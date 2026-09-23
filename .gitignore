@@ -1,0 +1,10 @@
+target/
+app/
+*.zip
+config.properties
+descargas.log
+sfrdata/
+recs/
+*.class
+.idea/
+.vscode/
