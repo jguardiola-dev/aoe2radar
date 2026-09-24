@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.api;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
  * El freno de cortesía (CLAUDE.md: «1 llamada/s con ráfaga de 5, cortacircuitos ante 429»), probado sin esperar:
@@ -94,6 +95,45 @@ class ThrottleCuboTest {
         r.avanzar(11 * 60_000L);
         t.registrarExito();
         assertEquals(60_000, t.registrar429(), "a los 11 min del último éxito vuelve a empezar");
+    }
+
+    @Test void detenerCortaLaEsperaDeLaPausaEnTramos() {
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        t.registrar429();                                            // 60 s
+        InterruptedException e = assertThrows(InterruptedException.class, () -> t.adquirir(() -> r.dormido >= 1_000));
+        assertEquals("detenido", e.getMessage());
+        assertEquals(1_000, r.dormido, "cuatro tramos de 250 ms y fuera");
+    }
+
+    @Test void detenerMientrasEsperaFichaNoLaConsume() throws Exception {
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        for (int i = 0; i < 5; i++) t.adquirir();                    // cubo vacío
+        assertThrows(InterruptedException.class, () -> t.adquirir(() -> r.dormido >= 250));
+        long antes = r.dormido;                                      // 250 ms dormidos: hay 0,25 fichas
+        t.adquirir();
+        assertEquals(750, r.dormido - antes, "el cancelado no consumió: falta 0,75 de ficha, no 1,75");
+    }
+
+    @Test void detenerTrasDejarPasarTiempoNoRegalaFichas() throws Exception {
+        // B1 del revisor: el tiempo se cuenta al recalcular; si Detener corta la espera, no se cuenta dos veces.
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        for (int i = 0; i < 5; i++) t.adquirir();                    // T0: cubo vacío
+        r.avanzar(500);                                              // T0+500: 0,5 fichas
+        assertThrows(InterruptedException.class, () -> t.adquirir(() -> r.dormido >= 250));   // espera 250 y se cancela
+        long antes = r.dormido;                                      // T0+750: debe haber 0,75 fichas, no 1,25
+        t.adquirir();
+        assertEquals(250, r.dormido - antes, "falta 0,25 de ficha: espera 250 ms (antes del arreglo pasaba sin esperar)");
+    }
+
+    @Test void sinDetenerLaEsperaEsLaMismaQueAntes() throws Exception {
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        t.registrar429();
+        t.adquirir(() -> false);
+        assertEquals(60_000, r.dormido);
     }
 
     @Test void lasPausasYaVencidasNoSeEsperan() throws Exception {

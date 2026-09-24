@@ -40,7 +40,7 @@ public final class ApiClient {
         // Una interrupción residual de un Detener anterior (los hilos del pool se reutilizan) se limpia;
         // solo cuenta si hay un Detener real en curso.
         if (Thread.interrupted() && detenida.getAsBoolean()) throw new InterruptedException("detenido");
-        if (Freno.aplicaA(url)) throttle.adquirir();   // cualquier host del companion
+        if (Freno.aplicaA(url)) throttle.adquirir(detenida);   // cualquier host del companion; Detener corta la espera del freno
         return transporte.get(url);
     }
 

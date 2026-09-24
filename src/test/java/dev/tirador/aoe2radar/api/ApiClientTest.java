@@ -41,7 +41,7 @@ class ApiClientTest {
     /** Apunta qué le piden; el 429 siempre «pausa» 60 s. */
     static final class ThrottleEspia implements Throttle {
         int adquiridas, cuatrocientosVeintinueve, exitos;
-        @Override public void adquirir() { adquiridas++; }
+        @Override public void adquirir(java.util.function.BooleanSupplier cancelar) { adquiridas++; }
         @Override public long registrar429() { cuatrocientosVeintinueve++; return 60_000; }
         @Override public void registrarExito() { exitos++; }
     }
@@ -110,6 +110,35 @@ class ApiClientTest {
         red.responde(429, 429, 200);
         assertEquals("cuerpo 200", conFrenoReal.textoCon429(COMPANION));
         assertEquals(List.of(60L, 120L), avisos, "el segundo 429 llega tras dormir la pausa: escala");
+    }
+
+    @Test void conElFrenoRealDetenerCortaLaEsperaDeLaPausa() {
+        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> detenida);
+        red.responde(429);
+        assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));   // pausa de 60 s
+        detenida = true;                                                      // el usuario pulsa Detener
+        InterruptedException e = assertThrows(InterruptedException.class, () -> conFrenoReal.texto(COMPANION));
+        assertEquals("detenido", e.getMessage());
+        assertTrue(reloj.dormido < 1_000, "sale enseguida, no espera la pausa (durmió " + reloj.dormido + " ms)");
+        assertEquals(1, red.pedidas.size(), "la segunda llamada no llega a la red");
+    }
+
+    @Test void cableadoReal_detenerSoloCortaElHiloDeLaOperacion() throws Exception {
+        // ApiClient + freno real + Cancelacion.detieneEsteHilo, como en la app: la operación corre en OTRO hilo.
+        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        ApiClient app = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, Cancelacion::detieneEsteHilo);
+        try {
+            red.responde(429, 200);
+            assertThrows(IOException.class, () -> app.texto(COMPANION));   // pausa de 60 s
+            Cancelacion.hiloOperacion = new Thread(() -> { });              // la operación es otro hilo
+            Cancelacion.opEnCurso = true;
+            Cancelacion.stopOperacion = true;                              // el usuario pulsa Detener
+            assertEquals("cuerpo 200", app.texto(COMPANION), "este hilo (un barrido de fondo) no se corta");
+            assertEquals(60_000, reloj.dormido, "espera la pausa entera, como siempre");
+        } finally {
+            Cancelacion.stopOperacion = false; Cancelacion.opEnCurso = false; Cancelacion.hiloOperacion = null;
+        }
     }
 
     @Test void textoNoCuentaEl429DeOtroHost() {

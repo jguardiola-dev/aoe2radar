@@ -6,7 +6,13 @@ package dev.tirador.aoe2radar.api;
  */
 public interface Throttle {
     /** Espera lo que haga falta (pausa por 429 pendiente y/o falta de fichas) y consume una ficha. */
-    void adquirir() throws InterruptedException;
+    default void adquirir() throws InterruptedException { adquirir(() -> false); }
+
+    /**
+     * Como adquirir(), pero la espera se puede cortar: si cancelar pasa a true mientras espera (botón Detener), sale
+     * con InterruptedException("detenido") sin consumir ficha.
+     */
+    void adquirir(java.util.function.BooleanSupplier cancelar) throws InterruptedException;
 
     /**
      * Un 429: pausa global para todas las llamadas, más larga si se repite tras acabar la anterior (60 s → 120 → 240 →

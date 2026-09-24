@@ -6,4 +6,11 @@ public final class Cancelacion {
 
     public static volatile boolean stopOperacion;
     public static volatile boolean opEnCurso;   // solo dentro de una operación cancelable el freno corta pausas
+    /** El hilo de la operación cancelable en curso (lo anota cada operación al empezar su trabajo de fondo). */
+    public static volatile Thread hiloOperacion;
+
+    /** ¿Detener va por ESTE hilo? Solo el de la operación: un barrido de fondo que espere en el freno no se entera. */
+    public static boolean detieneEsteHilo() {
+        return stopOperacion && opEnCurso && Thread.currentThread() == hiloOperacion;
+    }
 }

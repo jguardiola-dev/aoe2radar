@@ -53,6 +53,8 @@ import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 
+import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
+import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
 import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
 import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
@@ -60,7 +62,6 @@ import static dev.tirador.aoe2radar.api.Freno.CONTROL_URL;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
-import static dev.tirador.aoe2radar.api.Freno.freno;
 import static dev.tirador.aoe2radar.api.Http.API;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.TRANSPORTE;
@@ -973,6 +974,7 @@ public class SpoilerFreeRecs extends JFrame {
         final long miSerial = opSerial;
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
+                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 int i = 0;
                 cargarEloAyer();
                 List<Player> porApi = new ArrayList<>();
@@ -8945,6 +8947,7 @@ public class SpoilerFreeRecs extends JFrame {
                 + " x" + multAzar + " continuar=" + continuar + " stop=" + stopOperacion);
         new SwingWorker<List<Match>, String>() {
             @Override protected List<Match> doInBackground() throws Exception {
+                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 Random rnd = new Random();
                 if (hours >= 24) {   // la muestra nocturna cubre «ayer»: si da para una tanda, cero llamadas
                     List<Match> deMuestra = azarDesdeMuestra(lo, hi, mapaSel, civSel, rnd);
@@ -8980,124 +8983,129 @@ public class SpoilerFreeRecs extends JFrame {
                     publish(t("De lo ya leído en esta sesión: ", "From this session's cache: ")
                             + encontradas.size() + "/10\u2026");
 
-                // Tramo del rango en el ladder (bisección sobre páginas cacheadas).
-                ProveedorPaginas prov = p -> lbPagina(ctxAzar, p);
-                int ult = ultimaPaginaLadder(ctxAzar);
-                int pIni = primeraPaginaRango(prov, hi, ult);
-                int pFin = ultimaPaginaRango(prov, lo, ult);
-                log("azar #" + miSerial + ": tramo páginas " + pIni + "-" + pFin + " de " + ult + " stop=" + stopOperacion);
-                if (pIni > pFin) return ordenaYRecorta(encontradas);
-                double fraccion = (pFin - pIni + 1) / (double) Math.max(1, ult);
+                try {
+                    // Tramo del rango en el ladder (bisección sobre páginas cacheadas).
+                    ProveedorPaginas prov = p -> lbPagina(ctxAzar, p);
+                    int ult = ultimaPaginaLadder(ctxAzar);
+                    int pIni = primeraPaginaRango(prov, hi, ult);
+                    int pFin = ultimaPaginaRango(prov, lo, ult);
+                    log("azar #" + miSerial + ": tramo páginas " + pIni + "-" + pFin + " de " + ult + " stop=" + stopOperacion);
+                    if (pIni > pFin) return ordenaYRecorta(encontradas);
+                    double fraccion = (pFin - pIni + 1) / (double) Math.max(1, ult);
 
-                // ---- Río global: solo si el rango es una porción rentable del
-                // ladder y no hay filtro de civ (la dilución lo vuelve un pozo).
-                if (fraccion >= 0.12 && civSel == null && encontradas.size() < 10) {
-                    String[] variantesLb = { "leaderboard_ids=rm_1v1&", "leaderboard_ids=3&", "" };
-                    int varLb = 0;
-                    int maxPagRio = mapaSel != null ? 25 : 15;
-                    int pagLeidas = 0;
-                    for (int pag = 1; pag <= maxPagRio && encontradas.size() < 10 && !stopOperacion; pag++) {
-                        publish(t("Leyendo partidas recientes del ladder\u2026 (p\u00e1g. ", "Reading recent ladder games\u2026 (page ")
-                                + pag + ", " + encontradas.size() + "/10)");
-                        String url = API + "/matches?" + variantesLb[varLb] + "page=" + pag + "&per_page=50";
-                        List<Object> ms;
-                        try {
-                            ms = arr(val(obj(Json.parse(httpText429(url))), "matches"));
-                        } catch (Exception ex) {
-                            log("al azar (r\u00edo): fallo en p\u00e1gina " + pag + " (variante " + varLb + "): " + causa(ex));
-                            if (varLb < variantesLb.length - 1 && pagLeidas == 0) { varLb++; pag = 0; continue; }
-                            break;
-                        }
-                        if (ms.isEmpty() && pagLeidas == 0 && varLb < variantesLb.length - 1) {
-                            varLb++;
-                            pag = 0;
-                            continue;
-                        }
-                        if (ms.isEmpty()) break;
-                        pagLeidas++;
-                        boolean algunaEnVentana = false;
-                        for (Object o : ms) {
-                            Match m = parseMatch(obj(o));
-                            if (m == null || m.finished == null) continue;
-                            cacheAzar.putIfAbsent(m.id, m);
-                            if (!m.finished.isBefore(cutoff)) algunaEnVentana = true;
-                            if (cumpleAzar(m, lo, hi, cutoff, mapaSel, civSel) && idsRes.add(m.id))
-                                encontradas.add(m);
-                        }
-                        if (!algunaEnVentana) break;      // el r\u00edo ya qued\u00f3 m\u00e1s viejo que la ventana
-                        dormir(PAUSA_MS / 2);
-                    }
-                    log("al azar (r\u00edo): " + pagLeidas + " p\u00e1ginas le\u00eddas (variante " + varLb + "), "
-                            + encontradas.size() + " v\u00e1lidas acumuladas");
-                }
-                if (encontradas.size() >= 10) return ordenaYRecorta(encontradas);
-
-                // ---- Perfiles activos del tramo, sin repetir los ya consultados.
-                if (pagsAzar == null) {
-                    pagsAzar = new ArrayList<>();
-                    for (int p = pIni; p <= pFin; p++) pagsAzar.add(p);
-                    Collections.shuffle(pagsAzar, rnd);
-                    cursorPagsAzar = 0;
-                }
-                int pasadas = ((mapaSel != null || civSel != null) ? 2 : 3) * multAzar;
-                for (int intento = 1; intento <= pasadas && encontradas.size() < 10 && !stopOperacion; intento++) {
-                    int nPerfiles = civSel != null ? 40 : (intento == 1 ? 12 : 24);
-                    int nPags = Math.min(pagsAzar.size(), civSel != null ? 12 : (intento == 1 ? 6 : 10));
-                    if (intento > 1 || continua)
-                        publish(t("A\u00fan ", "Still ") + encontradas.size()
-                                + t(" de 10; muestreando jugadores nuevos\u2026 (pasada ", " of 10; sampling new players\u2026 (pass ")
-                                + intento + "/" + pasadas + ")");
-                    Map<Long, Match> unicos = new LinkedHashMap<>();
-                    List<long[]> lb = new ArrayList<>();
-                    for (int i = 0; i < nPags; i++) {
-                        int pag = pagsAzar.get((cursorPagsAzar + i) % pagsAzar.size());
-                        publish(t("Muestreando el ladder\u2026 (", "Sampling the ladder\u2026 (") + (i + 1) + "/" + nPags + ")");
-                        lb.addAll(lbPagina(ctxAzar, pag).jugadores());
-                    }
-                    cursorPagsAzar += nPags;
-                    ratingsLb.clear();
-                    for (PaginaLb pg : ctxAzar.cache.values())
-                        for (long[] p : pg.jugadores()) ratingsLb.put(p[0], (int) p[1]);
-                    log("al azar por ELO " + lo + "-" + hi
-                            + (mapaSel != null ? ", mapa=" + mapaSel : "")
-                            + (civSel != null ? ", civ=" + civSel : "")
-                            + ": pasada " + intento + "/" + pasadas
-                            + ", tramo en p\u00e1ginas " + pIni + "\u2013" + pFin
-                            + " (" + String.format("%.1f", fraccion * 100) + "% del ladder), "
-                            + lb.size() + " jugadores a la vista, "
-                            + perfilVistoAzar.size() + " consultados en la sesi\u00f3n");
-                    List<Long> perfiles = new ArrayList<>();
-                    for (long pid : elegirPerfiles(lb, lo, hi, cutoff.toEpochMilli(), nPerfiles * 4, rnd)) {
-                        if (perfiles.size() >= nPerfiles) break;
-                        if (!perfilVistoAzar.containsKey(pid)) perfiles.add(pid);
-                    }
-                    if (perfiles.isEmpty()) { azarTramoAgotado = true; break; }
-                    int i = 0;
-                    for (long pid : perfiles) {
-                        if (stopOperacion) break;
-                        publish(t("Perfil ", "Profile ") + (++i) + "/" + perfiles.size()
-                                + " \u00b7 " + encontradas.size() + "/10\u2026");
-                        try {
-                            Object root = COMPANION.matches(pid, 1, PER_PAGE);
-                            perfilVistoAzar.put(pid, System.currentTimeMillis());
-                            for (Object o : arr(val(obj(root), "matches"))) {
-                                Match m = parseMatch(obj(o));
-                                if (m != null && m.finished != null) {
-                                    unicos.putIfAbsent(m.id, m);
-                                    cacheAzar.putIfAbsent(m.id, m);
-                                }
+                    // ---- Río global: solo si el rango es una porción rentable del
+                    // ladder y no hay filtro de civ (la dilución lo vuelve un pozo).
+                    if (fraccion >= 0.12 && civSel == null && encontradas.size() < 10) {
+                        String[] variantesLb = { "leaderboard_ids=rm_1v1&", "leaderboard_ids=3&", "" };
+                        int varLb = 0;
+                        int maxPagRio = mapaSel != null ? 25 : 15;
+                        int pagLeidas = 0;
+                        for (int pag = 1; pag <= maxPagRio && encontradas.size() < 10 && !stopOperacion; pag++) {
+                            publish(t("Leyendo partidas recientes del ladder\u2026 (p\u00e1g. ", "Reading recent ladder games\u2026 (page ")
+                                    + pag + ", " + encontradas.size() + "/10)");
+                            String url = API + "/matches?" + variantesLb[varLb] + "page=" + pag + "&per_page=50";
+                            List<Object> ms;
+                            try {
+                                ms = arr(val(obj(Json.parse(httpText429(url))), "matches"));
+                            } catch (Exception ex) {
+                                log("al azar (r\u00edo): fallo en p\u00e1gina " + pag + " (variante " + varLb + "): " + causa(ex));
+                                if (varLb < variantesLb.length - 1 && pagLeidas == 0) { varLb++; pag = 0; continue; }
+                                break;
                             }
-                        } catch (Exception ex) {
-                            log("al azar: fallo con perfil " + pid + ": " + causa(ex));
+                            if (ms.isEmpty() && pagLeidas == 0 && varLb < variantesLb.length - 1) {
+                                varLb++;
+                                pag = 0;
+                                continue;
+                            }
+                            if (ms.isEmpty()) break;
+                            pagLeidas++;
+                            boolean algunaEnVentana = false;
+                            for (Object o : ms) {
+                                Match m = parseMatch(obj(o));
+                                if (m == null || m.finished == null) continue;
+                                cacheAzar.putIfAbsent(m.id, m);
+                                if (!m.finished.isBefore(cutoff)) algunaEnVentana = true;
+                                if (cumpleAzar(m, lo, hi, cutoff, mapaSel, civSel) && idsRes.add(m.id))
+                                    encontradas.add(m);
+                            }
+                            if (!algunaEnVentana) break;      // el r\u00edo ya qued\u00f3 m\u00e1s viejo que la ventana
+                            dormir(PAUSA_MS / 2);
                         }
-                        dormir(PAUSA_MS);
+                        log("al azar (r\u00edo): " + pagLeidas + " p\u00e1ginas le\u00eddas (variante " + varLb + "), "
+                                + encontradas.size() + " v\u00e1lidas acumuladas");
                     }
-                    for (Match m : filtrarAleatorias(unicos.values(), ratingsLb, lo, hi, cutoff, mapaSel, civSel, 10, rnd))
-                        if (idsRes.add(m.id)) encontradas.add(m);
+                    if (encontradas.size() >= 10) return ordenaYRecorta(encontradas);
+
+                    // ---- Perfiles activos del tramo, sin repetir los ya consultados.
+                    if (pagsAzar == null) {
+                        pagsAzar = new ArrayList<>();
+                        for (int p = pIni; p <= pFin; p++) pagsAzar.add(p);
+                        Collections.shuffle(pagsAzar, rnd);
+                        cursorPagsAzar = 0;
+                    }
+                    int pasadas = ((mapaSel != null || civSel != null) ? 2 : 3) * multAzar;
+                    for (int intento = 1; intento <= pasadas && encontradas.size() < 10 && !stopOperacion; intento++) {
+                        int nPerfiles = civSel != null ? 40 : (intento == 1 ? 12 : 24);
+                        int nPags = Math.min(pagsAzar.size(), civSel != null ? 12 : (intento == 1 ? 6 : 10));
+                        if (intento > 1 || continua)
+                            publish(t("A\u00fan ", "Still ") + encontradas.size()
+                                    + t(" de 10; muestreando jugadores nuevos\u2026 (pasada ", " of 10; sampling new players\u2026 (pass ")
+                                    + intento + "/" + pasadas + ")");
+                        Map<Long, Match> unicos = new LinkedHashMap<>();
+                        List<long[]> lb = new ArrayList<>();
+                        for (int i = 0; i < nPags; i++) {
+                            int pag = pagsAzar.get((cursorPagsAzar + i) % pagsAzar.size());
+                            publish(t("Muestreando el ladder\u2026 (", "Sampling the ladder\u2026 (") + (i + 1) + "/" + nPags + ")");
+                            lb.addAll(lbPagina(ctxAzar, pag).jugadores());
+                        }
+                        cursorPagsAzar += nPags;
+                        ratingsLb.clear();
+                        for (PaginaLb pg : ctxAzar.cache.values())
+                            for (long[] p : pg.jugadores()) ratingsLb.put(p[0], (int) p[1]);
+                        log("al azar por ELO " + lo + "-" + hi
+                                + (mapaSel != null ? ", mapa=" + mapaSel : "")
+                                + (civSel != null ? ", civ=" + civSel : "")
+                                + ": pasada " + intento + "/" + pasadas
+                                + ", tramo en p\u00e1ginas " + pIni + "\u2013" + pFin
+                                + " (" + String.format("%.1f", fraccion * 100) + "% del ladder), "
+                                + lb.size() + " jugadores a la vista, "
+                                + perfilVistoAzar.size() + " consultados en la sesi\u00f3n");
+                        List<Long> perfiles = new ArrayList<>();
+                        for (long pid : elegirPerfiles(lb, lo, hi, cutoff.toEpochMilli(), nPerfiles * 4, rnd)) {
+                            if (perfiles.size() >= nPerfiles) break;
+                            if (!perfilVistoAzar.containsKey(pid)) perfiles.add(pid);
+                        }
+                        if (perfiles.isEmpty()) { azarTramoAgotado = true; break; }
+                        int i = 0;
+                        for (long pid : perfiles) {
+                            if (stopOperacion) break;
+                            publish(t("Perfil ", "Profile ") + (++i) + "/" + perfiles.size()
+                                    + " \u00b7 " + encontradas.size() + "/10\u2026");
+                            try {
+                                Object root = COMPANION.matches(pid, 1, PER_PAGE);
+                                perfilVistoAzar.put(pid, System.currentTimeMillis());
+                                for (Object o : arr(val(obj(root), "matches"))) {
+                                    Match m = parseMatch(obj(o));
+                                    if (m != null && m.finished != null) {
+                                        unicos.putIfAbsent(m.id, m);
+                                        cacheAzar.putIfAbsent(m.id, m);
+                                    }
+                                }
+                            } catch (Exception ex) {
+                                log("al azar: fallo con perfil " + pid + ": " + causa(ex));
+                            }
+                            dormir(PAUSA_MS);
+                        }
+                        for (Match m : filtrarAleatorias(unicos.values(), ratingsLb, lo, hi, cutoff, mapaSel, civSel, 10, rnd))
+                            if (idsRes.add(m.id)) encontradas.add(m);
+                    }
+                    log("al azar: total acumulado " + encontradas.size() + " partidas"
+                            + (azarTramoAgotado ? " (tramo activo agotado en esta sesi\u00f3n)" : ""));
+                    return ordenaYRecorta(encontradas);
+                } catch (InterruptedException ex) {   // Detener durante la bisección o el muestreo: se aplica lo encontrado, como en la 1.1
+                    if (stopOperacion) return ordenaYRecorta(encontradas);
+                    throw ex;
                 }
-                log("al azar: total acumulado " + encontradas.size() + " partidas"
-                        + (azarTramoAgotado ? " (tramo activo agotado en esta sesi\u00f3n)" : ""));
-                return ordenaYRecorta(encontradas);
             }
             @Override protected void process(List<String> msgs) { status.setText(msgs.get(msgs.size() - 1)); }
             @Override protected void done() {
@@ -9154,7 +9162,7 @@ public class SpoilerFreeRecs extends JFrame {
                     status.setText(res.size() + t(" partidas 1v1 al azar, ELO ", " random 1v1s, ELO ") + lo + "–" + hi
                             + t(", últimas ", ", last ") + hours + " h." + extra);
                 } catch (Exception ex) {
-                    status.setText("Error: " + causa(ex));
+                    status.setText(stopOperacion ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("al azar por ELO: ERROR " + causa(ex));
                 }
             }
@@ -9182,7 +9190,8 @@ public class SpoilerFreeRecs extends JFrame {
                     root = obj(Json.parse(httpText(API + "/leaderboards/" + id + "?page=" + p + "&per_page=100")));
                     players = arr(val(root, "players"));
                     if (!players.isEmpty()) { ctx.id = id; break; }
-                } catch (Exception ignored) {}
+                } catch (InterruptedException ie) { throw ie; }   // Detener: no probar el otro id ni decir «no responde»
+                catch (Exception ignored) {}
             }
             if (ctx.id == null) throw new IOException("el leaderboard no responde (ni rm_1v1 ni 3)");
         } else {
@@ -9272,6 +9281,7 @@ public class SpoilerFreeRecs extends JFrame {
         status.setText(t("Preparando Guess the ELO…", "Preparing Guess the ELO…"));
         new SwingWorker<List<Match>, String>() {
             @Override protected List<Match> doInBackground() throws Exception {
+                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 Random rnd = new Random();
                 List<Match> deMuestra = gteDesdeMuestra(rnd);   // la muestra nocturna de sfr-data: cero llamadas y nunca una partida repetida
                 if (!deMuestra.isEmpty()) return deMuestra;
@@ -9363,7 +9373,7 @@ public class SpoilerFreeRecs extends JFrame {
                             + res.get(0).gte + t("»–«", "”–“") + res.get(res.size() - 1).gte
                             + t("»). Adivina y comprueba con «Revelar resultado…».", "”). Guess, then check with “Reveal result…”."));
                 } catch (Exception ex) {
-                    status.setText("Error: " + causa(ex));
+                    status.setText(stopOperacion ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("Guess the ELO: ERROR " + causa(ex));
                 }
             }
@@ -9557,6 +9567,7 @@ public class SpoilerFreeRecs extends JFrame {
         final long miSerial = opSerial;
         new SwingWorker<Integer, String>() {
             @Override protected Integer doInBackground() {
+                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 int anadidas = 0;
                 for (Player p : nuevos) {
                     if (stopOperacion) break;
@@ -11609,6 +11620,7 @@ public class SpoilerFreeRecs extends JFrame {
 
     void trabajando(boolean on) {
         progreso.setVisible(on);
+        if (on) { stopOperacion = false; hiloOperacion = null; }   // antes que opEnCurso: operación nueva = freno suelto (la anterior, si aún muere, ya no frena a esta), y hasta que anote su hilo Detener no alcanza a nadie
         opEnCurso = on;
         if (on) opSerial++;
         if (!on) {   // cualquier fin de operación deja la UI usable, pase por donde pase
@@ -11617,7 +11629,6 @@ public class SpoilerFreeRecs extends JFrame {
             if (dlAll != null) dlAll.setEnabled(true);
         }
         if (on) {
-            stopOperacion = false;   // operación nueva = freno suelto (la anterior, si aún muere, ya no frena a esta)
             if (continuarBtn != null) continuarBtn.setVisible(false);
         }
         if (detenerDescBtn != null) {
@@ -12211,6 +12222,7 @@ public class SpoilerFreeRecs extends JFrame {
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         SwingWorker<List<Match>, String> fw = new SwingWorker<>() {
             @Override protected List<Match> doInBackground() {
+                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 Map<Long, Match> unicos = new LinkedHashMap<>();
                 topeAlcanzado = false;
                 final int MAX_PAGINAS = 6, MAX_TOTAL = 600;   // tope de seguridad por búsqueda
@@ -12345,6 +12357,7 @@ public class SpoilerFreeRecs extends JFrame {
 
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() {
+                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 try { Files.createDirectories(RECS_DIR); } catch (IOException ignored) {}
                 int ok = 0, copiadas = 0;
                 for (Match m : objetivo) {
@@ -12550,7 +12563,7 @@ public class SpoilerFreeRecs extends JFrame {
         } catch (Exception ex) { log("control.json: " + causa(ex)); }
     }
     /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
-    static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> stopOperacion && opEnCurso);
+    static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
     static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
 

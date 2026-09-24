@@ -15,9 +15,6 @@ public final class Freno {
     public static double ctrlMult(String clave) { Object v = CONTROL.get(clave); return v instanceof Number n ? Math.max(0.5, Math.min(20, n.doubleValue())) : 1.0; }
     public static boolean ctrlOn(String clave) { Object v = CONTROL.get(clave); return !(v instanceof Boolean b) || b; }
 
-    /** Antes de cada llamada al companion (fachada para el código de la 1.1: delega en THROTTLE). */
-    public static void freno() throws InterruptedException { THROTTLE.adquirir(); }
-
     /**
      * ¿Esta URL es del companion y debe pasar por el freno? Cualquier host de aoe2companion.com (data., api., …).
      * En la 1.1 el criterio era «empieza por API» (data.aoe2companion.com/api) y las llamadas de Twitch

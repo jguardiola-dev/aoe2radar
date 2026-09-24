@@ -34,15 +34,30 @@ public final class ThrottleCubo implements Throttle {
 
     public ThrottleCubo(Reloj reloj) { this.reloj = reloj; }
 
-    @Override public void adquirir() throws InterruptedException {
+    static final long TRAMO_MS = 250;              // la espera se hace en tramos para poder atender a Detener
+
+    @Override public void adquirir(java.util.function.BooleanSupplier cancelar) throws InterruptedException {
         long pausa = pausaHastaMs - reloj.ahoraMs();
-        if (pausa > 0) reloj.dormir(Math.min(pausa, PAUSA_MAX_MS));   // cortacircuitos: nadie llama hasta que pase la pausa
+        if (pausa > 0) dormir(Math.min(pausa, PAUSA_MAX_MS), cancelar);   // cortacircuitos: nadie llama hasta que pase la pausa
         synchronized (cubo) {
             long ahora = reloj.ahoraMs();
             fichas = Math.min(FICHAS, fichas + (ahora - ultimaMs) / 1000.0);
+            ultimaMs = ahora;   // el tiempo ya está contado: si Detener corta la espera, el siguiente no lo cuenta otra vez
             if (fichas >= 1) fichas -= 1;
-            else { long espera = (long) ((1 - fichas) * 1000); reloj.dormir(espera); fichas = 0; }
+            else { long espera = (long) ((1 - fichas) * 1000); dormir(espera, cancelar); fichas = 0; }   // si se cancela, no consume ficha
             ultimaMs = reloj.ahoraMs();
+        }
+    }
+
+    /**
+     * Duerme ms en tramos de hasta TRAMO_MS; entre tramos, si cancelar da true, sale con InterruptedException("detenido").
+     * Se duerme hasta una hora de fin (no sumando tramos): el retraso de cada sleep de Windows no se acumula.
+     */
+    private void dormir(long ms, java.util.function.BooleanSupplier cancelar) throws InterruptedException {
+        long fin = reloj.ahoraMs() + ms;
+        for (long queda = ms; queda > 0; queda = fin - reloj.ahoraMs()) {
+            if (cancelar.getAsBoolean()) throw new InterruptedException("detenido");
+            reloj.dormir(Math.min(TRAMO_MS, queda));
         }
     }
 
