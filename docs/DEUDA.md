@@ -27,3 +27,8 @@
 | 2026-09-24 | fase 1 (cierre) | imports que quedan sin uso en SpoilerFreeRecs tras los movimientos (GZIPInputStream, InflaterInputStream, ZipInputStream, ZipEntry…): limpiar en un commit al final de la fase | 1 |
 | 2026-09-24 | cache.HistorialDisco.cargarActividad | disco en el EDT: al abrir un perfil se lee y convierte a Match hasta un año de partidas en el hilo de la UI | 2 |
 | 2026-09-24 | api.Parseo.COLOR_SLOT_DISTINTOS | contador que nadie lee (ni logs ni diagnóstico): mostrarlo o quitarlo | 4 |
+| 2026-09-24 | Live (VIVO_PARTIDA, ~7753) | **posible NPE en el EDT**: `VIVO_PARTIDA.get(p.id())` tres veces seguidas (comprobar `!= null` y leer `.map`); si el socket borra entre medias, NPE al pintar. Leer una vez en una variable local | 2 |
+| 2026-09-24 | Live (barrido ~5446 vs liveEvento ~5459) | el barrido reescribe `VIVO_PARTIDA`/`ahoraEnCurso` (clear + putAll) con una foto previa: una partida que el socket acaba de dar por terminada puede volver hasta el siguiente evento | 2 |
+| 2026-09-24 | Live (vivoWatch, vivoInfo, VIVO_RIVAL, VIVO_PARTIDA) | borrados y escrituras en varios mapas sin atomicidad (≈7225, 7237, 10728, 11971, 12032, 12172, 13037 frente a resumenVivo): estados a medias (rival sin partida…). LiveService como único escritor | 2 |
+| 2026-09-24 | api.Cancelacion / trabajando() | `opEnCurso = on` y `stopOperacion = false` son dos volatile sin atomicidad: httpText puede ver el stop de la operación anterior (el comentario ya lo asume) | 2 |
+| 2026-09-24 | cache.Vivos.VIVO_RIVAL | `Object[]` mutable y sin tipo: record | 2 |
