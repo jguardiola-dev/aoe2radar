@@ -49,6 +49,18 @@ import dev.tirador.aoe2radar.util.Json;
 
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
+import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
+import static dev.tirador.aoe2radar.util.Config.guardarConfig;
+import static dev.tirador.aoe2radar.util.Config.leerConfig;
+import static dev.tirador.aoe2radar.util.Identidad.AUTOR;
+import static dev.tirador.aoe2radar.util.Identidad.AUTOR_COMPLETO;
+import static dev.tirador.aoe2radar.util.Identidad.CLAN;
+import static dev.tirador.aoe2radar.util.Identidad.NOMBRE;
+import static dev.tirador.aoe2radar.util.Identidad.RELEASES_API;
+import static dev.tirador.aoe2radar.util.Identidad.RELEASES_URL;
+import static dev.tirador.aoe2radar.util.Identidad.REPO_URL;
+import static dev.tirador.aoe2radar.util.Identidad.TWITCH;
+import static dev.tirador.aoe2radar.util.Identidad.VERSION;
 import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
 import static dev.tirador.aoe2radar.util.Formato.pct1;
 import static dev.tirador.aoe2radar.util.Json.arr;
@@ -89,24 +101,12 @@ import java.util.zip.ZipInputStream;
 
 public class SpoilerFreeRecs extends JFrame {
 
-    // ----- Identidad / autoría ----------------------------------------------
-    static final String VERSION        = "1.1";
-    static final String NOMBRE         = "aoe2radar";   // nombre del producto (la clase sigue llamándose SpoilerFreeRecs)
-    static final String AUTOR          = "12Tirador";
-    static final String CLAN           = "R1";
-    static final String AUTOR_COMPLETO = "Jorge «12Tirador» Guardiola";
-    static final String TWITCH         = "twitch.tv/12tirador";
-
     // ----- Configuración -----------------------------------------------------
     static final String API     = "https://data.aoe2companion.com/api";
     static final String REC_URL = "https://aoe.ms/replay/?gameId=%d&profileId=%d";
-    static final String REPO_URL = "https://github.com/jguardiola-dev/aoe2radar";
-    static final String RELEASES_URL = REPO_URL + "/releases/latest";
-    static final String RELEASES_API = "https://api.github.com/repos/jguardiola-dev/aoe2radar/releases/latest";
     static final String UA      = NOMBRE + "/" + VERSION + " (+" + REPO_URL + "; twitch.tv/12tirador)";
     static final Path   PLAYERS_FILE = Path.of("players.txt");
     static final Path   RECS_DIR     = Path.of("recs");
-    static final Path   CONFIG_FILE  = Path.of("config.properties");
     static final String FLATLAF_JAR  = "flatlaf-3.7.2.jar";
     static final String DONAR_URL    = "https://paypal.me/12Tirador/5EUR";
     static final String TEMA_CLARO = "claro", TEMA_OSCURO = "oscuro", TEMA_SISTEMA = "sistema";
@@ -12708,27 +12708,6 @@ public class SpoilerFreeRecs extends JFrame {
 
     static String temaValido(String t) {
         return switch (t) { case TEMA_CLARO, TEMA_OSCURO -> t; default -> TEMA_SISTEMA; };
-    }
-
-    static String leerConfig(String clave, String porDefecto) {
-        try (var in = Files.newInputStream(CONFIG_FILE)) {
-            var p = new Properties();
-            p.load(in);
-            String v = p.getProperty(clave);
-            return v != null ? v : porDefecto;
-        } catch (IOException e) {
-            return porDefecto;
-        }
-    }
-
-    static void guardarConfig(String clave, String valor) {
-        try {
-            var p = new Properties();
-            if (Files.exists(CONFIG_FILE))
-                try (var in = Files.newInputStream(CONFIG_FILE)) { p.load(in); }
-            p.setProperty(clave, valor);
-            try (var out = Files.newOutputStream(CONFIG_FILE)) { p.store(out, NOMBRE); }
-        } catch (IOException ignored) {}
     }
 
     /** Mezcla dos colores: base con una fracción f del otro (rayado de tabla). */
