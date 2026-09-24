@@ -30,6 +30,19 @@
 
 package dev.tirador.aoe2radar;
 
+import dev.tirador.aoe2radar.model.CivAgg;
+import dev.tirador.aoe2radar.model.CivFila;
+import dev.tirador.aoe2radar.model.Comparado;
+import dev.tirador.aoe2radar.model.LadderHist;
+import dev.tirador.aoe2radar.model.LadderRow;
+import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.model.Matchup;
+import dev.tirador.aoe2radar.model.PaginaLb;
+import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.model.Rejilla;
+import dev.tirador.aoe2radar.model.Tendencias;
+import dev.tirador.aoe2radar.model.VentanaStats;
+
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.*;
@@ -112,10 +125,6 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     // ----- Modelo ------------------------------------------------------------
-    record Player(long id, String name, String grupo, long vinculo) {
-        Player(long id, String name, String grupo) { this(id, name, grupo, 0L); }
-        @Override public String toString() { return name + "  ·  " + id; }
-    }
 
     static final String GRUPO_GENERAL = "General";
 
@@ -154,14 +163,6 @@ public class SpoilerFreeRecs extends JFrame {
         }
         if (nm) guardarConfig("mapas_ranked", String.join(",", MAPAS_CAT));
         if (nc) guardarConfig("civs_vistas", String.join(",", CIVS_CAT));
-    }
-
-    static final class MatchPlayer {
-        long id; String name; String civ; int team; Boolean replay;
-        Boolean won;             // solo para «Revelar resultado…»
-        Integer color, slot;     // color/slot del lobby: en ranked coinciden; sirven para pocket/flanco en 3v3 y 4v4
-        String social;           // canal de Twitch vinculado, si viene
-        Integer rating, ratingDiff;
     }
 
     static final class Match {
@@ -1061,15 +1062,6 @@ public class SpoilerFreeRecs extends JFrame {
     // =====================================================================================
     static final String SFR_DATA = "https://raw.githubusercontent.com/jguardiola-dev/sfr-data/data/";
     static final Path LADDER_DIR = Path.of("sfrdata");
-    record LadderRow(long pid, String name, int rating, int rank, String country, String clan, int games) { }
-    record LadderHist(int total, int min, int[] bins, int mediana, Map<String, Integer> percentiles) { }
-    /** Rejilla de dispersión: celdas [ix, iy, n] sobre bins de 25 desde (minX, minY); recta y = a·x + b y correlación r. */
-    record Rejilla(int n, int minX, int minY, int[][] celdas, double a, double b, double r) { }
-    /** Un jugador en la comparación del Ladder: rating y rango en cada ladder (una sola llamada al perfil). */
-    record Comparado(long pid, String name, Map<String, int[]> ladders, String country, boolean deSeleccion) {
-        int rating(String lb) { int[] v = ladders.get(lb); return v == null ? 0 : v[0]; }
-        int rank(String lb) { int[] v = ladders.get(lb); return v == null ? 0 : v[1]; }
-    }
     static volatile Map<String, LadderHist> ladderHists = Map.of();          // todos los jugadores del ladder
     static volatile Map<String, LadderHist> ladderHistsActivos = Map.of();   // activos: 10+ partidas y una en 28 días
     static volatile Map<String, Rejilla> dispersionTodos = Map.of();         // «rm» / «ew» → rejilla 1v1 × equipos
@@ -1861,17 +1853,6 @@ public class SpoilerFreeRecs extends JFrame {
     // CIV STATS — resúmenes de sfr-data (civstats/ventanas/vN.json.gz y tendencias.json.gz):
     // winrate y pick rate por civ, modo, mapa y tramo de ELO; matchups 1v1; tendencias por mes
     // =====================================================================================
-    record CivFila(String modo, String mapa, String tramo, String civ, int n, int w, long d) { }
-    record Matchup(String modo, String tramo, String ca, String cb, int n, int wa) { }
-    record VentanaStats(String etiqueta, String desde, String hasta, int dias, String parche, List<String> tramos,
-                        Map<String, Map<String, Integer>> modos, Map<String, String> nombresMapas,
-                        Map<String, Map<String, Integer>> mapasPorModo, List<CivFila> civs, List<Matchup> matchups) { }
-    /** Tendencias: meses ordenados; partidas modo → mes → n; filas «modo|civ» → mes → {n, w}. */
-    record Tendencias(List<String> meses, Map<String, Map<String, Integer>> partidas, Map<String, Map<String, int[]>> filas,
-                      Map<String, Map<String, int[]>> filasMapa, Map<String, Map<String, int[]>> filasTramo, Map<String, Map<String, int[]>> filasMT) { }   // claves: modo|civ · modo|mapa|civ · modo|tramo|civ · modo|mapa|tramo|civ → mes → {n,w}
-    record CivAgg(String civ, int n, int w, long d) {
-        double wr() { return n == 0 ? 0 : 100.0 * w / n; }
-    }
     static final Map<String, VentanaStats> VENTANAS_STATS = new java.util.concurrent.ConcurrentHashMap<>();
     static volatile Tendencias tendenciasStats;
     static final String[] MODOS_STATS = { "rm_1v1", "rm_2v2", "rm_3v3", "rm_4v4", "ew_1v1", "ew_team", "dm_1v1", "dm_team" };
@@ -10043,10 +10024,6 @@ public class SpoilerFreeRecs extends JFrame {
             }
         }.execute();
     }
-
-    /** Página del leaderboard ya parseada: jugadores {profileId, rating} y
-     *  extremos de rating de la página. */
-    record PaginaLb(List<long[]> jugadores, int ratingMax, int ratingMin) {}
 
     /** Estado compartido de una consulta al leaderboard: id que responde
      *  (rm_1v1 o 3), total de páginas y caché por página para que la

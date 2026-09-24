@@ -1,5 +1,8 @@
 package dev.tirador.aoe2radar;
 
+import dev.tirador.aoe2radar.model.Comparado;
+import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.model.Player;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -227,7 +230,7 @@ class RegresionCapturas {
         SwingUtilities.invokeAndWait(() -> { app.setSize(1500, 950); app.setLocation(0, 0); app.validate(); });
         Thread.sleep(500);
         SpoilerFreeRecs.PAIS_DE.put(1L, "es"); SpoilerFreeRecs.PAIS_DE.put(2L, "es"); SpoilerFreeRecs.PAIS_DE.put(3L, "ar"); SpoilerFreeRecs.PAIS_DE.put(4L, "de");
-        SwingUtilities.invokeAndWait(() -> { app.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new SpoilerFreeRecs.Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new SpoilerFreeRecs.Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new SpoilerFreeRecs.Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
+        SwingUtilities.invokeAndWait(() -> { app.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
         Thread.sleep(400);
         // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar
         foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.tablaDirectos), app.directosContador, app.directosHora });
@@ -241,10 +244,10 @@ class RegresionCapturas {
         Thread.sleep(300);
         foto("shot_ladder_vacio.png");
         SwingUtilities.invokeAndWait(() -> {
-            app.ladderComparados.add(new SpoilerFreeRecs.Comparado(1L, "12Tirador", Map.of("rm_1v1", new int[]{ 1905, 260 }, "rm_team", new int[]{ 2110, 800 }, "ew_1v1", new int[]{ 1400, 300 }), "es", true));
-            app.ladderComparados.add(new SpoilerFreeRecs.Comparado(2L, "Turpiacho", Map.of("rm_1v1", new int[]{ 1610, 2800 }, "rm_team", new int[]{ 1750, 9000 }), "es", true));
-            app.ladderComparados.add(new SpoilerFreeRecs.Comparado(3L, "pume", Map.of("rm_1v1", new int[]{ 1980, 120 }, "rm_team", new int[]{ 1900, 4000 }), "es", false));
-            app.ladderComparados.add(new SpoilerFreeRecs.Comparado(4L, "novato", Map.of("rm_1v1", new int[]{ 760, 200000 }, "rm_team", new int[]{ 900, 250000 }), "de", false));
+            app.ladderComparados.add(new Comparado(1L, "12Tirador", Map.of("rm_1v1", new int[]{ 1905, 260 }, "rm_team", new int[]{ 2110, 800 }, "ew_1v1", new int[]{ 1400, 300 }), "es", true));
+            app.ladderComparados.add(new Comparado(2L, "Turpiacho", Map.of("rm_1v1", new int[]{ 1610, 2800 }, "rm_team", new int[]{ 1750, 9000 }), "es", true));
+            app.ladderComparados.add(new Comparado(3L, "pume", Map.of("rm_1v1", new int[]{ 1980, 120 }, "rm_team", new int[]{ 1900, 4000 }), "es", false));
+            app.ladderComparados.add(new Comparado(4L, "novato", Map.of("rm_1v1", new int[]{ 760, 200000 }, "rm_team", new int[]{ 900, 250000 }), "de", false));
             app.ladderRefrescar();
         });
         Thread.sleep(1200);
@@ -307,11 +310,11 @@ class RegresionCapturas {
             boolean equipo = rnd.nextInt(10) < 3;
             m.mode = equipo ? "Team Random Map" : "1v1 Random Map"; m.map = mapsS[rnd.nextInt(mapsS.length)];
             boolean gano = rnd.nextInt(100) < 53;
-            SpoilerFreeRecs.MatchPlayer yo = new SpoilerFreeRecs.MatchPlayer(); yo.id = 1L; yo.name = "12Tirador"; yo.civ = civsS[rnd.nextInt(civsS.length)]; yo.team = 1; yo.won = gano; yo.rating = 1850 + rnd.nextInt(120);
+            MatchPlayer yo = new MatchPlayer(); yo.id = 1L; yo.name = "12Tirador"; yo.civ = civsS[rnd.nextInt(civsS.length)]; yo.team = 1; yo.won = gano; yo.rating = 1850 + rnd.nextInt(120);
             m.players.add(yo);
             int nRiv = equipo ? 3 : 1;
-            for (int k = 0; k < (equipo ? 2 : 0); k++) { SpoilerFreeRecs.MatchPlayer al = new SpoilerFreeRecs.MatchPlayer(); al.id = 500 + rnd.nextInt(6); al.name = "aliado" + al.id; al.civ = civsS[rnd.nextInt(civsS.length)]; al.team = 1; al.won = gano; al.rating = 1700 + rnd.nextInt(300); m.players.add(al); }
-            for (int k = 0; k < nRiv; k++) { SpoilerFreeRecs.MatchPlayer r = new SpoilerFreeRecs.MatchPlayer(); int ri = rnd.nextInt(rivS.length); r.id = 100 + ri; r.name = rivS[ri]; r.civ = civsS[rnd.nextInt(civsS.length)]; r.team = 2; r.won = !gano; r.rating = 1500 + rnd.nextInt(700); m.players.add(r); }
+            for (int k = 0; k < (equipo ? 2 : 0); k++) { MatchPlayer al = new MatchPlayer(); al.id = 500 + rnd.nextInt(6); al.name = "aliado" + al.id; al.civ = civsS[rnd.nextInt(civsS.length)]; al.team = 1; al.won = gano; al.rating = 1700 + rnd.nextInt(300); m.players.add(al); }
+            for (int k = 0; k < nRiv; k++) { MatchPlayer r = new MatchPlayer(); int ri = rnd.nextInt(rivS.length); r.id = 100 + ri; r.name = rivS[ri]; r.civ = civsS[rnd.nextInt(civsS.length)]; r.team = 2; r.won = !gano; r.rating = 1500 + rnd.nextInt(700); m.players.add(r); }
             ms.add(m);
         }
         SpoilerFreeRecs.ACTIVIDAD_CACHE.put(1L, new SpoilerFreeRecs.Actividad(1L, "12Tirador", ms, true, 9, System.currentTimeMillis()));
@@ -339,8 +342,8 @@ class RegresionCapturas {
         System.out.println("tras adelante: techtree=" + app.techTreeBtn.isSelected() + " pos=" + app.historialPos + "/" + app.historial.size());
         // «Ahora»: inyectar top y partidas en curso para ver la tabla
         SpoilerFreeRecs.Match mv = new SpoilerFreeRecs.Match(); mv.id = 555; mv.started = java.time.Instant.now().minusSeconds(900); mv.map = "Arabia"; mv.mode = "1v1 Random Map";
-        SpoilerFreeRecs.MatchPlayer a1 = new SpoilerFreeRecs.MatchPlayer(); a1.id = 1; a1.name = "12Tirador"; a1.civ = "Aztecas"; a1.team = 1; a1.rating = 1905;
-        SpoilerFreeRecs.MatchPlayer a2 = new SpoilerFreeRecs.MatchPlayer(); a2.id = 3; a2.name = "pume"; a2.civ = "Francos"; a2.team = 2; a2.rating = 1980;
+        MatchPlayer a1 = new MatchPlayer(); a1.id = 1; a1.name = "12Tirador"; a1.civ = "Aztecas"; a1.team = 1; a1.rating = 1905;
+        MatchPlayer a2 = new MatchPlayer(); a2.id = 3; a2.name = "pume"; a2.civ = "Francos"; a2.team = 2; a2.rating = 1980;
         mv.players.add(a1); mv.players.add(a2);
         synchronized (app.ahoraTop) { app.ahoraTop.add(new Object[]{ 1L, "12Tirador", 1905, 260, "es" }); app.ahoraTop.add(new Object[]{ 3L, "pume", 1980, 120, "ar" }); app.ahoraTop.add(new Object[]{ 2L, "Turpiacho", 1610, 2800, "es" }); }
         app.ahoraTopMs = System.currentTimeMillis();
@@ -362,7 +365,7 @@ class RegresionCapturas {
         cerrarDialogos();
         // menú contextual de la watchlist sobre un jugador en partida
         app.vivoWatch.put(1L, 555L);
-        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new SpoilerFreeRecs.Player(1L, "12Tirador", "General")); app.todosJugadores.add(new SpoilerFreeRecs.Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
+        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new Player(1L, "12Tirador", "General")); app.todosJugadores.add(new Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
         // La partida 555 es inventada: un refresco de la propia app la quita en ~1 s y el panel pasa a «0 jugando»
         // (registrado: vivo(1)=null en la foto en 5 de 5 pasadas). Si el refresco tardaba, la foto pillaba el estado
         // intermedio («1 jugando»). Se espera a que termine para fotografiar siempre el estado final. DEUDA.md.
