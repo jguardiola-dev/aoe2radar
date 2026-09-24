@@ -51,6 +51,8 @@ que no es de interfaz ha salido de `SpoilerFreeRecs.java` y el harness sigue ver
 internos, código de cada pestaña) NO se parte aquí: se reparte en la fase 3, cuando ya hay servicios con tests
 (decisión del 2026-09-24: partirla ahora creaba ficheros que seguían dependiendo de la ventana entera y la
 fase 3 los habría rehecho).
+**Cerrada el 2026-09-24** (rama `fase-1-particion`): 51 ficheros en model, util, api, cache, sfrdata, techtree,
+service y ui; lo que queda fuera está listado en `DEUDA.md` («cierre fase 1»).
 
 **Fase 2 · Servicios con contrato.** Interfaces + implementaciones + tests unitarios con dobles (sin red).
 Aquí se unifican las tres cachés y los tres sitios donde hoy se decide «¿llamo a la API?». Hecho cuando cada

@@ -41,3 +41,4 @@
 | 2026-09-24 | util.Texto.truncar | método que nadie llama (ya en la 1.1) | 4 |
 | 2026-09-24 | service.ReglasPartida.DURACION_TRAMOS | el javadoc anuncia «<15, 15–25, 25–35, 35–45, 45–60, 60+» pero el código usa <5, 5–15, 15–25, 25–40, >40 (aoe2insights): comentario desfasado | 4 |
 | 2026-09-24 | cabecera «TECH TREE» (app) | sigue anunciando «datos de aoe2techtree… actualizada sola (ETag diario)», que ahora viven en techtree.TechTreeDatos; en la app solo quedan iconos y vista | 4 |
+| 2026-09-24 | cierre fase 1 | quedan en la app, por depender de la red o de la ventana: familia httpText (httpText, httpText429, registrar429, cargarControl, dormir, lbPagina, ultimaPaginaLadder, rioGlobalMuerto, eloDeLadder, perfilLadders, descargarActividad, buscarPerfilesApi/buscarPerfiles/sugerirPerfiles, cuentasVinculadas) → primer paso de la fase 2 (ApiClient); buscarLocal, SUJETOS, PER_PAGE/PAUSA_MS, resumenVivo, PLAYERS_FILE → con el servicio que los use | 2 |
