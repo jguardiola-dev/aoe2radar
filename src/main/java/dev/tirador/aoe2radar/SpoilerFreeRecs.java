@@ -42,6 +42,22 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
+import dev.tirador.aoe2radar.util.Json;
+
+import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
+import static dev.tirador.aoe2radar.util.I18n.t;
+import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
+import static dev.tirador.aoe2radar.util.Formato.pct1;
+import static dev.tirador.aoe2radar.util.Json.arr;
+import static dev.tirador.aoe2radar.util.Json.firstNonNull;
+import static dev.tirador.aoe2radar.util.Json.leerGzJson;
+import static dev.tirador.aoe2radar.util.Json.lng;
+import static dev.tirador.aoe2radar.util.Json.obj;
+import static dev.tirador.aoe2radar.util.Json.str;
+import static dev.tirador.aoe2radar.util.Json.val;
+import static dev.tirador.aoe2radar.util.Json.when;
+import static dev.tirador.aoe2radar.util.Log.causa;
+import static dev.tirador.aoe2radar.util.Log.log;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -87,7 +103,6 @@ public class SpoilerFreeRecs extends JFrame {
     static final String UA      = NOMBRE + "/" + VERSION + " (+" + REPO_URL + "; twitch.tv/12tirador)";
     static final Path   PLAYERS_FILE = Path.of("players.txt");
     static final Path   RECS_DIR     = Path.of("recs");
-    static final Path   LOG_FILE     = Path.of("descargas.log");
     static final Path   CONFIG_FILE  = Path.of("config.properties");
     static final String FLATLAF_JAR  = "flatlaf-3.7.2.jar";
     static final String DONAR_URL    = "https://paypal.me/12Tirador/5EUR";
@@ -105,10 +120,6 @@ public class SpoilerFreeRecs extends JFrame {
     final Map<Long, Match> cacheAzar = new HashMap<>();      // partidas ya descargadas del API
     final Map<Long, Long> perfilVistoAzar = new HashMap<>(); // perfil -> última consulta (TTL 10 min)
     volatile boolean azarTramoAgotado;
-    static String IDIOMA = "es";   // "es"/"en"; se fija en main antes de crear la UI
-
-    /** Texto según el idioma activo. */
-    static String t(String es, String en) { return "en".equals(IDIOMA) ? en : es; }
 
     static String todosModos() { return t("Todos los modos", "All modes"); }
 
@@ -316,12 +327,8 @@ public class SpoilerFreeRecs extends JFrame {
         @Override public int compareTo(FechaCell o) { return clave().compareTo(o.clave()); }
         @Override public String toString() {
             if (t != null) return F.format(t);
-            return orden != null ? "\u2014" : SpoilerFreeRecs.t("EN DIRECTO", "LIVE");
+            return orden != null ? "\u2014" : dev.tirador.aoe2radar.util.I18n.t("EN DIRECTO", "LIVE");
         }
-    }
-
-    static String escapeHtml(String s) {
-        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     /** Partida realmente en curso: sin terminar y empezada hace menos de 3 h.
@@ -2129,7 +2136,6 @@ public class SpoilerFreeRecs extends JFrame {
         Color fg = UIManager.getColor("Label.foreground");
         return fg == null ? Color.GRAY : fg;
     }
-    static String pct1(double p) { String s = String.format(Locale.ROOT, "%.1f", p); return ("en".equals(IDIOMA) ? s + "%" : s.replace('.', ',') + " %"); }
     static String duracionMedia(long segundos, int n) {
         if (n == 0) return "-";
         long s = segundos / n;
@@ -3943,12 +3949,6 @@ public class SpoilerFreeRecs extends JFrame {
         byte[] raw = descargarBytes(perfilesBase() + nombre, timeoutS);
         try { Files.createDirectories(PERFILES_SHARDS_DIR); Files.write(f, raw); } catch (IOException ignored) { }
         return raw;
-    }
-    static Map<String, Object> leerGzJson(byte[] raw) throws Exception {
-        try (java.util.zip.GZIPInputStream gz = new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(raw))) {
-            @SuppressWarnings("unchecked") Map<String, Object> m = (Map<String, Object>) Json.parse(new String(gz.readAllBytes(), StandardCharsets.UTF_8));
-            return m;
-        }
     }
     /** Carga (o refresca cada 6 h) ELO_AYER/NOMBRES_AYER y ELO_HACE7. Silencioso si la release no existe todavía. */
     static void cargarEloAyer() {
@@ -13797,7 +13797,7 @@ public class SpoilerFreeRecs extends JFrame {
      *  los tags de clan ("[R1] 12Tirador" -> "R1_12Tirador"). */
     static String limpiaNombre(String s) {
         String t = sanea(s).replaceAll("^_+|_+$", "");
-        return t.isBlank() ? SpoilerFreeRecs.t("jugador", "player") : t;
+        return t.isBlank() ? dev.tirador.aoe2radar.util.I18n.t("jugador", "player") : t;
     }
 
     static String sanea(String s) {
@@ -14091,19 +14091,6 @@ public class SpoilerFreeRecs extends JFrame {
         try (var in = new InflaterInputStream(new ByteArrayInputStream(b))) { return in.readAllBytes(); }
     }
 
-    static final DateTimeFormatter LOG_F =
-            DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());
-
-    /** Escribe en consola y en descargas.log (junto a players.txt). */
-    static synchronized void log(String linea) {
-        String l = LOG_F.format(Instant.now()) + "  " + linea;
-        System.out.println(l);
-        try {
-            Files.writeString(LOG_FILE, l + System.lineSeparator(), StandardCharsets.UTF_8,
-                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException ignored) {}
-    }
-
     static HttpRequest req(String url) {
         return HttpRequest.newBuilder(URI.create(url))
                 .header("User-Agent", UA)
@@ -14120,19 +14107,6 @@ public class SpoilerFreeRecs extends JFrame {
             catch (InterruptedException e) { return; }   // sin re-marcar: los hilos del pool se reutilizan
         }
     }
-
-    // ----- Utilidades JSON ---------------------------------------------------
-    @SuppressWarnings("unchecked")
-    static Map<String, Object> obj(Object o) { return o instanceof Map ? (Map<String, Object>) o : Map.of(); }
-    @SuppressWarnings("unchecked")
-    static List<Object> arr(Object o) { return o instanceof List ? (List<Object>) o : List.of(); }
-
-    static Object val(Map<String, Object> m, String... keys) {
-        for (String k : keys) if (m.containsKey(k)) return m.get(k);
-        return null;
-    }
-
-    static Object firstNonNull(Object... xs) { for (Object x : xs) if (x != null) return x; return null; }
 
     /** Búsqueda de jugadores por nombre en el companion: {id, nombre, etiqueta legible}. */
     /** Sugerencias locales del índice nocturno de nombres (top 40.000): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero. */
@@ -14175,129 +14149,5 @@ public class SpoilerFreeRecs extends JFrame {
             }
         } catch (Exception ex) { log("buscarPerfiles: " + causa(ex)); }
         return out;
-    }
-    static String str(Object o) { return o == null ? null : String.valueOf(o); }
-
-    static long lng(Object o) {
-        if (o instanceof Number n) return n.longValue();
-        try { return Long.parseLong(String.valueOf(o)); } catch (Exception e) { return -1; }
-    }
-
-    static Instant when(Object o) {
-        if (o == null) return null;
-        if (o instanceof Number n) {
-            long v = n.longValue();
-            return v > 100_000_000_000L ? Instant.ofEpochMilli(v) : Instant.ofEpochSecond(v);
-        }
-        String s = String.valueOf(o);
-        try { return Instant.parse(s); }
-        catch (Exception e) {
-            try { return OffsetDateTime.parse(s).toInstant(); }
-            catch (Exception e2) { return null; }
-        }
-    }
-
-    static String causa(Throwable t) {
-        while (t.getCause() != null) t = t.getCause();
-        String m = t.getMessage();
-        return m == null || m.isBlank() ? t.getClass().getSimpleName() : m;
-    }
-
-    // ----- Parser JSON mínimo (suficiente para estas APIs) -------------------
-    static final class Json {
-        private final String s; private int i;
-        private Json(String s) { this.s = s; }
-
-        static Object parse(String s) {
-            Json j = new Json(s);
-            j.ws();
-            Object v = j.value();
-            return v;
-        }
-
-        Object value() {
-            ws();
-            char c = peek();
-            return switch (c) {
-                case '{' -> object();
-                case '[' -> array();
-                case '"' -> string();
-                case 't' -> { expect("true");  yield Boolean.TRUE; }
-                case 'f' -> { expect("false"); yield Boolean.FALSE; }
-                case 'n' -> { expect("null");  yield null; }
-                default  -> number();
-            };
-        }
-
-        Map<String, Object> object() {
-            Map<String, Object> m = new LinkedHashMap<>();
-            i++; ws();
-            if (peek() == '}') { i++; return m; }
-            while (true) {
-                ws();
-                String k = string();
-                ws();
-                if (s.charAt(i++) != ':') throw err("':' esperado");
-                m.put(k, value());
-                ws();
-                char c = s.charAt(i++);
-                if (c == '}') return m;
-                if (c != ',') throw err("',' o '}' esperado");
-            }
-        }
-
-        List<Object> array() {
-            List<Object> a = new ArrayList<>();
-            i++; ws();
-            if (peek() == ']') { i++; return a; }
-            while (true) {
-                a.add(value());
-                ws();
-                char c = s.charAt(i++);
-                if (c == ']') return a;
-                if (c != ',') throw err("',' o ']' esperado");
-            }
-        }
-
-        String string() {
-            if (s.charAt(i) != '"') throw err("'\"' esperado");
-            i++;
-            StringBuilder b = new StringBuilder();
-            while (true) {
-                char c = s.charAt(i++);
-                if (c == '"') return b.toString();
-                if (c == '\\') {
-                    char e = s.charAt(i++);
-                    switch (e) {
-                        case '"' -> b.append('"');
-                        case '\\' -> b.append('\\');
-                        case '/' -> b.append('/');
-                        case 'b' -> b.append('\b');
-                        case 'f' -> b.append('\f');
-                        case 'n' -> b.append('\n');
-                        case 'r' -> b.append('\r');
-                        case 't' -> b.append('\t');
-                        case 'u' -> { b.append((char) Integer.parseInt(s.substring(i, i + 4), 16)); i += 4; }
-                        default -> throw err("escape inválido");
-                    }
-                } else b.append(c);
-            }
-        }
-
-        Object number() {
-            int start = i;
-            while (i < s.length() && "-+.eE0123456789".indexOf(s.charAt(i)) >= 0) i++;
-            String n = s.substring(start, i);
-            if (n.isEmpty()) throw err("valor inesperado");
-            return Double.parseDouble(n);
-        }
-
-        void ws() { while (i < s.length() && Character.isWhitespace(s.charAt(i))) i++; }
-        char peek() { return s.charAt(i); }
-        void expect(String w) {
-            if (!s.startsWith(w, i)) throw err("'" + w + "' esperado");
-            i += w.length();
-        }
-        RuntimeException err(String m) { return new RuntimeException("JSON: " + m + " (pos " + i + ")"); }
     }
 }
