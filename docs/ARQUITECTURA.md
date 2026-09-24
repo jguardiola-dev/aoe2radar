@@ -35,7 +35,11 @@ descargan), `model` y `util`, y `sfrdata`/`techtree` además `api` (transporte H
   Todo lo que devuelva pasa por `Throttle`. Nada de Swing.
 - `SfrDataClient`: `Optional<Shard> shard(long pid)`, `EloSnapshot eloAyer()`, `EloSnapshot eloHace7()`,
   `Muestra muestraAyer()`, `CivStatsWindow civStats(String ventana)`, `Ladder ladder()`.
-- `CacheService`: `<T> T get(String clave, Duration ttl, Supplier<T> cargar)` en memoria y variante en disco.
+- `CacheService(Reloj)`: una sola regla (`fresco = edad < caducidad`, cifras en `Caducidad`) y dos piezas:
+  `CacheMemoria<K,V>` por clave, con `vigente(k)` (¿hay que volver a pedirlo?) y `ultimo(k)` (¿qué pinto mientras?),
+  y `Sello` para un dato suelto (`fresco()`/`marcar()`); más `archivoFresco(Path, caducidad)` para el disco. La carga
+  la hace quien llama (no `get(clave, ttl, cargar)`): cada sitio tiene su política ante fallos. No son caché la
+  actividad del perfil abierto, las vinculadas ni las familias (estado de sesión: ProfileService/AppState).
 - `Throttle`: `void adquirir(cancelar)` (cubo de fichas: ráfaga de 5, luego 1/s; Detener corta la espera) y
   `long registrar429()` (pausa global 60→120→240→300 s por episodio; se olvida tras 10 min sin 429 desde que acabó la última pausa).
 - Presentadores: reciben eventos de la vista (`onBuscar(nick)`, `onAbrirPerfil(pid)`), llaman a servicios en
