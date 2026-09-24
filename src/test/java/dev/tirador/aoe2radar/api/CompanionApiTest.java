@@ -1,11 +1,15 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.cache.Canales;
 import dev.tirador.aoe2radar.cache.Paises;
+import dev.tirador.aoe2radar.model.Clasificacion;
+import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Match;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayDeque;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
@@ -91,7 +95,7 @@ class CompanionApiTest {
             + "{\"match_id\":13,\"players\":[{\"profile_id\":9000003,\"name\":\"c\",\"country\":\"de\",\"team\":1}]}]}";
 
     @AfterEach void limpiarPaises() {
-        for (long pid = 9000001; pid <= 9000003; pid++) Paises.PAIS_DE.remove(pid);
+        for (long pid = 9000001; pid <= 9000003; pid++) { Paises.PAIS_DE.remove(pid); Canales.CANAL_DE.remove(pid); }
     }
 
     @Test void partidasConvierteASaltandoLasIlegibles() throws Exception {
@@ -126,6 +130,72 @@ class CompanionApiTest {
     @Test void partidasSinPartidasEsVacia() throws Exception {
         red.cuerpo = "{\"matches\":[]}";
         assertFalse(companion.partidas(1L, 1, 50).iterator().hasNext());
+    }
+
+    @Test void clasificacionConvierteCadaCampo() throws Exception {
+        red.cuerpo = "{\"total\":250,\"per_page\":100,\"players\":["
+                + "{\"profile_id\":9000001,\"name\":\"Hera\",\"rating\":2890.6,\"rank\":1,\"country\":\"CA\","
+                + "\"social_twitch_channel\":\"hera\",\"last_match_time\":1700000000,\"streak\":-2,\"games\":4000,"
+                + "\"last10MatchesWon\":[true,false,true,null,\"x\"]},"
+                + "{\"profileId\":9000002,\"socialTwitchChannel\":\"otro\",\"rating\":\"alto\",\"lastMatchTime\":\"2024-01-02T03:04:05Z\",\"last_10_matches_won\":[false]},"
+                + "\"ilegible\"]}";
+        Clasificacion c = companion.clasificacion("rm_1v1", 1, 100, null);
+        assertEquals(250, c.total());
+        assertEquals(100, c.porPagina());
+        assertEquals(3, c.filas().size(), "una fila por elemento, también la ilegible");
+
+        FilaClasificacion hera = c.filas().get(0);
+        assertEquals(9000001, hera.pid());
+        assertEquals("Hera", hera.nombre());
+        assertEquals(2891, hera.rating(), "redondeo, no truncado");
+        assertEquals(1, hera.rango());
+        assertEquals("CA", hera.pais(), "tal cual: normalizar es cosa de aprenderPais");
+        assertEquals("hera", hera.canal());
+        assertEquals(Instant.ofEpochSecond(1700000000), hera.ultimaPartida());
+        assertEquals(-2, hera.racha());
+        assertEquals(4000, hera.partidas());
+        assertEquals(2, hera.ganadas10());
+        assertEquals(3, hera.jugadas10(), "solo cuentan los booleanos");
+
+        FilaClasificacion otra = c.filas().get(1);
+        assertEquals(9000002, otra.pid(), "clave alternativa profileId");
+        assertNull(otra.nombre());
+        assertEquals("null", String.valueOf(otra.nombre()), "las pantallas lo siguen viendo como «null», igual que antes");
+        assertNull(otra.rating(), "un rating que no es número queda null: cada pantalla pone su valor por defecto");
+        assertNull(otra.rango());
+        assertEquals(Instant.parse("2024-01-02T03:04:05Z"), otra.ultimaPartida());
+        assertEquals(0, otra.ganadas10());
+        assertEquals(1, otra.jugadas10());
+        assertEquals("otro", otra.canal(), "clave alternativa socialTwitchChannel");
+        assertNull(otra.racha());
+        assertNull(otra.partidas());
+
+        assertEquals(-1, c.filas().get(2).pid(), "ilegible: pid -1, que todas las pantallas filtran");
+    }
+
+    @Test void clasificacionAliasesYPrecedencia() throws Exception {
+        // Con las dos claves presentes gana la primera, como en la 1.1 (val recorre las claves en orden).
+        red.cuerpo = "{\"perPage\":50,\"players\":[{\"profile_id\":9000001,\"profileId\":7,\"last_match_time\":-1e30}]}";
+        Clasificacion c = companion.clasificacion("rm_1v1", 1, 50, null);
+        assertEquals(50, c.porPagina(), "clave alternativa perPage");
+        assertEquals(9000001, c.filas().get(0).pid(), "profile_id antes que profileId");
+        assertNull(c.filas().get(0).ultimaPartida(), "fecha absurda: null, no excepción");
+    }
+
+    @Test void clasificacionNoAprendeNada() throws Exception {
+        red.cuerpo = "{\"players\":[{\"profile_id\":9000003,\"country\":\"es\",\"social_twitch_channel\":\"canalx\"}]}";
+        companion.clasificacion("rm_1v1", 1, 100, null);
+        assertNull(Paises.PAIS_DE.get(9000003L), "aprender es de cada pantalla (lbPagina no aprende)");
+        assertNull(Canales.CANAL_DE.get(9000003L));
+    }
+
+    @Test void clasificacionSinCamposDePaginacion() throws Exception {
+        red.cuerpo = "{\"players\":[]}";
+        Clasificacion c = companion.clasificacion("3", 2, 100, "es");
+        assertEquals(-1, c.total());
+        assertEquals(-1, c.porPagina());
+        assertTrue(c.filas().isEmpty());
+        assertEquals("https://data.aoe2companion.com/api/leaderboards/3?page=2&per_page=100&country=es", ultima());
     }
 
     @Test void devuelveElJsonLeido() throws Exception {

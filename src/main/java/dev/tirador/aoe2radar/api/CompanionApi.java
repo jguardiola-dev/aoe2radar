@@ -1,9 +1,13 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.model.Clasificacion;
+import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -11,8 +15,11 @@ import java.util.NoSuchElementException;
 
 import static dev.tirador.aoe2radar.api.Parseo.parseMatch;
 import static dev.tirador.aoe2radar.util.Json.arr;
+import static dev.tirador.aoe2radar.util.Json.lng;
 import static dev.tirador.aoe2radar.util.Json.obj;
+import static dev.tirador.aoe2radar.util.Json.str;
 import static dev.tirador.aoe2radar.util.Json.val;
+import static dev.tirador.aoe2radar.util.Json.when;
 
 /**
  * Los endpoints del companion que usa la app, con su URL construida en un solo sitio. Paso 1 de la migración: cada
@@ -73,6 +80,45 @@ public final class CompanionApi {
     public Map<String, Object> leaderboard(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
         return obj(Json.parse(api.textoCon429(Http.API + "/leaderboards/" + id + "?page=" + pagina + "&per_page=" + porPagina
                 + (pais != null ? "&country=" + pais : ""))));
+    }
+
+    /** Como leaderboard(…), ya convertida (ver aClasificacion). */
+    public Clasificacion clasificacion(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
+        return aClasificacion(leaderboard(id, pagina, porPagina, pais));
+    }
+
+    /**
+     * Conversión pura de la raíz de /leaderboards: una fila por elemento de «players», en orden, sin filtrar ni
+     * aprender nada. Cada campo se lee con las mismas claves y la misma aritmética que usaban las pantallas de la 1.1.
+     */
+    static Clasificacion aClasificacion(Map<String, Object> root) {
+        List<FilaClasificacion> filas = new ArrayList<>();
+        for (Object o : arr(val(root, "players"))) {
+            Map<String, Object> pl = obj(o);
+            int ganadas10 = 0, jugadas10 = 0;
+            if (val(pl, "last10MatchesWon", "last_10_matches_won") instanceof List<?> l10)
+                for (Object b : l10) if (b instanceof Boolean bb) { jugadas10++; if (bb) ganadas10++; }
+            filas.add(new FilaClasificacion(
+                    lng(val(pl, "profile_id", "profileId")),
+                    str(val(pl, "name")),
+                    val(pl, "rating") instanceof Number n ? (int) Math.round(n.doubleValue()) : null,
+                    val(pl, "rank") instanceof Number n ? n.intValue() : null,
+                    str(val(pl, "country")),
+                    str(val(pl, "social_twitch_channel", "socialTwitchChannel")),
+                    fecha(val(pl, "last_match_time", "lastMatchTime")),
+                    val(pl, "streak") instanceof Number n ? n.intValue() : null,
+                    val(pl, "games") instanceof Number n ? n.intValue() : null,
+                    ganadas10, jugadas10));
+        }
+        return new Clasificacion(List.copyOf(filas), lng(val(root, "total")), lng(val(root, "per_page", "perPage")));
+    }
+
+    /**
+     * when() sin excepciones: una fecha absurda (p. ej. -1e30) queda null. El conversor lee la fecha de todas las filas,
+     * también en pantallas que antes no la miraban; así no les añade un fallo nuevo (ver DEUDA).
+     */
+    static Instant fecha(Object o) {
+        try { return when(o); } catch (RuntimeException e) { return null; }
     }
 
     /**

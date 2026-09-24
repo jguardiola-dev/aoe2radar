@@ -35,7 +35,9 @@ import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
+import dev.tirador.aoe2radar.model.Clasificacion;
 import dev.tirador.aoe2radar.model.Comparado;
+import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.LadderHist;
 import dev.tirador.aoe2radar.model.LadderRow;
@@ -5120,28 +5122,24 @@ public class SpoilerFreeRecs extends JFrame {
         List<Object[]> top = new ArrayList<>();
         switch (liveFuenteTipo) {
             case "pais" -> {
-                Map<String, Object> root = COMPANION.leaderboard("rm_1v1", 1, 100, liveFuenteValor);
-                for (Object o : arr(val(root, "players"))) {
-                    Map<String, Object> pl = obj(o);
-                    long pid = lng(val(pl, "profile_id", "profileId")); if (pid <= 0) continue;
-                    int rating = val(pl, "rating") instanceof Number n ? (int) Math.round(n.doubleValue()) : 0;
-                    int rango = val(pl, "rank") instanceof Number n ? n.intValue() : 0;
-                    aprenderPais(pid, val(pl, "country")); aprenderCanal(pid, val(pl, "social_twitch_channel", "socialTwitchChannel"));
-                    top.add(new Object[]{ pid, String.valueOf(val(pl, "name")), rating, rango, paisDe(pid) });
+                for (FilaClasificacion f : COMPANION.clasificacion("rm_1v1", 1, 100, liveFuenteValor).filas()) {
+                    long pid = f.pid(); if (pid <= 0) continue;
+                    int rating = f.rating() != null ? f.rating() : 0;
+                    int rango = f.rango() != null ? f.rango() : 0;
+                    aprenderPais(pid, f.pais()); aprenderCanal(pid, f.canal());
+                    top.add(new Object[]{ pid, String.valueOf(f.nombre()), rating, rango, paisDe(pid) });
                 }
             }
             case "clan" -> { if (ladderAsegurar(false) == null) for (LadderRow r : miembrosClan(liveFuenteValor)) { aprenderPais(r.pid(), r.country()); top.add(new Object[]{ r.pid(), r.name(), r.rating(), r.rank(), paisDe(r.pid()) }); } if (top.isEmpty()) log("live: clan «" + liveFuenteValor + "» sin miembros en el ladder 1v1"); }
             case "grupo" -> { for (Player pl : todosJugadores) if (pl.grupo().equalsIgnoreCase(liveFuenteValor)) { Integer elo = eloWatch.get(pl.id()); top.add(new Object[]{ pl.id(), pl.name(), elo == null ? 0 : elo, 0, paisDe(pl.id()) }); } }
             default -> {
                 for (int pag = 1; pag <= 3 && top.size() < AHORA_TOP; pag++) {
-                    Map<String, Object> root = COMPANION.leaderboard("rm_1v1", pag, 100, null);
-                    for (Object o : arr(val(root, "players"))) {
-                        Map<String, Object> pl = obj(o);
-                        long pid = lng(val(pl, "profile_id", "profileId")); if (pid <= 0) continue;
-                        int rating = val(pl, "rating") instanceof Number n ? (int) Math.round(n.doubleValue()) : 0;
-                        int rango = val(pl, "rank") instanceof Number n ? n.intValue() : top.size() + 1;
-                        aprenderPais(pid, val(pl, "country")); aprenderCanal(pid, val(pl, "social_twitch_channel", "socialTwitchChannel"));
-                        top.add(new Object[]{ pid, String.valueOf(val(pl, "name")), rating, rango, paisDe(pid) });
+                    for (FilaClasificacion f : COMPANION.clasificacion("rm_1v1", pag, 100, null).filas()) {
+                        long pid = f.pid(); if (pid <= 0) continue;
+                        int rating = f.rating() != null ? f.rating() : 0;
+                        int rango = f.rango() != null ? f.rango() : top.size() + 1;
+                        aprenderPais(pid, f.pais()); aprenderCanal(pid, f.canal());
+                        top.add(new Object[]{ pid, String.valueOf(f.nombre()), rating, rango, paisDe(pid) });
                         if (top.size() >= AHORA_TOP) break;
                     }
                 }
@@ -5663,8 +5661,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** Ids del top del ladder 1v1 (global o de un país), sin tocar la vista. */
     List<Long> idsLeaderboard(String pais, int n) throws Exception {
         List<Long> out = new ArrayList<>();
-        Map<String, Object> root = COMPANION.leaderboard("rm_1v1", 1, Math.min(100, Math.max(25, n)), pais);
-        for (Object o : arr(val(root, "players"))) { long pid = lng(val(obj(o), "profile_id", "profileId")); if (pid > 0) out.add(pid); if (out.size() >= n) break; }
+        for (FilaClasificacion f : COMPANION.clasificacion("rm_1v1", 1, Math.min(100, Math.max(25, n)), pais).filas()) { long pid = f.pid(); if (pid > 0) out.add(pid); if (out.size() >= n) break; }
         return out;
     }
 
@@ -9176,13 +9173,13 @@ public class SpoilerFreeRecs extends JFrame {
     static PaginaLb lbPagina(LbCtx ctx, int p) throws IOException, InterruptedException {
         PaginaLb enCache = ctx.cache.get(p);
         if (enCache != null) return enCache;
-        Map<String, Object> root = null;
-        List<Object> players = List.of();
+        Clasificacion root = null;
+        List<FilaClasificacion> players = List.of();
         if (ctx.id == null) {
             for (String id : new String[]{ "rm_1v1", "3" }) {
                 try {
-                    root = COMPANION.leaderboard(id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
-                    players = arr(val(root, "players"));
+                    root = COMPANION.clasificacion(id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
+                    players = root.filas();
                     if (!players.isEmpty()) { ctx.id = id; break; }
                 } catch (InterruptedException ie) { throw ie; }   // Detener: no probar el otro id ni decir «no responde»
                 catch (IOException io) { if (String.valueOf(io.getMessage()).contains("429")) throw io; }   // un 429 es «espera», no «prueba otro id» (con reintentos, probar el «3» alargaba ~12 min y subía la pausa al tope)
@@ -9190,24 +9187,22 @@ public class SpoilerFreeRecs extends JFrame {
             }
             if (ctx.id == null) throw new IOException("el leaderboard no responde (ni rm_1v1 ni 3)");
         } else {
-            root = COMPANION.leaderboard(ctx.id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
-            players = arr(val(root, "players"));
+            root = COMPANION.clasificacion(ctx.id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
+            players = root.filas();
         }
         if (ctx.totalPaginas < 0 && root != null) {
-            long total = lng(val(root, "total"));
-            long porPag = lng(val(root, "per_page", "perPage"));
+            long total = root.total();
+            long porPag = root.porPagina();
             if (porPag <= 0) porPag = 100;
             if (total > 0) ctx.totalPaginas = (int) ((total + porPag - 1) / porPag);
         }
         List<long[]> js = new ArrayList<>();
         int max = -1, min = -1;
-        for (Object o : players) {
-            Map<String, Object> pl = obj(o);
-            long pid = lng(val(pl, "profile_id", "profileId"));
-            Object rt = val(pl, "rating");
-            int rating = (rt instanceof Number n) ? (int) Math.round(n.doubleValue()) : -1;
+        for (FilaClasificacion f : players) {
+            long pid = f.pid();
+            int rating = f.rating() != null ? f.rating() : -1;
             if (pid > 0 && rating > 0) {
-                Instant lm = when(val(pl, "last_match_time", "lastMatchTime"));
+                Instant lm = f.ultimaPartida();
                 js.add(new long[]{ pid, rating, lm == null ? 0L : lm.toEpochMilli() });
                 max = max < 0 ? rating : Math.max(max, rating);
                 min = min < 0 ? rating : Math.min(min, rating);
@@ -9857,26 +9852,18 @@ public class SpoilerFreeRecs extends JFrame {
                 List<Object[]> out = new ArrayList<>();
                 for (String id : new String[]{ "rm_1v1", "3" }) {
                     try {
-                        Map<String, Object> root = COMPANION.leaderboard(id, 1, 100, pais);
-                        for (Object o : arr(val(root, "players"))) {
-                            Map<String, Object> pl = obj(o);
-                            long pid = lng(val(pl, "profile_id", "profileId"));
-                            Object rt = val(pl, "rating");
-                            int rating = (rt instanceof Number n) ? (int) Math.round(n.doubleValue()) : -1;
-                            String name = String.valueOf(val(pl, "name"));
-                            aprenderCanal(pid, val(pl, "social_twitch_channel", "socialTwitchChannel"));
-                            aprenderPais(pid, val(pl, "country"));
-                            Instant lm = when(val(pl, "last_match_time", "lastMatchTime"));
-                            if (val(pl, "streak") instanceof Number stN) TOP_STREAK.put(pid, stN.intValue());
-                            Object l10 = val(pl, "last10MatchesWon", "last_10_matches_won");
-                            if (l10 instanceof List<?> l10l) {
-                                int w10 = 0, n10 = 0;
-                                for (Object b : l10l) if (b instanceof Boolean bb) { n10++; if (bb) w10++; }
-                                if (n10 > 0) TOP_LAST10.put(pid, new int[]{ w10, n10 - w10 });
-                            }
+                        for (FilaClasificacion f : COMPANION.clasificacion(id, 1, 100, pais).filas()) {
+                            long pid = f.pid();
+                            int rating = f.rating() != null ? f.rating() : -1;
+                            String name = String.valueOf(f.nombre());
+                            aprenderCanal(pid, f.canal());
+                            aprenderPais(pid, f.pais());
+                            Instant lm = f.ultimaPartida();
+                            if (f.racha() != null) TOP_STREAK.put(pid, f.racha());
+                            if (f.jugadas10() > 0) TOP_LAST10.put(pid, new int[]{ f.ganadas10(), f.jugadas10() - f.ganadas10() });
                             if (pid > 0 && rating > 0 && !"null".equals(name)) {
                                 out.add(new Object[]{ pid, name, rating, lm == null ? 0L : lm.toEpochMilli() });
-                                if (val(pl, "games") instanceof Number gn) gamesWatch.put(pid, gn.intValue());
+                                if (f.partidas() != null) gamesWatch.put(pid, f.partidas());
                             }
                             if (out.size() >= topN) break;
                         }
