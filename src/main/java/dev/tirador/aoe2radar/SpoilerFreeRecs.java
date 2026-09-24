@@ -47,6 +47,21 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.util.Json;
 
+import static dev.tirador.aoe2radar.api.Freno.CONTROL;
+import static dev.tirador.aoe2radar.api.Freno.CONTROL_URL;
+import static dev.tirador.aoe2radar.api.Freno.PAUSAS_SEGUIDAS;
+import static dev.tirador.aoe2radar.api.Freno.PAUSA_HASTA;
+import static dev.tirador.aoe2radar.api.Freno.ULTIMO_EXITO_MS;
+import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
+import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
+import static dev.tirador.aoe2radar.api.Freno.freno;
+import static dev.tirador.aoe2radar.api.Http.API;
+import static dev.tirador.aoe2radar.api.Http.HTTP;
+import static dev.tirador.aoe2radar.api.Http.UA;
+import static dev.tirador.aoe2radar.api.Http.descargarBytes;
+import static dev.tirador.aoe2radar.api.Http.httpBytesTT;
+import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
+import static dev.tirador.aoe2radar.api.Http.req;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
@@ -102,9 +117,7 @@ import java.util.zip.ZipInputStream;
 public class SpoilerFreeRecs extends JFrame {
 
     // ----- Configuración -----------------------------------------------------
-    static final String API     = "https://data.aoe2companion.com/api";
     static final String REC_URL = "https://aoe.ms/replay/?gameId=%d&profileId=%d";
-    static final String UA      = NOMBRE + "/" + VERSION + " (+" + REPO_URL + "; twitch.tv/12tirador)";
     static final Path   PLAYERS_FILE = Path.of("players.txt");
     static final Path   RECS_DIR     = Path.of("recs");
     static final String FLATLAF_JAR  = "flatlaf-3.7.2.jar";
@@ -125,18 +138,6 @@ public class SpoilerFreeRecs extends JFrame {
     volatile boolean azarTramoAgotado;
 
     static String todosModos() { return t("Todos los modos", "All modes"); }
-
-    static volatile HttpClient HTTP = nuevoHttp();
-
-    /** Cliente HTTP/1.1 (una conexión rota no arrastra a las demás) con timeout de
-     *  conexión; se RENUEVA tras cada Detener para descartar conexiones a medias. */
-    static HttpClient nuevoHttp() {
-        return HttpClient.newBuilder()
-                .version(HttpClient.Version.HTTP_1_1)
-                .followRedirects(HttpClient.Redirect.ALWAYS)
-                .connectTimeout(Duration.ofSeconds(15))
-                .build();
-    }
 
     // ----- Modelo ------------------------------------------------------------
 
@@ -4020,23 +4021,6 @@ public class SpoilerFreeRecs extends JFrame {
         String base = v instanceof String s && !s.isBlank() ? s : "https://github.com/jguardiola-dev/sfr-data/releases/download/perfiles/";
         return base.endsWith("/") ? base : base + "/";
     }
-    static byte[] descargarBytes(String url, int timeoutS) throws IOException, InterruptedException {
-        IOException ultimo = null;
-        for (int intento = 1; intento <= 3; intento++) {   // con VPN (días de fútbol en España) GitHub va lento: tres intentos con más margen cada vez
-            try {
-                HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(timeoutS * intento)).header("User-Agent", UA).GET().build();
-                HttpResponse<byte[]> r = HTTP.send(req, HttpResponse.BodyHandlers.ofByteArray());
-                if (r.statusCode() == 404) throw new IOException("HTTP 404 " + url);
-                if (r.statusCode() != 200) throw new IOException("HTTP " + r.statusCode() + " " + url);
-                return r.body();
-            } catch (IOException ex) {
-                if (String.valueOf(ex.getMessage()).contains("404")) throw ex;
-                ultimo = ex; log("descarga (" + intento + "/3): " + causa(ex) + " · " + url.substring(url.lastIndexOf('/') + 1));
-                Thread.sleep(1500L * intento);
-            }
-        }
-        throw ultimo;
-    }
     /** index.json de la release (caché de 6 h): hasta, desde, shards, alcance. null si no hay release todavía. */
     static Map<String, Object> perfilesIndex() {
         if (PERFILES_INDEX != null && System.currentTimeMillis() - perfilesIndexMs < 6 * 3_600_000L) return PERFILES_INDEX;
@@ -6616,12 +6600,6 @@ public class SpoilerFreeRecs extends JFrame {
     static String ttClase(int id) {
         String en = TT_CLASES.getOrDefault(id, "#" + id);
         return "es".equals(IDIOMA) ? TT_CLASES_ES.getOrDefault(en, en) : en;
-    }
-
-    static byte[] httpBytesTT(String url) throws Exception {
-        HttpResponse<byte[]> r = HTTP.send(req(url), HttpResponse.BodyHandlers.ofByteArray());
-        if (r.statusCode() / 100 != 2) throw new IOException("HTTP " + r.statusCode());
-        return r.body();
     }
 
     static void ttDescargar(String rel) throws Exception {
@@ -13850,17 +13828,6 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     // ----- HTTP --------------------------------------------------------------
-    static final Object FRENO = new Object();
-    static long frenoUltimaMs;
-    /** Freno de cortesía: nunca más de 3 llamadas por segundo a la API del companion, pase lo que pase. */
-    // ----- Buen vecino: cortacircuitos ante 429 y mando a distancia (control.json en sfr-data) -----
-    static volatile long PAUSA_HASTA;          // hasta cuándo están pausadas TODAS las llamadas tras un 429
-    static volatile int PAUSAS_SEGUIDAS;       // 429 encadenados: la pausa se dobla (60 s → 120 → 240 → 300 máx)
-    static volatile long ULTIMO_EXITO_MS;
-    static final Map<String, Object> CONTROL = new java.util.concurrent.ConcurrentHashMap<>();   // control.json: multiplicadores e interruptores
-    static final String CONTROL_URL = "https://raw.githubusercontent.com/jguardiola-dev/sfr-data/main/control.json";
-    static double ctrlMult(String clave) { Object v = CONTROL.get(clave); return v instanceof Number n ? Math.max(0.5, Math.min(20, n.doubleValue())) : 1.0; }
-    static boolean ctrlOn(String clave) { Object v = CONTROL.get(clave); return !(v instanceof Boolean b) || b; }
     /** Un 429: todas las llamadas se detienen un rato (y más cada vez que se repite). */
     static void registrar429() {
         PAUSAS_SEGUIDAS = Math.min(PAUSAS_SEGUIDAS + 1, 4);
@@ -13891,19 +13858,6 @@ public class SpoilerFreeRecs extends JFrame {
             }
         } catch (Exception ex) { log("control.json: " + causa(ex)); }
     }
-    static double frenoCreditos = 5;   // cubo de fichas: hasta 5 llamadas seguidas sin esperar, después 1 por segundo (se recarga a 1/s)
-    static void freno() throws InterruptedException {
-        long pausa = PAUSA_HASTA - System.currentTimeMillis();
-        if (pausa > 0) Thread.sleep(Math.min(pausa, 300_000L));   // cortacircuitos: nadie llama hasta que pase la pausa
-        synchronized (FRENO) {
-            long ahora = System.currentTimeMillis();
-            frenoCreditos = Math.min(5, frenoCreditos + (ahora - frenoUltimaMs) / 1000.0);
-            if (frenoCreditos >= 1) frenoCreditos -= 1;
-            else { long espera = (long) ((1 - frenoCreditos) * 1000); Thread.sleep(espera); frenoCreditos = 0; }
-            frenoUltimaMs = System.currentTimeMillis();
-        }
-    }
-
     static String httpText(String url) throws IOException, InterruptedException {
         // Una interrupción residual de un Detener anterior (los hilos del pool se reutilizan) se limpia;
         // solo cuenta si hay un Detener real en curso.
@@ -14030,13 +13984,6 @@ public class SpoilerFreeRecs extends JFrame {
 
     static byte[] inflar(byte[] b) throws IOException {
         try (var in = new InflaterInputStream(new ByteArrayInputStream(b))) { return in.readAllBytes(); }
-    }
-
-    static HttpRequest req(String url) {
-        return HttpRequest.newBuilder(URI.create(url))
-                .header("User-Agent", UA)
-                .timeout(Duration.ofSeconds(15))
-                .GET().build();
     }
 
     static void dormir(long ms) {
