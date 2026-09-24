@@ -126,7 +126,6 @@ import static dev.tirador.aoe2radar.service.CalculoStats.partidasPorMapa;
 import static dev.tirador.aoe2radar.service.CalculoStats.tramoEnRango;
 import static dev.tirador.aoe2radar.service.CalculoStats.wilson;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.BIN_LADDER;
-import static dev.tirador.aoe2radar.service.ConsultasLadder.clanLimpio;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.miembrosClan;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRango;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRating;
@@ -146,7 +145,6 @@ import static dev.tirador.aoe2radar.service.ReglasPartida.modoDeLadder;
 import static dev.tirador.aoe2radar.service.ReglasPartida.modoPrincipal;
 import static dev.tirador.aoe2radar.service.ReglasPartida.posicionEnEquipo;
 import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
-import static dev.tirador.aoe2radar.service.ReglasPartida.tramoDeRating;
 import static dev.tirador.aoe2radar.service.ReglasPartida.tramoDuracion;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.MODOS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
@@ -212,10 +210,8 @@ import static dev.tirador.aoe2radar.util.Log.log;
 import static dev.tirador.aoe2radar.util.Sistema.fijarAutoArranque;
 import static dev.tirador.aoe2radar.util.Sistema.rutaExePropia;
 import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
-import static dev.tirador.aoe2radar.util.Texto.limpiaNombre;
 import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
 import static dev.tirador.aoe2radar.util.Texto.recorta;
-import static dev.tirador.aoe2radar.util.Texto.sanea;
 import static dev.tirador.aoe2radar.util.Texto.sinTildes;
 import static dev.tirador.aoe2radar.util.Texto.variantesNick;
 import static dev.tirador.aoe2radar.util.Texto.versionMayor;
@@ -5968,7 +5964,6 @@ public class SpoilerFreeRecs extends JFrame {
     volatile boolean ttCargando, ttRellenandoCombo;
     final Map<String, String> ttCivPorNombre = new java.util.LinkedHashMap<>();   // nombre mostrado → clave (Aztecs)
     JTextField ttBuscaCiv;
-
     volatile String ttCivPedida;
     int ttDivisorPrevio = -1;
 
