@@ -1,13 +1,11 @@
 target/
 app/
 *.zip
-config.properties
-descargas.log
-sfrdata/
-recs/
+# ficheros de ejecución de la app: solo en la raíz (anclados con «/» para no ignorar el paquete java sfrdata ni la fixture del harness)
+/config.properties
+/descargas.log
+/sfrdata/
+/recs/
 *.class
 .idea/
 .vscode/
-# la fixture del harness sí se versiona (datos de red congelados para RegresionCapturas)
-!src/test/resources/fixture/sfrdata/
-!src/test/resources/fixture/config.properties
