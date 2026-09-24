@@ -5,6 +5,7 @@ import dev.tirador.aoe2radar.model.Comparado;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.sfrdata.Ladder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -239,7 +240,7 @@ class RegresionCapturas {
         // «N espectadores · Actualizado hh:mm:ss» desplaza el desplegable Idioma y el botón Refrescar.
         foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.tablaDirectos), (JComponent) app.directosContador.getParent() });
         SwingUtilities.invokeAndWait(() -> app.ladderBtn.doClick());
-        for (int i = 0; i < 80 && (SpoilerFreeRecs.ladderHists.isEmpty()); i++) Thread.sleep(250);
+        for (int i = 0; i < 80 && (Ladder.ladderHists.isEmpty()); i++) Thread.sleep(250);
         Thread.sleep(1500);
         // Carrera de la app (DEUDA.md): al abrir el ladder programa «tabla de 230 px» solo si el divisor ya tiene alto.
         // Casi siempre aún no lo tiene y la tabla queda plegada (el estado de las referencias); a veces sí, y cambian
