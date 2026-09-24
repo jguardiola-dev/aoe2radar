@@ -11,6 +11,8 @@ un agente) entienda el proyecto en una tarde.
 model     Datos puros: Match, MatchPlayer, Player, Actividad, Forma, LadderRow… Sin Swing, sin red.
 api       Cliente del companion: ApiClient (REST), OngoingSocket (websocket). Solo transporte + parseo.
 sfrdata   Cliente de sfr-data: SfrDataClient (index/shards/elo_ayer/muestra/civstats/ladder), con caché en disco.
+techtree  Datos de aoe2techtree (data.json, árboles por civ, cadenas por idioma), con caché en disco y ETag.
+          Misma capa que sfrdata: fuente externa de datos precalculados. Los iconos (ImageIcon) son de ui.
 cache     CacheService: cachés en memoria y disco con TTL, una sola implementación para todas.
 service   Reglas de negocio: ProfileService (perfil = shard + «Actualizar hoy»), LiveService (Live now: barrido +
           socket + fantasmas), FormService (forma por resta + fallback), RecService (descargas/enviar al juego),
@@ -23,7 +25,8 @@ app       AppState (estado observable: qué vista, qué jugador, qué filtros) y
 util      Json, t() (i18n), formatos, Log.
 ```
 Regla de dependencia: cada capa solo conoce las de dentro. `ui` conoce `service` y `model`; `service` conoce
-`api`, `sfrdata`, `cache`, `model`; `model` no conoce a nadie. Si una flecha va hacia fuera, está mal.
+`api`, `sfrdata`, `techtree`, `cache`, `model`; `util` lo puede usar cualquiera y no conoce a nadie (salvo `model`
+si hiciera falta); `model` no conoce a nadie. Si una flecha va hacia fuera, está mal.
 
 ## Contratos clave (interfaces)
 - `ApiClient`: `List<Match> matches(List<Long> pids, int page, int perPage)`, `Profile profile(long pid)`,
