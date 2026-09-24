@@ -39,3 +39,4 @@
 | 2026-09-24 | colorWr (app) | dos javadocs seguidos; el primero («verde si el intervalo…») describe una lógica de Wilson que el método ya no tiene | 4 |
 | 2026-09-24 | cabecera «Mi partida» (app) | anuncia «quién eres (registro de Windows)», código que ahora está en service.Juego y nadie llama (steamIdActivo) | 4 |
 | 2026-09-24 | util.Texto.truncar | método que nadie llama (ya en la 1.1) | 4 |
+| 2026-09-24 | service.ReglasPartida.DURACION_TRAMOS | el javadoc anuncia «<15, 15–25, 25–35, 35–45, 45–60, 60+» pero el código usa <5, 5–15, 15–25, 25–40, >40 (aoe2insights): comentario desfasado | 4 |
