@@ -37,7 +37,20 @@
         <version>3.2.5</version>
         <configuration>
           <!-- el harness de capturas necesita pantalla: en Windows la hay; en CI se usa -Djava.awt.headless=false con un escritorio virtual -->
-          <argLine>-Duser.language=es -Dfile.encoding=UTF-8</argLine>
+          <argLine>-Duser.language=es -Dfile.encoding=UTF-8 -Djava.awt.headless=false</argLine>
+          <!-- la app lee y escribe con rutas relativas (config.properties, sfrdata/, banderas/, techtree/):
+               en el test trabaja en target/harness para no ensuciar la raíz del repo -->
+          <workingDirectory>${project.build.directory}/harness</workingDirectory>
+          <!-- una JVM limpia por clase de test: si otro test inicializa Java2D antes que la app, el escalado de iconos cambia píxeles -->
+          <reuseForks>false</reuseForks>
+          <!-- surefire solo recoge *Test/Test*/*Tests/*TestCase: RegresionCapturas hay que nombrarlo -->
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/RegresionCapturas.java</include>
+          </includes>
+          <systemPropertyVariables>
+            <basedir>${project.basedir}</basedir>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
       <plugin>

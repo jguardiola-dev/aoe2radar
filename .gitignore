@@ -8,3 +8,6 @@ recs/
 *.class
 .idea/
 .vscode/
+# la fixture del harness sí se versiona (datos de red congelados para RegresionCapturas)
+!src/test/resources/fixture/sfrdata/
+!src/test/resources/fixture/config.properties

@@ -1,11 +1,153 @@
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import javax.imageio.ImageIO;
-import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.FileTime;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
+import java.util.Properties;
+import java.util.stream.Stream;
 
-public class TTShot {
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * Harness de capturas (antes TTShot): test de caracterización de la UI.
+ * Arranca la app, recorre las pestañas y compara 23 capturas con las referencias de src/test/resources/capturas.
+ *
+ * - Primera ejecución: graba las referencias y pasa. Con -Dcapturas.regrabar=true se regrabarán a propósito
+ *   (solo tras un cambio visual intencionado; nunca para «hacer pasar» un rojo).
+ * - Si una captura falla: target/capturas/<nombre>.png (nueva) y <nombre>.diff.png (diferencias en rojo).
+ * - La app trabaja en target/harness (workingDirectory de surefire) con datos de red congelados en
+ *   src/test/resources/fixture: se graban en la primera ejecución y después se reutilizan con fecha «ahora»,
+ *   para que las cachés de disco parezcan frescas y la app no descargue nada.
+ * - No toques ratón ni teclado mientras corre (~1,5 min): Robot fotografía la pantalla, no la ventana.
+ *   Las referencias dependen de la resolución, el escalado de Windows y las fuentes de esta máquina.
+ */
+class RegresionCapturas {
+    static final Path BASE = Path.of(System.getProperty("basedir", "."));
+    static final Path HARNESS = Path.of(System.getProperty("user.dir"));
+    static final Path RECURSOS = BASE.resolve("src/main/resources");
+    static final Path FIXTURE = BASE.resolve("src/test/resources/fixture");
+    static final List<String> FALLOS = new ArrayList<>();
+    static final Map<String, Double> UMBRALES = Map.of();
+    static ComparadorCapturas comparador;
+    static boolean grabarFixture;
+    static int fotos;
+
+    @BeforeAll static void prepararDirectorio() throws IOException {
+        if (!HARNESS.endsWith(Path.of("target", "harness")))
+            throw new IllegalStateException("el harness debe correr en target/harness (workingDirectory de surefire), no en " + HARNESS);
+        try (Stream<Path> s = Files.list(HARNESS)) { for (Path p : s.toList()) borrar(p); }
+        copiar(RECURSOS.resolve("banderas"), HARNESS.resolve("banderas"));
+        copiar(RECURSOS.resolve("techtree"), HARNESS.resolve("techtree"));
+        grabarFixture = !Files.isDirectory(FIXTURE);
+        if (!grabarFixture) {
+            copiar(FIXTURE, HARNESS);
+            renombrarEloHace7();
+            FileTime ahora = FileTime.fromMillis(System.currentTimeMillis());
+            try (Stream<Path> s = Files.walk(HARNESS)) { for (Path p : s.toList()) Files.setLastModifiedTime(p, ahora); }
+            guardarConfig(Map.of("techtree_check", String.valueOf(System.currentTimeMillis())));
+        }
+        guardarConfig(Map.of("idioma", "es", "tema", "oscuro"));   // siempre: con «sistema» las capturas dependerían del tema de Windows
+        String umbralFijo = System.getProperty("capturas.umbral");   // diagnóstico: -Dcapturas.umbral=0 deja el diff de todas para ver el ruido
+        comparador = new ComparadorCapturas(BASE.resolve("src/test/resources/capturas"), BASE.resolve("target/capturas"),
+                Boolean.getBoolean("capturas.regrabar"), UMBRALES, umbralFijo == null ? null : Double.valueOf(umbralFijo));
+    }
+
+    @Test void capturas() throws Exception {
+        correr();
+        assertTrue(fotos == 23, "se esperaban 23 capturas y se hicieron " + fotos);
+        assertTrue(FALLOS.isEmpty(), FALLOS.size() + " capturas distintas de su referencia:\n  " + String.join("\n  ", FALLOS));
+    }
+
+    @AfterAll static void cerrar() throws Exception {
+        SwingUtilities.invokeAndWait(() -> { for (Window w : Window.getWindows()) w.dispose(); });   // dispose, no System.exit: mataría el JVM de surefire
+        // los hilos de la app (socket, descargas) siguen vivos: si uno escribe en sfrdata/ justo ahora, la fixture
+        // podría salir a medias. Solo afecta a la grabación; si una captura falla tras grabar, se borra y se regraba.
+        if (grabarFixture) grabarFixture();
+    }
+
+    /**
+     * Congela los datos de red que la app dejó en disco: sfrdata/ y lo que cambió en techtree/ respecto a
+     * src/main/resources. De la config, solo las claves de datos (etags) más idioma y tema: el estado de la UI
+     * (familia del ladder, anchos de tabla, grupos…) es el del final de la ejecución y cambiaría el arranque.
+     * top_cache.txt no: lleva su fecha dentro y la app lo refresca por red pasados 15 min (se crea durante la ejecución).
+     */
+    static void grabarFixture() throws IOException {
+        for (String dir : List.of("sfrdata", "techtree")) {
+            try (Stream<Path> s = Files.walk(HARNESS.resolve(dir))) {
+                for (Path p : s.filter(Files::isRegularFile).toList()) {
+                    Path rel = HARNESS.relativize(p);
+                    Path original = RECURSOS.resolve(rel);
+                    if (Files.exists(original) && Files.mismatch(original, p) == -1) continue;
+                    Files.createDirectories(FIXTURE.resolve(rel).getParent());
+                    Files.copy(p, FIXTURE.resolve(rel), StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
+        Properties todo = new Properties(), datos = new Properties();
+        try (InputStream in = Files.newInputStream(HARNESS.resolve("config.properties"))) { todo.load(in); }
+        for (String k : todo.stringPropertyNames())
+            if (k.startsWith("sfrdata_etag_") || k.startsWith("techtree_") || k.equals("idioma") || k.equals("tema"))
+                datos.setProperty(k, todo.getProperty(k));
+        try (OutputStream out = Files.newOutputStream(FIXTURE.resolve("config.properties"))) { datos.store(out, "harness: datos congelados"); }
+        System.out.println("fixture grabada en " + FIXTURE);
+    }
+
+    /**
+     * cargarEloAyer() pide «elo-<hoy UTC − 7>.json.gz»: el nombre cambia cada día. La copia congelada se renombra
+     * a la fecha que la app va a pedir hoy; si no, mañana iría a la red.
+     */
+    static void renombrarEloHace7() throws IOException {
+        Path dir = HARNESS.resolve("sfrdata/perfiles_shards");
+        if (!Files.isDirectory(dir)) return;
+        Path destino = dir.resolve("elo-" + java.time.LocalDate.now(java.time.ZoneId.of("UTC")).minusDays(7) + ".json.gz");
+        try (Stream<Path> s = Files.list(dir)) {
+            for (Path p : s.filter(q -> q.getFileName().toString().matches("elo-\\d{4}-\\d{2}-\\d{2}\\.json\\.gz")).toList())
+                if (!p.equals(destino)) Files.move(p, destino, StandardCopyOption.REPLACE_EXISTING);
+        }
+    }
+
+    static void guardarConfig(Map<String, String> valores) throws IOException {
+        Path f = HARNESS.resolve("config.properties");
+        Properties p = new Properties();
+        if (Files.exists(f)) try (InputStream in = Files.newInputStream(f)) { p.load(in); }
+        p.putAll(valores);
+        try (OutputStream out = Files.newOutputStream(f)) { p.store(out, "harness"); }
+    }
+
+    static void copiar(Path origen, Path destino) throws IOException {
+        try (Stream<Path> s = Files.walk(origen)) {
+            for (Path p : s.toList()) {
+                Path d = destino.resolve(origen.relativize(p).toString());
+                if (Files.isDirectory(p)) Files.createDirectories(d);
+                else Files.copy(p, d, StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+    }
+
+    static void borrar(Path p) throws IOException {
+        try (Stream<Path> s = Files.walk(p)) { for (Path q : s.sorted(Comparator.reverseOrder()).toList()) Files.delete(q); }
+    }
+
+    /** Zona a ignorar: solo la parte visible del componente (si está desplazado, su rectángulo entero taparía otras cosas). */
+    static void zonaVisible(JComponent c, JRootPane raiz, List<Rectangle> zonas) {
+        if (c == null || !c.isShowing()) return;
+        Rectangle v = c.getVisibleRect();
+        if (!v.isEmpty()) zonas.add(SwingUtilities.convertRectangle(c, v, raiz));
+    }
+
     static SpoilerFreeRecs app() {
         for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs s) return s;
         return null;
@@ -13,15 +155,31 @@ public class TTShot {
     static void cerrarDialogos() throws Exception {
         SwingUtilities.invokeAndWait(() -> { for (Window w : Window.getWindows()) if (w instanceof JDialog d && d.isVisible()) d.dispose(); });
     }
-    static void foto(String nombre) throws Exception {
+    /**
+     * Fotografía el JRootPane, no getBounds() del marco: en Windows 10 el marco incluye un borde invisible
+     * de 7 px (izquierda, derecha, abajo) y Robot captaría el escritorio que hay detrás.
+     * ignorar: componentes con datos en directo (se excluyen de la comparación), más la última fila de píxeles.
+     */
+    static void foto(String nombre) throws Exception { foto(nombre, () -> new JComponent[0]); }
+    static void foto(String nombre, java.util.function.Supplier<JComponent[]> ignorar) throws Exception {
         SpoilerFreeRecs app = app();
-        Rectangle r = app.getBounds();
-        BufferedImage img = new Robot().createScreenCapture(r);
-        ImageIO.write(img, "png", new File(nombre));
-        System.out.println("foto " + nombre + " " + r);
-    }
-    public static void main(String[] a) throws Exception {
-        try { correr(); } catch (Throwable ex) { ex.printStackTrace(); } finally { System.exit(0); }
+        Rectangle[] r = new Rectangle[1];
+        List<Rectangle> zonas = new ArrayList<>();
+        SwingUtilities.invokeAndWait(() -> {
+            JRootPane raiz = app.getRootPane();
+            r[0] = new Rectangle(raiz.getLocationOnScreen(), raiz.getSize());
+            zonas.add(new Rectangle(0, raiz.getHeight() - 1, raiz.getWidth(), 1));   // línea del marco de Windows: cambia de color si un diálogo quita el foco
+            // dependen de la fecha del día (LocalDate.now() en actPintar, sin reloj inyectable: DEUDA.md): mañana se
+            // desplazarían aunque nada cambie. Se ignoran donde se vean; la gráfica por horas sí se compara.
+            for (JComponent c : new JComponent[]{ app.actCalendario, app.actSemana, app.actMeses })
+                zonaVisible(c, raiz, zonas);
+            for (JComponent c : ignorar.get()) zonaVisible(c, raiz, zonas);   // se resuelven aquí, en el EDT
+        });
+        BufferedImage img = new Robot().createScreenCapture(r[0]);
+        fotos++;
+        ComparadorCapturas.Resultado res = comparador.comparar(nombre.replaceFirst("\\.png$", ""), img, zonas);
+        if (!res.ok()) FALLOS.add(res.nombre() + ": " + res.detalle());
+        System.out.println("foto " + nombre + " " + r[0] + " · " + (res.ok() ? "ok" : "FALLA") + " · " + res.detalle());
     }
     static void correr() throws Exception {
         SpoilerFreeRecs.main(new String[0]);
@@ -33,7 +191,8 @@ public class TTShot {
         SpoilerFreeRecs.PAIS_DE.put(1L, "es"); SpoilerFreeRecs.PAIS_DE.put(2L, "es"); SpoilerFreeRecs.PAIS_DE.put(3L, "ar"); SpoilerFreeRecs.PAIS_DE.put(4L, "de");
         SwingUtilities.invokeAndWait(() -> { app.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new SpoilerFreeRecs.Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new SpoilerFreeRecs.Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new SpoilerFreeRecs.Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
         Thread.sleep(400);
-        foto("shot_watchlist.png");
+        // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar
+        foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.tablaDirectos), app.directosContador, app.directosHora });
         SwingUtilities.invokeAndWait(() -> app.ladderBtn.doClick());
         for (int i = 0; i < 80 && (SpoilerFreeRecs.ladderHists.isEmpty()); i++) Thread.sleep(250);
         Thread.sleep(1500);
@@ -157,7 +316,9 @@ public class TTShot {
         cerrarDialogos();
         // menú contextual de la watchlist sobre un jugador en partida
         app.vivoWatch.put(1L, 555L);
-        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new SpoilerFreeRecs.Player(1L, "12Tirador", "General")); app.todosJugadores.add(new SpoilerFreeRecs.Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
+        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new SpoilerFreeRecs.Player(1L, "12Tirador", "General")); app.todosJugadores.add(new SpoilerFreeRecs.Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0);
+            app.actualizarIndicadoresVivos(); });   // lo que hace el vigilante tras detectar la partida; sin esto la foto dependía de cuándo saltara su temporizador.
+        // Carrera reducida, no eliminada: si el vigilante salta antes de la foto puede quitar vivoWatch(1L) (la partida 555 no existe).
         Thread.sleep(300);
         SwingUtilities.invokeAndWait(() -> { Rectangle r = app.playersList.getCellBounds(0, 0); app.menuContextualWatchlist(app.playersModel.get(0), new java.awt.event.MouseEvent(app.playersList, java.awt.event.MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, r.x + 40, r.y + 8, 1, true)); });
         Thread.sleep(700);
