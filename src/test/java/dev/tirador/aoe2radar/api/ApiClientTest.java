@@ -1,5 +1,6 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
@@ -94,7 +95,7 @@ class ApiClientTest {
     }
 
     @Test void conElFrenoRealUn429EnTextoHaceEsperarALaLlamadaSiguiente() throws Exception {
-        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        RelojFalso reloj = new RelojFalso();
         ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> false);
         red.responde(429, 200);
         assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));
@@ -104,7 +105,7 @@ class ApiClientTest {
     }
 
     @Test void conElFrenoRealElReintentoTrasLaPausaEsUnEpisodioNuevo() throws Exception {
-        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        RelojFalso reloj = new RelojFalso();
         ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> false);
         red.responde(429, 429, 200);
         assertEquals("cuerpo 200", conFrenoReal.textoCon429(COMPANION));
@@ -112,7 +113,7 @@ class ApiClientTest {
     }
 
     @Test void conElFrenoRealDetenerCortaLaEsperaDeLaPausa() {
-        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        RelojFalso reloj = new RelojFalso();
         ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> detenida);
         red.responde(429);
         assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));   // pausa de 60 s
@@ -125,7 +126,7 @@ class ApiClientTest {
 
     @Test void cableadoReal_detenerSoloCortaElHiloDeLaOperacion() throws Exception {
         // ApiClient + freno real + Cancelacion.detieneEsteHilo, como en la app: la operación corre en OTRO hilo.
-        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        RelojFalso reloj = new RelojFalso();
         ApiClient app = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, Cancelacion::detieneEsteHilo);
         try {
             red.responde(429, 200);

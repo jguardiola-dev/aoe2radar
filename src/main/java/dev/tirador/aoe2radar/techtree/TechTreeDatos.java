@@ -1,5 +1,7 @@
 package dev.tirador.aoe2radar.techtree;
 
+import dev.tirador.aoe2radar.cache.Caducidad;
+import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
@@ -104,7 +106,7 @@ public final class TechTreeDatos {
         try {
             long ultima = Long.parseLong(leerConfig("techtree_check", "0"));
             Path dj = TT_DIR.resolve("data/data.json");
-            if (Files.exists(dj) && System.currentTimeMillis() - ultima < 24 * 3_600_000L) return;
+            if (Files.exists(dj) && CacheService.SISTEMA.fresco(ultima, Caducidad.TECHTREE)) return;
             String etag = leerConfig("techtree_etag", "");
             HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(TT_RAW + "data/data.json")).timeout(Duration.ofSeconds(20))
                     .header("User-Agent", UA).GET();

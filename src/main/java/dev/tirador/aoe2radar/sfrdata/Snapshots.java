@@ -1,5 +1,8 @@
 package dev.tirador.aoe2radar.sfrdata;
 
+import dev.tirador.aoe2radar.cache.Caducidad;
+import dev.tirador.aoe2radar.cache.CacheService;
+import dev.tirador.aoe2radar.cache.Sello;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
@@ -32,18 +35,19 @@ public final class Snapshots {
     public static final Map<Long, int[]> ELO_AYER = new java.util.concurrent.ConcurrentHashMap<>();     // pid → {elo1v1, partidas1v1, eloEq, partidasEq}
     public static final Map<Long, String[]> NOMBRES_AYER = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {nombre, país}
     public static final Map<Long, int[]> ELO_HACE7 = new java.util.concurrent.ConcurrentHashMap<>();
-    public static volatile String eloAyerFecha, eloHace7Fecha; public static volatile long eloAyerMs, muestraMs; public static volatile boolean eloAyerCargando;
+    public static volatile String eloAyerFecha, eloHace7Fecha; public static volatile boolean eloAyerCargando;
+    private static final Sello ELO_AYER_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO), MUESTRA_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);
     public static volatile Map<String, List<List<Object>>> MUESTRA_AYER; public static volatile String muestraFecha;
     public static byte[] descargarCacheDiaria(String nombre, int timeoutS) throws Exception {   // un archivo de la release, guardado en disco y reutilizado 12 h
         Path f = PERFILES_SHARDS_DIR.resolve(nombre);
-        try { if (Files.exists(f) && System.currentTimeMillis() - Files.getLastModifiedTime(f).toMillis() < 12 * 3_600_000L) return Files.readAllBytes(f); } catch (IOException ignored) { }
+        try { if (CacheService.SISTEMA.archivoFresco(f, Caducidad.DESCARGA_DIARIA)) return Files.readAllBytes(f); } catch (IOException ignored) { }
         byte[] raw = descargarBytes(perfilesBase() + nombre, timeoutS);
         try { Files.createDirectories(PERFILES_SHARDS_DIR); Files.write(f, raw); } catch (IOException ignored) { }
         return raw;
     }
     /** Carga (o refresca cada 6 h) ELO_AYER/NOMBRES_AYER y ELO_HACE7. Silencioso si la release no existe todavía. */
     public static void cargarEloAyer() {
-        if (eloAyerCargando || System.currentTimeMillis() - eloAyerMs < 6 * 3_600_000L) return;
+        if (eloAyerCargando || ELO_AYER_SELLO.fresco()) return;
         eloAyerCargando = true;
         try {
             Map<String, Object> m = leerGzJson(descargarCacheDiaria("elo_ayer.json.gz", 60));
@@ -61,23 +65,24 @@ public final class Snapshots {
             } catch (Exception ex) { log("perfiles: elo hace 7: " + causa(ex)); }
             log("perfiles: elo_ayer " + eloAyerFecha + ": " + ELO_AYER.size() + " jugadores; hace 7: " + ELO_HACE7.size());
         } catch (Exception ex) { log("perfiles: elo_ayer: " + causa(ex)); }
-        finally { eloAyerMs = System.currentTimeMillis(); eloAyerCargando = false; }
+        finally { ELO_AYER_SELLO.marcar(); eloAyerCargando = false; }
     }
     /** La muestra de ayer (Al azar por ELO y Guess the ELO sin API). null si no está disponible. */
     public static Map<String, List<List<Object>>> muestraAyer() {
-        if (MUESTRA_AYER != null && System.currentTimeMillis() - muestraMs < 6 * 3_600_000L) return MUESTRA_AYER;
+        if (MUESTRA_AYER != null && MUESTRA_SELLO.fresco()) return MUESTRA_AYER;
         try {
             Map<String, Object> m = leerGzJson(descargarCacheDiaria("muestra_ayer.json.gz", 60));
             Map<String, List<List<Object>>> out = new HashMap<>();
             if (m.get("tramos") instanceof Map<?, ?> tm) for (Map.Entry<?, ?> en : tm.entrySet()) { List<List<Object>> l = new ArrayList<>(); for (Object o : arr(en.getValue())) l.add(arr(o)); out.put(String.valueOf(en.getKey()), l); }
             MUESTRA_AYER = out; muestraFecha = String.valueOf(m.get("fecha"));
         } catch (Exception ex) { log("perfiles: muestra: " + causa(ex)); MUESTRA_AYER = null; }
-        muestraMs = System.currentTimeMillis();
+        MUESTRA_SELLO.marcar();
         return MUESTRA_AYER;
     }
 
     // ----- Perfiles precalculados (release «perfiles» de sfr-data): el año completo sin tocar la API -----
-    public static volatile Map<String, Object> PERFILES_INDEX; public static volatile long perfilesIndexMs;
+    public static volatile Map<String, Object> PERFILES_INDEX;
+    private static final Sello INDEX_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);
     public static final Path PERFILES_SHARDS_DIR = LADDER_DIR.resolve("perfiles_shards");
 
     public static String perfilesBase() {
@@ -87,12 +92,12 @@ public final class Snapshots {
     }
     /** index.json de la release (caché de 6 h): hasta, desde, shards, alcance. null si no hay release todavía. */
     public static Map<String, Object> perfilesIndex() {
-        if (PERFILES_INDEX != null && System.currentTimeMillis() - perfilesIndexMs < 6 * 3_600_000L) return PERFILES_INDEX;
+        if (PERFILES_INDEX != null && INDEX_SELLO.fresco()) return PERFILES_INDEX;
         try {
             Object root = Json.parse(new String(descargarBytes(perfilesBase() + "index.json", 20), StandardCharsets.UTF_8).replace(",NaN", ",\"\"").replace("[NaN", "[\"\""));   // tolerancia: un NaN suelto no es JSON válido
             if (root instanceof Map<?, ?> m) { @SuppressWarnings("unchecked") Map<String, Object> mm = (Map<String, Object>) m; PERFILES_INDEX = mm; }
         } catch (Exception ex) { log("perfiles: index: " + causa(ex)); PERFILES_INDEX = null; }
-        perfilesIndexMs = System.currentTimeMillis();
+        INDEX_SELLO.marcar();
         return PERFILES_INDEX;
     }
     /** Un archivo de la release con caché en disco por «versión» (la fecha que lo hace válido): si la marca coincide, no se baja. */

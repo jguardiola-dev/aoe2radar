@@ -1,5 +1,8 @@
 package dev.tirador.aoe2radar.sfrdata;
 
+import dev.tirador.aoe2radar.cache.Caducidad;
+import dev.tirador.aoe2radar.cache.CacheService;
+import dev.tirador.aoe2radar.cache.Sello;
 import dev.tirador.aoe2radar.model.LadderHist;
 import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Rejilla;
@@ -50,7 +53,7 @@ public final class Ladder {
     public static volatile Map<String, List<LadderRow>> clanes = Map.of();          // tag → miembros (1v1 RM), ordenados por rating
     public static volatile String ladderGenerado = "";
     public static volatile int activosMinPartidas = 10, activosDias = 28;
-    public static volatile long ladderCargadoMs;
+    private static final Sello LADDER_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);   // cuándo se cargaron bien los resúmenes
     public static volatile boolean ladderCargando;
     public static volatile String ladderProgreso = "";
     public static final Object LADDER_LOCK = new Object();
@@ -59,8 +62,7 @@ public final class Ladder {
     public static byte[] sfrDataArchivo(String nombre) throws Exception {
         Path local = LADDER_DIR.resolve(nombre);
         Files.createDirectories(local.getParent());
-        long edad = Files.exists(local) ? System.currentTimeMillis() - Files.getLastModifiedTime(local).toMillis() : Long.MAX_VALUE;
-        if (edad > 6 * 3_600_000L) {
+        if (!CacheService.SISTEMA.archivoFresco(local, Caducidad.NOCTURNO)) {
             HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(SFR_DATA + nombre)).timeout(Duration.ofSeconds(60)).header("User-Agent", UA).GET();
             String etag = leerConfig("sfrdata_etag_" + nombre, "");
             if (!etag.isEmpty() && Files.exists(local)) rb.header("If-None-Match", etag);
@@ -106,7 +108,7 @@ public final class Ladder {
     /** Carga (o refresca) campanas, dispersión y clanes. null si va bien; si no, el motivo. */
     public static String ladderAsegurar(boolean forzar) {
         synchronized (LADDER_LOCK) {
-            if (!forzar && !ladderHists.isEmpty() && System.currentTimeMillis() - ladderCargadoMs < 6 * 3_600_000L) return null;
+            if (!forzar && !ladderHists.isEmpty() && LADDER_SELLO.fresco()) return null;
             try {
                 ladderProgreso = t("Descargando los resúmenes del ladder…", "Downloading the ladder summaries…");
                 Map<String, Object> lj = obj(Json.parse(new String(sfrDataArchivo("ladder.json"), StandardCharsets.UTF_8)));
@@ -143,7 +145,7 @@ public final class Ladder {
                     }
                     cl.put(en.getKey(), mi);
                 }
-                ladderHists = h; ladderHistsActivos = ha; dispersionTodos = dt; dispersionActivos = da; clanes = cl; ladderCargadoMs = System.currentTimeMillis();
+                ladderHists = h; ladderHistsActivos = ha; dispersionTodos = dt; dispersionActivos = da; clanes = cl; LADDER_SELLO.marcar();
                 log("ladder: resúmenes de sfr-data cargados (" + h.size() + " ladders, " + ha.size() + " con activos, " + dt.size() + " dispersiones, " + cl.size() + " clanes, generado " + ladderGenerado + ")");
                 return null;
             } catch (Exception ex) {
