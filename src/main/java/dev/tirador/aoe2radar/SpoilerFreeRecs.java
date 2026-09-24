@@ -190,94 +190,10 @@ public class SpoilerFreeRecs extends JFrame {
         String mapaClave;             // clave del mapa (rm_arabia) cuando viene de un paquete de sfr-data
         int gte;                      // > 0: partida «Guess the ELO» nº gte (anónima en la app)     // la rec ya existe en ./recs
 
-        String enfrentamiento() { return enfrentamiento(false); }
-
-        String enfrentamiento(boolean conResultados) {
-            boolean revelar = conResultados && finished != null;   // en GTE solo con su ojo: nombres, ELO y ganador
-            Map<Integer, List<String>> porEquipo = new TreeMap<>();
-            Map<Integer, Boolean> equipoGano = new TreeMap<>();
-            int anon = 0;
-            for (MatchPlayer p : players) {
-                String nombre = gte > 0 && !conResultados ? t("Jugador ", "Player ") + (++anon) : nombreVisible(p.id, p.name);
-                if (gte > 0 && conResultados && p.rating != null) nombre += " " + p.rating;   // la solución del GTE
-                String extra = p.civ != null && !p.civ.isBlank() ? p.civ : "";
-                if (azar && gte == 0 && p.rating != null)
-                    extra = extra.isEmpty() ? String.valueOf(p.rating) : extra + ", " + p.rating;
-                String pieza = nombre + (extra.isEmpty() ? "" : " (" + extra + ")");
-                if (revelar) {
-                    pieza = escapeHtml(pieza);
-                    if (SUJETOS.contains(p.id)) pieza = "<b>" + pieza + "</b>";   // la negrita dice la autoría
-                    if (p.ratingDiff != null) {
-                        String col = p.ratingDiff >= 0
-                                ? (temaOscuroActivo ? "#6abf69" : "#2e7d32")
-                                : (temaOscuroActivo ? "#e57373" : "#c62828");
-                        pieza += " <font color='" + col + "'>" + (p.ratingDiff >= 0 ? "+" : "")
-                                + p.ratingDiff + "</font>";
-                    }
-                }
-                porEquipo.computeIfAbsent(p.team, k -> new ArrayList<>()).add(pieza);
-                if (Boolean.TRUE.equals(p.won)) equipoGano.put(p.team, true);
-            }
-            List<String> lados = new ArrayList<>();
-            boolean algunGanador = equipoGano.containsValue(true);
-            for (Map.Entry<Integer, List<String>> e : porEquipo.entrySet()) {
-                String lado = String.join(", ", e.getValue());
-                if (revelar && algunGanador && Boolean.TRUE.equals(equipoGano.get(e.getKey())))
-                    lado = "\u2726 " + lado;   // corona discreta: el color vive en la columna Jugador
-                lados.add(lado);
-            }
-            String s = String.join("  vs  ", lados);
-            return revelar ? "<html>" + s + "</html>" : s;
-        }
-
-        /** Nombre del jugador seguido de referencia (columna «Jugador»). */
-        String refNombre() { return refNombre(false); }
-
-        String refNombre(boolean revelado) {
-            if (gte > 0 && !revelado) return "GTE " + gte;
-            for (MatchPlayer p : players) if (p.id == refId) return nombreVisible(p.id, p.name);
-            return "?";
-        }
-
         String civDe(long pid) {
             if (gte > 0) return "";
             for (MatchPlayer p : players) if (p.id == pid) return p.civ == null ? "" : p.civ;
             return "";
-        }
-
-        /** «2364 \u2192 2378 (+14)»: el rating con el que entró y con el que salió. */
-        static String eloAntesDespues(MatchPlayer p) {   // devuelve HTML (sin envoltorio): gris + diff en verde/rojo
-            if (p == null || p.rating == null) return "";
-            if (p.ratingDiff == null) return " <font color='#8a8a8a'>" + p.rating + "</font>";
-            String colD = p.ratingDiff > 0 ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : p.ratingDiff < 0 ? (temaOscuroActivo ? "#e57373" : "#c62828") : "#8a8a8a";
-            return " <font color='" + colD + "'>(" + (p.ratingDiff >= 0 ? "+" : "") + p.ratingDiff + ")</font> <font color='#8a8a8a'>"
-                    + p.rating + " \u2192 " + (p.rating + p.ratingDiff) + "</font>";
-        }
-
-        String rivalTexto() { return rivalTexto(false); }
-
-        /** Columna Rival: en 1v1 el otro (con su ELO antes → después si la fila está revelada); en equipos «2v2 \u00B7 vs A, B». */
-        String rivalTexto(boolean revelado) {
-            if (gte > 0 && !revelado) return "";
-            MatchPlayer yo = null;
-            for (MatchPlayer p : players) if (p.id == refId) yo = p;
-            if (yo == null) return "";
-            if (players.size() == 2) {
-                for (MatchPlayer p : players) if (p.id != refId) {
-                    if (!revelado) return nombreVisible(p.id, p.name);
-                    String colR = Boolean.TRUE.equals(p.won) ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : (temaOscuroActivo ? "#e57373" : "#c62828");
-                    return "<html><font color='" + colR + "'>" + (Boolean.TRUE.equals(p.won) ? "\u2726 " : "") + escapeHtml(nombreVisible(p.id, p.name))
-                            + eloAntesDespues(p) + "</font></html>";
-                }
-                return "";
-            }
-            Map<Integer, Integer> porEquipo = new TreeMap<>();
-            for (MatchPlayer p : players) porEquipo.merge(p.team, 1, Integer::sum);
-            StringBuilder tam = new StringBuilder();
-            for (int n : porEquipo.values()) { if (tam.length() > 0) tam.append('v'); tam.append(n); }
-            List<String> riv = new ArrayList<>();
-            for (MatchPlayer p : players) if (p.team != yo.team) riv.add(nombreVisible(p.id, p.name));
-            return tam + " \u00B7 vs " + String.join(", ", riv);
         }
 
         /** Columna Civ rival: solo en 1v1 (en equipos, el detalle va en el tooltip). */
@@ -285,24 +201,6 @@ public class SpoilerFreeRecs extends JFrame {
             if (gte > 0 || players.size() != 2) return "";
             for (MatchPlayer p : players) if (p.id != refId) return p.civ == null ? "" : p.civ;
             return "";
-        }
-
-        /** El veredicto del buscado, en su columna: verde con \u2726 si ganó,
-         *  rojo si perdió; a pelo en vivas, colgadas y GTE. */
-        String refConVeredicto() {
-            String nombre = refNombre(true);
-            if (finished == null) return nombre;
-            Boolean gano = null;
-            for (MatchPlayer p : players) if (p.id == refId) { gano = p.won; break; }
-            if (gano == null) return nombre;
-            String col = gano ? (temaOscuroActivo ? "#6abf69" : "#2e7d32")
-                              : (temaOscuroActivo ? "#e57373" : "#c62828");
-            MatchPlayer yo = null;
-            for (MatchPlayer p : players) if (p.id == refId) yo = p;
-            return "<html><font color='" + col + "'>" + (gano ? "\u2726 " : "")
-                    + escapeHtml(nombre)
-                    + eloAntesDespues(yo)
-                    + "</font></html>";
         }
 
         boolean tieneJugador(long pid) {
@@ -315,6 +213,109 @@ public class SpoilerFreeRecs extends JFrame {
             for (MatchPlayer p : players) if (Boolean.TRUE.equals(p.replay)) n++;
             return n;
         }
+    }
+
+    // ----- Presentación de Match (texto/HTML de las columnas; los datos viven en Match) -----
+    static String enfrentamiento(Match m) { return enfrentamiento(m, false); }
+
+    static String enfrentamiento(Match m, boolean conResultados) {
+        boolean revelar = conResultados && m.finished != null;   // en GTE solo con su ojo: nombres, ELO y ganador
+        Map<Integer, List<String>> porEquipo = new TreeMap<>();
+        Map<Integer, Boolean> equipoGano = new TreeMap<>();
+        int anon = 0;
+        for (MatchPlayer p : m.players) {
+            String nombre = m.gte > 0 && !conResultados ? t("Jugador ", "Player ") + (++anon) : nombreVisible(p.id, p.name);
+            if (m.gte > 0 && conResultados && p.rating != null) nombre += " " + p.rating;   // la solución del GTE
+            String extra = p.civ != null && !p.civ.isBlank() ? p.civ : "";
+            if (m.azar && m.gte == 0 && p.rating != null)
+                extra = extra.isEmpty() ? String.valueOf(p.rating) : extra + ", " + p.rating;
+            String pieza = nombre + (extra.isEmpty() ? "" : " (" + extra + ")");
+            if (revelar) {
+                pieza = escapeHtml(pieza);
+                if (SUJETOS.contains(p.id)) pieza = "<b>" + pieza + "</b>";   // la negrita dice la autoría
+                if (p.ratingDiff != null) {
+                    String col = p.ratingDiff >= 0
+                            ? (temaOscuroActivo ? "#6abf69" : "#2e7d32")
+                            : (temaOscuroActivo ? "#e57373" : "#c62828");
+                    pieza += " <font color='" + col + "'>" + (p.ratingDiff >= 0 ? "+" : "")
+                            + p.ratingDiff + "</font>";
+                }
+            }
+            porEquipo.computeIfAbsent(p.team, k -> new ArrayList<>()).add(pieza);
+            if (Boolean.TRUE.equals(p.won)) equipoGano.put(p.team, true);
+        }
+        List<String> lados = new ArrayList<>();
+        boolean algunGanador = equipoGano.containsValue(true);
+        for (Map.Entry<Integer, List<String>> e : porEquipo.entrySet()) {
+            String lado = String.join(", ", e.getValue());
+            if (revelar && algunGanador && Boolean.TRUE.equals(equipoGano.get(e.getKey())))
+                lado = "\u2726 " + lado;   // corona discreta: el color vive en la columna Jugador
+            lados.add(lado);
+        }
+        String s = String.join("  vs  ", lados);
+        return revelar ? "<html>" + s + "</html>" : s;
+    }
+
+    /** Nombre del jugador seguido de referencia (columna «Jugador»). */
+    static String refNombre(Match m) { return refNombre(m, false); }
+
+    static String refNombre(Match m, boolean revelado) {
+        if (m.gte > 0 && !revelado) return "GTE " + m.gte;
+        for (MatchPlayer p : m.players) if (p.id == m.refId) return nombreVisible(p.id, p.name);
+        return "?";
+    }
+
+    /** «2364 \u2192 2378 (+14)»: el rating con el que entró y con el que salió. */
+    static String eloAntesDespues(MatchPlayer p) {   // devuelve HTML (sin envoltorio): gris + diff en verde/rojo
+        if (p == null || p.rating == null) return "";
+        if (p.ratingDiff == null) return " <font color='#8a8a8a'>" + p.rating + "</font>";
+        String colD = p.ratingDiff > 0 ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : p.ratingDiff < 0 ? (temaOscuroActivo ? "#e57373" : "#c62828") : "#8a8a8a";
+        return " <font color='" + colD + "'>(" + (p.ratingDiff >= 0 ? "+" : "") + p.ratingDiff + ")</font> <font color='#8a8a8a'>"
+                + p.rating + " \u2192 " + (p.rating + p.ratingDiff) + "</font>";
+    }
+
+    static String rivalTexto(Match m) { return rivalTexto(m, false); }
+
+    /** Columna Rival: en 1v1 el otro (con su ELO antes → después si la fila está revelada); en equipos «2v2 \u00B7 vs A, B». */
+    static String rivalTexto(Match m, boolean revelado) {
+        if (m.gte > 0 && !revelado) return "";
+        MatchPlayer yo = null;
+        for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
+        if (yo == null) return "";
+        if (m.players.size() == 2) {
+            for (MatchPlayer p : m.players) if (p.id != m.refId) {
+                if (!revelado) return nombreVisible(p.id, p.name);
+                String colR = Boolean.TRUE.equals(p.won) ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : (temaOscuroActivo ? "#e57373" : "#c62828");
+                return "<html><font color='" + colR + "'>" + (Boolean.TRUE.equals(p.won) ? "\u2726 " : "") + escapeHtml(nombreVisible(p.id, p.name))
+                        + eloAntesDespues(p) + "</font></html>";
+            }
+            return "";
+        }
+        Map<Integer, Integer> porEquipo = new TreeMap<>();
+        for (MatchPlayer p : m.players) porEquipo.merge(p.team, 1, Integer::sum);
+        StringBuilder tam = new StringBuilder();
+        for (int n : porEquipo.values()) { if (tam.length() > 0) tam.append('v'); tam.append(n); }
+        List<String> riv = new ArrayList<>();
+        for (MatchPlayer p : m.players) if (p.team != yo.team) riv.add(nombreVisible(p.id, p.name));
+        return tam + " \u00B7 vs " + String.join(", ", riv);
+    }
+
+    /** El veredicto del buscado, en su columna: verde con \u2726 si ganó,
+     *  rojo si perdió; a pelo en vivas, colgadas y GTE. */
+    static String refConVeredicto(Match m) {
+        String nombre = refNombre(m, true);
+        if (m.finished == null) return nombre;
+        Boolean gano = null;
+        for (MatchPlayer p : m.players) if (p.id == m.refId) { gano = p.won; break; }
+        if (gano == null) return nombre;
+        String col = gano ? (temaOscuroActivo ? "#6abf69" : "#2e7d32")
+                          : (temaOscuroActivo ? "#e57373" : "#c62828");
+        MatchPlayer yo = null;
+        for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
+        return "<html><font color='" + col + "'>" + (gano ? "\u2726 " : "")
+                + escapeHtml(nombre)
+                + eloAntesDespues(yo)
+                + "</font></html>";
     }
 
     /** Celdas ordenables que se pintan como texto. En curso real = «EN DIRECTO»
@@ -829,11 +830,12 @@ public class SpoilerFreeRecs extends JFrame {
     // ----- Forma reciente (±ELO en una ventana de horas; 1v1 ranked) --------------
     record Forma(int diff, int w, int l, int racha, boolean rachaGana, int partidas) {
         String corta() { return partidas == 0 ? "\u00B7" : (diff > 0 ? "\u25B2+" + diff : diff < 0 ? "\u25BC" + diff : "\u25AC 0"); }
-        String larga() {
-            if (partidas == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
-            String r = racha >= 2 ? " \u00B7 " + t("racha ", "streak ") + racha + (rachaGana ? "V" : "D") : "";
-            return w + "-" + l + " \u00B7 " + (diff >= 0 ? "+" : "") + diff + r;
-        }
+    }
+
+    static String formaLarga(Forma f) {
+        if (f.partidas() == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
+        String r = f.racha() >= 2 ? " \u00B7 " + t("racha ", "streak ") + f.racha() + (f.rachaGana() ? "V" : "D") : "";
+        return f.w() + "-" + f.l() + " \u00B7 " + (f.diff() >= 0 ? "+" : "") + f.diff() + r;
     }
     static final Map<Long, Integer> TOP_STREAK = new java.util.concurrent.ConcurrentHashMap<>();   // racha del ladder (+3 / -2)
     static final Map<Long, int[]> TOP_LAST10 = new java.util.concurrent.ConcurrentHashMap<>();    // {ganadas, perdidas} de las últimas 10
@@ -9074,7 +9076,7 @@ public class SpoilerFreeRecs extends JFrame {
                         if (mp.id != m.refId && notaDe(mp.id) != null) return t("Nota: ", "Note: ") + notaDe(mp.id);
                 if (enCursoReal(m))
                     return t("EN DIRECTO — doble clic para espectar", "LIVE — double-click to spectate");
-                String enf = m.enfrentamiento(revelada(m));
+                String enf = enfrentamiento(m, revelada(m));
                 if (revelada(m)) {   // revelada: el enfrentamiento con resultados, y la duración
                     String tr = tipResultado(m);
                     if (tr != null) return "<html>" + (enf.startsWith("<html>") ? enf.substring(6, enf.length() - 7) : escapeHtml(enf))
@@ -9279,7 +9281,7 @@ public class SpoilerFreeRecs extends JFrame {
                 if (mr < 0 || mr >= view.size()) return;
                 Match m = view.get(mr);
                 if (enCursoReal(m)) {
-                    if (confirmarEspectar(m.refNombre())) espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
+                    if (confirmarEspectar(refNombre(m))) espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
                     return;
                 }
                 else if (m.finished == null)
@@ -9995,7 +9997,7 @@ public class SpoilerFreeRecs extends JFrame {
                         m.azar = true;
                         ajustarRefAzar(m, civSel);   // el titular: quien jugó la civ filtrada
                         if (refIds.add(m.refId)) {
-                            String nom = m.refNombre();
+                            String nom = refNombre(m);
                             refs.add(new Player(m.refId, nom, "", 0));
                         }
                     }
@@ -11494,7 +11496,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** Tooltip de la columna Jugador: si la cuenta es hermana de una familia,
      *  dice de quién. Null si no aplica. */
     String tipCuentaVinculada(Match m) {
-        String ref = m.refNombre();
+        String ref = refNombre(m);
         for (Player x : todosJugadores)
             if (x.name().equals(ref) && x.vinculo() != 0) {
                 Player matriz = null;
@@ -13892,11 +13894,11 @@ public class SpoilerFreeRecs extends JFrame {
                 case 0 -> m.finished == null && !enCursoReal(m)
                         ? new FechaCell(null, m.started)
                         : new FechaCell(m.finished);
-                case 1 -> revelada(m) ? m.refConVeredicto() : m.refNombre();
+                case 1 -> revelada(m) ? refConVeredicto(m) : refNombre(m);
                 case 2 -> m.civDe(m.refId);
                 case 3 -> m.mode;
                 case 4 -> m.map;
-                case 5 -> m.rivalTexto(revelada(m));
+                case 5 -> rivalTexto(m, revelada(m));
                 case 6 -> m.civRival();
                 case 8 -> m.finished == null ? "" : (revelada(m) ? "\u25C9" : "\u25CE");   // ojo abierto / cerrado (también en GTE)
                 case 7 -> !m.estado.isBlank() ? m.estado
