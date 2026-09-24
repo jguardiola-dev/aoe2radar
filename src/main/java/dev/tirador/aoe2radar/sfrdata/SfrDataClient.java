@@ -84,6 +84,14 @@ public final class SfrDataClient {
         return raw;
     }
 
+    /**
+     * Borra la copia en disco de un archivo de diario(): quien lo leyó no pudo entenderlo (roto, truncado). Sin esto,
+     * cada reintento releería la misma basura durante 12 h; así el siguiente vuelve a la red.
+     */
+    public void olvidarDiario(String nombre) {
+        try { Files.deleteIfExists(dirRelease.resolve(nombre)); } catch (IOException ex) { log("sfr-data: no se pudo borrar " + nombre + ": " + causa(ex)); }
+    }
+
     /** Como versionado(base, …) con la base de la release «perfiles». */
     public byte[] versionado(String nombre, String version, int timeoutS) throws Exception {
         return versionado(baseRelease.get(), nombre, version, timeoutS);

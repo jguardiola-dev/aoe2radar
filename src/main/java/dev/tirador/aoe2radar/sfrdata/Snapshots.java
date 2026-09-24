@@ -28,56 +28,19 @@ public final class Snapshots {
     private Snapshots() {}
 
     // ----- Snapshots nocturnos de sfr-data: ELO de anoche (forma por resta, índice de nombres), de hace 7 días y la muestra de ayer -----
-    public static final Map<Long, int[]> ELO_AYER = new java.util.concurrent.ConcurrentHashMap<>();     // pid → {elo1v1, partidas1v1, eloEq, partidasEq}
-    public static final Map<Long, String[]> NOMBRES_AYER = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {nombre, país}
-    public static final Map<Long, int[]> ELO_HACE7 = new java.util.concurrent.ConcurrentHashMap<>();
-    public static volatile String eloAyerFecha, eloHace7Fecha; public static volatile boolean eloAyerCargando;
-    private static final Sello ELO_AYER_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO), MUESTRA_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);
-    private static final Sello ELO_AYER_INTENTO = CacheService.SISTEMA.sello(Caducidad.REINTENTO);   // último intento, bueno o malo
+    /** El ELO de anoche y de hace 7 días (ver EloNocturno). Los mapas de abajo son los suyos: mismos objetos. */
+    public static final EloNocturno ELO = new EloNocturno(SfrDataClient.SISTEMA, CacheService.SISTEMA,
+            tarea -> { Thread h = new Thread(tarea, "elo-ayer-reintento"); h.setDaemon(true); h.start(); },
+            () -> LocalDate.now(ZoneId.of("UTC")));
+    public static final Map<Long, int[]> ELO_AYER = ELO.ayer;              // pid → {elo1v1, partidas1v1, eloEq, partidasEq}
+    public static final Map<Long, String[]> NOMBRES_AYER = ELO.nombres;    // pid → {nombre, país}
+    public static final Map<Long, int[]> ELO_HACE7 = ELO.hace7;
+    private static final Sello MUESTRA_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);
     public static volatile Map<String, List<List<Object>>> MUESTRA_AYER; public static volatile String muestraFecha;
     /** Un archivo de la release, guardado en disco y reutilizado 12 h. Ver SfrDataClient.diario. */
     public static byte[] descargarCacheDiaria(String nombre, int timeoutS) throws Exception { return SfrDataClient.SISTEMA.diario(nombre, timeoutS); }
-    /**
-     * Carga (o refresca cada 6 h) ELO_AYER/NOMBRES_AYER y ELO_HACE7. Silencioso si la release no existe todavía. Si el
-     * ELO de ayer no llega (sin red, release aún no publicada), reintenta a los 5 min y no a las 6 h: mientras falte,
-     * la forma y el ELO salen del companion. El reintento tras un fallo va en segundo plano: quien llama sigue al
-     * instante con lo que haya (como antes, que tras un fallo volvía al momento), sin comerse la espera de la red.
-     */
-    public static void cargarEloAyer() {
-        if (eloAyerCargando || ELO_AYER_SELLO.fresco() || ELO_AYER_INTENTO.fresco()) return;
-        eloAyerCargando = true;
-        if (eloAyerFallo) {
-            Thread h = new Thread(Snapshots::descargarEloAyer, "elo-ayer-reintento");
-            h.setDaemon(true);
-            try { h.start(); } catch (Throwable t) { eloAyerCargando = false; throw t; }   // si no arranca, no se queda «cargando» para siempre
-            return;
-        }
-        descargarEloAyer();
-    }
-    private static volatile boolean eloAyerFallo;   // el último intento no trajo el ELO de ayer
-    /** La descarga en sí (eloAyerCargando ya está a true); en el finally se apunta el intento y si llegó. */
-    private static void descargarEloAyer() {
-        boolean llego = false;
-        try {
-            Map<String, Object> m = leerGzJson(descargarCacheDiaria("elo_ayer.json.gz", 60));
-            Object j = m.get("j");
-            if (j instanceof Map<?, ?> jm) {
-                ELO_AYER.clear(); NOMBRES_AYER.clear();
-                for (Map.Entry<?, ?> en : jm.entrySet()) { List<Object> v = arr(en.getValue()); long pid = Long.parseLong(String.valueOf(en.getKey())); ELO_AYER.put(pid, new int[]{ (int) lng(v.get(0)), (int) lng(v.get(1)), (int) lng(v.get(2)), (int) lng(v.get(3)) }); NOMBRES_AYER.put(pid, new String[]{ String.valueOf(v.get(4)), String.valueOf(v.get(5)) }); }
-                eloAyerFecha = String.valueOf(m.get("fecha"));
-                ELO_AYER_SELLO.marcar();   // solo si llegó: un fallo no bloquea 6 h
-                llego = true;
-            }
-            String hace7 = LocalDate.now(ZoneId.of("UTC")).minusDays(7).toString();
-            try {
-                Map<String, Object> m7 = leerGzJson(descargarCacheDiaria("elo-" + hace7 + ".json.gz", 60));
-                Object j7 = m7.get("j");
-                if (j7 instanceof Map<?, ?> jm) { ELO_HACE7.clear(); for (Map.Entry<?, ?> en : jm.entrySet()) { List<Object> v = arr(en.getValue()); ELO_HACE7.put(Long.parseLong(String.valueOf(en.getKey())), new int[]{ (int) lng(v.get(0)), (int) lng(v.get(1)), (int) lng(v.get(2)), (int) lng(v.get(3)) }); } eloHace7Fecha = hace7; }
-            } catch (Exception ex) { log("perfiles: elo hace 7: " + causa(ex)); }
-            log("perfiles: elo_ayer " + eloAyerFecha + ": " + ELO_AYER.size() + " jugadores; hace 7: " + ELO_HACE7.size());
-        } catch (Exception ex) { log("perfiles: elo_ayer: " + causa(ex)); }
-        finally { eloAyerFallo = !llego; ELO_AYER_INTENTO.marcar(); eloAyerCargando = false; }
-    }
+    /** Carga (o refresca) el ELO de anoche y de hace 7 días. Ver EloNocturno.cargar. */
+    public static void cargarEloAyer() { ELO.cargar(); }
     /** La muestra de ayer (Al azar por ELO y Guess the ELO sin API). null si no está disponible. */
     public static Map<String, List<List<Object>>> muestraAyer() {
         if (MUESTRA_AYER != null && MUESTRA_SELLO.fresco()) return MUESTRA_AYER;
