@@ -30,6 +30,7 @@
 
 package dev.tirador.aoe2radar;
 
+import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
@@ -56,12 +57,12 @@ import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL_URL;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
-import static dev.tirador.aoe2radar.api.Freno.aplicaA;
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
 import static dev.tirador.aoe2radar.api.Freno.freno;
 import static dev.tirador.aoe2radar.api.Http.API;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
+import static dev.tirador.aoe2radar.api.Http.TRANSPORTE;
 import static dev.tirador.aoe2radar.api.Http.UA;
 import static dev.tirador.aoe2radar.api.Http.descargarBytes;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
@@ -9226,28 +9227,8 @@ public class SpoilerFreeRecs extends JFrame {
         return p * 2;
     }
 
-    /** httpText con un reintento tras espera si el servidor limita (HTTP 429). */
-    static String httpText429(String url) throws IOException, InterruptedException {
-        boolean companion = aplicaA(url);   // solo el companion cuenta para el freno: un 429 o un éxito de otro host (Steam…) no lo toca
-        try {
-            String r = httpText(url);
-            if (companion) THROTTLE.registrarExito();   // diez minutos sin 429 del companion: se olvida la escalada
-            return r;
-        } catch (Exception ex) {
-            if (String.valueOf(ex.getMessage()).contains("429")) {
-                if (companion) registrar429();   // pausa global; el propio freno() la respeta en todas las llamadas
-                try { return httpText(url); }
-                catch (Exception ex2) {
-                    if (!String.valueOf(ex2.getMessage()).contains("429")) throw ex2;
-                    if (companion) registrar429();
-                    return httpText(url);
-                }
-            }
-            if (ex instanceof IOException io) throw io;
-            if (ex instanceof InterruptedException ie) throw ie;
-            throw new IOException(causa(ex));
-        }
-    }
+    /** httpText con hasta dos reintentos tras espera si el servidor limita (HTTP 429). Delega en ApiClient. */
+    static String httpText429(String url) throws IOException, InterruptedException { return API_CLIENTE.textoCon429(url); }
 
     /** Río global: partidas RM 1v1 recientes de todo el ladder, sin perfiles
      *  (leaderboard_ids). Si el parámetro no estuviera soportado, devuelve
@@ -12551,12 +12532,10 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     // ----- HTTP --------------------------------------------------------------
-    /** Un 429: todas las llamadas se detienen un rato (y más cada vez que se repite). */
-    static void registrar429() {
-        long pausa = THROTTLE.registrar429();   // escalada y pausa global viven en el Throttle
-        log("API: 429 recibido: pausa global de " + pausa / 1000 + " s para no insistir");
+    /** La pausa por 429 del companion, contada en la barra de estado (ApiClient avisa; la red ya no toca Swing). */
+    static void avisarPausa429(long seg) {
         SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
-        final SpoilerFreeRecs appF = app; final long seg = pausa / 1000;
+        final SpoilerFreeRecs appF = app;
         if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(t("La API pide calma (429): la app pausa las consultas ", "The API asks for calm (429): the app pauses its requests for ") + seg + t(" s y sigue sola.", " s and carries on by itself.")));
     }
     /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. */
@@ -12579,15 +12558,10 @@ public class SpoilerFreeRecs extends JFrame {
             }
         } catch (Exception ex) { log("control.json: " + causa(ex)); }
     }
-    static String httpText(String url) throws IOException, InterruptedException {
-        // Una interrupción residual de un Detener anterior (los hilos del pool se reutilizan) se limpia;
-        // solo cuenta si hay un Detener real en curso.
-        if (Thread.interrupted() && stopOperacion && opEnCurso) throw new InterruptedException("detenido");
-        if (aplicaA(url)) freno();   // cualquier host del companion (antes solo data.…/api: Twitch se saltaba el freno)
-        HttpResponse<String> r = HTTP.send(req(url), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (r.statusCode() / 100 != 2) throw new IOException("HTTP " + r.statusCode());
-        return r.body();
-    }
+    /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
+    static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> stopOperacion && opEnCurso);
+
+    static String httpText(String url) throws IOException, InterruptedException { return API_CLIENTE.texto(url); }
 
     static void dormir(long ms) {
         long fin = System.currentTimeMillis() + ms;

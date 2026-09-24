@@ -39,6 +39,12 @@ public final class Http {
                 .GET().build();
     }
 
+    /** El transporte real de ApiClient. Lee HTTP en cada llamada: Detener lo sustituye por un cliente nuevo. */
+    public static final Transporte TRANSPORTE = url -> {
+        HttpResponse<String> r = HTTP.send(req(url), HttpResponse.BodyHandlers.ofString(java.nio.charset.StandardCharsets.UTF_8));
+        return new Transporte.Respuesta(r.statusCode(), r.body());
+    };
+
     public static byte[] descargarBytes(String url, int timeoutS) throws IOException, InterruptedException {
         IOException ultimo = null;
         for (int intento = 1; intento <= 3; intento++) {   // con VPN (días de fútbol en España) GitHub va lento: tres intentos con más margen cada vez
