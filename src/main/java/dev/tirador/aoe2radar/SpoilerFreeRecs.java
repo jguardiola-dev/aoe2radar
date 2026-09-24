@@ -97,6 +97,9 @@ import static dev.tirador.aoe2radar.cache.Paises.aprenderPais;
 import static dev.tirador.aoe2radar.cache.Paises.cargarPaises;
 import static dev.tirador.aoe2radar.cache.Paises.guardarPaises;
 import static dev.tirador.aoe2radar.cache.Paises.paisDe;
+import static dev.tirador.aoe2radar.cache.RecsDisco.RECS_DIR;
+import static dev.tirador.aoe2radar.cache.RecsDisco.destino;
+import static dev.tirador.aoe2radar.cache.RecsDisco.maxGteEnDisco;
 import static dev.tirador.aoe2radar.cache.Vivos.VISTO_VIVO_MS;
 import static dev.tirador.aoe2radar.cache.Vivos.VIVO_PARTIDA;
 import static dev.tirador.aoe2radar.cache.Vivos.VIVO_RIVAL;
@@ -121,9 +124,16 @@ import static dev.tirador.aoe2radar.service.CalculoStats.duracionMedia;
 import static dev.tirador.aoe2radar.service.CalculoStats.partidasPorMapa;
 import static dev.tirador.aoe2radar.service.CalculoStats.tramoEnRango;
 import static dev.tirador.aoe2radar.service.CalculoStats.wilson;
+import static dev.tirador.aoe2radar.service.ConsultasLadder.BIN_LADDER;
+import static dev.tirador.aoe2radar.service.ConsultasLadder.clanLimpio;
+import static dev.tirador.aoe2radar.service.ConsultasLadder.miembrosClan;
+import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRango;
+import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRating;
+import static dev.tirador.aoe2radar.service.ConsultasLadder.sugerirClanes;
 import static dev.tirador.aoe2radar.service.Juego.OFICIAL_LOBBIES;
 import static dev.tirador.aoe2radar.service.Juego.buscarLobbyConPid;
 import static dev.tirador.aoe2radar.service.Juego.carpetaLogsJuego;
+import static dev.tirador.aoe2radar.service.Juego.copiarASavegame;
 import static dev.tirador.aoe2radar.service.Juego.detectarSavegames;
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
 import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
@@ -213,7 +223,6 @@ public class SpoilerFreeRecs extends JFrame {
 
     // ----- Configuración -----------------------------------------------------
     static final Path   PLAYERS_FILE = Path.of("players.txt");
-    static final Path   RECS_DIR     = Path.of("recs");
     static final String FLATLAF_JAR  = "flatlaf-3.7.2.jar";
     static final String DONAR_URL    = "https://paypal.me/12Tirador/5EUR";
     static final String TEMA_CLARO = "claro", TEMA_OSCURO = "oscuro", TEMA_SISTEMA = "sistema";
@@ -1031,7 +1040,6 @@ public class SpoilerFreeRecs extends JFrame {
     final Map<Long, String> vivoInfo = new java.util.concurrent.ConcurrentHashMap<>();
 
     // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
-    static final int BIN_LADDER = 25;
     static final int MAX_COMPARADOS = 10;
     static final String[] LADDER_IDS = { "rm_1v1", "rm_team", "ew_1v1", "ew_team" };
     static final String[] FAMILIAS = { "rm", "ew" };
@@ -1073,52 +1081,10 @@ public class SpoilerFreeRecs extends JFrame {
     static final Color[] PALETA_LADDER = { new Color(0xe5, 0x73, 0x73), new Color(0x81, 0xc7, 0x84), new Color(0xff, 0xb7, 0x4d), new Color(0xba, 0x68, 0xc8), new Color(0x4d, 0xd0, 0xe1),
             new Color(0xff, 0xf1, 0x76), new Color(0xf0, 0x62, 0x92), new Color(0xa1, 0x88, 0x7f), new Color(0x90, 0xa4, 0xae), new Color(0x7c, 0xb3, 0x42) };
 
-    /** «Top 1,30 %» a partir del rango del companion (entre TODOS los jugadores del ladder). */
-    static String percentilRango(String lb, Integer rank) {
-        LadderHist h = hist(lb);
-        if (h == null || rank == null || rank <= 0 || h.total() <= 0) return null;
-        return fmtTop(100.0 * rank / h.total());
-    }
-
-    /** Percentil por rating sobre la campana elegida (todos o activos): jugadores por encima / total. */
-    static String percentilRating(String lb, boolean activos, int rating) {
-        LadderHist h = hist(lb, activos);
-        if (h == null || rating <= 0 || h.total() <= 0) return null;
-        int[] bins = h.bins();
-        int idx = Math.floorDiv(rating - h.min(), BIN_LADDER);
-        double encima;
-        if (idx < 0) encima = h.total();
-        else if (idx >= bins.length) encima = 0;
-        else {
-            encima = 0;
-            for (int i = idx + 1; i < bins.length; i++) encima += bins[i];
-            double dentro = (h.min() + (idx + 1) * BIN_LADDER - rating - 0.5) / BIN_LADDER;   // parte del bin por encima del rating
-            encima += bins[idx] * Math.max(0, Math.min(1, dentro));
-        }
-        return fmtTop(100.0 * encima / h.total());
-    }
-
     /** El «Top %» que se muestra: con todos y rango conocido, el exacto por rango; si no, por rating sobre la campana elegida. */
     String topDe(Comparado c, String lb) {
         String p = !soloActivos && c.rank(lb) > 0 ? percentilRango(lb, c.rank(lb)) : null;
         return p != null ? p : percentilRating(lb, soloActivos, c.rating(lb));
-    }
-    static String clanLimpio(String s) { return s == null ? "" : s.trim().replaceAll("^[\\[\\(]|[\\]\\)]$", "").trim().toLowerCase(); }
-
-    static List<LadderRow> miembrosClan(String tag) {
-        String t0 = clanLimpio(tag);
-        if (t0.isEmpty()) return List.of();
-        for (Map.Entry<String, List<LadderRow>> en : clanes.entrySet()) if (clanLimpio(en.getKey()).equals(t0)) return en.getValue();
-        return List.of();
-    }
-
-    static List<Map.Entry<String, Integer>> sugerirClanes(String q) {
-        String q0 = clanLimpio(q);
-        List<Map.Entry<String, Integer>> l = new ArrayList<>();
-        for (Map.Entry<String, List<LadderRow>> en : clanes.entrySet())
-            if (q0.isEmpty() || clanLimpio(en.getKey()).contains(q0)) l.add(Map.entry(en.getKey(), en.getValue().size()));
-        l.sort((a, b) -> { int c = b.getValue() - a.getValue(); return c != 0 ? c : a.getKey().compareToIgnoreCase(b.getKey()); });
-        return l.size() > 12 ? l.subList(0, 12) : l;
     }
 
     /** Perfil del jugador (una llamada), con caché de 30 min: {ms, Map ladder→{rating, rango, máximo, victorias, derrotas}, país, clan, partidas totales}. */
@@ -8984,20 +8950,6 @@ public class SpoilerFreeRecs extends JFrame {
         return p;
     }
 
-    /** Copia la rec ya descargada de la partida a savegame. Solo copia y solo
-     *  sobrescribe su propio nombre (misma partida): nunca borra nada del juego. */
-    static boolean copiarASavegame(Match m, Path sg) {
-        try {
-            Path origen = destino(m);
-            Files.copy(origen, sg.resolve(origen.getFileName().toString()),
-                    StandardCopyOption.REPLACE_EXISTING);
-            return true;
-        } catch (IOException ex) {
-            log("no se pudo copiar a savegame: " + causa(ex));
-            return false;
-        }
-    }
-
     /** Enviar al juego: copia lo descargado y descarga+envía lo que falte. */
     void enviarInteligente(List<Match> objetivo) {
         if (objetivo.isEmpty()) { status.setText(t("No hay partidas seleccionadas.", "No games selected.")); return; }
@@ -9625,23 +9577,6 @@ public class SpoilerFreeRecs extends JFrame {
                 }
             }
         }.execute();
-    }
-
-    /** Mayor número «Guess the ELO N» ya usado en ./recs, para continuar la
-     *  numeración sin sobrescribir tandas anteriores. */
-    static int maxGteEnDisco() {
-        int max = 0;
-        try (var st = Files.list(RECS_DIR)) {
-            for (Path p : st.toList()) {
-                String n = p.getFileName().toString();
-                if (n.startsWith("Guess the ELO ") && n.endsWith(".aoe2record")) {
-                    try {
-                        max = Math.max(max, Integer.parseInt(n.substring(14, n.length() - 11).trim()));
-                    } catch (NumberFormatException ignored) {}
-                }
-            }
-        } catch (IOException ignored) {}
-        return max;
     }
 
     String grupoActivo() {   // null = «Todos»
@@ -12698,40 +12633,6 @@ public class SpoilerFreeRecs extends JFrame {
             int idx = view.indexOf(m);
             if (idx >= 0) tableModel.fireTableRowsUpdated(idx, idx);
         });
-    }
-
-    /** Nombre de archivo: empieza SIEMPRE por el jugador seguido de referencia
-     *  (y su equipo), luego los rivales, mapa y hora:
-     *  Ref+Aliado-vs-Rival1+Rival2_Mapa_dd-MM_HH.mm.aoe2record
-     *  La misma partida siempre genera el mismo nombre (re-descargar sobrescribe). */
-    static Path destino(Match m) {
-        if (m.gte > 0) return RECS_DIR.resolve("Guess the ELO " + m.id + ".aoe2record");
-        String hora = DateTimeFormatter.ofPattern("dd-MM_HH.mm")
-                .withZone(ZoneId.systemDefault()).format(m.finished);
-
-        Map<Integer, List<MatchPlayer>> porEquipo = new TreeMap<>();
-        for (MatchPlayer p : m.players)
-            porEquipo.computeIfAbsent(p.team, k -> new ArrayList<>()).add(p);
-
-        Integer equipoRef = null;
-        for (MatchPlayer p : m.players) if (p.id == m.refId) equipoRef = p.team;
-
-        List<Integer> orden = new ArrayList<>(porEquipo.keySet());
-        if (equipoRef != null) { orden.remove(equipoRef); orden.add(0, equipoRef); }
-
-        List<String> lados = new ArrayList<>();
-        for (Integer t : orden) {
-            List<MatchPlayer> ps = new ArrayList<>(porEquipo.get(t));
-            if (t.equals(equipoRef))
-                ps.sort((a, b) -> Boolean.compare(b.id == m.refId, a.id == m.refId)); // ref primero
-            List<String> ns = new ArrayList<>();
-            for (MatchPlayer p : ps) ns.add(recorta(limpiaNombre(p.name), 14));
-            lados.add(String.join("+", ns));
-        }
-        String vs = String.join("-vs-", lados);
-        if (vs.length() > 110) vs = vs.substring(0, 110);   // TGs con nicks kilométricos
-        String nombre = sanea(vs + "_" + m.map + "_" + hora) + ".aoe2record";
-        return RECS_DIR.resolve(nombre);
     }
 
     // ----- Persistencia ------------------------------------------------------

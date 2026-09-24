@@ -8,6 +8,7 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.cache.CachePerfiles;
 import dev.tirador.aoe2radar.cache.HistorialDisco;
 import dev.tirador.aoe2radar.cache.Paises;
+import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.sfrdata.CivStats;
 import dev.tirador.aoe2radar.sfrdata.Ladder;
 import org.junit.jupiter.api.AfterAll;
@@ -390,7 +391,7 @@ class RegresionCapturas {
         foto("shot_actividad_abajo.png");
         System.out.println("actividad estado: " + app.actEstado.getText() + " | título: " + app.getTitle());
         System.out.println("tabla filas: " + app.ladderModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.ladderModelo.getDataVector().get(0).toArray()));
-        System.out.println("pct rango 12Tirador todos rm_1v1: " + SpoilerFreeRecs.percentilRango("rm_1v1", 260) + " | por rating activos: " + SpoilerFreeRecs.percentilRating("rm_1v1", true, 1905) + " | novato: " + SpoilerFreeRecs.percentilRating("rm_1v1", true, 760));
+        System.out.println("pct rango 12Tirador todos rm_1v1: " + ConsultasLadder.percentilRango("rm_1v1", 260) + " | por rating activos: " + ConsultasLadder.percentilRating("rm_1v1", true, 1905) + " | novato: " + ConsultasLadder.percentilRating("rm_1v1", true, 760));
         SwingUtilities.invokeAndWait(() -> { app.stRango.rango("1600-1800|*"); app.stRango.alCambiar.accept("1600-1800|*"); app.stMapaCombo.setSelectedIndex(3); });
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());

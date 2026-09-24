@@ -4,11 +4,17 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import dev.tirador.aoe2radar.model.Match;
+
+import static dev.tirador.aoe2radar.cache.RecsDisco.destino;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
+import static dev.tirador.aoe2radar.util.Log.causa;
+import static dev.tirador.aoe2radar.util.Log.log;
 
 /** Integración con AoE2 DE en este PC: carpeta de savegames, CaptureAge, logs del juego, cuenta de Steam activa y lobby. */
 public final class Juego {
@@ -67,6 +73,20 @@ public final class Juego {
         String cfg = leerConfig("logs_juego", "");
         if (!cfg.isBlank()) return Path.of(cfg);
         return Path.of(System.getProperty("user.home"), "Games", "Age of Empires 2 DE", "logs");
+    }
+
+    /** Copia la rec ya descargada de la partida a savegame. Solo copia y solo
+     *  sobrescribe su propio nombre (misma partida): nunca borra nada del juego. */
+    public static boolean copiarASavegame(Match m, Path sg) {
+        try {
+            Path origen = destino(m);
+            Files.copy(origen, sg.resolve(origen.getFileName().toString()),
+                    StandardCopyOption.REPLACE_EXISTING);
+            return true;
+        } catch (IOException ex) {
+            log("no se pudo copiar a savegame: " + causa(ex));
+            return false;
+        }
     }
 
     /** Busca en cualquier estructura JSON un lobby cuyos miembros incluyan mi pid; devuelve los demás ids. */
