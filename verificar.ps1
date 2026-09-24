@@ -16,6 +16,12 @@ Write-Host "== Compilando" -ForegroundColor Cyan
 mvn -q -DskipTests test-compile
 if ($LASTEXITCODE -ne 0) { Write-Host "NO COMPILA" -ForegroundColor Red; exit 1 }
 
+# Regla de capas (docs/ARQUITECTURA.md): ningún paquete puede importar una capa de fuera
+if (Get-Command python -ErrorAction SilentlyContinue) {
+    python tools\capas.py
+    if ($LASTEXITCODE -ne 0) { Write-Host "CAPAS: hay dependencias hacia fuera (arriba el detalle)" -ForegroundColor Red; exit 1 }
+} else { Write-Host "(sin python: no se comprueban las capas)" -ForegroundColor Yellow }
+
 # lista explícita: un «if» que devuelve un array de un elemento lo convierte en String, y @String pasaría sus letras sueltas
 $argumentos = @('test')
 if ($Rapido) { $argumentos += '-Dtest=ComparadorCapturasTest' }
