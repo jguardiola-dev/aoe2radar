@@ -237,6 +237,11 @@ class RegresionCapturas {
         Thread.sleep(3000);
         SpoilerFreeRecs app = app();
         SwingUtilities.invokeAndWait(() -> { app.setSize(1500, 950); app.setLocation(0, 0); app.validate(); });
+        // el cursor encima de la app provoca hovers y tooltips (p. ej. la ficha de una celda de la matriz, que salió en
+        // shot_matriz_grande): se aparca fuera de la zona fotografiada (la app ocupa 0..1500 x 0..950 del monitor principal).
+        // DESPUÉS de arrancar la app: crear un Robot antes inicializa Java2D y cambia el escalado de iconos (lo mismo que obligó a reuseForks=false).
+        Rectangle pantalla = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().getBounds();
+        new Robot().mouseMove(pantalla.x + pantalla.width - 5, pantalla.y + pantalla.height - 5);
         Thread.sleep(500);
         Paises.PAIS_DE.put(1L, "es"); Paises.PAIS_DE.put(2L, "es"); Paises.PAIS_DE.put(3L, "ar"); Paises.PAIS_DE.put(4L, "de");
         SwingUtilities.invokeAndWait(() -> { app.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
