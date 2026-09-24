@@ -83,18 +83,17 @@ class ThrottleCuboTest {
         assertEquals(60_000, r.dormido, "espera la pausa entera; después hay fichas de sobra");
     }
 
-    @Test void diezMinutosSinProblemasOlvidanLaEscalada() {
+    @Test void diezMinutosDeCalmaOlvidanLaEscalada() {
         RelojFalso r = new RelojFalso();
         ThrottleCubo t = new ThrottleCubo(r);
-        t.registrarExito();
         pasaLaPausa(r, t.registrar429());                // 60 s
-        t.registrar429();                                // 120 s
+        long p = t.registrar429();                       // 120 s
+        pasaLaPausa(r, p);
         r.avanzar(5 * 60_000L);
-        t.registrarExito();
-        assertEquals(240_000, t.registrar429(), "a los ~6 min del último éxito sigue la escalada");
+        assertEquals(240_000, t.registrar429(), "a los 5 min de acabar la pausa sigue siendo el mismo episodio: escala");
+        pasaLaPausa(r, 240_000);
         r.avanzar(11 * 60_000L);
-        t.registrarExito();
-        assertEquals(60_000, t.registrar429(), "a los 11 min del último éxito vuelve a empezar");
+        assertEquals(60_000, t.registrar429(), "a los 11 min de calma vuelve a empezar por 60 s");
     }
 
     @Test void detenerCortaLaEsperaDeLaPausaEnTramos() {
@@ -164,27 +163,31 @@ class ThrottleCuboTest {
         assertEquals(300_000, r.dormido, "tope de lo que se duerme de una vez");
     }
 
-    @Test void caracterizacion_elPrimerExitoSinExitoPrevioOlvidaLaEscalada() {
-        // Rareza de la 1.1 que se conserva: ultimoExito empieza en 0, así que el primer éxito de la sesión borra la escalada.
+    @Test void unUsoContinuoNoImpideOlvidar() throws Exception {
+        // El fallo de la regla anterior: con éxitos cada poco no se olvidaba nunca. Ahora solo cuentan los 429.
         RelojFalso r = new RelojFalso();
         ThrottleCubo t = new ThrottleCubo(r);
-        pasaLaPausa(r, t.registrar429());
-        long p = t.registrar429();                       // 120 s
-        t.registrarExito();                              // primer éxito de la sesión: olvida
-        pasaLaPausa(r, p);
+        for (int i = 0; i < 3; i++) pasaLaPausa(r, t.registrar429());   // 60, 120, 240: la siguiente sería 300
+        for (int i = 0; i < 700; i++) t.adquirir();                      // ~11 min de llamadas buenas, una por segundo
         assertEquals(60_000, t.registrar429());
+    }
+
+    @Test void conElRelojHaciaAtrasNuncaOlvida() {
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        pasaLaPausa(r, t.registrar429());                // 60 s
+        r.avanzar(-30 * 60_000L);                        // Windows ajusta la hora 30 min atrás
+        assertEquals(300_000, t.registrar429(), "la pausa parece vigente: devuelve lo que queda, con tope, sin olvidar ni escalar");
+        r.avanzar(30 * 60_000L + 1);
+        assertEquals(120_000, t.registrar429(), "de vuelta a la hora real: sigue la escalada");
     }
 
     @Test void fronteraDeLosDiezMinutosEsEstricta() {
         RelojFalso r = new RelojFalso();
         ThrottleCubo t = new ThrottleCubo(r);
-        t.registrarExito();
-        t.registrar429();
-        r.avanzar(600_000);
-        t.registrarExito();                              // 10 min exactos: no olvida
+        r.avanzar(t.registrar429() + 600_000);           // pausa de 60 s y 10 min exactos de calma: no olvida
         assertEquals(120_000, t.registrar429());
-        r.avanzar(600_001);
-        t.registrarExito();                              // 10 min y 1 ms: olvida
+        r.avanzar(120_000 + 600_001);                    // 10 min y 1 ms de calma: olvida
         assertEquals(60_000, t.registrar429());
     }
 }

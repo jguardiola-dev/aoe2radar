@@ -36,7 +36,8 @@ descargan), `model` y `util`, y `sfrdata`/`techtree` además `api` (transporte H
 - `SfrDataClient`: `Optional<Shard> shard(long pid)`, `EloSnapshot eloAyer()`, `EloSnapshot eloHace7()`,
   `Muestra muestraAyer()`, `CivStatsWindow civStats(String ventana)`, `Ladder ladder()`.
 - `CacheService`: `<T> T get(String clave, Duration ttl, Supplier<T> cargar)` en memoria y variante en disco.
-- `Throttle`: `void adquirir()` (cubo de fichas) y `void pausar(Duration)` (429).
+- `Throttle`: `void adquirir(cancelar)` (cubo de fichas: ráfaga de 5, luego 1/s; Detener corta la espera) y
+  `long registrar429()` (pausa global 60→120→240→300 s por episodio; se olvida tras 10 min sin 429 desde que acabó la última pausa).
 - Presentadores: reciben eventos de la vista (`onBuscar(nick)`, `onAbrirPerfil(pid)`), llaman a servicios en
   un hilo de trabajo y devuelven al EDT un `…ViewModel` inmutable que la vista pinta.
 

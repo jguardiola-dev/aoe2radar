@@ -40,10 +40,9 @@ class ApiClientTest {
 
     /** Apunta qué le piden; el 429 siempre «pausa» 60 s. */
     static final class ThrottleEspia implements Throttle {
-        int adquiridas, cuatrocientosVeintinueve, exitos;
+        int adquiridas, cuatrocientosVeintinueve;
         @Override public void adquirir(java.util.function.BooleanSupplier cancelar) { adquiridas++; }
         @Override public long registrar429() { cuatrocientosVeintinueve++; return 60_000; }
-        @Override public void registrarExito() { exitos++; }
     }
 
     final ThrottleEspia throttle = new ThrottleEspia();
@@ -148,12 +147,6 @@ class ApiClientTest {
         assertTrue(avisos.isEmpty());
     }
 
-    @Test void textoNoCuentaExitos() {
-        // Decisión: los éxitos solo los cuenta textoCon429 (ver DEUDA, «olvido de la escalada»).
-        assertDoesNotThrow(() -> api.texto(COMPANION));
-        assertEquals(0, throttle.exitos);
-    }
-
     @Test void unDetenerRealCancelaAntesDePedirNada() {
         detenida = true;
         Thread.currentThread().interrupt();
@@ -171,18 +164,12 @@ class ApiClientTest {
 
     // ----- textoCon429 (antes httpText429)
 
-    @Test void exitoDelCompanionSeCuenta() throws Exception {
-        api.textoCon429(COMPANION);
-        assertEquals(1, throttle.exitos);
-    }
-
     @Test void un429DelCompanionPausaAvisaYReintenta() throws Exception {
         red.responde(429, 200);
         assertEquals("cuerpo 200", api.textoCon429(COMPANION));
         assertEquals(1, throttle.cuatrocientosVeintinueve);
         assertEquals(List.of(60L), avisos, "aviso en segundos para la barra de estado");
         assertEquals(2, red.pedidas.size());
-        assertEquals(0, throttle.exitos, "caracterización: el éxito en un reintento no se cuenta");
     }
 
     @Test void dosReintentosComoMaximo() {
@@ -198,7 +185,6 @@ class ApiClientTest {
         assertEquals("cuerpo 200", api.textoCon429(STEAM));
         assertEquals(0, throttle.cuatrocientosVeintinueve);
         assertTrue(avisos.isEmpty());
-        assertEquals(0, throttle.exitos, "el éxito de Steam tampoco cuenta");
     }
 
     @Test void un429YLuegoOtroErrorSaleConEseError() {

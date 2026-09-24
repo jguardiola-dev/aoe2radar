@@ -21,7 +21,7 @@ public final class ThrottleCubo implements Throttle {
     static final long PAUSA_BASE_MS = 60_000L;      // primer 429: 60 s
     static final long PAUSA_MAX_MS = 300_000L;      // tope de la pausa (y de lo que se duerme de una vez)
     static final int ESCALONES = 4;                 // 60 → 120 → 240 → 300 (tope)
-    static final long OLVIDO_MS = 10 * 60_000L;     // más de 10 min desde el último éxito contado: se olvida la escalada (ver DEUDA)
+    static final long OLVIDO_MS = 10 * 60_000L;     // más de 10 min de calma desde que acabó la última pausa: se olvida la escalada
 
     private final Reloj reloj;
     private final Object cubo = new Object();
@@ -30,7 +30,6 @@ public final class ThrottleCubo implements Throttle {
     private long ultimaMs;                          // bajo «cubo»
     private volatile long pausaHastaMs;             // se lee sin candado al entrar en adquirir()
     private int pausasSeguidas;                     // bajo «escalada»
-    private long ultimoExitoMs;                     // bajo «escalada»
 
     public ThrottleCubo(Reloj reloj) { this.reloj = reloj; }
 
@@ -66,23 +65,21 @@ public final class ThrottleCubo implements Throttle {
      * ráfaga (salieron antes de la pausa) y no escalan ni acortan la pausa. Si el 429 llega después de que acabe,
      * sí escala. Para el servidor es igual (durante la pausa no le llega nada); para el usuario, 60 s y no 300 s por
      * una sola queja. Decisión de Jorge (2026-09-24). Bajo candado: la escalada es atómica.
+     * <p>Olvido: si desde que acabó la última pausa pasaron más de OLVIDO_MS sin ningún 429, el episodio anterior ya
+     * no cuenta y se empieza otra vez por 60 s. Solo depende de los 429, no de los éxitos: con la app en uso continuo
+     * (éxitos cada poco) la escalada también se olvida. Decidido el 2026-09-25 (antes: «10 min desde el último éxito
+     * contado», que en uso continuo no olvidaba nunca).
      */
     @Override public long registrar429() {
         synchronized (escalada) {
-            long vigente = pausaHastaMs - reloj.ahoraMs();
+            long ahora = reloj.ahoraMs();
+            long vigente = pausaHastaMs - ahora;
             if (vigente > 0) return Math.min(PAUSA_MAX_MS, vigente);   // lo que queda (con tope: si el reloj retrocede no se duerme más de 300 s)
+            if (ahora - pausaHastaMs > OLVIDO_MS) pausasSeguidas = 0;   // 10 min de calma: episodio nuevo desde cero
             pausasSeguidas = Math.min(pausasSeguidas + 1, ESCALONES);
             long pausa = Math.min(PAUSA_MAX_MS, PAUSA_BASE_MS * (1L << (pausasSeguidas - 1)));
             pausaHastaMs = reloj.ahoraMs() + pausa;
             return pausa;
-        }
-    }
-
-    /** Bajo el mismo candado que registrar429: el olvido y un 429 simultáneo ya no se cruzan. */
-    @Override public void registrarExito() {
-        synchronized (escalada) {
-            if (reloj.ahoraMs() - ultimoExitoMs > OLVIDO_MS) pausasSeguidas = 0;
-            ultimoExitoMs = reloj.ahoraMs();
         }
     }
 }

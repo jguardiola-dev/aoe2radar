@@ -8,7 +8,7 @@ import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
- * El único camino de la app hacia la red en texto: freno para el companion, 429 y éxitos al Throttle, cancelación.
+ * El único camino de la app hacia la red en texto: freno para el companion, sus 429 al Throttle, cancelación.
  * Todo lo que necesita entra por el constructor (Throttle, Transporte, aviso de pausa, «¿Detener en curso?»), así que
  * se prueba sin red ni pantalla. La red ya no toca Swing: la pausa se avisa por alPausar y la UI decide qué pinta.
  */
@@ -53,11 +53,9 @@ public final class ApiClient {
 
     /** Antes httpText429: como texto(), con hasta dos reintentos si el servidor limita (HTTP 429). */
     public String textoCon429(String url) throws IOException, InterruptedException {
-        boolean companion = Freno.aplicaA(url);   // solo el companion cuenta para el freno: un 429 o un éxito de otro host (Steam…) no lo toca
+        boolean companion = Freno.aplicaA(url);   // solo el companion cuenta para el freno: un 429 de otro host (Steam…) no lo toca
         try {
-            String r = textoSinRegistrar(url);
-            if (companion) throttle.registrarExito();   // si hacía más de 10 min del último éxito contado, se olvida la escalada
-            return r;
+            return textoSinRegistrar(url);
         } catch (Exception ex) {
             if (String.valueOf(ex.getMessage()).contains("429")) {
                 if (companion) registrar429();   // pausa global; el propio freno la respeta en todas las llamadas
