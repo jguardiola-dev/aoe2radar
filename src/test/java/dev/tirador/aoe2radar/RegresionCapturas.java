@@ -234,8 +234,10 @@ class RegresionCapturas {
         SpoilerFreeRecs.PAIS_DE.put(1L, "es"); SpoilerFreeRecs.PAIS_DE.put(2L, "es"); SpoilerFreeRecs.PAIS_DE.put(3L, "ar"); SpoilerFreeRecs.PAIS_DE.put(4L, "de");
         SwingUtilities.invokeAndWait(() -> { app.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
         Thread.sleep(400);
-        // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar
-        foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.tablaDirectos), app.directosContador, app.directosHora });
+        // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar.
+        // Se ignora la fila de cabecera entera (padre de directosContador), no solo sus etiquetas: el ancho de
+        // «N espectadores · Actualizado hh:mm:ss» desplaza el desplegable Idioma y el botón Refrescar.
+        foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.tablaDirectos), (JComponent) app.directosContador.getParent() });
         SwingUtilities.invokeAndWait(() -> app.ladderBtn.doClick());
         for (int i = 0; i < 80 && (SpoilerFreeRecs.ladderHists.isEmpty()); i++) Thread.sleep(250);
         Thread.sleep(1500);
