@@ -59,6 +59,15 @@ import static dev.tirador.aoe2radar.cache.Anotaciones.notaDe;
 import static dev.tirador.aoe2radar.cache.Canales.CANAL_DE;
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
 import static dev.tirador.aoe2radar.cache.Canales.cargarCanales;
+import static dev.tirador.aoe2radar.cache.CachePerfiles.ELO_VINC;
+import static dev.tirador.aoe2radar.cache.CachePerfiles.FAMILIA_CACHE;
+import static dev.tirador.aoe2radar.cache.CachePerfiles.PERFIL_CACHE;
+import static dev.tirador.aoe2radar.cache.CachePerfiles.VINCULADAS_CACHE;
+import static dev.tirador.aoe2radar.cache.HistorialDisco.ACTIVIDAD_CACHE;
+import static dev.tirador.aoe2radar.cache.HistorialDisco.ACT_DIAS;
+import static dev.tirador.aoe2radar.cache.HistorialDisco.PERFILES_DIR;
+import static dev.tirador.aoe2radar.cache.HistorialDisco.cargarActividad;
+import static dev.tirador.aoe2radar.cache.HistorialDisco.guardarActividad;
 import static dev.tirador.aoe2radar.cache.Paises.PAIS_DE;
 import static dev.tirador.aoe2radar.cache.Paises.aprenderPais;
 import static dev.tirador.aoe2radar.cache.Paises.cargarPaises;
@@ -1048,7 +1057,6 @@ public class SpoilerFreeRecs extends JFrame {
     static final int MAX_COMPARADOS = 10;
     static final String[] LADDER_IDS = { "rm_1v1", "rm_team", "ew_1v1", "ew_team" };
     static final String[] FAMILIAS = { "rm", "ew" };
-    static final Map<Long, Object[]> PERFIL_CACHE = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {ms, ladders, país}
     static String ladderNombre(String id) {
         return switch (id) {
             case "rm_1v1" -> "1v1 Random Map"; case "rm_team" -> t("Equipos Random Map", "Team Random Map");
@@ -3137,80 +3145,7 @@ public class SpoilerFreeRecs extends JFrame {
     // mapas, rivales, aliados y tramos). Solo agregados con un mínimo de partidas: nunca el
     // resultado de una partida suelta.
     // =====================================================================================
-    static final int ACT_DIAS = 365, ACT_MAX_PAGINAS = 20, ACT_PAGINAS_RAPIDAS = 2, ACT_MAS_PAGINAS = 4, ACT_MIN = 3;   // por API, lo mínimo: 100 partidas al abrir; el resto solo si lo pides
-    static final Map<Long, Actividad> ACTIVIDAD_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
-    static final Path PERFILES_DIR = LADDER_DIR.resolve("perfiles");
-
-    static String jsonTxt(String s) {
-        if (s == null) return "null";
-        StringBuilder b = new StringBuilder("\"");
-        for (char c : s.toCharArray()) {
-            switch (c) {
-                case '"' -> b.append("\\\""); case '\\' -> b.append("\\\\"); case '\n' -> b.append("\\n"); case '\r' -> b.append("\\r"); case '\t' -> b.append("\\t");
-                default -> { if (c < 0x20) b.append(String.format("\\u%04x", (int) c)); else b.append(c); }
-            }
-        }
-        return b.append('"').toString();
-    }
-
-    /** Guarda el historial en sfrdata/perfiles/<pid>.json (solo lo que usa el perfil). */
-    static void guardarActividad(Actividad a) {
-        try {
-            Files.createDirectories(PERFILES_DIR);
-            StringBuilder b = new StringBuilder("{\"pid\":").append(a.pid()).append(",\"nombre\":").append(jsonTxt(a.nombre())).append(",\"completo\":").append(a.completo())
-                    .append(",\"paginas\":").append(a.paginas()).append(",\"ms\":").append(a.ms()).append(",\"partidas\":[");
-            boolean primera = true;
-            for (Match m : a.partidas()) {
-                if (m.started == null) continue;
-                if (!primera) b.append(',');
-                primera = false;
-                b.append("{\"id\":").append(m.id).append(",\"s\":").append(m.started.toEpochMilli()).append(",\"f\":").append(m.finished == null ? "null" : String.valueOf(m.finished.toEpochMilli()))
-                 .append(",\"mode\":").append(jsonTxt(m.mode)).append(",\"map\":").append(jsonTxt(m.map)).append(",\"players\":[");
-                boolean pp = true;
-                for (MatchPlayer p : m.players) {
-                    if (!pp) b.append(',');
-                    pp = false;
-                    b.append("{\"id\":").append(p.id).append(",\"n\":").append(jsonTxt(p.name)).append(",\"c\":").append(jsonTxt(p.civ)).append(",\"t\":").append(p.team)
-                     .append(",\"w\":").append(p.won == null ? "null" : String.valueOf(p.won)).append(",\"r\":").append(p.rating == null ? "null" : String.valueOf(p.rating))
-                     .append(",\"d\":").append(p.ratingDiff == null ? "null" : String.valueOf(p.ratingDiff)).append('}');
-                }
-                b.append("]}");
-            }
-            b.append("]}");
-            Files.writeString(PERFILES_DIR.resolve(a.pid() + ".json"), b.toString(), StandardCharsets.UTF_8);
-        } catch (Exception ex) { log("perfil: no se pudo guardar " + a.pid() + ": " + causa(ex)); }
-    }
-
-    /** Lee el historial guardado, o null. Descarta lo de hace más de un año. */
-    static Actividad cargarActividad(long pid) {
-        try {
-            Path p = PERFILES_DIR.resolve(pid + ".json");
-            if (!Files.exists(p)) return null;
-            Map<String, Object> j = obj(Json.parse(Files.readString(p, StandardCharsets.UTF_8)));
-            Instant limite = Instant.now().minus(Duration.ofDays(ACT_DIAS));
-            List<Match> lista = new ArrayList<>();
-            for (Object o : arr(j.get("partidas"))) {
-                Map<String, Object> mj = obj(o);
-                Match m = new Match();
-                m.id = lng(mj.get("id"));
-                m.started = Instant.ofEpochMilli(lng(mj.get("s")));
-                if (m.started.isBefore(limite)) continue;
-                m.finished = mj.get("f") == null ? null : Instant.ofEpochMilli(lng(mj.get("f")));
-                m.mode = String.valueOf(firstNonNull(mj.get("mode"), "?"));
-                m.map = String.valueOf(firstNonNull(mj.get("map"), "?"));
-                for (Object po : arr(mj.get("players"))) {
-                    Map<String, Object> pj = obj(po);
-                    MatchPlayer mp = new MatchPlayer();
-                    mp.id = lng(pj.get("id")); mp.name = pj.get("n") == null ? "" : String.valueOf(pj.get("n")); mp.civ = pj.get("c") == null ? null : String.valueOf(pj.get("c"));
-                    mp.team = (int) lng(pj.get("t")); mp.won = pj.get("w") instanceof Boolean w ? w : null;
-                    mp.rating = pj.get("r") instanceof Number n ? n.intValue() : null; mp.ratingDiff = pj.get("d") instanceof Number n ? n.intValue() : null;
-                    m.players.add(mp);
-                }
-                lista.add(m);
-            }
-            return new Actividad(pid, String.valueOf(firstNonNull(j.get("nombre"), "")), lista, Boolean.TRUE.equals(j.get("completo")), (int) lng(j.get("paginas")), lng(j.get("ms")));
-        } catch (Exception ex) { log("perfil: caché ilegible " + pid + ": " + causa(ex)); return null; }
-    }
+    static final int ACT_MAX_PAGINAS = 20, ACT_PAGINAS_RAPIDAS = 2, ACT_MAS_PAGINAS = 4, ACT_MIN = 3;   // por API, lo mínimo: 100 partidas al abrir; el resto solo si lo pides
 
     /**
      * Descarga historial página a página y avisa tras cada página con el estado parcial.
@@ -4219,8 +4154,6 @@ public class SpoilerFreeRecs extends JFrame {
     /** Cabecera: país y clan, un chip por ladder con ELO · rango · Top %, máximo y totales, y la forma reciente. */
     @SuppressWarnings("unchecked")
     // ----- Cara a cara: ventana con buscador de rival y ficha del cruce (partidas del historial cargado) -----
-    static final Map<Long, List<Object[]>> VINCULADAS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {vid, nombre, país, partidas} (sesión)
-    static final Map<Long, Integer> ELO_VINC = new java.util.concurrent.ConcurrentHashMap<>();                  // vid → ELO 1v1 (sesión)
     JDialog h2hDialogo; JTextField h2hBusca; JPopupMenu h2hPopup; javax.swing.Timer h2hDebounce; PanelScrollable h2hCuerpo; JComboBox<String> h2hModo; long h2hPidActual; String h2hNombreActual, h2hMapaFiltro;
     final List<Object[]> h2hHistorial = new ArrayList<>(); boolean h2hNavegando; JButton h2hAtrasBtn;   // {pid, nombre, mapa, modoIdx}
     void h2hRegistrar() { if (h2hNavegando) return; Object[] est = { h2hPidActual, h2hNombreActual, h2hMapaFiltro, h2hModo == null ? 0 : h2hModo.getSelectedIndex() }; if (!h2hHistorial.isEmpty()) { Object[] u = h2hHistorial.get(h2hHistorial.size() - 1); if (Objects.equals(u[0], est[0]) && Objects.equals(u[2], est[2]) && Objects.equals(u[3], est[3])) return; } h2hHistorial.add(est); if (h2hAtrasBtn != null) h2hAtrasBtn.setEnabled(h2hHistorial.size() > 1); }
@@ -10814,9 +10747,6 @@ public class SpoilerFreeRecs extends JFrame {
             }
         }.execute();
     }
-
-    /** Familias conocidas en la sesión (de consultar vinculadas): id -> {altId -> nombre}. */
-    static final Map<Long, Map<Long, String>> FAMILIA_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 
     /** La cuenta hermana con MÁS ELO conocido que la propia, o null.
      *  Bebe de los vínculos guardados y de las familias consultadas. */

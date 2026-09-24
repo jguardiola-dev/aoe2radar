@@ -5,6 +5,8 @@ import dev.tirador.aoe2radar.model.Comparado;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.cache.CachePerfiles;
+import dev.tirador.aoe2radar.cache.HistorialDisco;
 import dev.tirador.aoe2radar.cache.Paises;
 import dev.tirador.aoe2radar.sfrdata.Ladder;
 import org.junit.jupiter.api.AfterAll;
@@ -323,8 +325,8 @@ class RegresionCapturas {
             for (int k = 0; k < nRiv; k++) { MatchPlayer r = new MatchPlayer(); int ri = rnd.nextInt(rivS.length); r.id = 100 + ri; r.name = rivS[ri]; r.civ = civsS[rnd.nextInt(civsS.length)]; r.team = 2; r.won = !gano; r.rating = 1500 + rnd.nextInt(700); m.players.add(r); }
             ms.add(m);
         }
-        SpoilerFreeRecs.ACTIVIDAD_CACHE.put(1L, new Actividad(1L, "12Tirador", ms, true, 9, System.currentTimeMillis()));
-        SpoilerFreeRecs.PERFIL_CACHE.put(1L, new Object[]{ System.currentTimeMillis(), Map.of("rm_1v1", new int[]{ 1905, 260, 1960, 1240, 1100 }, "rm_team", new int[]{ 2110, 800, 2150, 800, 600 }, "ew_1v1", new int[]{ 1400, 300, 1450, 40, 30 }), "es", "TSK", 3810L });
+        HistorialDisco.ACTIVIDAD_CACHE.put(1L, new Actividad(1L, "12Tirador", ms, true, 9, System.currentTimeMillis()));
+        CachePerfiles.PERFIL_CACHE.put(1L, new Object[]{ System.currentTimeMillis(), Map.of("rm_1v1", new int[]{ 1905, 260, 1960, 1240, 1100 }, "rm_team", new int[]{ 2110, 800, 2150, 800, 600 }, "ew_1v1", new int[]{ 1400, 300, 1450, 40, 30 }), "es", "TSK", 3810L });
         SwingUtilities.invokeAndWait(() -> app.perfilBtn.doClick());
         Thread.sleep(800);
         foto("shot_perfil_vacio.png");
@@ -332,8 +334,8 @@ class RegresionCapturas {
         Thread.sleep(2500);
         cerrarDialogos();
         foto("shot_actividad.png");
-        SpoilerFreeRecs.ACTIVIDAD_CACHE.put(2L, new Actividad(2L, "Turpiacho", ms, true, 9, System.currentTimeMillis()));
-        SpoilerFreeRecs.PERFIL_CACHE.put(2L, new Object[]{ System.currentTimeMillis(), Map.of("rm_1v1", new int[]{ 1610, 2800, 1700, 900, 800 }), "es", "", 1700L });
+        HistorialDisco.ACTIVIDAD_CACHE.put(2L, new Actividad(2L, "Turpiacho", ms, true, 9, System.currentTimeMillis()));
+        CachePerfiles.PERFIL_CACHE.put(2L, new Object[]{ System.currentTimeMillis(), Map.of("rm_1v1", new int[]{ 1610, 2800, 1700, 900, 800 }), "es", "", 1700L });
         SwingUtilities.invokeAndWait(() -> app.abrirPerfilEnPestana(2L, "Turpiacho"));
         Thread.sleep(1200);
         foto("shot_perfil_pestanas.png");
