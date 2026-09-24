@@ -24,7 +24,7 @@
 | 2026-09-24 | sfrdata.Ladder.LADDER_DIR | «sfrdata/» hace de raíz de todas las cachés en disco (perfiles_shards, paises.txt, mapas/…): debería ser el directorio de caché de CacheService, no una constante del ladder | 2 |
 | 2026-09-24 | cache.Paises, cache.Anotaciones | disco en el EDT: `cargarPaises` (Timer de 8 s), `guardarPaises` (Timer de 60 s), `cargarAliases`/`cargarNotas` (al construir la ventana) leen/escriben ficheros en el hilo de la UI | 2 |
 | 2026-09-24 | cache.Paises.guardarPaises | pone `paisesSucios = false` antes de escribir: si la escritura falla, ese lote no se reintenta | 2 |
-| 2026-09-24 | fase 1 (cierre) | imports que quedan sin uso en SpoilerFreeRecs tras los movimientos (GZIPInputStream, InflaterInputStream, ZipInputStream, ZipEntry…): limpiar en un commit al final de la fase | 1 |
+| 2026-09-24 | fase 1 (cierre) | ~~imports que quedan sin uso en SpoilerFreeRecs tras los movimientos~~ **resuelto** al cerrar la fase 1 (8 imports) | 1 |
 | 2026-09-24 | cache.HistorialDisco.cargarActividad | disco en el EDT: al abrir un perfil se lee y convierte a Match hasta un año de partidas en el hilo de la UI | 2 |
 | 2026-09-24 | api.Parseo.COLOR_SLOT_DISTINTOS | contador que nadie lee (ni logs ni diagnóstico): mostrarlo o quitarlo | 4 |
 | 2026-09-24 | Live (VIVO_PARTIDA, ~7753) | **posible NPE en el EDT**: `VIVO_PARTIDA.get(p.id())` tres veces seguidas (comprobar `!= null` y leer `.map`); si el socket borra entre medias, NPE al pintar. Leer una vez en una variable local | 2 |
