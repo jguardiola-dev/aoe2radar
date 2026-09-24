@@ -64,6 +64,15 @@ class CompanionApiTest {
         assertEquals("https://data.aoe2companion.com/api/leaderboards/rm_1v1?page=1&per_page=100&country=", ultima());
     }
 
+    @Test void buscarPerfilesCodificaYNoReintenta() throws Exception {
+        companion.buscarPerfiles("  Mr_Yo ñ ");
+        assertEquals("https://data.aoe2companion.com/api/profiles?search=Mr_Yo+%C3%B1&page=1", ultima(), "trim y URLEncoder UTF-8, como la 1.1");
+        red.estados.add(429);
+        assertThrows(java.io.IOException.class, () -> companion.buscarPerfiles("hera"));
+        assertEquals(2, red.pedidas.size(), "un solo intento: no reintenta");
+        assertEquals(1, throttle.cuatrocientosVeintinueve, "pero el 429 sí cuenta al freno");
+    }
+
     @Test void twitch() throws Exception {
         companion.twitchDirectos();
         assertEquals("https://api.aoe2companion.com/twitch/live?game=13389", ultima());

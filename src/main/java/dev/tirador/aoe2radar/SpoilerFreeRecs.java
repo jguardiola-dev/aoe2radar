@@ -229,7 +229,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.URI;
-import java.net.URLEncoder;
 import java.net.http.*;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
@@ -9187,15 +9186,16 @@ public class SpoilerFreeRecs extends JFrame {
         if (ctx.id == null) {
             for (String id : new String[]{ "rm_1v1", "3" }) {
                 try {
-                    root = obj(Json.parse(httpText(API + "/leaderboards/" + id + "?page=" + p + "&per_page=100")));
+                    root = COMPANION.leaderboard(id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
                     players = arr(val(root, "players"));
                     if (!players.isEmpty()) { ctx.id = id; break; }
                 } catch (InterruptedException ie) { throw ie; }   // Detener: no probar el otro id ni decir «no responde»
+                catch (IOException io) { if (String.valueOf(io.getMessage()).contains("429")) throw io; }   // un 429 es «espera», no «prueba otro id» (con reintentos, probar el «3» alargaba ~12 min y subía la pausa al tope)
                 catch (Exception ignored) {}
             }
             if (ctx.id == null) throw new IOException("el leaderboard no responde (ni rm_1v1 ni 3)");
         } else {
-            root = obj(Json.parse(httpText(API + "/leaderboards/" + ctx.id + "?page=" + p + "&per_page=100")));
+            root = COMPANION.leaderboard(ctx.id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
             players = arr(val(root, "players"));
         }
         if (ctx.totalPaginas < 0 && root != null) {
@@ -12066,8 +12066,7 @@ public class SpoilerFreeRecs extends JFrame {
         status.setText(t("Buscando \"", "Searching \"") + q.trim() + "\"…");
         new SwingWorker<List<String[]>, Void>() {
             @Override protected List<String[]> doInBackground() throws Exception {
-                String url = API + "/profiles?search=" + URLEncoder.encode(q.trim(), StandardCharsets.UTF_8) + "&page=1";
-                Object root = Json.parse(httpText(url));
+                Object root = COMPANION.buscarPerfiles(q);   // sin reintento, como antes
                 List<String[]> out = new ArrayList<>();
                 for (Object o : arr(val(obj(root), "profiles"))) {
                     Map<String, Object> p = obj(o);
@@ -12234,8 +12233,7 @@ public class SpoilerFreeRecs extends JFrame {
                         publish(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
                         boolean seguir = false;
                         try {
-                            String url = API + "/matches?profile_ids=" + pl.id() + "&page=" + pagina + "&per_page=" + PER_PAGE;
-                            Object root = Json.parse(httpText(url));
+                            Object root = COMPANION.matches(pl.id(), pagina, PER_PAGE);   // con reintento ante 429 (la segunda pulsación corta la espera)
                             int n = 0; Instant masAntigua = null;
                             for (Object o : arr(val(obj(root), "matches"))) {
                                 Match m = parseMatch(obj(o));
@@ -12253,6 +12251,7 @@ public class SpoilerFreeRecs extends JFrame {
                             if (unicos.size() >= MAX_TOTAL) { topeAlcanzado = true; seguir = false; }
                             Thread.sleep(PAUSA_MS);
                         } catch (Exception ex) {
+                            if (isCancelled() || ex instanceof InterruptedException) break;   // segunda pulsación: done() ya dijo «detenida»; no pisarlo ni contar un fallo en la búsqueda siguiente
                             fallosFetch++;
                             publish(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
                         }
@@ -12606,8 +12605,7 @@ public class SpoilerFreeRecs extends JFrame {
     static List<String[]> buscarPerfilesApi(String q) {
         List<String[]> out = new ArrayList<>();
         try {
-            String url = API + "/profiles?search=" + URLEncoder.encode(q.trim(), StandardCharsets.UTF_8) + "&page=1";
-            Object root = Json.parse(httpText(url));
+            Object root = COMPANION.buscarPerfiles(q);   // sin reintento, como antes
             for (Object o : arr(val(obj(root), "profiles"))) {
                 Map<String, Object> p = obj(o);
                 long id = lng(val(p, "profile_id", "profileId"));

@@ -9,8 +9,9 @@ import static dev.tirador.aoe2radar.util.Json.obj;
 
 /**
  * Los endpoints del companion que usa la app, con su URL construida en un solo sitio. Paso 1 de la migración: cada
- * método construye exactamente la URL que la app construía a mano y devuelve el JSON leído, igual que antes; todos
- * van por ApiClient.textoCon429 (freno, 429 con reintentos, cancelación). Paso 2: devolver objetos del modelo.
+ * método construye exactamente la URL que la app construía a mano y devuelve el JSON leído, igual que antes. Todos
+ * pasan por ApiClient (freno, cancelación); todos reintentan ante 429 (textoCon429) salvo buscarPerfiles (texto).
+ * Paso 2: devolver objetos del modelo.
  */
 public final class CompanionApi {
     public static final String TWITCH_LIVE = "https://api.aoe2companion.com/twitch/live";
@@ -38,6 +39,14 @@ public final class CompanionApi {
     public Map<String, Object> leaderboard(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
         return obj(Json.parse(api.textoCon429(Http.API + "/leaderboards/" + id + "?page=" + pagina + "&per_page=" + porPagina
                 + (pais != null ? "&country=" + pais : ""))));
+    }
+
+    /**
+     * GET /profiles?search=…&page=1 (q sin espacios en los extremos, codificado en UTF-8). SIN reintento ante 429 (por
+     * texto(), que sí lo cuenta al freno): es la búsqueda de nicks; si falla, la siguiente tecla o búsqueda lo repite.
+     */
+    public Object buscarPerfiles(String q) throws IOException, InterruptedException {
+        return Json.parse(api.texto(Http.API + "/profiles?search=" + java.net.URLEncoder.encode(q.trim(), java.nio.charset.StandardCharsets.UTF_8) + "&page=1"));
     }
 
     /** Directos de AoE2 en Twitch según el companion (game=13389). */
