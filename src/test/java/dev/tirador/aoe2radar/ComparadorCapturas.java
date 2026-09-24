@@ -1,3 +1,5 @@
+package dev.tirador.aoe2radar;
+
 import javax.imageio.ImageIO;
 import java.awt.Rectangle;
 import java.awt.image.BufferedImage;

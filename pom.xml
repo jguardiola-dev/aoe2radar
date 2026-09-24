@@ -60,7 +60,7 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>SpoilerFreeRecs</mainClass>
+              <mainClass>dev.tirador.aoe2radar.SpoilerFreeRecs</mainClass>
             </manifest>
           </archive>
         </configuration>

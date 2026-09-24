@@ -1,3 +1,5 @@
+package dev.tirador.aoe2radar;
+
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;

@@ -1,3 +1,5 @@
+package dev.tirador.aoe2radar;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

@@ -28,6 +28,8 @@
 //      y alguna partida puede no tener rec subida)
 // ============================================================================
 
+package dev.tirador.aoe2radar;
+
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.*;
