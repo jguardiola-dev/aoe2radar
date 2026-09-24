@@ -42,15 +42,20 @@ capturas como test (`RegresionCapturas`: las 23 fotos actuales, comparadas píxe
 Hecho cuando `mvn test` reproduce las capturas en verde.
 
 **Fase 1 · Partición mecánica.** Extraer clases y métodos a los paquetes sin cambiar una línea de lógica.
-Orden: model → util → api → sfrdata → cache → service → ui. Hecho cuando `SpoilerFreeRecs.java` queda
-como un `Main` de menos de 300 líneas y el harness sigue verde.
+Orden: model → util → api → sfrdata → cache (y estado de Live/socket). Hecho cuando todo el código estático
+que no es de interfaz ha salido de `SpoilerFreeRecs.java` y el harness sigue verde. La interfaz (paneles
+internos, código de cada pestaña) NO se parte aquí: se reparte en la fase 3, cuando ya hay servicios con tests
+(decisión del 2026-09-24: partirla ahora creaba ficheros que seguían dependiendo de la ventana entera y la
+fase 3 los habría rehecho).
 
 **Fase 2 · Servicios con contrato.** Interfaces + implementaciones + tests unitarios con dobles (sin red).
 Aquí se unifican las tres cachés y los tres sitios donde hoy se decide «¿llamo a la API?». Hecho cuando cada
 servicio tiene tests y ningún `httpText` vive fuera de `api`.
 
-**Fase 3 · Vistas y presentadores.** Pestaña a pestaña. Hecho cuando ninguna clase de `ui` importa `java.net`
-ni conoce `ApiClient`.
+**Fase 3 · Vistas y presentadores.** Pestaña a pestaña, como «estrangulador»: cada pestaña sale ENTERA de
+`SpoilerFreeRecs.java` a su vista + presentador y su código se borra del original. Hecho cuando ninguna clase
+de `ui` importa `java.net` ni conoce `ApiClient`, y `SpoilerFreeRecs.java` queda como un `Main` de menos de
+300 líneas.
 
 **Fase 4 · Cierre.** Deuda anotada resuelta o descartada con motivo, `README` técnico, jpackage desde Maven,
 release 1.2.
