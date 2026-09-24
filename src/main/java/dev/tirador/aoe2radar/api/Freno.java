@@ -17,4 +17,22 @@ public final class Freno {
 
     /** Antes de cada llamada al companion (fachada para el código de la 1.1: delega en THROTTLE). */
     public static void freno() throws InterruptedException { THROTTLE.adquirir(); }
+
+    /**
+     * ¿Esta URL es del companion y debe pasar por el freno? Cualquier host de aoe2companion.com (data., api., …).
+     * En la 1.1 el criterio era «empieza por API» (data.aoe2companion.com/api) y las llamadas de Twitch
+     * (api.aoe2companion.com/twitch/…) se saltaban el freno global. Quedan fuera por no usar httpText, a propósito:
+     * las imágenes de cdn.aoe2companion.com (una por mapa, con caché) y el socket (conexión persistente con su propio
+     * escalonado de reconexión). Si algún día pasaran por httpText, se frenarían.
+     */
+    public static boolean aplicaA(String url) {
+        try {
+            String host = java.net.URI.create(url).getHost();
+            if (host == null) return false;
+            host = host.toLowerCase(java.util.Locale.ROOT);
+            return host.equals("aoe2companion.com") || host.endsWith(".aoe2companion.com");
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
 }

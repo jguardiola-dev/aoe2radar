@@ -13,7 +13,7 @@ import static dev.tirador.aoe2radar.util.Identidad.VERSION;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
-/** Transporte HTTP: cliente, User-Agent y descargas sin freno (GitHub). Las llamadas al companion pasan por Freno. */
+/** Transporte HTTP: cliente, User-Agent y descargas sin freno (GitHub). Las llamadas a la API del companion (httpText) pasan por Freno; imágenes del CDN y socket no. */
 public final class Http {
     private Http() {}
 

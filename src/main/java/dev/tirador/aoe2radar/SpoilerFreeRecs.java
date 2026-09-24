@@ -56,6 +56,7 @@ import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL_URL;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
+import static dev.tirador.aoe2radar.api.Freno.aplicaA;
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
 import static dev.tirador.aoe2radar.api.Freno.freno;
@@ -12581,7 +12582,7 @@ public class SpoilerFreeRecs extends JFrame {
         // Una interrupción residual de un Detener anterior (los hilos del pool se reutilizan) se limpia;
         // solo cuenta si hay un Detener real en curso.
         if (Thread.interrupted() && stopOperacion && opEnCurso) throw new InterruptedException("detenido");
-        if (url.startsWith(API)) freno();
+        if (aplicaA(url)) freno();   // cualquier host del companion (antes solo data.…/api: Twitch se saltaba el freno)
         HttpResponse<String> r = HTTP.send(req(url), HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (r.statusCode() / 100 != 2) throw new IOException("HTTP " + r.statusCode());
         return r.body();
