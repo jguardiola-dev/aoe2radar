@@ -11,6 +11,7 @@ import dev.tirador.aoe2radar.cache.Paises;
 import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.sfrdata.CivStats;
 import dev.tirador.aoe2radar.sfrdata.Ladder;
+import dev.tirador.aoe2radar.techtree.TechTreeDatos;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -294,9 +295,9 @@ class RegresionCapturas {
         System.out.println("stats filas tabla: " + app.stModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.stModelo.getDataVector().get(0).toArray()) + " | tramo=" + app.statsTramo + " mapa=" + app.statsMapa);
         // ----- Tech tree con WR
         SwingUtilities.invokeAndWait(() -> app.techTreeBtn.doClick());
-        for (int i = 0; i < 160 && (SpoilerFreeRecs.ttData == null || app.ttCivCombo.getItemCount() == 0); i++) Thread.sleep(250);
+        for (int i = 0; i < 160 && (TechTreeDatos.ttData == null || app.ttCivCombo.getItemCount() == 0); i++) Thread.sleep(250);
         Thread.sleep(4000);
-        SwingUtilities.invokeAndWait(() -> app.ttCivCombo.setSelectedItem(app.ttNombreCiv("Aztecs")));
+        SwingUtilities.invokeAndWait(() -> app.ttCivCombo.setSelectedItem(TechTreeDatos.ttNombreCiv("Aztecs")));
         Thread.sleep(5000);
         cerrarDialogos();
         foto("shot_techtree_wr.png");
