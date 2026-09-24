@@ -46,6 +46,9 @@ import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.util.Json;
+import dev.tirador.aoe2radar.ui.PanelScrollable;
+import dev.tirador.aoe2radar.ui.PctRenderer;
+import dev.tirador.aoe2radar.ui.WrapLayout;
 
 import static dev.tirador.aoe2radar.sfrdata.Ladder.LADDER_DIR;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.MAPA_IMG_URL;
@@ -1447,16 +1450,6 @@ public class SpoilerFreeRecs extends JFrame {
         }
     }
 
-    /** Un panel apilado que ocupa el ancho del visor y solo hace scroll vertical. */
-    static class PanelScrollable extends JPanel implements Scrollable {
-        PanelScrollable() { setLayout(new BoxLayout(this, BoxLayout.Y_AXIS)); }
-        @Override public Dimension getPreferredScrollableViewportSize() { return getPreferredSize(); }
-        @Override public int getScrollableUnitIncrement(Rectangle r, int o, int d) { return 16; }
-        @Override public int getScrollableBlockIncrement(Rectangle r, int o, int d) { return Math.max(16, r.height - 16); }
-        @Override public boolean getScrollableTracksViewportWidth() { return true; }
-        @Override public boolean getScrollableTracksViewportHeight() { return false; }
-    }
-
     JPanel construirPanelLadder() {
         ladderPanel = new JPanel(new BorderLayout(8, 6));
         ladderPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
@@ -2334,10 +2327,6 @@ public class SpoilerFreeRecs extends JFrame {
             g2.drawString(s, tx - g2.getFontMetrics().stringWidth(s), h / 2 + 4);
             g2.dispose();
         }
-    }
-    static class PctRenderer extends DefaultTableCellRenderer {
-        PctRenderer() { setHorizontalAlignment(RIGHT); }
-        @Override protected void setValue(Object v) { setText(v instanceof Double d ? pct1(d) : ""); }
     }
     static class MilesRenderer extends DefaultTableCellRenderer {
         MilesRenderer() { setHorizontalAlignment(RIGHT); }
@@ -12488,52 +12477,6 @@ public class SpoilerFreeRecs extends JFrame {
                 Math.round(a.getRed()   * (1 - f) + b.getRed()   * f),
                 Math.round(a.getGreen() * (1 - f) + b.getGreen() * f),
                 Math.round(a.getBlue()  * (1 - f) + b.getBlue()  * f));
-    }
-
-    /** FlowLayout que envuelve a varias líneas y reporta la altura real, para
-     *  que las filas de controles no se corten al estrechar la ventana. */
-    static class WrapLayout extends FlowLayout {
-        WrapLayout(int align, int hgap, int vgap) { super(align, hgap, vgap); }
-
-        @Override public Dimension preferredLayoutSize(Container target) { return layoutSize(target, true); }
-
-        @Override public Dimension minimumLayoutSize(Container target) {
-            Dimension d = layoutSize(target, false);
-            d.width -= (getHgap() + 1);
-            return d;
-        }
-
-        private Dimension layoutSize(Container target, boolean preferido) {
-            synchronized (target.getTreeLock()) {
-                int ancho = target.getSize().width;
-                Container padre = target;
-                while (ancho == 0 && padre.getParent() != null) {
-                    padre = padre.getParent();
-                    ancho = padre.getSize().width;
-                }
-                if (ancho < 120) ancho = Integer.MAX_VALUE;   // plegado o aún sin tamaño: una sola fila (si no, se quedaba la altura de 4 filas al volver: la watchlist «bajaba»)
-                Insets in = target.getInsets();
-                int maxAncho = ancho - (in.left + in.right + getHgap() * 2);
-                Dimension dim = new Dimension(0, 0);
-                int filaAncho = 0, filaAlto = 0;
-                for (int i = 0; i < target.getComponentCount(); i++) {
-                    Component c = target.getComponent(i);
-                    if (!c.isVisible()) continue;
-                    Dimension d = preferido ? c.getPreferredSize() : c.getMinimumSize();
-                    if (filaAncho + d.width > maxAncho && filaAncho > 0) {
-                        dim.width = Math.max(dim.width, filaAncho);
-                        dim.height += filaAlto + getVgap();
-                        filaAncho = 0;
-                        filaAlto = 0;
-                    }
-                    filaAncho += d.width + getHgap();
-                    filaAlto = Math.max(filaAlto, d.height);
-                }
-                dim.width = Math.max(dim.width, filaAncho);
-                dim.height += filaAlto + in.top + in.bottom + getVgap() * 2;
-                return dim;
-            }
-        }
     }
 
     /** Muestra u oculta la barra de progreso de la fila de estado. */
