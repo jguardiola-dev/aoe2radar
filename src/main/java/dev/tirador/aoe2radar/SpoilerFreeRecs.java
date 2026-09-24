@@ -4151,8 +4151,6 @@ public class SpoilerFreeRecs extends JFrame {
         return l;
     }
 
-    /** Cabecera: país y clan, un chip por ladder con ELO · rango · Top %, máximo y totales, y la forma reciente. */
-    @SuppressWarnings("unchecked")
     // ----- Cara a cara: ventana con buscador de rival y ficha del cruce (partidas del historial cargado) -----
     JDialog h2hDialogo; JTextField h2hBusca; JPopupMenu h2hPopup; javax.swing.Timer h2hDebounce; PanelScrollable h2hCuerpo; JComboBox<String> h2hModo; long h2hPidActual; String h2hNombreActual, h2hMapaFiltro;
     final List<Object[]> h2hHistorial = new ArrayList<>(); boolean h2hNavegando; JButton h2hAtrasBtn;   // {pid, nombre, mapa, modoIdx}
@@ -4633,6 +4631,8 @@ public class SpoilerFreeRecs extends JFrame {
         menu.show(sobre, e.getX(), e.getY());
     }
 
+    /** Cabecera: país y clan, un chip por ladder con ELO · rango · Top %, máximo y totales, y la forma reciente. */
+    @SuppressWarnings("unchecked")
     void actPintarCabecera(Object[] perfil) {
         actChips.removeAll();
         actPintarVinculadas();
