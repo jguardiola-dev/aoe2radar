@@ -22,3 +22,6 @@
 | 2026-09-24 | registrar429 | `PAUSAS_SEGUIDAS = Math.min(PAUSAS_SEGUIDAS + 1, 4)` no es atómico (volatile no basta): dos 429 a la vez pueden subir un escalón en vez de dos. Va con `Throttle` | 2 |
 | 2026-09-24 | sfrdata.Ladder.MAPA_IMG_URL | caché de imágenes de mapa compartida: la rellena sfr-data (mapas.json) y también el código de API/Live; no es un dato de sfr-data. Llevar a CacheService | 2 |
 | 2026-09-24 | sfrdata.Ladder.LADDER_DIR | «sfrdata/» hace de raíz de todas las cachés en disco (perfiles_shards, paises.txt, mapas/…): debería ser el directorio de caché de CacheService, no una constante del ladder | 2 |
+| 2026-09-24 | cache.Paises, cache.Anotaciones | disco en el EDT: `cargarPaises` (Timer de 8 s), `guardarPaises` (Timer de 60 s), `cargarAliases`/`cargarNotas` (al construir la ventana) leen/escriben ficheros en el hilo de la UI | 2 |
+| 2026-09-24 | cache.Paises.guardarPaises | pone `paisesSucios = false` antes de escribir: si la escritura falla, ese lote no se reintenta | 2 |
+| 2026-09-24 | fase 1 (cierre) | imports que quedan sin uso en SpoilerFreeRecs tras los movimientos (GZIPInputStream, InflaterInputStream, ZipInputStream, ZipEntry…): limpiar en un commit al final de la fase | 1 |
