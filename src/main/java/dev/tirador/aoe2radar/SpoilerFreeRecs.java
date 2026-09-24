@@ -50,6 +50,20 @@ import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 
+import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
+import static dev.tirador.aoe2radar.cache.Anotaciones.NOTAS;
+import static dev.tirador.aoe2radar.cache.Anotaciones.cargarAliases;
+import static dev.tirador.aoe2radar.cache.Anotaciones.cargarNotas;
+import static dev.tirador.aoe2radar.cache.Anotaciones.nombreVisible;
+import static dev.tirador.aoe2radar.cache.Anotaciones.notaDe;
+import static dev.tirador.aoe2radar.cache.Canales.CANAL_DE;
+import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
+import static dev.tirador.aoe2radar.cache.Canales.cargarCanales;
+import static dev.tirador.aoe2radar.cache.Paises.PAIS_DE;
+import static dev.tirador.aoe2radar.cache.Paises.aprenderPais;
+import static dev.tirador.aoe2radar.cache.Paises.cargarPaises;
+import static dev.tirador.aoe2radar.cache.Paises.guardarPaises;
+import static dev.tirador.aoe2radar.cache.Paises.paisDe;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.LADDER_DIR;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.activosDias;
@@ -671,30 +685,6 @@ public class SpoilerFreeRecs extends JFrame {
     }
     String topFirma = "";
     final Map<Long, Integer> rankTop = new HashMap<>();
-    static final Map<Long, String> CANAL_DE = new java.util.concurrent.ConcurrentHashMap<>();   // pid -> canal Twitch vinculado (persistido)
-
-    static void aprenderCanal(long pid, Object canal) {
-        if (pid <= 0 || canal == null) return;
-        String c = String.valueOf(canal).trim();
-        if (c.isBlank() || "null".equals(c)) return;
-        if (c.equals(CANAL_DE.put(pid, c))) return;   // ya lo sabíamos
-        StringBuilder sb = new StringBuilder();
-        int n = 0;
-        for (Map.Entry<Long, String> e : CANAL_DE.entrySet()) {
-            if (n++ >= 400) break;   // cota del config
-            sb.append(sb.isEmpty() ? "" : ",").append(e.getKey()).append(":").append(e.getValue());
-        }
-        guardarConfig("twitch_canales", sb.toString());
-    }
-
-    static void cargarCanales() {
-        for (String par : leerConfig("twitch_canales", "").split(",")) {
-            int i = par.indexOf(':');
-            if (i <= 0) continue;
-            try { CANAL_DE.put(Long.parseLong(par.substring(0, i).trim()), par.substring(i + 1).trim()); }
-            catch (Exception ignored) { }
-        }
-    }
     final Map<Long, String[]> twitchLive = new HashMap<>();   // pid -> { canal, título, viewers }
     final List<String[]> directosAoE2 = new ArrayList<>();    // { login, display, título, idioma, viewers }
     JToggleButton directosBtn, resultadosBtn;
@@ -6066,44 +6056,11 @@ public class SpoilerFreeRecs extends JFrame {
     void ocultarToast() { if (toast != null) { getLayeredPane().remove(toast); getLayeredPane().repaint(); toast = null; } }
 
     // =====================================================================================
-    // PAÍSES Y BANDERAS — país de cada jugador aprendido de lo que ya descargamos (tops, perfiles,
-    // partidas, búsquedas), guardado en sfrdata/paises.txt; banderas de 20×15 en banderas/<cc>.png
-    // (dominio público, Wikimedia vía hampusborgos/country-flags; el bat las deja junto al exe)
+    // BANDERAS — banderas de 20×15 en banderas/<cc>.png (dominio público, Wikimedia vía
+    // hampusborgos/country-flags; el bat las deja junto al exe). El país en sí vive en cache.Paises.
     // =====================================================================================
-    static final Map<Long, String> PAIS_DE = new java.util.concurrent.ConcurrentHashMap<>();
-    static final Path PAISES_FILE = LADDER_DIR.resolve("paises.txt");
     static final Path BANDERAS_DIR = Path.of("banderas");
     static final Map<String, ImageIcon> ICONOS_BANDERA = new java.util.concurrent.ConcurrentHashMap<>();
-    static volatile boolean paisesSucios;
-
-    static void aprenderPais(long pid, Object pais) {
-        if (pid <= 0 || pais == null) return;
-        String c = String.valueOf(pais).trim().toLowerCase(Locale.ROOT);
-        if (c.isEmpty() || "null".equals(c) || c.length() > 6) return;
-        if (!c.equals(PAIS_DE.put(pid, c))) paisesSucios = true;
-    }
-    static String paisDe(long pid) { return PAIS_DE.get(pid); }
-
-    static void cargarPaises() {
-        try {
-            if (!Files.exists(PAISES_FILE)) return;
-            for (String linea : Files.readAllLines(PAISES_FILE, StandardCharsets.UTF_8)) {
-                int i = linea.indexOf('=');
-                if (i <= 0) continue;
-                try { PAIS_DE.put(Long.parseLong(linea.substring(0, i).trim()), linea.substring(i + 1).trim()); } catch (NumberFormatException ignored) { }
-            }
-        } catch (Exception ex) { log("paises: " + causa(ex)); }
-    }
-    static void guardarPaises() {
-        if (!paisesSucios) return;
-        paisesSucios = false;
-        try {
-            Files.createDirectories(LADDER_DIR);
-            StringBuilder b = new StringBuilder();
-            for (Map.Entry<Long, String> en : PAIS_DE.entrySet()) b.append(en.getKey()).append('=').append(en.getValue()).append('\n');
-            Files.writeString(PAISES_FILE, b.toString(), StandardCharsets.UTF_8);
-        } catch (Exception ex) { log("paises: no se pudo guardar: " + causa(ex)); }
-    }
 
     /** Bandera del país (código ISO de dos letras), o null si no hay archivo. */
     static ImageIcon iconoBandera(String cc) {
@@ -7521,39 +7478,6 @@ public class SpoilerFreeRecs extends JFrame {
         catch (Exception e) { return 60_000; }
     }
 
-    // ----- Alias: el nombre que TÚ decides para una cuenta ---------------------
-    static final Map<Long, String> ALIASES = new java.util.concurrent.ConcurrentHashMap<>();
-
-    static void cargarAliases() {
-        try (var in = Files.newInputStream(CONFIG_FILE)) {
-            var p = new Properties();
-            p.load(in);
-            for (String k : p.stringPropertyNames())
-                if (k.startsWith("alias_")) {
-                    String v = p.getProperty(k, "").trim();
-                    try { long id = Long.parseLong(k.substring(6)); if (!v.isEmpty()) ALIASES.put(id, v); }
-                    catch (NumberFormatException ignored) { }
-                }
-        } catch (IOException ignored) { }
-    }
-
-    static final Map<Long, String> NOTAS = new java.util.concurrent.ConcurrentHashMap<>();   // id → nota propia
-
-    static void cargarNotas() {
-        try (var in = Files.newInputStream(CONFIG_FILE)) {
-            var p = new Properties();
-            p.load(in);
-            for (String k : p.stringPropertyNames())
-                if (k.startsWith("nota_")) {
-                    String v = p.getProperty(k, "").trim();
-                    try { long id = Long.parseLong(k.substring(5)); if (!v.isEmpty()) NOTAS.put(id, v); }
-                    catch (NumberFormatException ignored) { }
-                }
-        } catch (IOException ignored) { }
-    }
-
-    static String notaDe(long id) { return NOTAS.get(id); }
-
     void borrarNota(long pid, String nombre) {
         NOTAS.remove(pid);
         guardarConfig("nota_" + pid, "");
@@ -7582,11 +7506,6 @@ public class SpoilerFreeRecs extends JFrame {
         refrescarAlturasWatch();   // la sublínea de la nota nace o muere: re-medir
         tableModel.fireTableDataChanged();
         status.setText(nota.isEmpty() ? t("Nota quitada.", "Note removed.") : t("Nota guardada para ", "Note saved for ") + nombre + ".");
-    }
-
-    static String nombreVisible(long id, String original) {
-        String a = ALIASES.get(id);
-        return a != null && !a.isBlank() ? a : original;
     }
 
     void pedirAlias(long pid, String original) {
