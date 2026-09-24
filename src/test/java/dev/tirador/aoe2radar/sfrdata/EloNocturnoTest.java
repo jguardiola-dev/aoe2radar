@@ -87,26 +87,59 @@ class EloNocturnoTest {
         assertEquals("2026-09-18", elo.fechaHace7());
     }
 
-    @Test void siLlegaValeSeisHorasYElRefrescoVaEnLinea() {
+    /** Hora real de la copia del ELO de ayer en disco: T0 exacto para fronteras sin holgura. */
+    long t0() throws IOException { return Files.getLastModifiedTime(copia(AYER)).toMillis(); }
+
+    @Test void siLlegaValeDoceHorasDesdeQueSeBajoYElRefrescoVaEnLinea() throws IOException {
         elo.cargar();
-        reloj.avanzar(6 * HORA - 1);
+        long t0 = t0();
+        reloj.ahora = t0 + 12 * HORA - 1;
         elo.cargar();
-        assertEquals(2, red.pedidos.size(), "dentro de las 6 h no se vuelve a cargar");
-        reloj.avanzar(13 * HORA);   // más allá de las 12 h de la copia en disco, para verlo en la red
+        assertEquals(2, red.pedidos.size(), "a 12 h − 1 ms no se recarga: ni la memoria ni la copia han caducado");
+        reloj.ahora = t0 + 12 * HORA;
         elo.cargar();
-        assertEquals(4, red.pedidos.size());
+        assertEquals(2, red.pedidos.stream().filter(AYER::equals).count(), "a las 12 h justas caducan las dos a la vez y se va a la red");
         assertTrue(enSegundoPlano.isEmpty(), "el refresco tras un éxito va en línea, como en la 1.1");
     }
 
-    @Test void laFronteraDeLasSeisHoras() throws IOException {
+    @Test void trasReiniciarCuentaDesdeLaCopiaNoDesdeLaLectura() throws IOException {
+        elo.cargar();                                      // T0: se baja y se guarda
+        long t0 = t0();
+        reloj.ahora = t0 + 11 * HORA;
+        EloNocturno reiniciada = new EloNocturno(sfr, new CacheService(reloj), enSegundoPlano::add, HOY);
+        reiniciada.cargar();                               // la app reiniciada a las 11 h lo lee del disco
+        assertEquals(2, red.pedidos.size());
+        reloj.ahora = t0 + 12 * HORA;
+        reiniciada.cargar();
+        assertEquals(2, red.pedidos.stream().filter(AYER::equals).count(), "a las 12 h de la descarga, no a las 6 h de la lectura (serían 17 h)");
+    }
+
+    @Test void alCambiarElDiaUtcSePideElNuevoDeHaceSiete() {
+        LocalDate[] dia = { LocalDate.of(2026, 9, 25) };
+        EloNocturno e = new EloNocturno(sfr, new CacheService(reloj), enSegundoPlano::add, () -> dia[0]);
+        e.cargar();
+        reloj.avanzar(HORA);
+        e.cargar();
+        assertEquals(List.of(AYER, HACE7), red.pedidos, "mismo día y copia fresca: nada");
+        dia[0] = LocalDate.of(2026, 9, 26);                 // medianoche UTC
+        red.archivos.put("elo-2026-09-19.json.gz", gz(JSON_HACE7));
+        e.cargar();
+        assertEquals(List.of(AYER, HACE7, "elo-2026-09-19.json.gz"), red.pedidos, "el de ayer, del disco; el nuevo de hace 7, de la red");
+        assertEquals("2026-09-19", e.fechaHace7());
+    }
+
+    @Test void unJsonNullCuentaComoCopiaRota() throws IOException {
+        red.archivos.put(AYER, gz("null"));
         elo.cargar();
-        Files.write(copia(AYER), gz(JSON_AYER.replace("1905", "1999")));   // la copia del disco sigue fresca (12 h): se ve si se relee
-        reloj.avanzar(6 * HORA - 1);
+        assertFalse(Files.exists(copia(AYER)), "«null» no es un volcado: se borra");
+    }
+
+    @Test void entreRecargasNoReleeElDisco() throws IOException {
         elo.cargar();
-        assertEquals(1905, elo.ayer.get(1L)[0], "a 6 h − 1 ms no se relee");
-        reloj.avanzar(1);
+        Files.write(copia(AYER), gz(JSON_AYER.replace("1905", "1999")));   // si se releyera el disco, se vería
+        reloj.ahora = t0() + 11 * HORA;
         elo.cargar();
-        assertEquals(1999, elo.ayer.get(1L)[0], "a las 6 h justas, sí");
+        assertEquals(1905, elo.ayer.get(1L)[0], "sin bucle de relecturas: la memoria vale lo mismo que la copia");
     }
 
     @Test void unHaceSieteRotoSeBorraPeroNoEsFallo() throws IOException {
@@ -150,7 +183,7 @@ class EloNocturnoTest {
         assertEquals(1905, elo.ayer.get(1L)[0]);
         reloj.avanzar(5 * MIN);
         elo.cargar();
-        assertEquals(1, enSegundoPlano.size(), "tras el éxito, 6 h de calma");
+        assertEquals(1, enSegundoPlano.size(), "tras el éxito, calma hasta que caduque la copia");
     }
 
     @Test void unArchivoRotoSeBorraYElSiguienteVuelveALaRed() throws IOException {
@@ -183,7 +216,7 @@ class EloNocturnoTest {
         assertTrue(elo.hace7.isEmpty());
         reloj.avanzar(5 * MIN);
         elo.cargar();
-        assertEquals(2, red.pedidos.size(), "el de ayer llegó: 6 h, no 5 min");
+        assertEquals(2, red.pedidos.size(), "el de ayer llegó: sin reintento a los 5 min");
     }
 
     @Test void dosLlamadoresALaVezNoDescarganDosVeces() {

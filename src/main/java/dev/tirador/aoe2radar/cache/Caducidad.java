@@ -13,9 +13,9 @@ public final class Caducidad {
     public static final Duration PERFIL = Duration.ofMinutes(30);
     /** La tarjeta de perfil ya pintada (datos + sparkline). */
     public static final Duration TARJETA = Duration.ofMinutes(10);
-    /** Resúmenes nocturnos de sfr-data, en memoria (ELO de ayer, muestra, índice de perfiles, ladder) y en disco. */
+    /** Resúmenes nocturnos de sfr-data: ladder y civ stats (rama «data», en disco y memoria) e índice de perfiles. */
     public static final Duration NOCTURNO = Duration.ofHours(6);
-    /** Archivos de la release «perfiles» de sfr-data guardados en disco. */
+    /** Archivos de la release «perfiles» de sfr-data guardados en disco; el ELO de ayer y la muestra valen lo mismo en memoria. */
     public static final Duration DESCARGA_DIARIA = Duration.ofHours(12);
     /**
      * Tras una descarga fallida de sfr-data, cuánto esperar para reintentar. Corto a propósito: mientras falte el
