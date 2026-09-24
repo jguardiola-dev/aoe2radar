@@ -169,6 +169,19 @@ class RegresionCapturas {
             JRootPane raiz = app.getRootPane();
             r[0] = new Rectangle(raiz.getLocationOnScreen(), raiz.getSize());
             zonas.add(new Rectangle(0, raiz.getHeight() - 1, raiz.getWidth(), 1));   // línea del marco de Windows: cambia de color si un diálogo quita el foco
+            // lo mismo con el marco nativo de los diálogos abiertos y su sombra (8 px fuera): dependen de qué ventana tenga el foco
+            Point origen = raiz.getLocationOnScreen();
+            for (Window w : Window.getWindows())
+                if (w instanceof JDialog d && d.isShowing()) {
+                    Rectangle fuera = d.getBounds(); fuera.grow(8, 8);
+                    Rectangle dentro = new Rectangle(d.getRootPane().getLocationOnScreen(), d.getRootPane().getSize());
+                    fuera.translate(-origen.x, -origen.y); dentro.translate(-origen.x, -origen.y);
+                    dentro.height -= 1;   // su última fila es borde de Windows, como en el marco principal
+                    zonas.add(new Rectangle(fuera.x, fuera.y, fuera.width, dentro.y - fuera.y));                                  // arriba
+                    zonas.add(new Rectangle(fuera.x, dentro.y + dentro.height, fuera.width, fuera.y + fuera.height - dentro.y - dentro.height));   // abajo
+                    zonas.add(new Rectangle(fuera.x, fuera.y, dentro.x - fuera.x, fuera.height));                                 // izquierda
+                    zonas.add(new Rectangle(dentro.x + dentro.width, fuera.y, fuera.x + fuera.width - dentro.x - dentro.width, fuera.height));    // derecha
+                }
             // dependen de la fecha del día (LocalDate.now() en actPintar, sin reloj inyectable: DEUDA.md): mañana se
             // desplazarían aunque nada cambie. Se ignoran donde se vean; la gráfica por horas sí se compara.
             for (JComponent c : new JComponent[]{ app.actCalendario, app.actSemana, app.actMeses })
@@ -315,6 +328,11 @@ class RegresionCapturas {
         foto("shot_lista250.png");
         cerrarDialogos();
         // menú contextual de la watchlist sobre un jugador en partida
+        // el vigilante barre la API cada poco y quitaría la partida inventada 555 antes de la foto: se para su
+        // temporizador y se espera a que acabe un barrido en curso (vigilando se lee en el EDT, donde se escribe)
+        SwingUtilities.invokeAndWait(() -> { if (app.vigilante != null) app.vigilante.stop(); });
+        boolean[] barriendo = { true };
+        for (int i = 0; i < 120 && barriendo[0]; i++) { SwingUtilities.invokeAndWait(() -> barriendo[0] = app.vigilando); if (barriendo[0]) Thread.sleep(250); }
         app.vivoWatch.put(1L, 555L);
         SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new SpoilerFreeRecs.Player(1L, "12Tirador", "General")); app.todosJugadores.add(new SpoilerFreeRecs.Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0);
             app.actualizarIndicadoresVivos(); });   // lo que hace el vigilante tras detectar la partida; sin esto la foto dependía de cuándo saltara su temporizador.
