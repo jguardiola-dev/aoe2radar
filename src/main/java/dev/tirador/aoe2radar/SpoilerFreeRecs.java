@@ -30,11 +30,14 @@
 
 package dev.tirador.aoe2radar;
 
+import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
 import dev.tirador.aoe2radar.model.Comparado;
+import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.LadderHist;
 import dev.tirador.aoe2radar.model.LadderRow;
+import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Matchup;
 import dev.tirador.aoe2radar.model.PaginaLb;
@@ -174,45 +177,6 @@ public class SpoilerFreeRecs extends JFrame {
         }
         if (nm) guardarConfig("mapas_ranked", String.join(",", MAPAS_CAT));
         if (nc) guardarConfig("civs_vistas", String.join(",", CIVS_CAT));
-    }
-
-    static final class Match {
-        long id;
-        Instant started, finished;
-        String map = "?", mode = "?";
-        List<MatchPlayer> players = new ArrayList<>();
-        String estado = "";
-        long refId;          // jugador seguido de referencia (primer nombre del archivo)
-        boolean enDisco;
-        boolean azar;                 // vino de «Al azar por ELO…»: el enfrentamiento muestra el ELO del momento
-        boolean enJuego;              // copia presente en la carpeta savegame
-        boolean fantasma;             // «en curso» según la API pero imposible: el mismo jugador tiene otra partida posterior
-        String mapaClave;             // clave del mapa (rm_arabia) cuando viene de un paquete de sfr-data
-        int gte;                      // > 0: partida «Guess the ELO» nº gte (anónima en la app)     // la rec ya existe en ./recs
-
-        String civDe(long pid) {
-            if (gte > 0) return "";
-            for (MatchPlayer p : players) if (p.id == pid) return p.civ == null ? "" : p.civ;
-            return "";
-        }
-
-        /** Columna Civ rival: solo en 1v1 (en equipos, el detalle va en el tooltip). */
-        String civRival() {
-            if (gte > 0 || players.size() != 2) return "";
-            for (MatchPlayer p : players) if (p.id != refId) return p.civ == null ? "" : p.civ;
-            return "";
-        }
-
-        boolean tieneJugador(long pid) {
-            for (MatchPlayer p : players) if (p.id == pid) return true;
-            return false;
-        }
-
-        int povsConRec() {
-            int n = 0;
-            for (MatchPlayer p : players) if (Boolean.TRUE.equals(p.replay)) n++;
-            return n;
-        }
     }
 
     // ----- Presentación de Match (texto/HTML de las columnas; los datos viven en Match) -----
@@ -828,9 +792,6 @@ public class SpoilerFreeRecs extends JFrame {
     boolean mostrarResultados;   // modo consulta: SIEMPRE renace apagado
 
     // ----- Forma reciente (±ELO en una ventana de horas; 1v1 ranked) --------------
-    record Forma(int diff, int w, int l, int racha, boolean rachaGana, int partidas) {
-        String corta() { return partidas == 0 ? "\u00B7" : (diff > 0 ? "\u25B2+" + diff : diff < 0 ? "\u25BC" + diff : "\u25AC 0"); }
-    }
 
     static String formaLarga(Forma f) {
         if (f.partidas() == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
@@ -3294,7 +3255,6 @@ public class SpoilerFreeRecs extends JFrame {
     // resultado de una partida suelta.
     // =====================================================================================
     static final int ACT_DIAS = 365, ACT_MAX_PAGINAS = 20, ACT_PAGINAS_RAPIDAS = 2, ACT_MAS_PAGINAS = 4, ACT_MIN = 3;   // por API, lo mínimo: 100 partidas al abrir; el resto solo si lo pides
-    record Actividad(long pid, String nombre, List<Match> partidas, boolean completo, int paginas, long ms) { }
     static final Map<Long, Actividad> ACTIVIDAD_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
     static final Path PERFILES_DIR = LADDER_DIR.resolve("perfiles");
 

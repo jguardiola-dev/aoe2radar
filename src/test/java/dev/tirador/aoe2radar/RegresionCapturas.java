@@ -1,6 +1,8 @@
 package dev.tirador.aoe2radar;
 
+import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.Comparado;
+import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
 import org.junit.jupiter.api.AfterAll;
@@ -297,12 +299,12 @@ class RegresionCapturas {
         System.out.println("tt wr civs: " + app.ttWrPorCiv.size() + " | puesto: " + app.ttPuestoBtn.getText() + " | banda: " + app.ttWrLabel.getText().replaceAll("<[^>]+>", "").substring(0, 60));
         // ----- Actividad (historial sintético en caché: la API está bloqueada aquí)
         java.util.Random rnd = new java.util.Random(3);
-        java.util.List<SpoilerFreeRecs.Match> ms = new java.util.ArrayList<>();
+        java.util.List<Match> ms = new java.util.ArrayList<>();
         String[] civsS = { "Aztecas", "Francos", "Mayas", "Hunos", "Britanos", "Mongoles", "Vikingos", "Romanos" };
         String[] mapsS = { "Arabia", "Arena", "Bosque Negro", "Cuatro Lagos", "Nómada", "Acrópolis" };
         String[] rivS = { "pume", "Turpiacho", "Viper", "Hera", "Liereyy", "DauT", "Vinchester", "Yo", "Nicov", "Mr_Yo", "Tatoh", "JorDan", "Capoch" };
         for (int i = 0; i < 420; i++) {
-            SpoilerFreeRecs.Match m = new SpoilerFreeRecs.Match();
+            Match m = new Match();
             m.id = 1000 + i;
             int dias = (int) Math.min(364, Math.abs(rnd.nextGaussian()) * 120);
             java.time.ZonedDateTime z = java.time.ZonedDateTime.now().minusDays(dias).withHour(rnd.nextInt(24) < 8 ? 22 : 19 + rnd.nextInt(5)).withMinute(rnd.nextInt(60));
@@ -317,7 +319,7 @@ class RegresionCapturas {
             for (int k = 0; k < nRiv; k++) { MatchPlayer r = new MatchPlayer(); int ri = rnd.nextInt(rivS.length); r.id = 100 + ri; r.name = rivS[ri]; r.civ = civsS[rnd.nextInt(civsS.length)]; r.team = 2; r.won = !gano; r.rating = 1500 + rnd.nextInt(700); m.players.add(r); }
             ms.add(m);
         }
-        SpoilerFreeRecs.ACTIVIDAD_CACHE.put(1L, new SpoilerFreeRecs.Actividad(1L, "12Tirador", ms, true, 9, System.currentTimeMillis()));
+        SpoilerFreeRecs.ACTIVIDAD_CACHE.put(1L, new Actividad(1L, "12Tirador", ms, true, 9, System.currentTimeMillis()));
         SpoilerFreeRecs.PERFIL_CACHE.put(1L, new Object[]{ System.currentTimeMillis(), Map.of("rm_1v1", new int[]{ 1905, 260, 1960, 1240, 1100 }, "rm_team", new int[]{ 2110, 800, 2150, 800, 600 }, "ew_1v1", new int[]{ 1400, 300, 1450, 40, 30 }), "es", "TSK", 3810L });
         SwingUtilities.invokeAndWait(() -> app.perfilBtn.doClick());
         Thread.sleep(800);
@@ -326,7 +328,7 @@ class RegresionCapturas {
         Thread.sleep(2500);
         cerrarDialogos();
         foto("shot_actividad.png");
-        SpoilerFreeRecs.ACTIVIDAD_CACHE.put(2L, new SpoilerFreeRecs.Actividad(2L, "Turpiacho", ms, true, 9, System.currentTimeMillis()));
+        SpoilerFreeRecs.ACTIVIDAD_CACHE.put(2L, new Actividad(2L, "Turpiacho", ms, true, 9, System.currentTimeMillis()));
         SpoilerFreeRecs.PERFIL_CACHE.put(2L, new Object[]{ System.currentTimeMillis(), Map.of("rm_1v1", new int[]{ 1610, 2800, 1700, 900, 800 }), "es", "", 1700L });
         SwingUtilities.invokeAndWait(() -> app.abrirPerfilEnPestana(2L, "Turpiacho"));
         Thread.sleep(1200);
@@ -341,7 +343,7 @@ class RegresionCapturas {
         Thread.sleep(600);
         System.out.println("tras adelante: techtree=" + app.techTreeBtn.isSelected() + " pos=" + app.historialPos + "/" + app.historial.size());
         // «Ahora»: inyectar top y partidas en curso para ver la tabla
-        SpoilerFreeRecs.Match mv = new SpoilerFreeRecs.Match(); mv.id = 555; mv.started = java.time.Instant.now().minusSeconds(900); mv.map = "Arabia"; mv.mode = "1v1 Random Map";
+        Match mv = new Match(); mv.id = 555; mv.started = java.time.Instant.now().minusSeconds(900); mv.map = "Arabia"; mv.mode = "1v1 Random Map";
         MatchPlayer a1 = new MatchPlayer(); a1.id = 1; a1.name = "12Tirador"; a1.civ = "Aztecas"; a1.team = 1; a1.rating = 1905;
         MatchPlayer a2 = new MatchPlayer(); a2.id = 3; a2.name = "pume"; a2.civ = "Francos"; a2.team = 2; a2.rating = 1980;
         mv.players.add(a1); mv.players.add(a2);
@@ -349,7 +351,7 @@ class RegresionCapturas {
         app.ahoraTopMs = System.currentTimeMillis();
         synchronized (app.ahoraEnCurso) { app.ahoraEnCurso.put(1L, mv); app.ahoraEnCurso.put(3L, mv); }
         app.ahoraUltimaMs = System.currentTimeMillis();
-        synchronized (app.liveTerminadas) { SpoilerFreeRecs.Match mt = new SpoilerFreeRecs.Match(); mt.id = 556; mt.started = java.time.Instant.now().minusSeconds(3000); mt.finished = java.time.Instant.now().minusSeconds(600); mt.map = "Arena"; mt.mode = "1v1 Random Map"; mt.players.add(a1); mt.players.add(a2); app.liveTerminadas.put(556L, new Object[]{ mt, System.currentTimeMillis() - 600_000 }); }
+        synchronized (app.liveTerminadas) { Match mt = new Match(); mt.id = 556; mt.started = java.time.Instant.now().minusSeconds(3000); mt.finished = java.time.Instant.now().minusSeconds(600); mt.map = "Arena"; mt.mode = "1v1 Random Map"; mt.players.add(a1); mt.players.add(a2); app.liveTerminadas.put(556L, new Object[]{ mt, System.currentTimeMillis() - 600_000 }); }
         SwingUtilities.invokeAndWait(() -> { app.ahoraBtn.doClick(); });
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(() -> app.mostrarToast("\u25CF Hera ha empezado una partida \u00B7 vs Viper 2732 (Mongoles\u2013Francos) \u00B7 Arabia", 555));
