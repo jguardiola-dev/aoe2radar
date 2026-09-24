@@ -9228,17 +9228,18 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** httpText con un reintento tras espera si el servidor limita (HTTP 429). */
     static String httpText429(String url) throws IOException, InterruptedException {
+        boolean companion = aplicaA(url);   // solo el companion cuenta para el freno: un 429 o un éxito de otro host (Steam…) no lo toca
         try {
             String r = httpText(url);
-            THROTTLE.registrarExito();   // diez minutos sin 429: se olvida la escalada
+            if (companion) THROTTLE.registrarExito();   // diez minutos sin 429 del companion: se olvida la escalada
             return r;
         } catch (Exception ex) {
             if (String.valueOf(ex.getMessage()).contains("429")) {
-                registrar429();   // pausa global; el propio freno() la respeta en todas las llamadas
+                if (companion) registrar429();   // pausa global; el propio freno() la respeta en todas las llamadas
                 try { return httpText(url); }
                 catch (Exception ex2) {
                     if (!String.valueOf(ex2.getMessage()).contains("429")) throw ex2;
-                    registrar429();
+                    if (companion) registrar429();
                     return httpText(url);
                 }
             }
