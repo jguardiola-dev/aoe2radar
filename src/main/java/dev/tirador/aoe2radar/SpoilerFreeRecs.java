@@ -97,6 +97,20 @@ import static dev.tirador.aoe2radar.cache.Vivos.VISTO_VIVO_MS;
 import static dev.tirador.aoe2radar.cache.Vivos.VIVO_PARTIDA;
 import static dev.tirador.aoe2radar.cache.Vivos.VIVO_RIVAL;
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
+import static dev.tirador.aoe2radar.service.CalculoStats.MIN_PARTIDAS_CIV;
+import static dev.tirador.aoe2radar.service.CalculoStats.MUESTRA_FIABLE;
+import static dev.tirador.aoe2radar.service.CalculoStats.POCAS_PARTIDAS;
+import static dev.tirador.aoe2radar.service.CalculoStats.agregarCivs;
+import static dev.tirador.aoe2radar.service.CalculoStats.civPorMapa;
+import static dev.tirador.aoe2radar.service.CalculoStats.duracionMedia;
+import static dev.tirador.aoe2radar.service.CalculoStats.partidasPorMapa;
+import static dev.tirador.aoe2radar.service.CalculoStats.tramoEnRango;
+import static dev.tirador.aoe2radar.service.CalculoStats.wilson;
+import static dev.tirador.aoe2radar.sfrdata.CivStats.MODOS_STATS;
+import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
+import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS_KEYS;
+import static dev.tirador.aoe2radar.sfrdata.CivStats.statsAsegurar;
+import static dev.tirador.aoe2radar.sfrdata.CivStats.tendenciasStats;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.LADDER_DIR;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.activosDias;
@@ -1712,15 +1726,8 @@ public class SpoilerFreeRecs extends JFrame {
     // =====================================================================================
     // CIV STATS — resúmenes de sfr-data (civstats/ventanas/vN.json.gz y tendencias.json.gz):
     // winrate y pick rate por civ, modo, mapa y tramo de ELO; matchups 1v1; tendencias por mes
+    // datos y cálculos: sfrdata.CivStats y service.CalculoStats
     // =====================================================================================
-    static final Map<String, VentanaStats> VENTANAS_STATS = new java.util.concurrent.ConcurrentHashMap<>();
-    static volatile Tendencias tendenciasStats;
-    static final String[] MODOS_STATS = { "rm_1v1", "rm_2v2", "rm_3v3", "rm_4v4", "ew_1v1", "ew_team", "dm_1v1", "dm_team" };
-    static final String[] VENTANAS_STATS_KEYS = { "7", "30", "90", "365", "parche" };
-    static final int MIN_PARTIDAS_CIV = 20;       // por debajo, la civ no se lista; por debajo de MUESTRA_FIABLE se pinta en gris
-    static final int MUESTRA_FIABLE = 100;
-    static final int POCAS_PARTIDAS = 2000;       // por debajo de este total, aviso discreto: prueba 90 o 365 días
-    static final int MIN_PARTIDAS_MAPA = 200;
     String statsModo = leerConfig("stats_modo", "rm_1v1"), statsVentana = leerConfig("stats_ventana", "30"), statsMapa = leerConfig("stats_mapa", "*"), statsTramo = leerConfig("stats_tramo", "*");
     JToggleButton civStatsBtn;
     JPanel civStatsPanel; JComboBox<String> stModoCombo, stVentanaCombo, stMapaCombo, stTramoCombo; JLabel stEstado;
@@ -1772,17 +1779,6 @@ public class SpoilerFreeRecs extends JFrame {
             return lo + "\u2013" + hi;
         }
         return tr.endsWith("+") ? tr : tr.replace("-", "\u2013");
-    }
-    /** ¿La fila de tramo «tramo» entra en el rango elegido? Acepta «*», una clave simple o «desde|hasta» (extremos con * = sin límite). */
-    static boolean tramoEnRango(String tramo, List<String> tramos, String rango) {
-        if (rango == null || "*".equals(rango) || "*|*".equals(rango)) return true;
-        if (!rango.contains("|")) return tramo.equals(rango);
-        String[] p = rango.split("\\|", -1);
-        int i = tramos.indexOf(tramo); if (i < 0) return false;
-        int a = "*".equals(p[0]) ? 0 : tramos.indexOf(p[0]), b = "*".equals(p[1]) ? tramos.size() - 1 : tramos.indexOf(p[1]);
-        if (a < 0) a = 0; if (b < 0) b = tramos.size() - 1;
-        if (a > b) { int x = a; a = b; b = x; }
-        return i >= a && i <= b;
     }
     /** Selector de ELO: presets (Todos, <800, 800–1000, …, 2000+) y «Personalizado…», que pregunta el rango «de … a …» en un diálogo y lo deja como opción activa. El valor es «*», un tramo o «desde|hasta». */
     class SelectorRangoElo extends JPanel {
@@ -1873,112 +1869,6 @@ public class SpoilerFreeRecs extends JFrame {
         return n;
     }
 
-    static VentanaStats parsearVentana(Map<String, Object> j) {
-        List<String> tramos = new ArrayList<>();
-        for (Object o : arr(j.get("tramos"))) tramos.add(String.valueOf(o));
-        Map<String, Map<String, Integer>> modos = new LinkedHashMap<>();
-        for (Map.Entry<String, Object> en : obj(j.get("modos")).entrySet()) {
-            Map<String, Integer> c = new HashMap<>();
-            for (Map.Entry<String, Object> x : obj(en.getValue()).entrySet()) c.put(x.getKey(), (int) lng(x.getValue()));
-            modos.put(en.getKey(), c);
-        }
-        Map<String, String> nombres = new HashMap<>();
-        for (Map.Entry<String, Object> en : obj(j.get("nombres_mapas")).entrySet()) nombres.put(en.getKey(), String.valueOf(en.getValue()));
-        Map<String, Map<String, Integer>> mapas = new HashMap<>();
-        for (Object o : arr(j.get("mapas"))) { List<Object> f = arr(o); mapas.computeIfAbsent(String.valueOf(f.get(0)), k -> new LinkedHashMap<>()).put(String.valueOf(f.get(1)), (int) lng(f.get(2))); }
-        List<CivFila> civs = new ArrayList<>();
-        for (Object o : arr(j.get("civs"))) {
-            List<Object> f = arr(o);
-            if (f.size() < 7) continue;
-            String civ = String.valueOf(f.get(3));
-            if ("unknown".equals(civ)) continue;
-            civs.add(new CivFila(String.valueOf(f.get(0)), String.valueOf(f.get(1)), String.valueOf(f.get(2)), civ, (int) lng(f.get(4)), (int) lng(f.get(5)), lng(f.get(6))));
-        }
-        List<Matchup> mu = new ArrayList<>();
-        for (Object o : arr(j.get("matchups"))) {
-            List<Object> f = arr(o);
-            if (f.size() < 6) continue;
-            if ("unknown".equals(String.valueOf(f.get(2))) || "unknown".equals(String.valueOf(f.get(3)))) continue;
-            mu.add(new Matchup(String.valueOf(f.get(0)), String.valueOf(f.get(1)), String.valueOf(f.get(2)), String.valueOf(f.get(3)), (int) lng(f.get(4)), (int) lng(f.get(5))));
-        }
-        Object parche = j.get("parche");
-        return new VentanaStats(String.valueOf(j.get("ventana")), String.valueOf(firstNonNull(j.get("desde"), "")), String.valueOf(firstNonNull(j.get("hasta"), "")), (int) lng(j.get("dias")),
-                parche == null ? "" : String.valueOf(parche instanceof Number n ? (Object) n.longValue() : parche), tramos, modos, nombres, mapas, civs, mu);
-    }
-
-    /** Carga (con caché) la ventana pedida. null si va bien; si no, el motivo. */
-    static String statsAsegurar(String ventana, boolean conTendencias) {
-        try {
-            if (!VENTANAS_STATS.containsKey(ventana))
-                VENTANAS_STATS.put(ventana, parsearVentana(obj(Json.parse(new String(sfrDataArchivo("civstats/ventanas/v" + ventana + ".json.gz"), StandardCharsets.UTF_8)))));
-            if (conTendencias && tendenciasStats == null) {
-                Map<String, Object> j = obj(Json.parse(new String(sfrDataArchivo("civstats/tendencias.json.gz"), StandardCharsets.UTF_8)));
-                List<String> meses = new ArrayList<>();
-                for (Object o : arr(j.get("meses"))) meses.add(String.valueOf(o));
-                Map<String, Map<String, Integer>> partidas = new HashMap<>();
-                for (Object o : arr(j.get("partidas"))) { List<Object> f = arr(o); partidas.computeIfAbsent(String.valueOf(f.get(0)), k -> new HashMap<>()).put(String.valueOf(f.get(1)), (int) lng(f.get(2))); }
-                Map<String, Map<String, int[]>> filas = new HashMap<>();
-                for (Object o : arr(j.get("filas"))) { List<Object> f = arr(o); filas.computeIfAbsent(f.get(0) + "|" + f.get(1), k -> new HashMap<>()).put(String.valueOf(f.get(2)), new int[]{ (int) lng(f.get(3)), (int) lng(f.get(4)) }); }
-                Map<String, Map<String, int[]>> filasMapa = new HashMap<>();
-                for (Object o : arr(j.get("filas_mapa"))) { List<Object> f = arr(o); filasMapa.computeIfAbsent(f.get(0) + "|" + f.get(1) + "|" + f.get(2), k -> new HashMap<>()).put(String.valueOf(f.get(3)), new int[]{ (int) lng(f.get(4)), (int) lng(f.get(5)) }); }
-                Map<String, Map<String, int[]>> filasTramo = new HashMap<>();
-                for (Object o : arr(j.get("filas_tramo"))) { List<Object> f = arr(o); filasTramo.computeIfAbsent(f.get(0) + "|" + f.get(1) + "|" + f.get(2), k -> new HashMap<>()).put(String.valueOf(f.get(3)), new int[]{ (int) lng(f.get(4)), (int) lng(f.get(5)) }); }
-                Map<String, Map<String, int[]>> filasMT = new HashMap<>();
-                for (Object o : arr(j.get("filas_mt"))) { List<Object> f = arr(o); filasMT.computeIfAbsent(f.get(0) + "|" + f.get(1) + "|" + f.get(2) + "|" + f.get(3), k -> new HashMap<>()).put(String.valueOf(f.get(4)), new int[]{ (int) lng(f.get(5)), (int) lng(f.get(6)) }); }
-                tendenciasStats = new Tendencias(meses, partidas, filas, filasMapa, filasTramo, filasMT);
-            }
-            return null;
-        } catch (Exception ex) { log("civstats: " + causa(ex)); return causa(ex); }
-    }
-
-    /** Intervalo de Wilson al 95 % en porcentaje: {inferior, superior}. */
-    static double[] wilson(int w, int n) {
-        if (n <= 0) return new double[]{ 0, 100 };
-        double z = 1.96, p = (double) w / n, den = 1 + z * z / n;
-        double centro = p + z * z / (2 * n), marg = z * Math.sqrt((p * (1 - p) + z * z / (4 * n)) / n);
-        return new double[]{ 100 * (centro - marg) / den, 100 * (centro + marg) / den };
-    }
-
-    /** Suma por civ con los filtros («*» = todos). */
-    static Map<String, CivAgg> agregarCivs(VentanaStats v, String modo, String mapa, String tramo) {
-        Map<String, int[]> acc = new HashMap<>();
-        Map<String, long[]> dur = new HashMap<>();
-        for (CivFila f : v.civs()) {
-            if (!f.modo().equals(modo)) continue;
-            if (!"*".equals(mapa) && !f.mapa().equals(mapa)) continue;
-            if (!tramoEnRango(f.tramo(), v.tramos(), tramo)) continue;
-            int[] a = acc.computeIfAbsent(f.civ(), k -> new int[2]); a[0] += f.n(); a[1] += f.w();
-            dur.computeIfAbsent(f.civ(), k -> new long[1])[0] += f.d();
-        }
-        Map<String, CivAgg> out = new HashMap<>();
-        for (Map.Entry<String, int[]> en : acc.entrySet()) out.put(en.getKey(), new CivAgg(en.getKey(), en.getValue()[0], en.getValue()[1], dur.get(en.getKey())[0]));
-        return out;
-    }
-
-    /** Partidas por mapa en el modo elegido: totales o, con tramo, solo las de ese tramo (filas civ / jugadores por partida). */
-    static Map<String, Integer> partidasPorMapa(VentanaStats v, String modo, String tramo) {
-        if (tramo == null || "*".equals(tramo) || "*|*".equals(tramo)) return new LinkedHashMap<>(v.mapasPorModo().getOrDefault(modo, Map.of()));
-        Map<String, Integer> porTramo = new HashMap<>();
-        for (CivFila f : v.civs()) if (f.modo().equals(modo) && tramoEnRango(f.tramo(), v.tramos(), tramo)) porTramo.merge(f.mapa(), f.n(), Integer::sum);
-        int jpp = modo.endsWith("_1v1") ? 2 : modo.endsWith("_2v2") ? 4 : modo.endsWith("_3v3") ? 6 : modo.endsWith("_4v4") ? 8 : 6;
-        Map<String, Integer> out = new LinkedHashMap<>();
-        for (Map.Entry<String, Integer> en : porTramo.entrySet()) out.put(en.getKey(), en.getValue() / jpp);
-        return out;
-    }
-
-    /** Winrate de una civ por mapa (para la ficha del tech tree): mapa → agg. */
-    static Map<String, CivAgg> civPorMapa(VentanaStats v, String modo, String tramo, String civ) {
-        Map<String, int[]> acc = new HashMap<>();
-        for (CivFila f : v.civs()) {
-            if (!f.modo().equals(modo) || !f.civ().equals(civ)) continue;
-            if (!tramoEnRango(f.tramo(), v.tramos(), tramo)) continue;
-            int[] a = acc.computeIfAbsent(f.mapa(), k -> new int[2]); a[0] += f.n(); a[1] += f.w();
-        }
-        Map<String, CivAgg> out = new HashMap<>();
-        for (Map.Entry<String, int[]> en : acc.entrySet()) out.put(en.getKey(), new CivAgg(en.getKey(), en.getValue()[0], en.getValue()[1], 0));
-        return out;
-    }
-
     /** Color del winrate: verde si el intervalo queda por encima de 50, rojo si por debajo, gris si no se sabe. */
     /** Color de un winrate, igual en toda la app: verde de 52 % en adelante, rojo de 48 % para abajo, el resto en el color del texto. */
     static Color colorWr(int w, int n) {
@@ -1989,12 +1879,6 @@ public class SpoilerFreeRecs extends JFrame {
         Color fg = UIManager.getColor("Label.foreground");
         return fg == null ? Color.GRAY : fg;
     }
-    static String duracionMedia(long segundos, int n) {
-        if (n == 0) return "-";
-        long s = segundos / n;
-        return String.format(Locale.ROOT, "%d:%02d", s / 60, s % 60) + " min";
-    }
-
     // ----- Panel «Civ Stats» -----
     JPanel construirPanelCivStats() {
         civStatsPanel = new JPanel(new BorderLayout(8, 6));

@@ -32,3 +32,4 @@
 | 2026-09-24 | Live (vivoWatch, vivoInfo, VIVO_RIVAL, VIVO_PARTIDA) | borrados y escrituras en varios mapas sin atomicidad (≈7225, 7237, 10728, 11971, 12032, 12172, 13037 frente a resumenVivo): estados a medias (rival sin partida…). LiveService como único escritor | 2 |
 | 2026-09-24 | api.Cancelacion / trabajando() | `opEnCurso = on` y `stopOperacion = false` son dos volatile sin atomicidad: httpText puede ver el stop de la operación anterior (el comentario ya lo asume) | 2 |
 | 2026-09-24 | cache.Vivos.VIVO_RIVAL | `Object[]` mutable y sin tipo: record | 2 |
+| 2026-09-24 | service.CalculoStats.MIN_PARTIDAS_MAPA | constante que nadie usa (ya en la 1.1): usarla donde tocaba o quitarla | 4 |

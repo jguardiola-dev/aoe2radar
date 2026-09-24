@@ -8,6 +8,7 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.cache.CachePerfiles;
 import dev.tirador.aoe2radar.cache.HistorialDisco;
 import dev.tirador.aoe2radar.cache.Paises;
+import dev.tirador.aoe2radar.sfrdata.CivStats;
 import dev.tirador.aoe2radar.sfrdata.Ladder;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -277,7 +278,7 @@ class RegresionCapturas {
         foto("shot_ladder_ew.png");
         // ----- Civ Stats
         SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());
-        for (int i = 0; i < 120 && !SpoilerFreeRecs.VENTANAS_STATS.containsKey(app.statsVentana); i++) Thread.sleep(250);
+        for (int i = 0; i < 120 && !CivStats.VENTANAS_STATS.containsKey(app.statsVentana); i++) Thread.sleep(250);
         Thread.sleep(2500);
         cerrarDialogos();
         foto("shot_civstats_arriba.png");
