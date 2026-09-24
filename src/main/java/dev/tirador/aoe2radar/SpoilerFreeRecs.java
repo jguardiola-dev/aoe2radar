@@ -31,6 +31,7 @@
 package dev.tirador.aoe2radar;
 
 import dev.tirador.aoe2radar.api.ApiClient;
+import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
@@ -844,7 +845,7 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** Una llamada por jugador: sus últimas partidas, filtradas a 1v1 ranked dentro de la ventana. */
     Forma calcForma(long pid, int horas) throws Exception {
-        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pid + "&page=1&per_page=40"));
+        Object root = COMPANION.matches(pid, 1, 40);
         Instant desde = Instant.now().minus(Duration.ofHours(horas));
         int diff = 0, w = 0, l = 0, partidas = 0, racha = 0; Boolean rachaGana = null; boolean rachaViva = true;
         for (Object o : arr(val(obj(root), "matches"))) {
@@ -870,7 +871,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** Una llamada a /profiles: la serie de rating 1v1 con fechas → 24 h y 7 d a la vez.
      *  Devuelve {forma24, forma7d}; null si el perfil no trae serie (entonces se usa calcForma). */
     Forma[] calcFormaSerie(long pid) throws Exception {
-        Map<String, Object> root = obj(Json.parse(httpText429(API + "/profiles/" + pid)));
+        Map<String, Object> root = COMPANION.perfil(pid);
         List<Object[]> serie = new ArrayList<>();   // {epochMs, rating, ratingDiff|null}
         for (Object lbO : arr(val(root, "ratings"))) {
             Map<String, Object> lb = obj(lbO);
@@ -919,7 +920,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** Forma de hasta cinco jugadores con UNA llamada (/matches?profile_ids=…): partidas 1v1 RM con resultado y ±ELO; 24 h y 7 días. */
     Map<Long, Forma[]> calcFormaLote(List<Player> lote) throws Exception {
         StringBuilder csv = new StringBuilder(); for (Player p : lote) { if (csv.length() > 0) csv.append(','); csv.append(p.id()); }
-        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + csv + "&page=1&per_page=50"));
+        Object root = COMPANION.matches(csv.toString(), 1, 50);
         Map<Long, List<Object[]>> series = new HashMap<>();   // pid → {epochMs, ratingDespués, diff} de más nueva a más vieja
         for (Object o : arr(val(obj(root), "matches"))) {
             Match m = parseMatch(obj(o));
@@ -1095,7 +1096,7 @@ public class SpoilerFreeRecs extends JFrame {
         String pais = "", clan = "";
         long games = 0;
         try {
-            Map<String, Object> root = obj(Json.parse(httpText429(API + "/profiles/" + pid)));
+            Map<String, Object> root = COMPANION.perfil(pid);
             aprenderCanal(pid, val(root, "social_twitch_channel", "socialTwitchChannel"));
             aprenderPais(pid, val(root, "country"));
             pais = String.valueOf(firstNonNull(val(root, "country"), "")).trim();
@@ -2975,7 +2976,7 @@ public class SpoilerFreeRecs extends JFrame {
         boolean cancelado = false;
         for (int pag = desde; pag <= hasta; pag++) {
             if (cancelar.getAsBoolean()) { cancelado = true; break; }   // el usuario ya está mirando a otro: ni una llamada más
-            Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pid + "&page=" + pag + "&per_page=" + PER_PAGE));
+            Object root = COMPANION.matches(pid, pag, PER_PAGE);
             List<Object> ms = arr(val(obj(root), "matches"));
             ultimaPagina = pag;
             if (ms.isEmpty()) { completo = true; break; }
@@ -3674,7 +3675,7 @@ public class SpoilerFreeRecs extends JFrame {
                 Actividad base = ACTIVIDAD_CACHE.get(pid);
                 Set<Long> vistos = new HashSet<>(); if (base != null) for (Match x : base.partidas()) vistos.add(x.id);
                 List<Match> extra = new ArrayList<>();
-                Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pid + "&page=1&per_page=50"));
+                Object root = COMPANION.matches(pid, 1, 50);
                 for (Object o : arr(val(obj(root), "matches"))) { Match x = parseMatch(obj(o)); if (x != null && x.finished != null && !vistos.contains(x.id)) { x.refId = pid; extra.add(x); } }
                 nuevas = extra.size();
                 if (base != null && !extra.isEmpty()) {
@@ -5120,7 +5121,7 @@ public class SpoilerFreeRecs extends JFrame {
         List<Object[]> top = new ArrayList<>();
         switch (liveFuenteTipo) {
             case "pais" -> {
-                Map<String, Object> root = obj(Json.parse(httpText429(API + "/leaderboards/rm_1v1?page=1&per_page=100&country=" + liveFuenteValor)));
+                Map<String, Object> root = COMPANION.leaderboard("rm_1v1", 1, 100, liveFuenteValor);
                 for (Object o : arr(val(root, "players"))) {
                     Map<String, Object> pl = obj(o);
                     long pid = lng(val(pl, "profile_id", "profileId")); if (pid <= 0) continue;
@@ -5134,7 +5135,7 @@ public class SpoilerFreeRecs extends JFrame {
             case "grupo" -> { for (Player pl : todosJugadores) if (pl.grupo().equalsIgnoreCase(liveFuenteValor)) { Integer elo = eloWatch.get(pl.id()); top.add(new Object[]{ pl.id(), pl.name(), elo == null ? 0 : elo, 0, paisDe(pl.id()) }); } }
             default -> {
                 for (int pag = 1; pag <= 3 && top.size() < AHORA_TOP; pag++) {
-                    Map<String, Object> root = obj(Json.parse(httpText429(API + "/leaderboards/rm_1v1?page=" + pag + "&per_page=100")));
+                    Map<String, Object> root = COMPANION.leaderboard("rm_1v1", pag, 100, null);
                     for (Object o : arr(val(root, "players"))) {
                         Map<String, Object> pl = obj(o);
                         long pid = lng(val(pl, "profile_id", "profileId")); if (pid <= 0) continue;
@@ -5176,7 +5177,7 @@ public class SpoilerFreeRecs extends JFrame {
                     StringBuilder csv = new StringBuilder(); Set<Long> ids = new HashSet<>();
                     for (Object[] f : lote) { if (csv.length() > 0) csv.append(','); csv.append((Long) f[0]); ids.add((Long) f[0]); }
                     try {
-                        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + csv + "&page=1&per_page=100"));
+                        Object root = COMPANION.matches(csv.toString(), 1, 100);
                         for (Object o : arr(val(obj(root), "matches"))) {
                             Match m = parseMatch(obj(o));
                             if (m == null) continue;
@@ -5439,7 +5440,7 @@ public class SpoilerFreeRecs extends JFrame {
                     res.setText(t("consultando…", "checking…"));
                     long pid0 = m.players.get(0).id;
                     new Thread(() -> {   // el socket avisa del final antes de que la API tenga el resultado: una llamada, solo si lo pides
-                        try { Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pid0 + "&page=1&per_page=5")); for (Object o : arr(val(obj(root), "matches"))) { Match x = parseMatch(obj(o)); if (x != null && x.id == m.id) { for (MatchPlayer mp : m.players) for (MatchPlayer xp : x.players) if (xp.id == mp.id) mp.won = xp.won; break; } } } catch (Exception ex) { log("resultado: " + causa(ex)); }
+                        try { Object root = COMPANION.matches(pid0, 1, 5); for (Object o : arr(val(obj(root), "matches"))) { Match x = parseMatch(obj(o)); if (x != null && x.id == m.id) { for (MatchPlayer mp : m.players) for (MatchPlayer xp : x.players) if (xp.id == mp.id) mp.won = xp.won; break; } } } catch (Exception ex) { log("resultado: " + causa(ex)); }
                         SwingUtilities.invokeLater(pintar);
                     }, "resultado").start();
                 } });
@@ -5664,7 +5665,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** Ids del top del ladder 1v1 (global o de un país), sin tocar la vista. */
     List<Long> idsLeaderboard(String pais, int n) throws Exception {
         List<Long> out = new ArrayList<>();
-        Map<String, Object> root = obj(Json.parse(httpText429(API + "/leaderboards/rm_1v1?page=1&per_page=" + Math.min(100, Math.max(25, n)) + (pais != null ? "&country=" + pais : ""))));
+        Map<String, Object> root = COMPANION.leaderboard("rm_1v1", 1, Math.min(100, Math.max(25, n)), pais);
         for (Object o : arr(val(root, "players"))) { long pid = lng(val(obj(o), "profile_id", "profileId")); if (pid > 0) out.add(pid); if (out.size() >= n) break; }
         return out;
     }
@@ -6819,7 +6820,7 @@ public class SpoilerFreeRecs extends JFrame {
         new Thread(() -> {
             boolean viva = true;
             try {
-                Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pids.get(0) + "&page=1&per_page=5"));
+                Object root = COMPANION.matches(pids.get(0), 1, 5);
                 for (Object o : arr(val(obj(root), "matches"))) {
                     Match r = parseMatch(obj(o));
                     if (r != null && r.id == m.id) { viva = enCursoReal(r); break; }
@@ -9077,8 +9078,7 @@ public class SpoilerFreeRecs extends JFrame {
                         publish(t("Perfil ", "Profile ") + (++i) + "/" + perfiles.size()
                                 + " \u00b7 " + encontradas.size() + "/10\u2026");
                         try {
-                            Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pid
-                                    + "&page=1&per_page=" + PER_PAGE));
+                            Object root = COMPANION.matches(pid, 1, PER_PAGE);
                             perfilVistoAzar.put(pid, System.currentTimeMillis());
                             for (Object o : arr(val(obj(root), "matches"))) {
                                 Match m = parseMatch(obj(o));
@@ -9317,8 +9317,7 @@ public class SpoilerFreeRecs extends JFrame {
                         if (stopOperacion) break;
                         publish(t("Perfil ", "Profile ") + (++i) + "/" + nPerfiles + "…");
                         try {
-                            Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pid
-                                    + "&page=1&per_page=" + PER_PAGE));
+                            Object root = COMPANION.matches(pid, 1, PER_PAGE);
                             for (Object o : arr(val(obj(root), "matches"))) {
                                 Match m = parseMatch(obj(o));
                                 if (m != null && m.finished != null) unicos.putIfAbsent(m.id, m);
@@ -9853,9 +9852,7 @@ public class SpoilerFreeRecs extends JFrame {
                 List<Object[]> out = new ArrayList<>();
                 for (String id : new String[]{ "rm_1v1", "3" }) {
                     try {
-                        Map<String, Object> root = obj(Json.parse(httpText429(
-                                API + "/leaderboards/" + id + "?page=1&per_page=100"
-                                + (pais != null ? "&country=" + pais : ""))));
+                        Map<String, Object> root = COMPANION.leaderboard(id, 1, 100, pais);
                         for (Object o : arr(val(root, "players"))) {
                             Map<String, Object> pl = obj(o);
                             long pid = lng(val(pl, "profile_id", "profileId"));
@@ -10011,8 +10008,7 @@ public class SpoilerFreeRecs extends JFrame {
                         csv.append(p.id());
                     }
                     try {
-                        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + csv
-                                + "&page=1&per_page=100"));
+                        Object root = COMPANION.matches(csv.toString(), 1, 100);
                         int nPart = 0, nCurso = 0; Instant masAntigua = null;
                         for (Object o : arr(val(obj(root), "matches"))) {
                             Match m = parseMatch(obj(o));
@@ -10042,7 +10038,7 @@ public class SpoilerFreeRecs extends JFrame {
                     if (stopOperacion) break;
                     if (!vivoWatch.containsKey(p.id()) || resultado.containsKey(p.id()) || !topVerificados.contains(p.id())) continue;
                     try {
-                        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + p.id() + "&page=1&per_page=3"));
+                        Object root = COMPANION.matches(p.id(), 1, 3);
                         Match ultima = null;
                         for (Object o : arr(val(obj(root), "matches"))) { Match m = parseMatch(obj(o)); if (m != null) { ultima = m; break; } }
                         if (ultima != null && enCursoReal(ultima)) {
@@ -10117,7 +10113,7 @@ public class SpoilerFreeRecs extends JFrame {
     static List<Object[]> cuentasVinculadas(long profileId) {
         List<Object[]> out = new ArrayList<>();
         try {
-            Map<String, Object> root = obj(Json.parse(httpText429(API + "/profiles/" + profileId)));
+            Map<String, Object> root = COMPANION.perfil(profileId);
             aprenderCanal(profileId, val(root, "social_twitch_channel", "socialTwitchChannel"));
             Set<Long> vistos = new HashSet<>();
             for (Object o : arr(val(root, "linked_profiles", "linkedProfiles"))) {
@@ -10476,7 +10472,7 @@ public class SpoilerFreeRecs extends JFrame {
             String motivo;
             @Override protected List<String[]> doInBackground() {
                 try {
-                    Map<String, Object> root = obj(Json.parse(httpText429(API + "/profiles/" + pid)));
+                    Map<String, Object> root = COMPANION.perfil(pid);
                     Object sid = val(root, "steam_id", "steamId");
                     String steamId = sid == null ? "" : String.valueOf(sid).trim();
                     if (steamId.isBlank() || "null".equals(steamId)) {
@@ -10783,9 +10779,9 @@ public class SpoilerFreeRecs extends JFrame {
             final List<String[]> completos = new ArrayList<>();
             @Override protected Map<Long, String[]> doInBackground() {
                 Map<String, String[]> envivo = new HashMap<>();   // clave lower -> {canal, título, viewers}
-                String h = "https://api.aoe2companion.com/twitch/live?game=13389";
+                String h = CompanionApi.TWITCH_LIVE + "?game=13389";   // solo para el log: la URL real la construye COMPANION.twitchDirectos()
                 try {
-                    Object root = Json.parse(httpText429(h));
+                    Object root = COMPANION.twitchDirectos();
                     List<Object> lista = root instanceof List<?> l ? new ArrayList<>(l)
                             : arr(val(obj(root), "data"));
                     for (Object o : lista) {
@@ -10826,7 +10822,7 @@ public class SpoilerFreeRecs extends JFrame {
                     if (consultas++ >= 12) break;
                     String canal = CANAL_DE.get(p.id());
                     try {
-                        Object rootC = Json.parse(httpText429("https://api.aoe2companion.com/twitch/live?channel=" + canal.toLowerCase()));
+                        Object rootC = COMPANION.twitchCanal(canal);
                         Object primero = rootC instanceof List<?> lc ? (lc.isEmpty() ? null : lc.get(0)) : rootC;
                         if (primero != null) {
                             Map<String, Object> s = obj(primero);
@@ -11099,7 +11095,7 @@ public class SpoilerFreeRecs extends JFrame {
                 long games = 0;
                 Integer rating = null, maxRating = null, wins = null, losses = null;
                 try {
-                    Map<String, Object> root = obj(Json.parse(httpText429(API + "/profiles/" + pid)));
+                    Map<String, Object> root = COMPANION.perfil(pid);
                     aprenderCanal(pid, val(root, "social_twitch_channel", "socialTwitchChannel"));
                     Object c = val(root, "country");
                     aprenderPais(pid, c);
@@ -11130,8 +11126,7 @@ public class SpoilerFreeRecs extends JFrame {
                     List<Integer> serie = new ArrayList<>();
                     for (int pag = 1; pag <= 2 && serie.size() <= 15; pag++) {
                         dormir(PAUSA_MS / 2);
-                        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + pid
-                                + "&page=" + pag + "&per_page=" + PER_PAGE));
+                        Object root = COMPANION.matches(pid, pag, PER_PAGE);
                         List<Object> ms = arr(val(obj(root), "matches"));
                         if (ms.isEmpty()) break;
                         for (Object o : ms) {
@@ -11204,7 +11199,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** ELO 1v1 actual de un perfil, preguntando su fila del leaderboard. */
     static Integer eloDeLadder(long profileId) {
         try {   // la vía del perfil: la misma que usa el hover, probada
-            Map<String, Object> root = obj(Json.parse(httpText429(API + "/profiles/" + profileId)));
+            Map<String, Object> root = COMPANION.perfil(profileId);
             aprenderCanal(profileId, val(root, "social_twitch_channel", "socialTwitchChannel"));
             for (Object o : arr(val(root, "leaderboards"))) {
                 Map<String, Object> lb = obj(o);
@@ -11232,8 +11227,7 @@ public class SpoilerFreeRecs extends JFrame {
                     int[] snap = ELO_AYER.get(p.id());
                     if (snap != null && snap[0] > 0) { gamesWatch.put(p.id(), snap[1]); publish(new Object[]{ p.id(), null, snap[0], null }); continue; }   // del snapshot nocturno: sin llamada (el socket dirá si está en partida)
                     try {
-                        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + p.id()
-                                + "&page=1&per_page=10"));
+                        Object root = COMPANION.matches(p.id(), 1, 10);
                         Long vivo = null;
                         String resV = null;
                         Integer elo = null;
@@ -11249,8 +11243,7 @@ public class SpoilerFreeRecs extends JFrame {
                         }
                         if (elo == null) {   // sin 1v1 ranked entre sus últimas 10: mirar más atrás
                             dormir(PAUSA_MS);
-                            Object root2 = Json.parse(httpText429(API + "/matches?profile_ids=" + p.id()
-                                    + "&page=1&per_page=" + PER_PAGE));
+                            Object root2 = COMPANION.matches(p.id(), 1, PER_PAGE);
                             for (Object o : arr(val(obj(root2), "matches"))) {
                                 Match m = parseMatch(obj(o));
                                 if (m == null || m.finished == null || m.players.size() != 2
@@ -11302,8 +11295,7 @@ public class SpoilerFreeRecs extends JFrame {
                         csv.append(p.id());
                     }
                     try {
-                        Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + csv
-                                + "&page=1&per_page=50"));
+                        Object root = COMPANION.matches(csv.toString(), 1, 50);
                         Map<Long, Long> vivos = new HashMap<>();
                         Map<Long, String> infos = new HashMap<>();
                         List<Match> terminadas = new ArrayList<>();
@@ -11440,8 +11432,7 @@ public class SpoilerFreeRecs extends JFrame {
         new SwingWorker<Boolean, Void>() {
             @Override protected Boolean doInBackground() {
                 try {
-                    Object root = Json.parse(httpText429(API + "/matches?profile_ids=" + profileId
-                            + "&page=1&per_page=" + PER_PAGE));
+                    Object root = COMPANION.matches(profileId, 1, PER_PAGE);
                     for (Object o : arr(val(obj(root), "matches"))) {
                         Match m = parseMatch(obj(o));
                         if (m != null && m.id == matchId) { log("espectar: verificación de " + matchId + " → started=" + m.started + " finished=" + m.finished); return enCursoReal(m); }
@@ -12560,6 +12551,8 @@ public class SpoilerFreeRecs extends JFrame {
     }
     /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
     static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> stopOperacion && opEnCurso);
+    /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
+    static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
 
     static String httpText(String url) throws IOException, InterruptedException { return API_CLIENTE.texto(url); }
 
