@@ -1,5 +1,7 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.util.Reloj;
+
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -12,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ThrottleCuboTest {
 
     /** Reloj de prueba: dormir no espera, solo apunta cuánto se durmió y adelanta la hora. */
-    static final class RelojFalso implements ThrottleCubo.Reloj {
+    static final class RelojFalso implements Reloj {
         long ahora = 1_000_000_000L;   // no empezar en 0: el freno real nunca ve la hora 0
         long dormido;
         @Override public long ahoraMs() { return ahora; }

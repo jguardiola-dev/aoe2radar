@@ -1,5 +1,7 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.util.Reloj;
+
 import java.util.Map;
 
 /** Reglas de cortesía con la API del companion: el Throttle único de la app y el mando a distancia (control.json). */
@@ -7,7 +9,7 @@ public final class Freno {
     private Freno() {}
 
     /** El único Throttle de la app: cubo de fichas (ráfaga de 5, luego 1 por segundo) y cortacircuitos ante 429. */
-    public static final Throttle THROTTLE = new ThrottleCubo(ThrottleCubo.Reloj.SISTEMA);
+    public static final Throttle THROTTLE = new ThrottleCubo(Reloj.SISTEMA);
 
     // ----- Buen vecino: mando a distancia (control.json en sfr-data) -----
     public static final Map<String, Object> CONTROL = new java.util.concurrent.ConcurrentHashMap<>();   // control.json: multiplicadores e interruptores

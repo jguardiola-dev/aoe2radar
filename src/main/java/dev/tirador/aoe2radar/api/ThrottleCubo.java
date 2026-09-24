@@ -1,21 +1,12 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.util.Reloj;
+
 /**
  * Throttle de cubo de fichas con cortacircuitos. Misma aritmética que el freno de la 1.1 (antes estado público en
  * Freno y en la app); ahora el estado es privado y el reloj entra por el constructor para poder probarlo sin esperar.
  */
 public final class ThrottleCubo implements Throttle {
-
-    /** El tiempo, inyectable: en producción el del sistema; en los tests, uno falso que avanza cuando el test quiere. */
-    public interface Reloj {
-        long ahoraMs();
-        void dormir(long ms) throws InterruptedException;
-
-        Reloj SISTEMA = new Reloj() {
-            @Override public long ahoraMs() { return System.currentTimeMillis(); }
-            @Override public void dormir(long ms) throws InterruptedException { Thread.sleep(ms); }
-        };
-    }
 
     static final int FICHAS = 5;                    // ráfaga máxima sin esperar
     static final long PAUSA_BASE_MS = 60_000L;      // primer 429: 60 s
