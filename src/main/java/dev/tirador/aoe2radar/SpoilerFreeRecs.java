@@ -50,6 +50,12 @@ import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 
+import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
+import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
+import static dev.tirador.aoe2radar.cache.Vivos.VISTO_VIVO_MS;
+import static dev.tirador.aoe2radar.cache.Vivos.VIVO_PARTIDA;
+import static dev.tirador.aoe2radar.cache.Vivos.VIVO_RIVAL;
+import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
 import static dev.tirador.aoe2radar.cache.Anotaciones.NOTAS;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarAliases;
@@ -347,12 +353,6 @@ public class SpoilerFreeRecs extends JFrame {
         }
     }
 
-    /** Partida realmente en curso: sin terminar y empezada hace menos de 3 h.
-     *  Las «en curso» de hace días son fantasmas de partidas que crashearon. */
-    static boolean enCursoReal(Match m) {
-        return m != null && !m.fantasma && m.finished == null && m.started != null
-                && m.started.isAfter(Instant.now().minus(Duration.ofHours(3)));
-    }
     /** Nadie juega dos partidas a la vez: una «en curso» cuyo jugador tiene otra partida empezada después es un fantasma (la API no registró el final). También lo es si el socket/API dice que ese jugador está en OTRA partida. */
     static void marcarFantasmas(List<Match> lista) {
         Map<Long, Instant> ultimaPorJugador = new HashMap<>();
@@ -1042,15 +1042,10 @@ public class SpoilerFreeRecs extends JFrame {
         if (resultadosBtn != null && resultadosBtn.isSelected()) resultadosBtn.setSelected(false);
         if (cambia) { actualizarNotaSpoilers(); if (tableModel != null) tableModel.fireTableDataChanged(); }
     }
-    static volatile boolean stopOperacion;
-    static volatile boolean opEnCurso;   // solo dentro de una operación cancelable el freno corta pausas
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
     volatile int fallosFetch;   // jugadores sin respuesta en la última búsqueda
     final Map<Long, String> vivoInfo = new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** Resumen compacto de la partida en curso, para la sublínea y el tooltip:
-     *  1v1 → «vs Rival (CivP–CivR) · Mapa»; equipos → «TG 4v4 · Mapa». */
-    static final Map<Long, Object[]> VIVO_RIVAL = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {rivalId, rivalNombre}
 
     // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
     static final int BIN_LADDER = 25;
@@ -3779,7 +3774,6 @@ public class SpoilerFreeRecs extends JFrame {
         return new Forma[]{ f24, f7 };
     }
     final Map<Long, Integer> gamesWatch = new java.util.concurrent.ConcurrentHashMap<>();
-    static final Map<Long, Long> VISTO_VIVO_MS = new java.util.concurrent.ConcurrentHashMap<>();   // pid → última vez que lo vimos en partida (socket/barridos)
     boolean actOrigenSfr; String actHastaSfr; JButton actHoyBtn; JLabel actHastaLabel;
 
     static String modoDeLadder(String lb) {
@@ -5027,7 +5021,6 @@ public class SpoilerFreeRecs extends JFrame {
     // lotes al abrir y cada 10 min; entre medias, el socket del companion suscrito a esos 250.
     // =====================================================================================
     static final int AHORA_TOP = 250;
-    static final Map<Long, Match> VIVO_PARTIDA = new java.util.concurrent.ConcurrentHashMap<>();   // pid → partida en curso (socket y barridos)
     JToggleButton ahoraBtn; JPanel ahoraPanel; JLabel ahoraEstado, liveSub; PanelScrollable ahoraCuerpo; JComboBox<String> liveTipo, liveMapa, liveOrden, liveFuente; JCheckBox liveTwitch, liveTopTop;
     final List<String[]> liveFuentes = new ArrayList<>();   // {tipo, valor, etiqueta}: top · pais · clan · grupo
     String liveFuenteTipo = "top", liveFuenteValor = ""; boolean liveRellenandoFuente;
@@ -7252,6 +7245,8 @@ public class SpoilerFreeRecs extends JFrame {
         if (cambio) SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); table.repaint(); });
     }
 
+    /** Resumen compacto de la partida en curso, para la sublínea y el tooltip:
+     *  1v1 → «vs Rival (CivP–CivR) · Mapa»; equipos → «TG 4v4 · Mapa». */
     static String resumenVivo(Match m, long pid) {
         if (enCursoReal(m)) { VIVO_PARTIDA.put(pid, m); VISTO_VIVO_MS.put(pid, System.currentTimeMillis()); }   // todos los caminos que detectan a alguien en partida pasan por aquí: así el menú «En partida ahora» siempre tiene la partida
         try {
