@@ -37,6 +37,7 @@ public final class Snapshots {
     public static final Map<Long, int[]> ELO_HACE7 = new java.util.concurrent.ConcurrentHashMap<>();
     public static volatile String eloAyerFecha, eloHace7Fecha; public static volatile boolean eloAyerCargando;
     private static final Sello ELO_AYER_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO), MUESTRA_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);
+    private static final Sello ELO_AYER_INTENTO = CacheService.SISTEMA.sello(Caducidad.REINTENTO);   // último intento, bueno o malo
     public static volatile Map<String, List<List<Object>>> MUESTRA_AYER; public static volatile String muestraFecha;
     public static byte[] descargarCacheDiaria(String nombre, int timeoutS) throws Exception {   // un archivo de la release, guardado en disco y reutilizado 12 h
         Path f = PERFILES_SHARDS_DIR.resolve(nombre);
@@ -45,10 +46,27 @@ public final class Snapshots {
         try { Files.createDirectories(PERFILES_SHARDS_DIR); Files.write(f, raw); } catch (IOException ignored) { }
         return raw;
     }
-    /** Carga (o refresca cada 6 h) ELO_AYER/NOMBRES_AYER y ELO_HACE7. Silencioso si la release no existe todavía. */
+    /**
+     * Carga (o refresca cada 6 h) ELO_AYER/NOMBRES_AYER y ELO_HACE7. Silencioso si la release no existe todavía. Si el
+     * ELO de ayer no llega (sin red, release aún no publicada), reintenta a los 5 min y no a las 6 h: mientras falte,
+     * la forma y el ELO salen del companion. El reintento tras un fallo va en segundo plano: quien llama sigue al
+     * instante con lo que haya (como antes, que tras un fallo volvía al momento), sin comerse la espera de la red.
+     */
     public static void cargarEloAyer() {
-        if (eloAyerCargando || ELO_AYER_SELLO.fresco()) return;
+        if (eloAyerCargando || ELO_AYER_SELLO.fresco() || ELO_AYER_INTENTO.fresco()) return;
         eloAyerCargando = true;
+        if (eloAyerFallo) {
+            Thread h = new Thread(Snapshots::descargarEloAyer, "elo-ayer-reintento");
+            h.setDaemon(true);
+            try { h.start(); } catch (Throwable t) { eloAyerCargando = false; throw t; }   // si no arranca, no se queda «cargando» para siempre
+            return;
+        }
+        descargarEloAyer();
+    }
+    private static volatile boolean eloAyerFallo;   // el último intento no trajo el ELO de ayer
+    /** La descarga en sí (eloAyerCargando ya está a true); en el finally se apunta el intento y si llegó. */
+    private static void descargarEloAyer() {
+        boolean llego = false;
         try {
             Map<String, Object> m = leerGzJson(descargarCacheDiaria("elo_ayer.json.gz", 60));
             Object j = m.get("j");
@@ -56,6 +74,8 @@ public final class Snapshots {
                 ELO_AYER.clear(); NOMBRES_AYER.clear();
                 for (Map.Entry<?, ?> en : jm.entrySet()) { List<Object> v = arr(en.getValue()); long pid = Long.parseLong(String.valueOf(en.getKey())); ELO_AYER.put(pid, new int[]{ (int) lng(v.get(0)), (int) lng(v.get(1)), (int) lng(v.get(2)), (int) lng(v.get(3)) }); NOMBRES_AYER.put(pid, new String[]{ String.valueOf(v.get(4)), String.valueOf(v.get(5)) }); }
                 eloAyerFecha = String.valueOf(m.get("fecha"));
+                ELO_AYER_SELLO.marcar();   // solo si llegó: un fallo no bloquea 6 h
+                llego = true;
             }
             String hace7 = LocalDate.now(ZoneId.of("UTC")).minusDays(7).toString();
             try {
@@ -65,7 +85,7 @@ public final class Snapshots {
             } catch (Exception ex) { log("perfiles: elo hace 7: " + causa(ex)); }
             log("perfiles: elo_ayer " + eloAyerFecha + ": " + ELO_AYER.size() + " jugadores; hace 7: " + ELO_HACE7.size());
         } catch (Exception ex) { log("perfiles: elo_ayer: " + causa(ex)); }
-        finally { ELO_AYER_SELLO.marcar(); eloAyerCargando = false; }
+        finally { eloAyerFallo = !llego; ELO_AYER_INTENTO.marcar(); eloAyerCargando = false; }
     }
     /** La muestra de ayer (Al azar por ELO y Guess the ELO sin API). null si no está disponible. */
     public static Map<String, List<List<Object>>> muestraAyer() {
