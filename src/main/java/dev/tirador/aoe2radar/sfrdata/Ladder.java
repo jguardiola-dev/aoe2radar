@@ -8,26 +8,14 @@ import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.util.Json;
 
-import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import static dev.tirador.aoe2radar.api.Http.HTTP;
-import static dev.tirador.aoe2radar.api.Http.UA;
-import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
-import static dev.tirador.aoe2radar.util.Config.guardarConfig;
-import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.firstNonNull;
@@ -45,7 +33,6 @@ public final class Ladder {
     // los volcados diarios de aoe2companion): campanas por ladder (todos y activos), dispersión
     // rating 1v1 × equipos, y clanes con sus miembros
     // =====================================================================================
-    public static final String SFR_DATA = "https://raw.githubusercontent.com/jguardiola-dev/sfr-data/data/";
     public static volatile Map<String, LadderHist> ladderHists = Map.of();          // todos los jugadores del ladder
     public static volatile Map<String, LadderHist> ladderHistsActivos = Map.of();   // activos: 10+ partidas y una en 28 días
     public static volatile Map<String, Rejilla> dispersionTodos = Map.of();         // «rm» / «ew» → rejilla 1v1 × equipos
@@ -58,23 +45,8 @@ public final class Ladder {
     public static volatile String ladderProgreso = "";
     public static final Object LADDER_LOCK = new Object();
 
-    /** Baja un archivo de sfr-data si cambió (ETag) y devuelve su contenido (gzip transparente). */
-    public static byte[] sfrDataArchivo(String nombre) throws Exception {
-        Path local = LADDER_DIR.resolve(nombre);
-        Files.createDirectories(local.getParent());
-        if (!CacheService.SISTEMA.archivoFresco(local, Caducidad.NOCTURNO)) {
-            HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create(SFR_DATA + nombre)).timeout(Duration.ofSeconds(60)).header("User-Agent", UA).GET();
-            String etag = leerConfig("sfrdata_etag_" + nombre, "");
-            if (!etag.isEmpty() && Files.exists(local)) rb.header("If-None-Match", etag);
-            HttpResponse<byte[]> r = HTTP.send(rb.build(), HttpResponse.BodyHandlers.ofByteArray());
-            if (r.statusCode() == 304) Files.setLastModifiedTime(local, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
-            else if (r.statusCode() / 100 == 2) { Files.write(local, r.body()); r.headers().firstValue("etag").ifPresent(e -> guardarConfig("sfrdata_etag_" + nombre, e)); }
-            else if (!Files.exists(local)) throw new IOException("HTTP " + r.statusCode() + " (" + nombre + ")");
-        }
-        byte[] b = Files.readAllBytes(local);
-        if (nombre.endsWith(".gz")) try (var in = new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(b))) { b = in.readAllBytes(); }
-        return b;
-    }
+    /** Baja un archivo de sfr-data si cambió (ETag) y devuelve su contenido (gzip transparente). Ver SfrDataClient.datos. */
+    public static byte[] sfrDataArchivo(String nombre) throws Exception { return SfrDataClient.SISTEMA.datos(nombre); }
 
     public static double dblNum(Object o) { return o instanceof Number n ? n.doubleValue() : 0; }
 

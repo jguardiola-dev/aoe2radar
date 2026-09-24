@@ -5,10 +5,7 @@ import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Sello;
 import dev.tirador.aoe2radar.util.Json;
 
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayList;
@@ -20,7 +17,6 @@ import java.util.Set;
 
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.api.Http.descargarBytes;
-import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.leerGzJson;
 import static dev.tirador.aoe2radar.util.Json.lng;
@@ -39,13 +35,8 @@ public final class Snapshots {
     private static final Sello ELO_AYER_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO), MUESTRA_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);
     private static final Sello ELO_AYER_INTENTO = CacheService.SISTEMA.sello(Caducidad.REINTENTO);   // último intento, bueno o malo
     public static volatile Map<String, List<List<Object>>> MUESTRA_AYER; public static volatile String muestraFecha;
-    public static byte[] descargarCacheDiaria(String nombre, int timeoutS) throws Exception {   // un archivo de la release, guardado en disco y reutilizado 12 h
-        Path f = PERFILES_SHARDS_DIR.resolve(nombre);
-        try { if (CacheService.SISTEMA.archivoFresco(f, Caducidad.DESCARGA_DIARIA)) return Files.readAllBytes(f); } catch (IOException ignored) { }
-        byte[] raw = descargarBytes(perfilesBase() + nombre, timeoutS);
-        try { Files.createDirectories(PERFILES_SHARDS_DIR); Files.write(f, raw); } catch (IOException ignored) { }
-        return raw;
-    }
+    /** Un archivo de la release, guardado en disco y reutilizado 12 h. Ver SfrDataClient.diario. */
+    public static byte[] descargarCacheDiaria(String nombre, int timeoutS) throws Exception { return SfrDataClient.SISTEMA.diario(nombre, timeoutS); }
     /**
      * Carga (o refresca cada 6 h) ELO_AYER/NOMBRES_AYER y ELO_HACE7. Silencioso si la release no existe todavía. Si el
      * ELO de ayer no llega (sin red, release aún no publicada), reintenta a los 5 min y no a las 6 h: mientras falte,
@@ -103,7 +94,6 @@ public final class Snapshots {
     // ----- Perfiles precalculados (release «perfiles» de sfr-data): el año completo sin tocar la API -----
     public static volatile Map<String, Object> PERFILES_INDEX;
     private static final Sello INDEX_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);
-    public static final Path PERFILES_SHARDS_DIR = LADDER_DIR.resolve("perfiles_shards");
 
     public static String perfilesBase() {
         Object v = CONTROL.get("perfiles_base");
@@ -120,15 +110,9 @@ public final class Snapshots {
         INDEX_SELLO.marcar();
         return PERFILES_INDEX;
     }
-    /** Un archivo de la release con caché en disco por «versión» (la fecha que lo hace válido): si la marca coincide, no se baja. */
-    public static byte[] archivoRelease(String nombre, String version, int timeoutS) throws Exception { return archivoRelease(perfilesBase(), nombre, version, timeoutS); }
-    public static byte[] archivoRelease(String base, String nombre, String version, int timeoutS) throws Exception {
-        Path f = PERFILES_SHARDS_DIR.resolve(nombre), marca = PERFILES_SHARDS_DIR.resolve(nombre + ".v");
-        try { if (Files.exists(f) && Files.exists(marca) && version.equals(Files.readString(marca).trim())) return Files.readAllBytes(f); } catch (IOException ignored) { }
-        byte[] raw = descargarBytes(base + nombre, timeoutS);
-        try { Files.createDirectories(PERFILES_SHARDS_DIR); Files.write(f, raw); Files.writeString(marca, version); } catch (IOException ex) { log("perfiles: caché: " + causa(ex)); }
-        return raw;
-    }
+    /** Un archivo de la release con caché en disco por «versión» (la fecha que lo hace válido). Ver SfrDataClient.versionado. */
+    public static byte[] archivoRelease(String nombre, String version, int timeoutS) throws Exception { return SfrDataClient.SISTEMA.versionado(nombre, version, timeoutS); }
+    public static byte[] archivoRelease(String base, String nombre, String version, int timeoutS) throws Exception { return SfrDataClient.SISTEMA.versionado(base, nombre, version, timeoutS); }
     /** El paquete del jugador: formato v2 = base semanal (shard-NNNN) + deltas diarios (delta-fecha-gG) del índice; formato v1 = shard-NNN. Devuelve {"v", "j": {pid: [partidas]}, "civs", "mapas"}. */
     public static Map<String, Object> perfilesShard(long pid) throws Exception {
         Map<String, Object> idx = perfilesIndex();
