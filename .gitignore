@@ -6,6 +6,10 @@ app/
 /descargas.log
 /sfrdata/
 /recs/
+/players.txt
+/banderas/
+/techtree/
+/arranque_error.log
 *.class
 .idea/
 .vscode/

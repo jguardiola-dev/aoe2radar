@@ -1048,11 +1048,7 @@ public class SpoilerFreeRecs extends JFrame {
      *  1v1 → «vs Rival (CivP–CivR) · Mapa»; equipos → «TG 4v4 · Mapa». */
     static final Map<Long, Object[]> VIVO_RIVAL = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {rivalId, rivalNombre}
 
-    // =====================================================================================
-    // LADDER — resúmenes ligeros publicados por sfr-data (rama «data»; GitHub Actions procesa
-    // los volcados diarios de aoe2companion): campanas por ladder (todos y activos), dispersión
-    // rating 1v1 × equipos, y clanes con sus miembros
-    // =====================================================================================
+    // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
     static final int BIN_LADDER = 25;
     static final int MAX_COMPARADOS = 10;
     static final String[] LADDER_IDS = { "rm_1v1", "rm_team", "ew_1v1", "ew_team" };
@@ -3805,7 +3801,6 @@ public class SpoilerFreeRecs extends JFrame {
         else abrirPerfil(0, "");
     }
 
-    /** Abre el perfil de un jugador; pid 0 = página vacía con el buscador. Pinta al instante lo guardado y va completando página a página. */
     /** Partida de la muestra → Match (jugadores con nombre, civ, rating y resultado; sin revelar nada en pantalla hasta que se pida). */
     Match matchDeMuestra(List<Object> f) {
         Match m = new Match();
@@ -4107,6 +4102,7 @@ public class SpoilerFreeRecs extends JFrame {
                 : t("No consta ninguna partida nueva desde el volcado; actualizar solo si crees que ha jugado hoy (2 llamadas)", "No new game is known since the dump; update only if you think they played today (2 requests)"));
         if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta el ", "Data up to ") + (actHastaSfr == null ? "?" : actHastaSfr) + (hayNuevas ? "" : t(" · sin partidas nuevas conocidas", " · no new games known")));
     }
+    /** Abre el perfil de un jugador; pid 0 = página vacía con el buscador. Pinta al instante lo guardado y va completando página a página. */
     void abrirPerfil(long pid, String nombre) {
         if (perfilBtn != null && !perfilBtn.isSelected()) perfilBtn.setSelected(true);
         directosBtn.setSelected(false);
