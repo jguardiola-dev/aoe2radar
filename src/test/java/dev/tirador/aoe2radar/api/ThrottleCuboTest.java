@@ -39,13 +39,39 @@ class ThrottleCuboTest {
         assertEquals(1000, r.dormido);
     }
 
-    @Test void el429EscalaLaPausaHastaElTope() {
-        ThrottleCubo t = new ThrottleCubo(new RelojFalso());
-        assertEquals(60_000, t.registrar429());
-        assertEquals(120_000, t.registrar429());
-        assertEquals(240_000, t.registrar429());
-        assertEquals(300_000, t.registrar429());
+    /** Deja pasar la pausa vigente entera (y 1 ms): el siguiente 429 es un episodio nuevo. */
+    static void pasaLaPausa(RelojFalso r, long pausa) { r.avanzar(pausa + 1); }
+
+    @Test void cada429TrasAcabarLaPausaEscalaHastaElTope() {
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        long p;
+        assertEquals(60_000, p = t.registrar429());  pasaLaPausa(r, p);
+        assertEquals(120_000, p = t.registrar429()); pasaLaPausa(r, p);
+        assertEquals(240_000, p = t.registrar429()); pasaLaPausa(r, p);
+        assertEquals(300_000, p = t.registrar429()); pasaLaPausa(r, p);
         assertEquals(300_000, t.registrar429(), "tope: 300 s");
+    }
+
+    @Test void un429JustoAlAcabarLaPausaEsUnEpisodioNuevo() {
+        // El caso real del reintento: el freno duerme la pausa entera y el 429 llega en el mismo milisegundo en que acaba.
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        r.avanzar(t.registrar429());                     // exactamente 60 s, sin el +1
+        assertEquals(120_000, t.registrar429());
+    }
+
+    @Test void un429DuranteLaPausaNoEscalaNiLaAcorta() {
+        // Decisión de Jorge (2026-09-24): un escalón por episodio. Los 429 que llegan con la pausa vigente son de la
+        // misma ráfaga (esas peticiones salieron antes de la pausa).
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        assertEquals(60_000, t.registrar429());
+        r.avanzar(10_000);
+        assertEquals(50_000, t.registrar429(), "devuelve lo que queda; no sube el escalón");
+        assertEquals(50_000, t.registrar429(), "ni con varios 429 seguidos");
+        pasaLaPausa(r, 50_000);
+        assertEquals(120_000, t.registrar429(), "acabada la pausa, el siguiente sí es un episodio nuevo");
     }
 
     @Test void trasUn429NadieLlamaHastaQuePaseLaPausa() throws Exception {
@@ -60,10 +86,11 @@ class ThrottleCuboTest {
         RelojFalso r = new RelojFalso();
         ThrottleCubo t = new ThrottleCubo(r);
         t.registrarExito();
-        t.registrar429(); t.registrar429();
+        pasaLaPausa(r, t.registrar429());                // 60 s
+        t.registrar429();                                // 120 s
         r.avanzar(5 * 60_000L);
         t.registrarExito();
-        assertEquals(240_000, t.registrar429(), "a los 5 min del último éxito sigue la escalada");
+        assertEquals(240_000, t.registrar429(), "a los ~6 min del último éxito sigue la escalada");
         r.avanzar(11 * 60_000L);
         t.registrarExito();
         assertEquals(60_000, t.registrar429(), "a los 11 min del último éxito vuelve a empezar");
@@ -90,7 +117,8 @@ class ThrottleCuboTest {
     @Test void nuncaSeDuermeMasDe300sDeUnaVezAunqueElRelojRetroceda() throws Exception {
         RelojFalso r = new RelojFalso();
         ThrottleCubo t = new ThrottleCubo(r);
-        for (int i = 0; i < 4; i++) t.registrar429();   // pausa de 300 s
+        for (int i = 0; i < 3; i++) pasaLaPausa(r, t.registrar429());
+        t.registrar429();                                // cuarto episodio: pausa de 300 s
         r.avanzar(-100_000);                            // p. ej. Windows ajusta la hora hacia atrás
         t.adquirir();
         assertEquals(300_000, r.dormido, "tope de lo que se duerme de una vez");
@@ -98,9 +126,12 @@ class ThrottleCuboTest {
 
     @Test void caracterizacion_elPrimerExitoSinExitoPrevioOlvidaLaEscalada() {
         // Rareza de la 1.1 que se conserva: ultimoExito empieza en 0, así que el primer éxito de la sesión borra la escalada.
-        ThrottleCubo t = new ThrottleCubo(new RelojFalso());
-        t.registrar429(); t.registrar429();
-        t.registrarExito();
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        pasaLaPausa(r, t.registrar429());
+        long p = t.registrar429();                       // 120 s
+        t.registrarExito();                              // primer éxito de la sesión: olvida
+        pasaLaPausa(r, p);
         assertEquals(60_000, t.registrar429());
     }
 

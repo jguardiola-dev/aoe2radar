@@ -21,7 +21,7 @@ public final class ThrottleCubo implements Throttle {
     static final long PAUSA_BASE_MS = 60_000L;      // primer 429: 60 s
     static final long PAUSA_MAX_MS = 300_000L;      // tope de la pausa (y de lo que se duerme de una vez)
     static final int ESCALONES = 4;                 // 60 → 120 → 240 → 300 (tope)
-    static final long OLVIDO_MS = 10 * 60_000L;     // diez minutos sin 429: se olvida la escalada
+    static final long OLVIDO_MS = 10 * 60_000L;     // más de 10 min desde el último éxito contado: se olvida la escalada (ver DEUDA)
 
     private final Reloj reloj;
     private final Object cubo = new Object();
@@ -46,9 +46,16 @@ public final class ThrottleCubo implements Throttle {
         }
     }
 
-    /** Bajo candado: en la 1.1 la escalada no era atómica y dos 429 a la vez podían subir un escalón en vez de dos. */
+    /**
+     * Un escalón por EPISODIO, no por respuesta: si ya hay una pausa vigente, un 429 más son respuestas de la misma
+     * ráfaga (salieron antes de la pausa) y no escalan ni acortan la pausa. Si el 429 llega después de que acabe,
+     * sí escala. Para el servidor es igual (durante la pausa no le llega nada); para el usuario, 60 s y no 300 s por
+     * una sola queja. Decisión de Jorge (2026-09-24). Bajo candado: la escalada es atómica.
+     */
     @Override public long registrar429() {
         synchronized (escalada) {
+            long vigente = pausaHastaMs - reloj.ahoraMs();
+            if (vigente > 0) return Math.min(PAUSA_MAX_MS, vigente);   // lo que queda (con tope: si el reloj retrocede no se duerme más de 300 s)
             pausasSeguidas = Math.min(pausasSeguidas + 1, ESCALONES);
             long pausa = Math.min(PAUSA_MAX_MS, PAUSA_BASE_MS * (1L << (pausasSeguidas - 1)));
             pausaHastaMs = reloj.ahoraMs() + pausa;

@@ -67,14 +67,62 @@ class ApiClientTest {
         red.responde(500);
         IOException e = assertThrows(IOException.class, () -> api.texto(COMPANION));
         assertEquals("HTTP 500", e.getMessage());
+        assertEquals(0, throttle.cuatrocientosVeintinueve, "un 500 no es un 429");
+        assertTrue(avisos.isEmpty());
     }
 
-    @Test void caracterizacion_textoNoRegistraEl429() {
-        // Rareza de la 1.1: httpText a secas deja pasar el 429 sin contarlo al freno (paso B lo cambia).
+    @Test void textoCuentaEl429DelCompanionAunqueNoReintente() {
+        // Cambio a propósito (fase 2, paso B): en la 1.1 httpText a secas dejaba pasar el 429 sin contarlo al freno.
         red.responde(429);
+        IOException e = assertThrows(IOException.class, () -> api.texto(COMPANION));
+        assertEquals("HTTP 429", e.getMessage(), "quien llama recibe lo mismo que antes");
+        assertEquals(1, throttle.cuatrocientosVeintinueve);
+        assertEquals(List.of(60L), avisos);
+        assertEquals(1, red.pedidas.size(), "texto no reintenta");
+    }
+
+    @Test void textoCuentaEl429DeCualquierHostDelCompanion() {
+        red.responde(429);
+        assertThrows(IOException.class, () -> api.texto("https://api.aoe2companion.com/twitch/live?game=13389"));
+        assertEquals(1, throttle.cuatrocientosVeintinueve);
+    }
+
+    @Test void caracterizacion_textoDetectaEl429PorElEstadoNoPorElMensaje() {
+        // Asimetría con textoCon429, que lo detecta por el texto del mensaje (ver DEUDA).
+        red.responde(new IOException("proxy: 429 conexiones"));
         assertThrows(IOException.class, () -> api.texto(COMPANION));
         assertEquals(0, throttle.cuatrocientosVeintinueve);
+    }
+
+    @Test void conElFrenoRealUn429EnTextoHaceEsperarALaLlamadaSiguiente() throws Exception {
+        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> false);
+        red.responde(429, 200);
+        assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));
+        long antes = reloj.dormido;
+        conFrenoReal.texto(COMPANION);
+        assertEquals(60_000, reloj.dormido - antes, "el efecto buscado: tras el 429, todos esperan la pausa");
+    }
+
+    @Test void conElFrenoRealElReintentoTrasLaPausaEsUnEpisodioNuevo() throws Exception {
+        ThrottleCuboTest.RelojFalso reloj = new ThrottleCuboTest.RelojFalso();
+        ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> false);
+        red.responde(429, 429, 200);
+        assertEquals("cuerpo 200", conFrenoReal.textoCon429(COMPANION));
+        assertEquals(List.of(60L, 120L), avisos, "el segundo 429 llega tras dormir la pausa: escala");
+    }
+
+    @Test void textoNoCuentaEl429DeOtroHost() {
+        red.responde(429);
+        assertThrows(IOException.class, () -> api.texto(STEAM));
+        assertEquals(0, throttle.cuatrocientosVeintinueve);
         assertTrue(avisos.isEmpty());
+    }
+
+    @Test void textoNoCuentaExitos() {
+        // Decisión: los éxitos solo los cuenta textoCon429 (ver DEUDA, «olvido de la escalada»).
+        assertDoesNotThrow(() -> api.texto(COMPANION));
+        assertEquals(0, throttle.exitos);
     }
 
     @Test void unDetenerRealCancelaAntesDePedirNada() {
@@ -113,7 +161,7 @@ class ApiClientTest {
         IOException e = assertThrows(IOException.class, () -> api.textoCon429(COMPANION));
         assertEquals("HTTP 429", e.getMessage());
         assertEquals(3, red.pedidas.size());
-        assertEquals(2, throttle.cuatrocientosVeintinueve);
+        assertEquals(2, throttle.cuatrocientosVeintinueve, "caracterización: el tercer 429 sale sin registrarse (texto() sí contaría todos)");
     }
 
     @Test void un429DeSteamNoTocaElFrenoDelCompanion() throws Exception {
