@@ -126,6 +126,7 @@ import static dev.tirador.aoe2radar.service.Juego.buscarLobbyConPid;
 import static dev.tirador.aoe2radar.service.Juego.carpetaLogsJuego;
 import static dev.tirador.aoe2radar.service.Juego.detectarSavegames;
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
+import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.MODOS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS_KEYS;
@@ -155,6 +156,8 @@ import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
+import static dev.tirador.aoe2radar.util.Formato.fmtTop;
+import static dev.tirador.aoe2radar.util.Formato.miles;
 import static dev.tirador.aoe2radar.util.Formato.pct1;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -177,6 +180,14 @@ import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 import static dev.tirador.aoe2radar.util.Sistema.fijarAutoArranque;
 import static dev.tirador.aoe2radar.util.Sistema.rutaExePropia;
+import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
+import static dev.tirador.aoe2radar.util.Texto.limpiaNombre;
+import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
+import static dev.tirador.aoe2radar.util.Texto.recorta;
+import static dev.tirador.aoe2radar.util.Texto.sanea;
+import static dev.tirador.aoe2radar.util.Texto.sinTildes;
+import static dev.tirador.aoe2radar.util.Texto.variantesNick;
+import static dev.tirador.aoe2radar.util.Texto.versionMayor;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -655,11 +666,6 @@ public class SpoilerFreeRecs extends JFrame {
     volatile boolean rearmandoPais;
     List<PaisItem> catalogoOrdenado = List.of();
 
-    static String sinTildes(String s) {
-        return java.text.Normalizer.normalize(s.toLowerCase(), java.text.Normalizer.Form.NFD)
-                .replaceAll("\\p{M}", "");
-    }
-
     /** El campo filtra el combo de al lado; nadie más escribe en él, así que
      *  no puede realimentarse (la lección del cuelgue de la 4.41). */
     void instalarFiltroPais() {
@@ -762,26 +768,6 @@ public class SpoilerFreeRecs extends JFrame {
     }
     JPopupMenu rivalPopup;
     String filtroRival = "";
-
-    /** minúsculas y sin acentos, para comparar nicks con tolerancia */
-    static String normalizarNick(String s) {
-        if (s == null) return "";
-        String n = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "");
-        return n.toLowerCase().trim();
-    }
-
-    /** ¿Alguien del bando contrario al sujeto coincide con el filtro? (contiene, sin acentos; respeta alias) */
-    static boolean rivalCoincide(Match m, String filtro) {
-        if (filtro.isEmpty()) return true;
-        MatchPlayer yo = null;
-        for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
-        for (MatchPlayer p : m.players) {
-            if (p.id == m.refId) continue;
-            if (yo != null && m.players.size() > 2 && p.team == yo.team) continue;   // aliado: no cuenta
-            if (normalizarNick(nombreVisible(p.id, p.name)).contains(filtro) || normalizarNick(p.name).contains(filtro)) return true;
-        }
-        return false;
-    }
 
     /** Sugerencias: rivales de la búsqueda actual que contienen lo tecleado, con su número de partidas. */
     void sugerirRivales() {
@@ -1086,16 +1072,6 @@ public class SpoilerFreeRecs extends JFrame {
     boolean soloActivos = Boolean.parseBoolean(leerConfig("ladder_activos", "true"));
     static final Color[] PALETA_LADDER = { new Color(0xe5, 0x73, 0x73), new Color(0x81, 0xc7, 0x84), new Color(0xff, 0xb7, 0x4d), new Color(0xba, 0x68, 0xc8), new Color(0x4d, 0xd0, 0xe1),
             new Color(0xff, 0xf1, 0x76), new Color(0xf0, 0x62, 0x92), new Color(0xa1, 0x88, 0x7f), new Color(0x90, 0xa4, 0xae), new Color(0x7c, 0xb3, 0x42) };
-
-    /** «Top 0,75 %» / «Top 0.75%» según el idioma; por debajo de 0,01 %, «< 0,01 %». */
-    static String fmtTop(double p) {
-        boolean es = !"en".equals(IDIOMA);
-        String s = p < 0.005 ? "< 0.01" : String.format(Locale.ROOT, "%.2f", p);
-        if (es) s = s.replace('.', ',');
-        return "Top " + s + (es ? " %" : "%");
-    }
-
-    static String miles(long n) { return java.text.NumberFormat.getIntegerInstance("en".equals(IDIOMA) ? Locale.US : Locale.forLanguageTag("es-ES")).format(n); }
 
     /** «Top 1,30 %» a partir del rango del companion (entre TODOS los jugadores del ladder). */
     static String percentilRango(String lb, Integer rank) {
@@ -7166,14 +7142,6 @@ public class SpoilerFreeRecs extends JFrame {
     boolean avisoTopMostrado;   // el popup del top caído: solo la primera vez por sesión
     JButton actualizarBtn;      // «Nueva versión X — Descargar», solo si existe una mayor
 
-    /** El comodín del desplegable («(cualquiera)» / «(any)», con o sin paréntesis, en cualquier idioma). */
-    static boolean esCualquiera(String s) {
-        if (s == null) return true;
-        String n = s.trim().toLowerCase().replace("(", "").replace(")", "");
-        return n.isEmpty() || n.equals("cualquiera") || n.equals("any") || n.equals("null");
-    }
-
-    /** Recorta s hasta que quepa en px píxeles con la fuente dada (con «…»). */
     /** Subtexto de quien está en partida, con el estilo de Live now: rival en color normal, civs en gris, mapa y reloj en ámbar. Se recorta a la anchura: primero cae el reloj, luego las civs, y al final se acorta el rival. */
     String subtextoVivo(long pid, FontMetrics fm, int px) {
         Match m = VIVO_PARTIDA.get(pid);
@@ -7206,6 +7174,7 @@ public class SpoilerFreeRecs extends JFrame {
         return h.toString();
     }
 
+    /** Recorta s hasta que quepa en px píxeles con la fuente dada (con «…»). */
     static String truncarPx(String s, FontMetrics fm, int px) {
         if (s == null) return "";
         if (fm == null || fm.stringWidth(s) <= px) return s;
@@ -7216,22 +7185,6 @@ public class SpoilerFreeRecs extends JFrame {
             if (fm.stringWidth(s.substring(0, mid) + puntos) <= px) lo = mid; else hi = mid - 1;
         }
         return lo <= 0 ? puntos : s.substring(0, lo) + puntos;
-    }
-
-    static String truncar(String s, int max) {
-        if (s == null) return "";
-        return s.length() > max ? s.substring(0, Math.max(1, max - 1)) + "\u2026" : s;
-    }
-
-    /** ¿«1.2.3» es mayor que «1.0»? Comparación numérica por tramos. */
-    static boolean versionMayor(String nueva, String actual) {
-        String[] a = nueva.replaceAll("[^0-9.]", "").split("\\."), b = actual.replaceAll("[^0-9.]", "").split("\\.");
-        for (int i = 0; i < Math.max(a.length, b.length); i++) {
-            int x = i < a.length && !a[i].isEmpty() ? Integer.parseInt(a[i]) : 0;
-            int y = i < b.length && !b[i].isEmpty() ? Integer.parseInt(b[i]) : 0;
-            if (x != y) return x > y;
-        }
-        return false;
     }
 
     /** Consulta GitHub Releases (una llamada, sin claves) y enseña el botón si hay versión nueva. */
@@ -11085,22 +11038,6 @@ public class SpoilerFreeRecs extends JFrame {
                 + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")));
     }
 
-    /** Variantes de un nick para casarlo con un canal: entero, sin tag de
-     *  clan (última parte tras . | _ o espacio) y sin guiones bajos sueltos. */
-    static List<String> variantesNick(String nombre) {
-        List<String> out = new ArrayList<>();
-        String base = nombre.toLowerCase().replaceAll("\\[.*?\\]", "").trim();
-        out.add(base.replaceAll("\\s+", ""));
-        String[] partes = base.split("[.|_\\s]+");
-        if (partes.length > 1) {
-            String ultima = partes[partes.length - 1];
-            if (ultima.length() >= 3) out.add(ultima);
-        }
-        String sinBajos = base.replaceAll("\\s+", "").replaceAll("_+$", "").replaceAll("^_+", "");
-        if (!out.contains(sinBajos)) out.add(sinBajos);
-        return out;
-    }
-
     /** Cruza los canales conocidos con la lista de directos de AoE2 del
      *  companion (una llamada global). Para el top sin canal vinculado,
      *  respaldo por coincidencia exacta de nick. */
@@ -12795,21 +12732,6 @@ public class SpoilerFreeRecs extends JFrame {
         if (vs.length() > 110) vs = vs.substring(0, 110);   // TGs con nicks kilométricos
         String nombre = sanea(vs + "_" + m.map + "_" + hora) + ".aoe2record";
         return RECS_DIR.resolve(nombre);
-    }
-
-    static String recorta(String s, int max) {
-        return s.length() <= max ? s : s.substring(0, max);
-    }
-
-    /** Sanea un nick para el nombre de archivo y quita los '_' sobrantes de
-     *  los tags de clan ("[R1] 12Tirador" -> "R1_12Tirador"). */
-    static String limpiaNombre(String s) {
-        String t = sanea(s).replaceAll("^_+|_+$", "");
-        return t.isBlank() ? dev.tirador.aoe2radar.util.I18n.t("jugador", "player") : t;
-    }
-
-    static String sanea(String s) {
-        return s.replaceAll("[^A-Za-z0-9._+-]", "_").replaceAll("_{2,}", "_");
     }
 
     // ----- Persistencia ------------------------------------------------------
