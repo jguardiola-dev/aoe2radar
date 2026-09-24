@@ -121,6 +121,11 @@ import static dev.tirador.aoe2radar.service.CalculoStats.duracionMedia;
 import static dev.tirador.aoe2radar.service.CalculoStats.partidasPorMapa;
 import static dev.tirador.aoe2radar.service.CalculoStats.tramoEnRango;
 import static dev.tirador.aoe2radar.service.CalculoStats.wilson;
+import static dev.tirador.aoe2radar.service.Juego.OFICIAL_LOBBIES;
+import static dev.tirador.aoe2radar.service.Juego.buscarLobbyConPid;
+import static dev.tirador.aoe2radar.service.Juego.carpetaLogsJuego;
+import static dev.tirador.aoe2radar.service.Juego.detectarSavegames;
+import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.MODOS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS_KEYS;
@@ -173,6 +178,8 @@ import static dev.tirador.aoe2radar.util.Json.val;
 import static dev.tirador.aoe2radar.util.Json.when;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
+import static dev.tirador.aoe2radar.util.Sistema.fijarAutoArranque;
+import static dev.tirador.aoe2radar.util.Sistema.rutaExePropia;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -8991,24 +8998,6 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     // ----- Savegame del juego y donación -------------------------------------
-    /** Carpetas savegame de AoE2 DE del usuario:
-     *  %USERPROFILE%\Games\Age of Empires 2 DE\<perfil>\savegame
-     *  (misma ruta en Steam y Microsoft Store). */
-    static List<Path> detectarSavegames() {
-        List<Path> out = new ArrayList<>();
-        String home = System.getProperty("user.home");
-        if (home == null) return out;
-        Path base = Path.of(home, "Games", "Age of Empires 2 DE");
-        if (!Files.isDirectory(base)) return out;
-        try (var st = Files.list(base)) {
-            for (Path perfil : st.toList()) {
-                Path sg = perfil.resolve("savegame");
-                if (Files.isDirectory(sg)) out.add(sg);
-            }
-        } catch (IOException ignored) {}
-        return out;
-    }
-
     /** Carpeta savegame activa: la de config si sigue existiendo; si no, la
      *  detectada (única = se guarda sola). En modo interactivo pregunta cuando
      *  hay varias o ninguna; sin interactivo devuelve null sin molestar. */
@@ -10692,31 +10681,6 @@ public class SpoilerFreeRecs extends JFrame {
         if (cambio) savePlayers();
     }
 
-    /** Ruta del exe real cuando corremos empaquetados con jpackage; null si no. */
-    static String rutaExePropia() {
-        String p = System.getProperty("jpackage.app-path");
-        return p == null || p.isBlank() ? null : p;
-    }
-
-    static final String CLAVE_RUN = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-
-    /** Escribe o borra la entrada de autoarranque en el registro del usuario
-     *  con reg.exe (sin permisos de administrador). Devuelve si fue bien. */
-    static boolean fijarAutoArranque(boolean activar) {
-        String exe = rutaExePropia();
-        if (!System.getProperty("os.name", "").toLowerCase().contains("win")) return false;
-        if (activar && exe == null) return false;
-        try {
-            ProcessBuilder pb = activar
-                    ? new ProcessBuilder("reg", "add", CLAVE_RUN, "/v", NOMBRE,
-                            "/t", "REG_SZ", "/d", "\"" + exe + "\"", "/f")
-                    : new ProcessBuilder("reg", "delete", CLAVE_RUN, "/v", NOMBRE, "/f");
-            Process pr = pb.redirectErrorStream(true).start();
-            pr.getInputStream().readAllBytes();
-            return pr.waitFor() == 0 || !activar;   // borrar lo inexistente también vale
-        } catch (Exception e) { return false; }
-    }
-
     void marcarVinculo(Set<Long> ids) {
         if (ids.size() < 2) return;
         long clave = ids.stream().mapToLong(Long::longValue).min().orElse(0L);
@@ -11773,22 +11737,6 @@ public class SpoilerFreeRecs extends JFrame {
         if (watchPanel != null) watchPanel.repaint();
     }
 
-    /** Ruta de CaptureAge: la fijada en Configuración o la instalación
-     *  estándar; null si no aparece. */
-    static Path rutaCaptureAge() {
-        String cfg = leerConfig("ca_ruta", "");
-        if (!cfg.isBlank()) {
-            Path p = Path.of(cfg);
-            if (Files.exists(p)) return p;
-        }
-        String lad = System.getenv("LOCALAPPDATA");
-        if (lad != null) {
-            Path p = Path.of(lad, "Programs", "CaptureAge", "CaptureAge.exe");
-            if (Files.exists(p)) return p;
-        }
-        return null;
-    }
-
     boolean usarCA() { return Boolean.parseBoolean(leerConfig("usar_ca", "false")); }
 
     /** Lanza CaptureAge — con una rec (la reproduce con su overlay) o sin
@@ -12330,28 +12278,9 @@ public class SpoilerFreeRecs extends JFrame {
 
     // ----- Alta de jugadores (búsqueda por nick, sin visitar webs) -----------
     // ----- «Mi partida»: quién eres (registro de Windows), aviso al encontrar partida (log del juego) y panel sobre el juego -----
-    static final String OFICIAL_LOBBIES = "https://aoe-api.worldsedgelink.com/community/advertisement/findAdvertisements?title=age2&start=0&count=200";
     javax.swing.Timer logJuegoTimer; Path logJuegoActual; long logJuegoPos; String logJuegoUltimaFase; long logJuegoUltimoAvisoMs;
     JWindow superposicion; javax.swing.Timer superposicionTimer;
 
-    /** SteamID activo según el registro de Windows (HKCU\\Software\\Valve\\Steam\\ActiveProcess\\ActiveUser, id de 32 bits) → id64. null si no hay Steam. */
-    static Long steamIdActivo() {
-        try {
-            Process p = new ProcessBuilder("reg", "query", "HKCU\\Software\\Valve\\Steam\\ActiveProcess", "/v", "ActiveUser").redirectErrorStream(true).start();
-            String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            p.waitFor();
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("ActiveUser\\s+REG_DWORD\\s+0x([0-9a-fA-F]+)").matcher(out);
-            if (!m.find()) return null;
-            long id32 = Long.parseLong(m.group(1), 16);
-            return id32 > 0 ? 76561197960265728L + id32 : null;
-        } catch (Exception ex) { return null; }
-    }
-    /** Carpeta de logs del juego: %USERPROFILE%\\Games\\Age of Empires 2 DE\\logs (o la indicada en config «logs_juego»). */
-    static Path carpetaLogsJuego() {
-        String cfg = leerConfig("logs_juego", "");
-        if (!cfg.isBlank()) return Path.of(cfg);
-        return Path.of(System.getProperty("user.home"), "Games", "Age of Empires 2 DE", "logs");
-    }
     /** Vigila el MainLog.txt de la sesión más reciente del juego: al ver la fase de preparación (MS_Setup), aviso temprano y sondeo del lobby. Solo si hay «mi perfil». */
     void iniciarVigilanciaLogJuego() {
         if (logJuegoTimer != null) return;
@@ -12408,22 +12337,6 @@ public class SpoilerFreeRecs extends JFrame {
             for (long pid : compañeros) { String[] nn = NOMBRES_AYER.get(pid); String nombre = nn != null ? nn[0] : "#" + pid; Integer e1 = elo1v1Conocido(pid); fichas.add(new Object[]{ pid, nombre, e1 }); if (sb.length() > 30) sb.append(", "); sb.append(nombre).append(e1 != null ? " (" + e1 + ")" : ""); }
             SwingUtilities.invokeLater(() -> mostrarSuperposicion(sb.toString(), fichas, 60_000));
         } catch (Exception ex) { log("lobby oficial: " + causa(ex)); }
-    }
-    /** Busca en cualquier estructura JSON un lobby cuyos miembros incluyan mi pid; devuelve los demás ids. */
-    static boolean buscarLobbyConPid(Object nodo, long mi, List<Long> otros) {
-        if (nodo instanceof Map<?, ?> m) {
-            for (Object k : List.of("matchmembers", "members", "players")) {
-                if (m.get(k) instanceof List<?> l) {
-                    List<Long> ids = new ArrayList<>();
-                    for (Object o : l) { if (o instanceof Map<?, ?> mm) { Object pid = mm.get("profile_id"); if (pid == null) pid = mm.get("profileId"); if (pid == null) pid = mm.get("profileid"); if (pid instanceof Number n) ids.add(n.longValue()); } else if (o instanceof Number n) ids.add(n.longValue()); }
-                    if (ids.contains(mi)) { for (long id : ids) if (id != mi) otros.add(id); return true; }
-                }
-            }
-            for (Object v : m.values()) if (buscarLobbyConPid(v, mi, otros)) return true;
-        } else if (nodo instanceof List<?> l) {
-            for (Object v : l) if (buscarLobbyConPid(v, mi, otros)) return true;
-        }
-        return false;
     }
     /** Panel sobre el juego (siempre visible, sin bordes, arriba en el centro): el aviso y, si hay, las fichas de los rivales. Se cierra solo. */
     void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) {

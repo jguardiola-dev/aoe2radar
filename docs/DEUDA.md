@@ -33,3 +33,4 @@
 | 2026-09-24 | api.Cancelacion / trabajando() | `opEnCurso = on` y `stopOperacion = false` son dos volatile sin atomicidad: httpText puede ver el stop de la operación anterior (el comentario ya lo asume) | 2 |
 | 2026-09-24 | cache.Vivos.VIVO_RIVAL | `Object[]` mutable y sin tipo: record | 2 |
 | 2026-09-24 | service.CalculoStats.MIN_PARTIDAS_MAPA | constante que nadie usa (ya en la 1.1): usarla donde tocaba o quitarla | 4 |
+| 2026-09-24 | service.Juego.steamIdActivo | método que nadie llama (ya en la 1.1): usarlo o quitarlo | 4 |
