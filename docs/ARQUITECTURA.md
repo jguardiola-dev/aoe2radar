@@ -25,8 +25,9 @@ app       AppState (estado observable: qué vista, qué jugador, qué filtros) y
 util      Json, t() (i18n), formatos, Log.
 ```
 Regla de dependencia: cada capa solo conoce las de dentro. `ui` conoce `service` y `model`; `service` conoce
-`api`, `sfrdata`, `techtree`, `cache`, `model`; `util` lo puede usar cualquiera y no conoce a nadie (salvo `model`
-si hiciera falta); `model` no conoce a nadie. Si una flecha va hacia fuera, está mal.
+`api`, `sfrdata`, `techtree`, `cache`, `model`; `api`, `sfrdata` y `techtree` conocen `cache` (guardan en ella lo que
+descargan), `model` y `util`; `cache` conoce `model` y `util`; `util` lo puede usar cualquiera y no conoce a nadie (salvo
+`model` si hiciera falta); `model` no conoce a nadie. Si una flecha va hacia fuera, está mal.
 
 ## Contratos clave (interfaces)
 - `ApiClient`: `List<Match> matches(List<Long> pids, int page, int perPage)`, `Profile profile(long pid)`,

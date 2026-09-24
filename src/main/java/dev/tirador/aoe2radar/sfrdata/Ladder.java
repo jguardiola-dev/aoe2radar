@@ -19,6 +19,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
+import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.UA;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
@@ -41,7 +43,6 @@ public final class Ladder {
     // rating 1v1 × equipos, y clanes con sus miembros
     // =====================================================================================
     public static final String SFR_DATA = "https://raw.githubusercontent.com/jguardiola-dev/sfr-data/data/";
-    public static final Path LADDER_DIR = Path.of("sfrdata");
     public static volatile Map<String, LadderHist> ladderHists = Map.of();          // todos los jugadores del ladder
     public static volatile Map<String, LadderHist> ladderHistsActivos = Map.of();   // activos: 10+ partidas y una en 28 días
     public static volatile Map<String, Rejilla> dispersionTodos = Map.of();         // «rm» / «ew» → rejilla 1v1 × equipos
@@ -54,7 +55,6 @@ public final class Ladder {
     public static volatile String ladderProgreso = "";
     public static final Object LADDER_LOCK = new Object();
 
-    public static final Map<String, String> MAPA_IMG_URL = new java.util.concurrent.ConcurrentHashMap<>();   // nombre o clave de mapa → URL de imagen (aprendida de la API)
 
     /** Baja un archivo de sfr-data si cambió (ETag) y devuelve su contenido (gzip transparente). */
     public static byte[] sfrDataArchivo(String nombre) throws Exception {

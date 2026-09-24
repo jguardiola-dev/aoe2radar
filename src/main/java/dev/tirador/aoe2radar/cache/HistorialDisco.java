@@ -14,7 +14,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.util.Json;
 
-import static dev.tirador.aoe2radar.sfrdata.Ladder.LADDER_DIR;
+import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.firstNonNull;
 import static dev.tirador.aoe2radar.util.Json.lng;

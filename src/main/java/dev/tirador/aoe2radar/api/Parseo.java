@@ -8,8 +8,8 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
+import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.cache.Paises.aprenderPais;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.firstNonNull;
 import static dev.tirador.aoe2radar.util.Json.lng;

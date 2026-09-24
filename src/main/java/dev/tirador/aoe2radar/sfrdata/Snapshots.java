@@ -17,7 +17,7 @@ import java.util.Set;
 
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.api.Http.descargarBytes;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.LADDER_DIR;
+import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.leerGzJson;
 import static dev.tirador.aoe2radar.util.Json.lng;

@@ -6,7 +6,7 @@ import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Map;
 
-import static dev.tirador.aoe2radar.sfrdata.Ladder.LADDER_DIR;
+import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
