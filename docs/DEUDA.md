@@ -34,3 +34,7 @@
 | 2026-09-24 | cache.Vivos.VIVO_RIVAL | `Object[]` mutable y sin tipo: record | 2 |
 | 2026-09-24 | service.CalculoStats.MIN_PARTIDAS_MAPA | constante que nadie usa (ya en la 1.1): usarla donde tocaba o quitarla | 4 |
 | 2026-09-24 | service.Juego.steamIdActivo | método que nadie llama (ya en la 1.1): usarlo o quitarlo | 4 |
+| 2026-09-24 | util.Sistema.fijarAutoArranque | **se llama en el EDT** desde el menú: lanza `reg.exe` y espera con `waitFor()`, puede congelar la UI (la llamada del arranque sí va en su hilo). También en el EDT, con poco coste: detectarSavegames, rutaCaptureAge, carpetaLogsJuego, guardarConfig en aprenderCatalogos | 2 |
+| 2026-09-24 | sfrdata.CivStats.statsAsegurar | `containsKey` + `put` sin atomicidad: dos hilos pueden parsear la misma ventana (sin pérdida); `computeIfAbsent` | 2 |
+| 2026-09-24 | colorWr (app) | dos javadocs seguidos; el primero («verde si el intervalo…») describe una lógica de Wilson que el método ya no tiene | 4 |
+| 2026-09-24 | cabecera «Mi partida» (app) | anuncia «quién eres (registro de Windows)», código que ahora está en service.Juego y nadie llama (steamIdActivo) | 4 |

@@ -9518,9 +9518,6 @@ public class SpoilerFreeRecs extends JFrame {
         return p * 2;
     }
 
-    /** Río global: partidas RM 1v1 recientes de todo el ladder, sin perfiles
-     *  (leaderboard_ids). Si el parámetro no estuviera soportado, devuelve
-     *  vacío y los perfiles sostienen la búsqueda. */
     /** httpText con un reintento tras espera si el servidor limita (HTTP 429). */
     static String httpText429(String url) throws IOException, InterruptedException {
         try {
@@ -9544,6 +9541,9 @@ public class SpoilerFreeRecs extends JFrame {
         }
     }
 
+    /** Río global: partidas RM 1v1 recientes de todo el ladder, sin perfiles
+     *  (leaderboard_ids). Si el parámetro no estuviera soportado, devuelve
+     *  vacío y los perfiles sostienen la búsqueda. */
     static List<Match> rioGlobalMuerto(int desde, int paginas) {
         List<Match> out = new ArrayList<>();
         for (int p = desde; p < desde + paginas; p++) {
