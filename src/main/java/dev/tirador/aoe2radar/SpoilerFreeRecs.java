@@ -45,6 +45,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Matchup;
 import dev.tirador.aoe2radar.model.PaginaLb;
+import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
@@ -208,7 +209,6 @@ import static dev.tirador.aoe2radar.util.Json.lng;
 import static dev.tirador.aoe2radar.util.Json.obj;
 import static dev.tirador.aoe2radar.util.Json.str;
 import static dev.tirador.aoe2radar.util.Json.val;
-import static dev.tirador.aoe2radar.util.Json.when;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 import static dev.tirador.aoe2radar.util.Sistema.fijarAutoArranque;
@@ -872,18 +872,15 @@ public class SpoilerFreeRecs extends JFrame {
     /** Una llamada a /profiles: la serie de rating 1v1 con fechas → 24 h y 7 d a la vez.
      *  Devuelve {forma24, forma7d}; null si el perfil no trae serie (entonces se usa calcForma). */
     Forma[] calcFormaSerie(long pid) throws Exception {
-        Map<String, Object> root = COMPANION.perfil(pid);
+        Perfil pf = COMPANION.perfil(pid);
         List<Object[]> serie = new ArrayList<>();   // {epochMs, rating, ratingDiff|null}
-        for (Object lbO : arr(val(root, "ratings"))) {
-            Map<String, Object> lb = obj(lbO);
-            String lbId = String.valueOf(firstNonNull(val(lb, "leaderboard_id", "leaderboardId"), ""));
+        for (Perfil.Serie lb : pf.series()) {
+            String lbId = String.valueOf(firstNonNull(lb.id(), ""));
             if (!lbId.equals("rm_1v1") && !lbId.equals("3")) continue;
-            for (Object ptO : arr(val(lb, "ratings"))) {
-                Map<String, Object> pt = obj(ptO);
-                Instant d = when(val(pt, "date"));
-                if (d == null || !(val(pt, "rating") instanceof Number rN)) continue;
-                Object dfO = val(pt, "rating_diff", "ratingDiff");
-                serie.add(new Object[]{ d.toEpochMilli(), rN.intValue(), dfO instanceof Number dn ? dn.intValue() : null });
+            for (Perfil.Punto pt : lb.puntos()) {
+                Instant d = pt.fecha();
+                if (d == null || pt.rating() == null) continue;
+                serie.add(new Object[]{ d.toEpochMilli(), pt.rating(), pt.diff() });
             }
         }
         if (serie.isEmpty()) return null;
@@ -1097,24 +1094,23 @@ public class SpoilerFreeRecs extends JFrame {
         String pais = "", clan = "";
         long games = 0;
         try {
-            Map<String, Object> root = COMPANION.perfil(pid);
-            aprenderCanal(pid, val(root, "social_twitch_channel", "socialTwitchChannel"));
-            aprenderPais(pid, val(root, "country"));
-            pais = String.valueOf(firstNonNull(val(root, "country"), "")).trim();
+            Perfil pf = COMPANION.perfil(pid);
+            aprenderCanal(pid, pf.canal());
+            aprenderPais(pid, pf.pais());
+            pais = String.valueOf(firstNonNull(pf.pais(), "")).trim();
             if ("null".equals(pais)) pais = "";
-            clan = String.valueOf(firstNonNull(val(root, "clan"), "")).trim();
+            clan = String.valueOf(firstNonNull(pf.clan(), "")).trim();
             if ("null".equals(clan)) clan = "";
-            games = lng(val(root, "games"));
-            for (Object o : arr(val(root, "leaderboards"))) {
-                Map<String, Object> l = obj(o);
-                String lid = String.valueOf(val(l, "leaderboard_id", "leaderboardId"));
+            games = pf.partidas();
+            for (Perfil.Ladder l : pf.ladders()) {
+                String lid = String.valueOf(l.id());
                 String lb = switch (lid) { case "3" -> "rm_1v1"; case "4" -> "rm_team"; case "13" -> "ew_1v1"; case "14" -> "ew_team"; default -> lid; };
                 if (!Arrays.asList(LADDER_IDS).contains(lb)) continue;
-                int rating = val(l, "rating") instanceof Number n ? (int) Math.round(n.doubleValue()) : 0;
-                int rank = val(l, "rank") instanceof Number n ? n.intValue() : 0;
-                int maxR = val(l, "max_rating", "maxRating") instanceof Number n ? (int) Math.round(n.doubleValue()) : 0;
-                int wins = val(l, "wins") instanceof Number n ? n.intValue() : 0;
-                int losses = val(l, "losses") instanceof Number n ? n.intValue() : 0;
+                int rating = l.rating() != null ? l.rating() : 0;
+                int rank = l.rango() != null ? l.rango() : 0;
+                int maxR = l.ratingMax() != null ? l.ratingMax() : 0;
+                int wins = l.ganadas() != null ? l.ganadas() : 0;
+                int losses = l.perdidas() != null ? l.perdidas() : 0;
                 m.put(lb, new int[]{ rating, rank, maxR, wins, losses });
             }
         } catch (Exception ex) { log("ladder: perfil " + pid + ": " + causa(ex)); return null; }
@@ -10104,17 +10100,16 @@ public class SpoilerFreeRecs extends JFrame {
     static List<Object[]> cuentasVinculadas(long profileId) {
         List<Object[]> out = new ArrayList<>();
         try {
-            Map<String, Object> root = COMPANION.perfil(profileId);
-            aprenderCanal(profileId, val(root, "social_twitch_channel", "socialTwitchChannel"));
+            Perfil pf = COMPANION.perfil(profileId);
+            aprenderCanal(profileId, pf.canal());
             Set<Long> vistos = new HashSet<>();
-            for (Object o : arr(val(root, "linked_profiles", "linkedProfiles"))) {
-                Map<String, Object> lp = obj(o);
-                long id = lng(val(lp, "profile_id", "profileId"));
+            for (Perfil.Vinculada lp : pf.vinculadas()) {
+                long id = lp.pid();
                 if (id <= 0 || id == profileId || !vistos.add(id)) continue;   // el propio no es su vinculada
-                String name = String.valueOf(val(lp, "name"));
-                Object c = val(lp, "country");
-                String pais = c == null ? "" : String.valueOf(c).toUpperCase();
-                long games = lng(val(lp, "games"));
+                String name = String.valueOf(lp.nombre());
+                String c = lp.pais();
+                String pais = c == null ? "" : c.toUpperCase();
+                long games = lp.partidas();
                 if (id > 0 && !"null".equals(name)) out.add(new Object[]{ id, name, pais, games });
             }
             if (!out.isEmpty()) {   // la familia consultada alimenta la señal \u21A5 de la sesión
@@ -10463,9 +10458,8 @@ public class SpoilerFreeRecs extends JFrame {
             String motivo;
             @Override protected List<String[]> doInBackground() {
                 try {
-                    Map<String, Object> root = COMPANION.perfil(pid);
-                    Object sid = val(root, "steam_id", "steamId");
-                    String steamId = sid == null ? "" : String.valueOf(sid).trim();
+                    String sid = COMPANION.perfil(pid).steamId();
+                    String steamId = sid == null ? "" : sid.trim();
                     if (steamId.isBlank() || "null".equals(steamId)) {
                         motivo = t("Esta cuenta no tiene Steam vinculado en el companion: sin historial disponible.",
                                    "This account has no Steam link on the companion: no history available.");
@@ -11086,26 +11080,21 @@ public class SpoilerFreeRecs extends JFrame {
                 long games = 0;
                 Integer rating = null, maxRating = null, wins = null, losses = null;
                 try {
-                    Map<String, Object> root = COMPANION.perfil(pid);
-                    aprenderCanal(pid, val(root, "social_twitch_channel", "socialTwitchChannel"));
-                    Object c = val(root, "country");
+                    Perfil pf = COMPANION.perfil(pid);
+                    aprenderCanal(pid, pf.canal());
+                    String c = pf.pais();
                     aprenderPais(pid, c);
-                    if (c != null && !"null".equals(String.valueOf(c))) pais = String.valueOf(c).toUpperCase();
-                    Object cl = val(root, "clan");
-                    if (cl != null && !"null".equals(String.valueOf(cl))) clan = String.valueOf(cl);
-                    games = lng(val(root, "games"));
-                    for (Object o : arr(val(root, "leaderboards"))) {
-                        Map<String, Object> lb = obj(o);
-                        String lid = String.valueOf(val(lb, "leaderboard_id", "leaderboardId"));
+                    if (c != null && !"null".equals(c)) pais = c.toUpperCase();
+                    String cl = pf.clan();
+                    if (cl != null && !"null".equals(cl)) clan = cl;
+                    games = pf.partidas();
+                    for (Perfil.Ladder lb : pf.ladders()) {
+                        String lid = String.valueOf(lb.id());
                         if (!"rm_1v1".equals(lid) && !"3".equals(lid)) continue;
-                        Object rt = val(lb, "rating");
-                        if (rt instanceof Number n) rating = (int) Math.round(n.doubleValue());
-                        Object mr = val(lb, "max_rating", "maxRating");
-                        if (mr instanceof Number n) maxRating = (int) Math.round(n.doubleValue());
-                        Object wi = val(lb, "wins");
-                        if (wi instanceof Number n) wins = n.intValue();
-                        Object lo = val(lb, "losses");
-                        if (lo instanceof Number n) losses = n.intValue();
+                        if (lb.rating() != null) rating = lb.rating();
+                        if (lb.ratingMax() != null) maxRating = lb.ratingMax();
+                        if (lb.ganadas() != null) wins = lb.ganadas();
+                        if (lb.perdidas() != null) losses = lb.perdidas();
                         break;
                     }
                 } catch (Exception ex) {
@@ -11190,13 +11179,12 @@ public class SpoilerFreeRecs extends JFrame {
     /** ELO 1v1 actual de un perfil, preguntando su fila del leaderboard. */
     static Integer eloDeLadder(long profileId) {
         try {   // la vía del perfil: la misma que usa el hover, probada
-            Map<String, Object> root = COMPANION.perfil(profileId);
-            aprenderCanal(profileId, val(root, "social_twitch_channel", "socialTwitchChannel"));
-            for (Object o : arr(val(root, "leaderboards"))) {
-                Map<String, Object> lb = obj(o);
-                String lid = String.valueOf(val(lb, "leaderboard_id", "leaderboardId"));
+            Perfil pf = COMPANION.perfil(profileId);
+            aprenderCanal(profileId, pf.canal());
+            for (Perfil.Ladder lb : pf.ladders()) {
+                String lid = String.valueOf(lb.id());
                 if (!"rm_1v1".equals(lid) && !"3".equals(lid)) continue;
-                if (val(lb, "rating") instanceof Number n) return (int) Math.round(n.doubleValue());
+                if (lb.rating() != null) return lb.rating();
             }
         } catch (Exception ignored) { }
         return null;

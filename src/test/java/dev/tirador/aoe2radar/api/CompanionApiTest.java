@@ -5,16 +5,16 @@ import dev.tirador.aoe2radar.cache.Paises;
 import dev.tirador.aoe2radar.model.Clasificacion;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Match;
+import dev.tirador.aoe2radar.model.Perfil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayDeque;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -198,10 +198,70 @@ class CompanionApiTest {
         assertEquals("https://data.aoe2companion.com/api/leaderboards/3?page=2&per_page=100&country=es", ultima());
     }
 
-    @Test void devuelveElJsonLeido() throws Exception {
-        red.cuerpo = "{\"profile_id\":199325,\"name\":\"Hera\"}";
-        Map<String, Object> p = companion.perfil(199325L);
-        assertEquals("Hera", p.get("name"));
+    @Test void perfilConvierteCadaBloque() throws Exception {
+        red.cuerpo = "{\"country\":\"es\",\"clan\":\"R1\",\"games\":321,\"socialTwitchChannel\":\"tira\",\"steam_id\":\" 7656 \","
+                + "\"leaderboards\":[{\"leaderboard_id\":3,\"rating\":1500.5,\"rank\":88,\"maxRating\":1600.6,\"wins\":10,\"losses\":\"x\"},{}],"
+                + "\"ratings\":[{\"leaderboardId\":\"rm_1v1\",\"ratings\":[{\"date\":\"2024-01-02T03:04:05Z\",\"rating\":1499.9,\"ratingDiff\":-12},"
+                + "{\"date\":-1e30,\"rating\":\"x\"}]}],"
+                + "\"linkedProfiles\":[{\"profileId\":42,\"name\":\"alt\",\"country\":\"fr\",\"games\":7},\"ilegible\"]}";
+        Perfil p = companion.perfil(199325L);
+        assertEquals("es", p.pais());
+        assertEquals("R1", p.clan());
+        assertEquals(321, p.partidas());
+        assertEquals("tira", p.canal(), "clave alternativa socialTwitchChannel");
+        assertEquals(" 7656 ", p.steamId(), "sin recortar: recortar es de la pantalla");
+
+        Perfil.Ladder l = p.ladders().get(0);
+        assertEquals("3.0", l.id(), "un id numérico llega como Double: «3.0», no «3» (como en la 1.1; ver DEUDA)");
+        assertEquals(1501, l.rating(), "ladders: redondeo");
+        assertEquals(88, l.rango());
+        assertEquals(1601, l.ratingMax(), "clave alternativa maxRating, redondeada (truncar daría 1600)");
+        assertEquals(10, l.ganadas());
+        assertNull(l.perdidas());
+        Perfil.Ladder vacio = p.ladders().get(1);
+        assertNull(vacio.id());
+        assertNull(vacio.rating());
+
+        Perfil.Serie s = p.series().get(0);
+        assertEquals("rm_1v1", s.id(), "clave alternativa leaderboardId");
+        assertEquals(2, s.puntos().size(), "sin filtrar: filtrar es de la pantalla");
+        assertEquals(1499, s.puntos().get(0).rating(), "serie: TRUNCADO, como en la 1.1");
+        assertEquals(-12, s.puntos().get(0).diff(), "clave alternativa ratingDiff");
+        assertEquals(Instant.parse("2024-01-02T03:04:05Z"), s.puntos().get(0).fecha());
+        assertNull(s.puntos().get(1).fecha(), "fecha absurda: null, no excepción");
+        assertNull(s.puntos().get(1).rating());
+
+        assertEquals(2, p.vinculadas().size());
+        Perfil.Vinculada v = p.vinculadas().get(0);
+        assertEquals(42, v.pid());
+        assertEquals("alt", v.nombre());
+        assertEquals("fr", v.pais());
+        assertEquals(7, v.partidas());
+        assertEquals(-1, p.vinculadas().get(1).pid(), "ilegible: pid -1, que la pantalla filtra");
+    }
+
+    @Test void perfilConLasDosClavesGanaLaPrimera() throws Exception {
+        red.cuerpo = "{\"social_twitch_channel\":\"uno\",\"socialTwitchChannel\":\"dos\","
+                + "\"leaderboards\":[{\"leaderboard_id\":\"rm_1v1\",\"leaderboardId\":\"3\"}],"
+                + "\"linked_profiles\":[{\"profile_id\":1,\"profileId\":2}],\"linkedProfiles\":[]}";
+        Perfil p = companion.perfil(1L);
+        assertEquals("uno", p.canal());
+        assertEquals("rm_1v1", p.ladders().get(0).id());
+        assertEquals(1, p.vinculadas().size(), "linked_profiles antes que linkedProfiles");
+        assertEquals(1, p.vinculadas().get(0).pid());
+    }
+
+    @Test void perfilVacioYSinEfectos() throws Exception {
+        red.cuerpo = "[]";   // raíz que no es objeto: como antes, un perfil vacío
+        Perfil p = companion.perfil(9000001L);
+        assertNull(p.pais());
+        assertNull(p.canal());
+        assertEquals(-1, p.partidas());
+        assertTrue(p.ladders().isEmpty() && p.series().isEmpty() && p.vinculadas().isEmpty());
+        red.cuerpo = "{\"country\":\"es\",\"social_twitch_channel\":\"canalx\"}";
+        companion.perfil(9000002L);
+        assertNull(Paises.PAIS_DE.get(9000002L), "aprender es de cada pantalla");
+        assertNull(Canales.CANAL_DE.get(9000002L));
     }
 
     @Test void pasaPorElFrenoYReintentaEl429() throws Exception {

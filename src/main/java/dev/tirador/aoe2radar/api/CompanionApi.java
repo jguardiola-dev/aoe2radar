@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.api;
 import dev.tirador.aoe2radar.model.Clasificacion;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Match;
+import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
@@ -71,9 +72,50 @@ public final class CompanionApi {
         return matches(String.valueOf(pid), pagina, porPagina);
     }
 
-    /** GET /profiles/{pid}. */
-    public Map<String, Object> perfil(long pid) throws IOException, InterruptedException {
-        return obj(Json.parse(api.textoCon429(Http.API + "/profiles/" + pid)));
+    /** GET /profiles/{pid}, ya convertido (ver aPerfil). */
+    public Perfil perfil(long pid) throws IOException, InterruptedException {
+        return aPerfil(obj(Json.parse(api.textoCon429(Http.API + "/profiles/" + pid))));
+    }
+
+    /**
+     * Conversión pura de /profiles/{pid}: sin filtrar ni aprender nada. Cada campo se lee con las mismas claves y la
+     * misma aritmética que usaban las pantallas de la 1.1 (ojo: el rating de la serie se trunca y el de los ladders
+     * se redondea, como entonces).
+     */
+    static Perfil aPerfil(Map<String, Object> root) {
+        List<Perfil.Ladder> ladders = new ArrayList<>();
+        for (Object o : arr(val(root, "leaderboards"))) {
+            Map<String, Object> l = obj(o);
+            ladders.add(new Perfil.Ladder(
+                    str(val(l, "leaderboard_id", "leaderboardId")),
+                    val(l, "rating") instanceof Number n ? (int) Math.round(n.doubleValue()) : null,
+                    val(l, "rank") instanceof Number n ? n.intValue() : null,
+                    val(l, "max_rating", "maxRating") instanceof Number n ? (int) Math.round(n.doubleValue()) : null,
+                    val(l, "wins") instanceof Number n ? n.intValue() : null,
+                    val(l, "losses") instanceof Number n ? n.intValue() : null));
+        }
+        List<Perfil.Serie> series = new ArrayList<>();
+        for (Object o : arr(val(root, "ratings"))) {
+            Map<String, Object> lb = obj(o);
+            List<Perfil.Punto> puntos = new ArrayList<>();
+            for (Object p : arr(val(lb, "ratings"))) {
+                Map<String, Object> pt = obj(p);
+                puntos.add(new Perfil.Punto(
+                        fecha(val(pt, "date")),
+                        val(pt, "rating") instanceof Number n ? n.intValue() : null,
+                        val(pt, "rating_diff", "ratingDiff") instanceof Number n ? n.intValue() : null));
+            }
+            series.add(new Perfil.Serie(str(val(lb, "leaderboard_id", "leaderboardId")), List.copyOf(puntos)));
+        }
+        List<Perfil.Vinculada> vinculadas = new ArrayList<>();
+        for (Object o : arr(val(root, "linked_profiles", "linkedProfiles"))) {
+            Map<String, Object> lp = obj(o);
+            vinculadas.add(new Perfil.Vinculada(lng(val(lp, "profile_id", "profileId")), str(val(lp, "name")),
+                    str(val(lp, "country")), lng(val(lp, "games"))));
+        }
+        return new Perfil(str(val(root, "country")), str(val(root, "clan")), lng(val(root, "games")),
+                str(val(root, "social_twitch_channel", "socialTwitchChannel")), str(val(root, "steam_id", "steamId")),
+                List.copyOf(ladders), List.copyOf(series), List.copyOf(vinculadas));
     }
 
     /** GET /leaderboards/{id}?page=…&per_page=… y, si pais no es null, &country=pais (también si es ""). */
