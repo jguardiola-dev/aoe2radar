@@ -55,9 +55,7 @@ import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
 import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL_URL;
-import static dev.tirador.aoe2radar.api.Freno.PAUSAS_SEGUIDAS;
-import static dev.tirador.aoe2radar.api.Freno.PAUSA_HASTA;
-import static dev.tirador.aoe2radar.api.Freno.ULTIMO_EXITO_MS;
+import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
 import static dev.tirador.aoe2radar.api.Freno.freno;
@@ -9231,8 +9229,7 @@ public class SpoilerFreeRecs extends JFrame {
     static String httpText429(String url) throws IOException, InterruptedException {
         try {
             String r = httpText(url);
-            if (System.currentTimeMillis() - ULTIMO_EXITO_MS > 10 * 60_000L) PAUSAS_SEGUIDAS = 0;   // diez minutos sin 429: se olvida la escalada
-            ULTIMO_EXITO_MS = System.currentTimeMillis();
+            THROTTLE.registrarExito();   // diez minutos sin 429: se olvida la escalada
             return r;
         } catch (Exception ex) {
             if (String.valueOf(ex.getMessage()).contains("429")) {
@@ -12554,9 +12551,7 @@ public class SpoilerFreeRecs extends JFrame {
     // ----- HTTP --------------------------------------------------------------
     /** Un 429: todas las llamadas se detienen un rato (y más cada vez que se repite). */
     static void registrar429() {
-        PAUSAS_SEGUIDAS = Math.min(PAUSAS_SEGUIDAS + 1, 4);
-        long pausa = Math.min(300_000L, 60_000L * (1L << (PAUSAS_SEGUIDAS - 1)));
-        PAUSA_HASTA = System.currentTimeMillis() + pausa;
+        long pausa = THROTTLE.registrar429();   // escalada y pausa global viven en el Throttle
         log("API: 429 recibido: pausa global de " + pausa / 1000 + " s para no insistir");
         SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
         final SpoilerFreeRecs appF = app; final long seg = pausa / 1000;

@@ -1,6 +1,6 @@
 # verificar.ps1 — la comprobación de antes de cada commit (CLAUDE.md): compila y pasa los tests con el harness.
 # Uso:  .\verificar.ps1            compila + todos los tests (abre la app ~1 min: no toques el PC)
-#       .\verificar.ps1 -Rapido    solo compila y pasa los tests sin pantalla (ComparadorCapturasTest).
+#       .\verificar.ps1 -Rapido    compila y pasa todos los tests salvo el harness (sin pantalla).
 #                                   Sirve para iterar; NO vale antes de un commit (no pasa el harness).
 param([switch]$Rapido)
 
@@ -24,7 +24,7 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
 
 # lista explícita: un «if» que devuelve un array de un elemento lo convierte en String, y @String pasaría sus letras sueltas
 $argumentos = @('test')
-if ($Rapido) { $argumentos += '-Dtest=ComparadorCapturasTest' }
+if ($Rapido) { $argumentos += '-Dtest=!RegresionCapturas' }
 
 # Con el harness: pitido grave al empezar y ventanita roja (fuera de la zona fotografiada, sin robar el foco);
 # al terminar, dos pitidos que suben y ventanita verde unos segundos. Se puede mover el ratón en los otros
@@ -51,6 +51,8 @@ try {
 # Resumen: capturas que fallan, avisos de reintento y el total de tests
 $salida | Select-String -Pattern 'intento \d .*FALLA' | ForEach-Object { ($_.Line -replace ' \? C:.*', '' -replace ' . watch:.*', '') }
 $salida | Select-String -Pattern 'AVISO' | ForEach-Object { Write-Host $_.Line -ForegroundColor Yellow }
+# tests unitarios que fallan: «[ERROR]   Clase.metodo:linea …»
+$salida | Select-String -Pattern '^\[ERROR\]\s+\w+\.\w+:\d+' | ForEach-Object { Write-Host $_.Line -ForegroundColor Red }
 $salida | Select-String -Pattern 'Tests run: \d+, Failures: \d+, Errors: \d+, Skipped: \d+$' | Select-Object -Last 1 | ForEach-Object { $_.Line }
-if ($codigo -eq 0) { Write-Host "VERDE" -ForegroundColor Green } else { Write-Host "ROJO: diferencias en target\capturas (*.diff.png)" -ForegroundColor Red }
+if ($codigo -eq 0) { Write-Host "VERDE" -ForegroundColor Green } else { Write-Host "ROJO: mira arriba qué falló (capturas: target\capturas\*.diff.png)" -ForegroundColor Red }
 exit $codigo
