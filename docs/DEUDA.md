@@ -38,3 +38,4 @@
 | 2026-09-24 | sfrdata.CivStats.statsAsegurar | `containsKey` + `put` sin atomicidad: dos hilos pueden parsear la misma ventana (sin pérdida); `computeIfAbsent` | 2 |
 | 2026-09-24 | colorWr (app) | dos javadocs seguidos; el primero («verde si el intervalo…») describe una lógica de Wilson que el método ya no tiene | 4 |
 | 2026-09-24 | cabecera «Mi partida» (app) | anuncia «quién eres (registro de Windows)», código que ahora está en service.Juego y nadie llama (steamIdActivo) | 4 |
+| 2026-09-24 | util.Texto.truncar | método que nadie llama (ya en la 1.1) | 4 |

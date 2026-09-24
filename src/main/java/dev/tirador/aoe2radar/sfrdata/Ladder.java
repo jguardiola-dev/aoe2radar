@@ -19,10 +19,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
-import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.UA;
+import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
+import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -54,7 +54,6 @@ public final class Ladder {
     public static volatile boolean ladderCargando;
     public static volatile String ladderProgreso = "";
     public static final Object LADDER_LOCK = new Object();
-
 
     /** Baja un archivo de sfr-data si cambió (ETag) y devuelve su contenido (gzip transparente). */
     public static byte[] sfrDataArchivo(String nombre) throws Exception {
