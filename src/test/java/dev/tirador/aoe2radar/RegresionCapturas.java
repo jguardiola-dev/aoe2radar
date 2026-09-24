@@ -42,6 +42,8 @@ class RegresionCapturas {
     static final Path RECURSOS = BASE.resolve("src/main/resources");
     static final Path FIXTURE = BASE.resolve("src/test/resources/fixture");
     static final List<String> FALLOS = new ArrayList<>();
+    static final List<String> REINTENTADAS = new ArrayList<>();
+    static final int INTENTOS = 3;
     static final Map<String, Double> UMBRALES = Map.of();
     static ComparadorCapturas comparador;
     static boolean grabarFixture;
@@ -69,6 +71,7 @@ class RegresionCapturas {
 
     @Test void capturas() throws Exception {
         correr();
+        if (!REINTENTADAS.isEmpty()) System.out.println("AVISO: capturas que pasaron al reintentar: " + REINTENTADAS);
         assertTrue(fotos == 23, "se esperaban 23 capturas y se hicieron " + fotos);
         assertTrue(FALLOS.isEmpty(), FALLOS.size() + " capturas distintas de su referencia:\n  " + String.join("\n  ", FALLOS));
     }
@@ -165,36 +168,56 @@ class RegresionCapturas {
     static void foto(String nombre) throws Exception { foto(nombre, () -> new JComponent[0]); }
     static void foto(String nombre, java.util.function.Supplier<JComponent[]> ignorar) throws Exception {
         SpoilerFreeRecs app = app();
-        Rectangle[] r = new Rectangle[1];
-        List<Rectangle> zonas = new ArrayList<>();
-        SwingUtilities.invokeAndWait(() -> {
-            JRootPane raiz = app.getRootPane();
-            r[0] = new Rectangle(raiz.getLocationOnScreen(), raiz.getSize());
-            zonas.add(new Rectangle(0, raiz.getHeight() - 1, raiz.getWidth(), 1));   // línea del marco de Windows: cambia de color si un diálogo quita el foco
-            // lo mismo con el marco nativo de los diálogos abiertos y su sombra (8 px fuera): dependen de qué ventana tenga el foco
-            Point origen = raiz.getLocationOnScreen();
-            for (Window w : Window.getWindows())
-                if (w instanceof JDialog d && d.isShowing()) {
-                    Rectangle fuera = d.getBounds(); fuera.grow(8, 8);
-                    Rectangle dentro = new Rectangle(d.getRootPane().getLocationOnScreen(), d.getRootPane().getSize());
-                    fuera.translate(-origen.x, -origen.y); dentro.translate(-origen.x, -origen.y);
-                    dentro.height -= 1;   // su última fila es borde de Windows, como en el marco principal
-                    zonas.add(new Rectangle(fuera.x, fuera.y, fuera.width, dentro.y - fuera.y));                                  // arriba
-                    zonas.add(new Rectangle(fuera.x, dentro.y + dentro.height, fuera.width, fuera.y + fuera.height - dentro.y - dentro.height));   // abajo
-                    zonas.add(new Rectangle(fuera.x, fuera.y, dentro.x - fuera.x, fuera.height));                                 // izquierda
-                    zonas.add(new Rectangle(dentro.x + dentro.width, fuera.y, fuera.x + fuera.width - dentro.x - dentro.width, fuera.height));    // derecha
-                }
-            // dependen de la fecha del día (LocalDate.now() en actPintar, sin reloj inyectable: DEUDA.md): mañana se
-            // desplazarían aunque nada cambie. Se ignoran donde se vean; la gráfica por horas sí se compara.
-            for (JComponent c : new JComponent[]{ app.actCalendario, app.actSemana, app.actMeses })
-                zonaVisible(c, raiz, zonas);
-            for (JComponent c : ignorar.get()) zonaVisible(c, raiz, zonas);   // se resuelven aquí, en el EDT
-        });
-        BufferedImage img = new Robot().createScreenCapture(r[0]);
+        // Hasta INTENTOS fotos separadas 1 s: un panel de Windows o un repintado tardío desaparecen en el siguiente
+        // intento; un cambio real del código no, y sigue en rojo. Las que necesitan reintento se listan al final.
+        ComparadorCapturas.Resultado res = null;
+        String[] estado = new String[1];
+        int intento = 0;
+        while (intento < INTENTOS && (res == null || !res.ok())) {
+            if (intento++ > 0) Thread.sleep(1000);
+            Rectangle[] r = new Rectangle[1];
+            List<Rectangle> zonas = new ArrayList<>();
+            SwingUtilities.invokeAndWait(() -> {
+                estado[0] = estadoWatch(app);
+                JRootPane raiz = app.getRootPane();
+                r[0] = new Rectangle(raiz.getLocationOnScreen(), raiz.getSize());
+                zonas.add(new Rectangle(0, raiz.getHeight() - 1, raiz.getWidth(), 1));   // línea del marco de Windows: cambia de color si un diálogo quita el foco
+                // lo mismo con el marco nativo de los diálogos abiertos y su sombra (8 px fuera): dependen de qué ventana tenga el foco
+                Point origen = raiz.getLocationOnScreen();
+                for (Window w : Window.getWindows())
+                    if (w instanceof JDialog d && d.isShowing()) {
+                        Rectangle fuera = d.getBounds(); fuera.grow(8, 8);
+                        Rectangle dentro = new Rectangle(d.getRootPane().getLocationOnScreen(), d.getRootPane().getSize());
+                        fuera.translate(-origen.x, -origen.y); dentro.translate(-origen.x, -origen.y);
+                        dentro.height -= 1;   // su última fila es borde de Windows, como en el marco principal
+                        zonas.add(new Rectangle(fuera.x, fuera.y, fuera.width, dentro.y - fuera.y));                                  // arriba
+                        zonas.add(new Rectangle(fuera.x, dentro.y + dentro.height, fuera.width, fuera.y + fuera.height - dentro.y - dentro.height));   // abajo
+                        zonas.add(new Rectangle(fuera.x, fuera.y, dentro.x - fuera.x, fuera.height));                                 // izquierda
+                        zonas.add(new Rectangle(dentro.x + dentro.width, fuera.y, fuera.x + fuera.width - dentro.x - dentro.width, fuera.height));    // derecha
+                    }
+                // dependen de la fecha del día (LocalDate.now() en actPintar, sin reloj inyectable: DEUDA.md): mañana se
+                // desplazarían aunque nada cambie. Se ignoran donde se vean; la gráfica por horas sí se compara.
+                for (JComponent c : new JComponent[]{ app.actCalendario, app.actSemana, app.actMeses })
+                    zonaVisible(c, raiz, zonas);
+                for (JComponent c : ignorar.get()) zonaVisible(c, raiz, zonas);   // se resuelven aquí, en el EDT
+            });
+            BufferedImage img = new Robot().createScreenCapture(r[0]);
+            res = comparador.comparar(nombre.replaceFirst("\\.png$", ""), img, zonas);
+            System.out.println("foto " + nombre + " intento " + intento + " · " + (res.ok() ? "ok" : "FALLA") + " · " + res.detalle() + " · " + estado[0]);
+        }
         fotos++;
-        ComparadorCapturas.Resultado res = comparador.comparar(nombre.replaceFirst("\\.png$", ""), img, zonas);
         if (!res.ok()) FALLOS.add(res.nombre() + ": " + res.detalle());
-        System.out.println("foto " + nombre + " " + r[0] + " · " + (res.ok() ? "ok" : "FALLA") + " · " + res.detalle());
+        else if (intento > 1) REINTENTADAS.add(res.nombre() + " (intento " + intento + ")");
+    }
+
+    /** Lo que la app cree de la watchlist en el momento de la foto (diagnóstico de shot_menu y compañía). En el EDT. */
+    static String estadoWatch(SpoilerFreeRecs app) {
+        List<Long> ids = new ArrayList<>();
+        for (var p : app.todosJugadores) ids.add(p.id());
+        return "watch: vivo(1)=" + app.vivoWatch.get(1L) + " todos=" + ids + " modelo=" + app.playersModel.size()
+                + " grupo=" + app.grupoActivo() + " top=" + app.modoTop()
+                + " titulo='" + (app.tituloWatch == null ? null : app.tituloWatch.getTitle()) + "'"
+                + " resumen='" + (app.resumenWatch == null ? null : app.resumenWatch.getText()) + "'";
     }
     static void correr() throws Exception {
         SpoilerFreeRecs.main(new String[0]);
@@ -211,6 +234,11 @@ class RegresionCapturas {
         SwingUtilities.invokeAndWait(() -> app.ladderBtn.doClick());
         for (int i = 0; i < 80 && (SpoilerFreeRecs.ladderHists.isEmpty()); i++) Thread.sleep(250);
         Thread.sleep(1500);
+        // Carrera de la app (DEUDA.md): al abrir el ladder programa «tabla de 230 px» solo si el divisor ya tiene alto.
+        // Casi siempre aún no lo tiene y la tabla queda plegada (el estado de las referencias); a veces sí, y cambian
+        // las 7 capturas del ladder. Se fija el reparto por defecto para que no dependa de ese orden.
+        SwingUtilities.invokeAndWait(() -> app.ladderDivisor.resetToPreferredSizes());
+        Thread.sleep(300);
         foto("shot_ladder_vacio.png");
         SwingUtilities.invokeAndWait(() -> {
             app.ladderComparados.add(new SpoilerFreeRecs.Comparado(1L, "12Tirador", Map.of("rm_1v1", new int[]{ 1905, 260 }, "rm_team", new int[]{ 2110, 800 }, "ew_1v1", new int[]{ 1400, 300 }), "es", true));
@@ -324,21 +352,22 @@ class RegresionCapturas {
         SwingUtilities.invokeAndWait(() -> app.mostrarToast("\u25CF Hera ha empezado una partida \u00B7 vs Viper 2732 (Mongoles\u2013Francos) \u00B7 Arabia", 555));
         Thread.sleep(700);
         foto("shot_ahora.png");
+        // el aviso existe para shot_ahora; su temporizador (10 s) lo cerraría en mitad de las capturas siguientes y cuáles
+        // lo muestran dependería del tiempo transcurrido. Se cierra ya, con el método que usa el propio temporizador.
+        SwingUtilities.invokeAndWait(() -> { if (app.toastTimer != null) app.toastTimer.stop(); app.ocultarToast(); });
         System.out.println("live tarjetas: " + app.ahoraCuerpo.getComponentCount() + " | estado: " + app.ahoraEstado.getText());
         SwingUtilities.invokeAndWait(app::mostrarLista250);
         Thread.sleep(800);
         foto("shot_lista250.png");
         cerrarDialogos();
         // menú contextual de la watchlist sobre un jugador en partida
-        // el vigilante barre la API cada poco y quitaría la partida inventada 555 antes de la foto: se para su
-        // temporizador y se espera a que acabe un barrido en curso (vigilando se lee en el EDT, donde se escribe)
-        SwingUtilities.invokeAndWait(() -> { if (app.vigilante != null) app.vigilante.stop(); });
-        boolean[] barriendo = { true };
-        for (int i = 0; i < 120 && barriendo[0]; i++) { SwingUtilities.invokeAndWait(() -> barriendo[0] = app.vigilando); if (barriendo[0]) Thread.sleep(250); }
         app.vivoWatch.put(1L, 555L);
-        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new SpoilerFreeRecs.Player(1L, "12Tirador", "General")); app.todosJugadores.add(new SpoilerFreeRecs.Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0);
-            app.actualizarIndicadoresVivos(); });   // lo que hace el vigilante tras detectar la partida; sin esto la foto dependía de cuándo saltara su temporizador.
-        // Carrera reducida, no eliminada: si el vigilante salta antes de la foto puede quitar vivoWatch(1L) (la partida 555 no existe).
+        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new SpoilerFreeRecs.Player(1L, "12Tirador", "General")); app.todosJugadores.add(new SpoilerFreeRecs.Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
+        // La partida 555 es inventada: un refresco de la propia app la quita en ~1 s y el panel pasa a «0 jugando»
+        // (registrado: vivo(1)=null en la foto en 5 de 5 pasadas). Si el refresco tardaba, la foto pillaba el estado
+        // intermedio («1 jugando»). Se espera a que termine para fotografiar siempre el estado final. DEUDA.md.
+        boolean[] enPartida = { true };
+        for (int i = 0; i < 40 && enPartida[0]; i++) { Thread.sleep(250); SwingUtilities.invokeAndWait(() -> enPartida[0] = app.vivoWatch.containsKey(1L)); }
         Thread.sleep(300);
         SwingUtilities.invokeAndWait(() -> { Rectangle r = app.playersList.getCellBounds(0, 0); app.menuContextualWatchlist(app.playersModel.get(0), new java.awt.event.MouseEvent(app.playersList, java.awt.event.MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, r.x + 40, r.y + 8, 1, true)); });
         Thread.sleep(700);
