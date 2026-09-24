@@ -1,10 +1,14 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.cache.Paises;
+import dev.tirador.aoe2radar.model.Match;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 
@@ -78,6 +82,50 @@ class CompanionApiTest {
         assertEquals("https://api.aoe2companion.com/twitch/live?game=13389", ultima());
         companion.twitchCanal("12Tirador");
         assertEquals("https://api.aoe2companion.com/twitch/live?channel=12tirador", ultima());
+    }
+
+    static final String TRES_PARTIDAS = "{\"matches\":["
+            + "{\"match_id\":11,\"players\":[{\"profile_id\":9000001,\"name\":\"a\",\"country\":\"es\",\"team\":1}]},"
+            + "{\"match_id\":0},"                                   // ilegible: parseMatch devuelve null
+            + "{\"match_id\":12,\"players\":[{\"profile_id\":9000002,\"name\":\"b\",\"country\":\"fr\",\"team\":1}]},"
+            + "{\"match_id\":13,\"players\":[{\"profile_id\":9000003,\"name\":\"c\",\"country\":\"de\",\"team\":1}]}]}";
+
+    @AfterEach void limpiarPaises() {
+        for (long pid = 9000001; pid <= 9000003; pid++) Paises.PAIS_DE.remove(pid);
+    }
+
+    @Test void partidasConvierteASaltandoLasIlegibles() throws Exception {
+        red.cuerpo = TRES_PARTIDAS;
+        List<Long> ids = new ArrayList<>();
+        for (Match m : companion.partidas(1L, 1, 50)) ids.add(m.id);
+        assertEquals(List.of(11L, 12L, 13L), ids);
+        assertEquals("https://data.aoe2companion.com/api/matches?profile_ids=1&page=1&per_page=50", ultima());
+    }
+
+    @Test void partidasEsPerezosa_unBreakNoLeeLasSiguientes() throws Exception {
+        // Mismo comportamiento que el bucle a mano de la 1.1: parseMatch aprende países; si se corta tras la primera,
+        // no se aprende nada de las siguientes.
+        red.cuerpo = TRES_PARTIDAS;
+        for (Match m : companion.partidas(1L, 1, 50)) { if (m.id == 11) break; }
+        assertEquals("es", Paises.PAIS_DE.get(9000001L));
+        assertNull(Paises.PAIS_DE.get(9000002L), "la segunda no se leyó");
+        assertNull(Paises.PAIS_DE.get(9000003L));
+    }
+
+    @Test void elIteradorNoAvanzaConHasNextRepetidoYNextFuncionaSolo() throws Exception {
+        red.cuerpo = TRES_PARTIDAS;
+        Iterator<Match> it = companion.partidas(1L, 1, 50).iterator();
+        assertTrue(it.hasNext()); assertTrue(it.hasNext());
+        assertEquals(11, it.next().id, "hasNext repetido no se come ninguna");
+        assertEquals(12, it.next().id, "next sin hasNext: salta la ilegible y da la siguiente");
+        assertEquals(13, it.next().id);
+        assertFalse(it.hasNext());
+        assertThrows(java.util.NoSuchElementException.class, it::next);
+    }
+
+    @Test void partidasSinPartidasEsVacia() throws Exception {
+        red.cuerpo = "{\"matches\":[]}";
+        assertFalse(companion.partidas(1L, 1, 50).iterator().hasNext());
     }
 
     @Test void devuelveElJsonLeido() throws Exception {

@@ -845,11 +845,10 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** Una llamada por jugador: sus últimas partidas, filtradas a 1v1 ranked dentro de la ventana. */
     Forma calcForma(long pid, int horas) throws Exception {
-        Object root = COMPANION.matches(pid, 1, 40);
+        Iterable<Match> leidas = COMPANION.partidas(pid, 1, 40);
         Instant desde = Instant.now().minus(Duration.ofHours(horas));
         int diff = 0, w = 0, l = 0, partidas = 0, racha = 0; Boolean rachaGana = null; boolean rachaViva = true;
-        for (Object o : arr(val(obj(root), "matches"))) {
-            Match m = parseMatch(obj(o));
+        for (Match m : leidas) {
             if (m == null || m.finished == null || m.finished.isBefore(desde) || m.players.size() != 2
                     || m.mode == null || !m.mode.startsWith("1v1 Random")) continue;
             for (MatchPlayer mp : m.players) {
@@ -920,10 +919,9 @@ public class SpoilerFreeRecs extends JFrame {
     /** Forma de hasta cinco jugadores con UNA llamada (/matches?profile_ids=…): partidas 1v1 RM con resultado y ±ELO; 24 h y 7 días. */
     Map<Long, Forma[]> calcFormaLote(List<Player> lote) throws Exception {
         StringBuilder csv = new StringBuilder(); for (Player p : lote) { if (csv.length() > 0) csv.append(','); csv.append(p.id()); }
-        Object root = COMPANION.matches(csv.toString(), 1, 50);
+        Iterable<Match> leidas = COMPANION.partidas(csv.toString(), 1, 50);
         Map<Long, List<Object[]>> series = new HashMap<>();   // pid → {epochMs, ratingDespués, diff} de más nueva a más vieja
-        for (Object o : arr(val(obj(root), "matches"))) {
-            Match m = parseMatch(obj(o));
+        for (Match m : leidas) {
             if (m == null || m.finished == null || m.started == null || m.mode == null || !m.mode.contains("1v1")) continue;
             for (Player p : lote) for (MatchPlayer mp : m.players) if (mp.id == p.id() && mp.rating != null && mp.ratingDiff != null)
                 series.computeIfAbsent(p.id(), k -> new ArrayList<>()).add(new Object[]{ m.finished.toEpochMilli(), mp.rating + mp.ratingDiff, mp.ratingDiff });
@@ -3676,8 +3674,8 @@ public class SpoilerFreeRecs extends JFrame {
                 Actividad base = ACTIVIDAD_CACHE.get(pid);
                 Set<Long> vistos = new HashSet<>(); if (base != null) for (Match x : base.partidas()) vistos.add(x.id);
                 List<Match> extra = new ArrayList<>();
-                Object root = COMPANION.matches(pid, 1, 50);
-                for (Object o : arr(val(obj(root), "matches"))) { Match x = parseMatch(obj(o)); if (x != null && x.finished != null && !vistos.contains(x.id)) { x.refId = pid; extra.add(x); } }
+                Iterable<Match> leidas = COMPANION.partidas(pid, 1, 50);
+                for (Match x : leidas) { if (x != null && x.finished != null && !vistos.contains(x.id)) { x.refId = pid; extra.add(x); } }
                 nuevas = extra.size();
                 if (base != null && !extra.isEmpty()) {
                     List<Match> todas = new ArrayList<>(extra); todas.addAll(base.partidas());
@@ -5178,9 +5176,8 @@ public class SpoilerFreeRecs extends JFrame {
                     StringBuilder csv = new StringBuilder(); Set<Long> ids = new HashSet<>();
                     for (Object[] f : lote) { if (csv.length() > 0) csv.append(','); csv.append((Long) f[0]); ids.add((Long) f[0]); }
                     try {
-                        Object root = COMPANION.matches(csv.toString(), 1, 100);
-                        for (Object o : arr(val(obj(root), "matches"))) {
-                            Match m = parseMatch(obj(o));
+                        Iterable<Match> leidas = COMPANION.partidas(csv.toString(), 1, 100);
+                        for (Match m : leidas) {
                             if (m == null) continue;
                             if (enCursoReal(m)) { for (MatchPlayer mp : m.players) if (ids.contains(mp.id) && !vivos.containsKey(mp.id)) vivos.put(mp.id, m); }
                             else if (m.finished != null && m.finished.isAfter(Instant.now().minus(Duration.ofHours(2)))) { synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(m.id, new Object[]{ m, m.finished.toEpochMilli() }); } }
@@ -5441,7 +5438,7 @@ public class SpoilerFreeRecs extends JFrame {
                     res.setText(t("consultando…", "checking…"));
                     long pid0 = m.players.get(0).id;
                     new Thread(() -> {   // el socket avisa del final antes de que la API tenga el resultado: una llamada, solo si lo pides
-                        try { Object root = COMPANION.matches(pid0, 1, 5); for (Object o : arr(val(obj(root), "matches"))) { Match x = parseMatch(obj(o)); if (x != null && x.id == m.id) { for (MatchPlayer mp : m.players) for (MatchPlayer xp : x.players) if (xp.id == mp.id) mp.won = xp.won; break; } } } catch (Exception ex) { log("resultado: " + causa(ex)); }
+                        try { Iterable<Match> leidas = COMPANION.partidas(pid0, 1, 5); for (Match x : leidas) { if (x != null && x.id == m.id) { for (MatchPlayer mp : m.players) for (MatchPlayer xp : x.players) if (xp.id == mp.id) mp.won = xp.won; break; } } } catch (Exception ex) { log("resultado: " + causa(ex)); }
                         SwingUtilities.invokeLater(pintar);
                     }, "resultado").start();
                 } });
@@ -6821,9 +6818,8 @@ public class SpoilerFreeRecs extends JFrame {
         new Thread(() -> {
             boolean viva = true;
             try {
-                Object root = COMPANION.matches(pids.get(0), 1, 5);
-                for (Object o : arr(val(obj(root), "matches"))) {
-                    Match r = parseMatch(obj(o));
+                Iterable<Match> leidas = COMPANION.partidas(pids.get(0), 1, 5);
+                for (Match r : leidas) {
                     if (r != null && r.id == m.id) { viva = enCursoReal(r); break; }
                 }
             } catch (Exception ex) { log("socket: no se pudo confirmar la partida " + m.id + ": " + causa(ex)); }
@@ -9081,10 +9077,9 @@ public class SpoilerFreeRecs extends JFrame {
                             publish(t("Perfil ", "Profile ") + (++i) + "/" + perfiles.size()
                                     + " \u00b7 " + encontradas.size() + "/10\u2026");
                             try {
-                                Object root = COMPANION.matches(pid, 1, PER_PAGE);
+                                Iterable<Match> leidas = COMPANION.partidas(pid, 1, PER_PAGE);
                                 perfilVistoAzar.put(pid, System.currentTimeMillis());
-                                for (Object o : arr(val(obj(root), "matches"))) {
-                                    Match m = parseMatch(obj(o));
+                                for (Match m : leidas) {
                                     if (m != null && m.finished != null) {
                                         unicos.putIfAbsent(m.id, m);
                                         cacheAzar.putIfAbsent(m.id, m);
@@ -9327,9 +9322,8 @@ public class SpoilerFreeRecs extends JFrame {
                         if (stopOperacion) break;
                         publish(t("Perfil ", "Profile ") + (++i) + "/" + nPerfiles + "…");
                         try {
-                            Object root = COMPANION.matches(pid, 1, PER_PAGE);
-                            for (Object o : arr(val(obj(root), "matches"))) {
-                                Match m = parseMatch(obj(o));
+                            Iterable<Match> leidas = COMPANION.partidas(pid, 1, PER_PAGE);
+                            for (Match m : leidas) {
                                 if (m != null && m.finished != null) unicos.putIfAbsent(m.id, m);
                             }
                         } catch (Exception ex) {
@@ -10019,10 +10013,9 @@ public class SpoilerFreeRecs extends JFrame {
                         csv.append(p.id());
                     }
                     try {
-                        Object root = COMPANION.matches(csv.toString(), 1, 100);
+                        Iterable<Match> leidas = COMPANION.partidas(csv.toString(), 1, 100);
                         int nPart = 0, nCurso = 0; Instant masAntigua = null;
-                        for (Object o : arr(val(obj(root), "matches"))) {
-                            Match m = parseMatch(obj(o));
+                        for (Match m : leidas) {
                             if (m == null) continue;
                             nPart++;
                             if (m.started != null && (masAntigua == null || m.started.isBefore(masAntigua))) masAntigua = m.started;
@@ -10049,9 +10042,9 @@ public class SpoilerFreeRecs extends JFrame {
                     if (stopOperacion) break;
                     if (!vivoWatch.containsKey(p.id()) || resultado.containsKey(p.id()) || !topVerificados.contains(p.id())) continue;
                     try {
-                        Object root = COMPANION.matches(p.id(), 1, 3);
+                        Iterable<Match> leidas = COMPANION.partidas(p.id(), 1, 3);
                         Match ultima = null;
-                        for (Object o : arr(val(obj(root), "matches"))) { Match m = parseMatch(obj(o)); if (m != null) { ultima = m; break; } }
+                        for (Match m : leidas) { if (m != null) { ultima = m; break; } }
                         if (ultima != null && enCursoReal(ultima)) {
                             resultado.put(p.id(), ultima.id);
                             vivoInfo.put(p.id(), resumenVivo(ultima, p.id()));
@@ -11238,12 +11231,11 @@ public class SpoilerFreeRecs extends JFrame {
                     int[] snap = ELO_AYER.get(p.id());
                     if (snap != null && snap[0] > 0) { gamesWatch.put(p.id(), snap[1]); publish(new Object[]{ p.id(), null, snap[0], null }); continue; }   // del snapshot nocturno: sin llamada (el socket dirá si está en partida)
                     try {
-                        Object root = COMPANION.matches(p.id(), 1, 10);
+                        Iterable<Match> leidas = COMPANION.partidas(p.id(), 1, 10);
                         Long vivo = null;
                         String resV = null;
                         Integer elo = null;
-                        for (Object o : arr(val(obj(root), "matches"))) {
-                            Match m = parseMatch(obj(o));
+                        for (Match m : leidas) {
                             if (m == null) continue;
                             if (enCursoReal(m) && vivo == null) { vivo = m.id; resV = resumenVivo(m, p.id()); }
                             if (elo == null && m.finished != null && m.players.size() == 2
@@ -11254,9 +11246,8 @@ public class SpoilerFreeRecs extends JFrame {
                         }
                         if (elo == null) {   // sin 1v1 ranked entre sus últimas 10: mirar más atrás
                             dormir(PAUSA_MS);
-                            Object root2 = COMPANION.matches(p.id(), 1, PER_PAGE);
-                            for (Object o : arr(val(obj(root2), "matches"))) {
-                                Match m = parseMatch(obj(o));
+                            Iterable<Match> leidasApi = COMPANION.partidas(p.id(), 1, PER_PAGE);
+                            for (Match m : leidasApi) {
                                 if (m == null || m.finished == null || m.players.size() != 2
                                         || m.mode == null || !m.mode.startsWith("1v1 Random")) continue;
                                 for (MatchPlayer mp : m.players)
@@ -11306,12 +11297,11 @@ public class SpoilerFreeRecs extends JFrame {
                         csv.append(p.id());
                     }
                     try {
-                        Object root = COMPANION.matches(csv.toString(), 1, 50);
+                        Iterable<Match> leidas = COMPANION.partidas(csv.toString(), 1, 50);
                         Map<Long, Long> vivos = new HashMap<>();
                         Map<Long, String> infos = new HashMap<>();
                         List<Match> terminadas = new ArrayList<>();
-                        for (Object o : arr(val(obj(root), "matches"))) {
-                            Match m = parseMatch(obj(o));
+                        for (Match m : leidas) {
                             if (m == null) continue;
                             if (enCursoReal(m)) {
                                 for (MatchPlayer mp : m.players)
@@ -11443,9 +11433,8 @@ public class SpoilerFreeRecs extends JFrame {
         new SwingWorker<Boolean, Void>() {
             @Override protected Boolean doInBackground() {
                 try {
-                    Object root = COMPANION.matches(profileId, 1, PER_PAGE);
-                    for (Object o : arr(val(obj(root), "matches"))) {
-                        Match m = parseMatch(obj(o));
+                    Iterable<Match> leidas = COMPANION.partidas(profileId, 1, PER_PAGE);
+                    for (Match m : leidas) {
                         if (m != null && m.id == matchId) { log("espectar: verificación de " + matchId + " → started=" + m.started + " finished=" + m.finished); return enCursoReal(m); }
                     }
                     log("espectar: la partida " + matchId + " no aparece en las últimas del perfil " + profileId + "; se lanza igualmente");
@@ -12233,10 +12222,9 @@ public class SpoilerFreeRecs extends JFrame {
                         publish(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
                         boolean seguir = false;
                         try {
-                            Object root = COMPANION.matches(pl.id(), pagina, PER_PAGE);   // con reintento ante 429 (la segunda pulsación corta la espera)
+                            Iterable<Match> leidas = COMPANION.partidas(pl.id(), pagina, PER_PAGE);   // con reintento ante 429 (la segunda pulsación corta la espera)
                             int n = 0; Instant masAntigua = null;
-                            for (Object o : arr(val(obj(root), "matches"))) {
-                                Match m = parseMatch(obj(o));
+                            for (Match m : leidas) {
                                 if (m == null) continue;
                                 n++;
                                 Instant ref = m.finished != null ? m.finished : m.started;

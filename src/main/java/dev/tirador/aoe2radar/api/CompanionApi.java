@@ -1,11 +1,18 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
+import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 
+import static dev.tirador.aoe2radar.api.Parseo.parseMatch;
+import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.obj;
+import static dev.tirador.aoe2radar.util.Json.val;
 
 /**
  * Los endpoints del companion que usa la app, con su URL construida en un solo sitio. Paso 1 de la migración: cada
@@ -23,6 +30,33 @@ public final class CompanionApi {
     /** GET /matches?profile_ids=…&page=…&per_page=… (ids: uno o varios separados por comas). Raíz del JSON. */
     public Object matches(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
         return Json.parse(api.textoCon429(Http.API + "/matches?profile_ids=" + ids + "&page=" + pagina + "&per_page=" + porPagina));
+    }
+
+    /**
+     * Las partidas de matches(…) ya convertidas a Match, saltando las ilegibles. PEREZOSO a propósito: la descarga es
+     * inmediata, pero cada partida se lee (parseMatch, que de paso aprende país, canal e imagen de mapa) solo cuando el
+     * bucle la pide; si el bucle corta con break, las siguientes no se leen, igual que el bucle a mano de la 1.1.
+     * Se recorre UNA sola vez: recorrerlo de nuevo volvería a leer (y a aprender) las partidas.
+     */
+    public Iterable<Match> partidas(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
+        List<Object> brutas = arr(val(obj(matches(ids, pagina, porPagina)), "matches"));
+        return () -> new Iterator<>() {
+            int i;
+            Match siguiente;
+            @Override public boolean hasNext() {
+                while (siguiente == null && i < brutas.size()) siguiente = parseMatch(obj(brutas.get(i++)));
+                return siguiente != null;
+            }
+            @Override public Match next() {
+                if (!hasNext()) throw new NoSuchElementException();
+                Match m = siguiente; siguiente = null; return m;
+            }
+        };
+    }
+
+    /** Como partidas(String…) para un solo jugador. */
+    public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+        return partidas(String.valueOf(pid), pagina, porPagina);
     }
 
     /** Como matches(String…) para un solo jugador. */

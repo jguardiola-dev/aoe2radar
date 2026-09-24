@@ -55,3 +55,4 @@
 | 2026-09-24 | CompanionApi.twitchCanal | `canal.toLowerCase()` usa la Locale por defecto (como en la 1.1): con Locale turca la «I» da «ı». Locale.ROOT | 4 |
 | 2026-09-24 | dormir(long) (app) | sigue con el criterio global `stopOperacion && opEnCurso`: un barrido de fondo que duerma PAUSA_MS ve su pausa acortada al pulsar Detener. Pasarlo a detieneEsteHilo() | 2 |
 | 2026-09-24 | «Buscar» (fetchMatches) | la segunda pulsación hace cancel(true) pero no pone stopOperacion: corta el freno por la interrupción del hilo, no por Cancelacion. Unificar | 2 |
+| 2026-09-25 | api.Parseo.parseMatch | mezcla convertir con aprender (país, canal, imagen de mapa): obliga a que CompanionApi.partidas sea perezoso y de un solo recorrido para no cambiar qué se aprende. Separar «leer» de «aprender» (p. ej. que CompanionApi aprenda de toda la página y parseMatch sea puro) | 3 |
