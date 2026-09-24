@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
+import java.time.Duration;
 import java.util.function.Supplier;
 
 import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
@@ -20,8 +21,9 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * <ul>
  * <li>datos(nombre): rama «data» (ladder, dispersión, clanes, mapas, civ stats). Vale 6 h (Caducidad.NOCTURNO); al
  *     caducar se pregunta con ETag (304 = sigue valiendo otras 6 h). Si la red falla y hay copia, se usa la copia.</li>
- * <li>diario(nombre, timeout): release «perfiles» (ELO de ayer, de hace 7 días, muestra). Vale 12 h
- *     (Caducidad.DESCARGA_DIARIA); se baja con reintentos.</li>
+ * <li>diario(nombre, timeout[, caducidad]): release «perfiles» (ELO de ayer, de hace 7 días, muestra, índice). Vale
+ *     12 h (Caducidad.DESCARGA_DIARIA) o la caducidad que se pase (el índice, 6 h); se baja con reintentos.
+ *     fechaDiario(nombre) dice de cuándo es la copia, para que la memoria cuente desde ahí y no desde la lectura.</li>
  * <li>versionado(base, nombre, versión, timeout): paquetes de perfil y deltas. Vale mientras la versión (la fecha del
  *     índice) sea la misma; se apunta en «nombre.v».</li>
  * </ul>
@@ -75,10 +77,16 @@ public final class SfrDataClient {
         return b;
     }
 
+    /** La base de la release «perfiles» de ahora (el mando a distancia puede cambiarla). */
+    public String baseRelease() { return baseRelease.get(); }
+
     /** Un archivo de la release «perfiles», guardado en disco y reutilizado 12 h (sin descomprimir). */
-    public byte[] diario(String nombre, int timeoutS) throws Exception {
+    public byte[] diario(String nombre, int timeoutS) throws Exception { return diario(nombre, timeoutS, Caducidad.DESCARGA_DIARIA); }
+
+    /** Como diario(nombre, timeout) con otra caducidad en disco (el índice, que cambia cada noche: 6 h). */
+    public byte[] diario(String nombre, int timeoutS, Duration caducidad) throws Exception {
         Path f = dirRelease.resolve(nombre);
-        try { if (cache.archivoFresco(f, Caducidad.DESCARGA_DIARIA)) return Files.readAllBytes(f); } catch (IOException ignored) { }
+        try { if (cache.archivoFresco(f, caducidad)) return Files.readAllBytes(f); } catch (IOException ignored) { }
         byte[] raw = red.bytes(baseRelease.get() + nombre, timeoutS);
         try { Files.createDirectories(dirRelease); Files.write(f, raw); } catch (IOException ignored) { }
         return raw;
@@ -86,10 +94,16 @@ public final class SfrDataClient {
 
     /**
      * Borra la copia en disco de un archivo de diario(): quien lo leyó no pudo entenderlo (roto, truncado). Sin esto,
-     * cada reintento releería la misma basura durante 12 h; así el siguiente vuelve a la red.
+     * cada reintento releería la misma basura mientras la copia valga (12 h, o su caducidad); así vuelve a la red.
      */
     public void olvidarDiario(String nombre) {
         try { Files.deleteIfExists(dirRelease.resolve(nombre)); } catch (IOException ex) { log("sfr-data: no se pudo borrar " + nombre + ": " + causa(ex)); }
+    }
+
+    /** Hora (ms) de la copia en disco de un archivo de diario(), o ahora si no se puede leer (no se llegó a guardar). */
+    public long fechaDiario(String nombre) {
+        try { return Files.getLastModifiedTime(dirRelease.resolve(nombre)).toMillis(); }
+        catch (IOException ex) { return cache.reloj().ahoraMs(); }
     }
 
     /** Como versionado(base, …) con la base de la release «perfiles». */

@@ -17,4 +17,10 @@ public final class Sello {
     public boolean fresco() { return marcaMs != Long.MIN_VALUE && cache.fresco(marcaMs, caducidad); }
 
     public void marcar() { marcaMs = cache.reloj().ahoraMs(); }
+
+    /**
+     * Marca con una hora dada: la del dato, no la de ahora. Para lo que se guarda también en disco: si la memoria se
+     * sellara al leer la copia, las dos caducidades se sumarían (una copia de 5 h valdría otras 6 h en memoria).
+     */
+    public void marcar(long marcaMs) { this.marcaMs = marcaMs; }
 }
