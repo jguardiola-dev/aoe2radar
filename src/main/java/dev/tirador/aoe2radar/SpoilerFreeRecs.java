@@ -45,6 +45,7 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
+import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.util.Json;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
@@ -83,6 +84,9 @@ import static dev.tirador.aoe2radar.cache.CachePerfiles.VINCULADAS_CACHE;
 import static dev.tirador.aoe2radar.cache.Canales.CANAL_DE;
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
 import static dev.tirador.aoe2radar.cache.Canales.cargarCanales;
+import static dev.tirador.aoe2radar.cache.Catalogos.CIVS_CAT;
+import static dev.tirador.aoe2radar.cache.Catalogos.MAPAS_CAT;
+import static dev.tirador.aoe2radar.cache.Catalogos.cargarCatalogos;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.ACTIVIDAD_CACHE;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.ACT_DIAS;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.PERFILES_DIR;
@@ -97,6 +101,17 @@ import static dev.tirador.aoe2radar.cache.Vivos.VISTO_VIVO_MS;
 import static dev.tirador.aoe2radar.cache.Vivos.VIVO_PARTIDA;
 import static dev.tirador.aoe2radar.cache.Vivos.VIVO_RIVAL;
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
+import static dev.tirador.aoe2radar.service.Aleatorio.componerTanda;
+import static dev.tirador.aoe2radar.service.Aleatorio.cumpleAzar;
+import static dev.tirador.aoe2radar.service.Aleatorio.elegirPerfiles;
+import static dev.tirador.aoe2radar.service.Aleatorio.esRankedRM;
+import static dev.tirador.aoe2radar.service.Aleatorio.filtrarAleatorias;
+import static dev.tirador.aoe2radar.service.Aleatorio.filtrarGte;
+import static dev.tirador.aoe2radar.service.Aleatorio.franjasAleatorias;
+import static dev.tirador.aoe2radar.service.Aleatorio.ordenaYRecorta;
+import static dev.tirador.aoe2radar.service.Aleatorio.primeraPaginaRango;
+import static dev.tirador.aoe2radar.service.Aleatorio.tramosGte;
+import static dev.tirador.aoe2radar.service.Aleatorio.ultimaPaginaRango;
 import static dev.tirador.aoe2radar.service.CalculoStats.MIN_PARTIDAS_CIV;
 import static dev.tirador.aoe2radar.service.CalculoStats.MUESTRA_FIABLE;
 import static dev.tirador.aoe2radar.service.CalculoStats.POCAS_PARTIDAS;
@@ -211,29 +226,6 @@ public class SpoilerFreeRecs extends JFrame {
     // ----- Modelo ------------------------------------------------------------
 
     static final String GRUPO_GENERAL = "General";
-
-    // Catálogos dinámicos de mapas y civs: semilla embebida + todo lo que la
-    // app va viendo en partidas reales (persistido en config). Así los
-    // selectores crecen solos con cada parche.
-    static final Set<String> MAPAS_CAT = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-    static final Set<String> CIVS_CAT  = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-    static final String[] CIVS_SEMILLA = { "Armenians","Aztecs","Bengalis","Berbers","Bohemians","Britons",
-            "Bulgarians","Burgundians","Burmese","Byzantines","Celts","Chinese","Cumans","Dravidians","Ethiopians",
-            "Franks","Georgians","Goths","Gurjaras","Hindustanis","Huns","Incas","Italians","Japanese","Jurchens",
-            "Khitans","Khmer","Koreans","Lithuanians","Magyars","Malay","Malians","Maya","Mongols","Persians",
-            "Poles","Portuguese","Romans","Saracens","Shu","Sicilians","Slavs","Spanish","Tatars","Teutons",
-            "Turks","Vietnamese","Vikings","Wei","Wu" };
-    static final String[] MAPAS_SEMILLA = { "Arabia","Arena","Nomad","African Clearing","Acropolis","Atacama",
-            "Baltic","Black Forest","Enclosed","Four Lakes","Ghost Lake","Gold Rush","Golden Pit","Hideout",
-            "Hill Fort","Islands","Lombardia","Mediterranean","Megarandom","Mountain Pass","Oasis","Serengeti",
-            "Socotra","Steppe" };
-
-    static void cargarCatalogos() {
-        MAPAS_CAT.addAll(Arrays.asList(MAPAS_SEMILLA));
-        CIVS_CAT.addAll(Arrays.asList(CIVS_SEMILLA));
-        for (String m : leerConfig("mapas_ranked", "").split(",")) if (!m.isBlank()) MAPAS_CAT.add(m.trim());
-        for (String c : leerConfig("civs_vistas", "").split(",")) if (!c.isBlank()) CIVS_CAT.add(c.trim());
-    }
 
     /** Añade a los catálogos los mapas y civs de las partidas recibidas y
      *  persiste las novedades. */
@@ -381,12 +373,6 @@ public class SpoilerFreeRecs extends JFrame {
             }
             m.fantasma = f;
         }
-    }
-
-    /** Modo ranked de mapa aleatorio (el mode del API llega como
-     *  «1v1 Random Map» / «Team Random Map»). */
-    static boolean esRankedRM(String mode) {
-        return mode != null && (mode.startsWith("1v1 Random") || mode.startsWith("Team Random"));
     }
 
     static String colorVivoHex() {
@@ -9486,11 +9472,6 @@ public class SpoilerFreeRecs extends JFrame {
         final Map<Integer, PaginaLb> cache = new HashMap<>();
     }
 
-    @FunctionalInterface
-    interface ProveedorPaginas {
-        PaginaLb pagina(int p) throws IOException, InterruptedException;
-    }
-
     /** Baja y parsea una página del leaderboard, con caché. */
     static PaginaLb lbPagina(LbCtx ctx, int p) throws IOException, InterruptedException {
         PaginaLb enCache = ctx.cache.get(p);
@@ -9548,55 +9529,6 @@ public class SpoilerFreeRecs extends JFrame {
         return p * 2;
     }
 
-    /** Búsqueda binaria: primera página cuyo rating mínimo ya alcanza el techo
-     *  del rango (el ladder va de mayor a menor rating). */
-    static int primeraPaginaRango(ProveedorPaginas prov, int hi, int ult) throws IOException, InterruptedException {
-        int a = 1, b = ult, res = ult;
-        while (a <= b) {
-            int m = (a + b) / 2;
-            PaginaLb pg = prov.pagina(m);
-            if (pg.jugadores().isEmpty() || pg.ratingMin() <= hi) { res = m; b = m - 1; }
-            else a = m + 1;
-        }
-        return res;
-    }
-
-    /** Búsqueda binaria: última página cuyo rating máximo sigue llegando al
-     *  suelo del rango. */
-    static int ultimaPaginaRango(ProveedorPaginas prov, int lo, int ult) throws IOException, InterruptedException {
-        int a = 1, b = ult, res = 1;
-        while (a <= b) {
-            int m = (a + b) / 2;
-            PaginaLb pg = prov.pagina(m);
-            if (!pg.jugadores().isEmpty() && pg.ratingMax() >= lo) { res = m; a = m + 1; }
-            else b = m - 1;
-        }
-        return res;
-    }
-
-    /** Del leaderboard, los perfiles dentro del rango, barajados y limitados. */
-    static List<Match> ordenaYRecorta(List<Match> l) {
-        l.sort(Comparator.comparing((Match m) -> m.finished).reversed());
-        return l.size() > 10 ? new ArrayList<>(l.subList(0, 10)) : l;
-    }
-
-    /** Perfiles del rango priorizando a los ACTIVOS dentro de la ventana: los
-     *  inactivos claros quedan fuera y los de actividad desconocida, al final. */
-    static List<Long> elegirPerfiles(List<long[]> lb, int lo, int hi, long cutoffMs, int max, Random rnd) {
-        List<Long> activos = new ArrayList<>(), desconocidos = new ArrayList<>();
-        for (long[] p : lb) {
-            if (p[1] < lo || p[1] > hi) continue;
-            long lm = p.length > 2 ? p[2] : 0L;
-            if (lm >= cutoffMs) activos.add(p[0]);
-            else if (lm == 0L) desconocidos.add(p[0]);
-        }
-        Collections.shuffle(activos, rnd);
-        Collections.shuffle(desconocidos, rnd);
-        List<Long> in = new ArrayList<>(activos);
-        in.addAll(desconocidos);
-        return in.subList(0, Math.min(in.size(), max));
-    }
-
     /** Río global: partidas RM 1v1 recientes de todo el ladder, sin perfiles
      *  (leaderboard_ids). Si el parámetro no estuviera soportado, devuelve
      *  vacío y los perfiles sostienen la búsqueda. */
@@ -9641,69 +9573,6 @@ public class SpoilerFreeRecs extends JFrame {
                 break;
             }
         }
-        return out;
-    }
-
-    /** ¿Cumple esta partida todos los filtros del azar? 1v1, en ventana, mapa,
-     *  civ (basta uno de los dos) y AMBOS ratings del momento dentro del rango. */
-    static boolean cumpleAzar(Match m, int lo, int hi, Instant cutoff, String mapa, String civ) {
-        if (m.players.size() != 2 || !esRankedRM(m.mode) || (m.mode != null && !m.mode.startsWith("1v1"))) return false;
-        if (m.finished == null || m.finished.isBefore(cutoff)) return false;
-        if (mapa != null && (m.map == null || !m.map.equalsIgnoreCase(mapa))) return false;
-        if (civ != null) {
-            boolean tiene = false;
-            for (MatchPlayer p : m.players)
-                if (p.civ != null && civ.equalsIgnoreCase(p.civ.trim())) { tiene = true; break; }
-            if (!tiene) return false;
-        }
-        for (MatchPlayer p : m.players) {
-            if (p.rating == null) return false;
-            if (p.rating < lo || p.rating > hi) return false;
-        }
-        return true;
-    }
-
-    /** Filtro final: 1v1 dentro de la ventana y ambos jugadores en el rango de
-     *  ELO (rating del leaderboard por profileId, con el del match como
-     *  respaldo). El flag replay del API describe el sistema de replays de
-     *  aoe2companion, no aoe.ms: NO descarta, solo prioriza (las partidas que
-     *  lo declaran entran primero al cupo). Deja el desglose en el log. */
-    static List<Match> filtrarAleatorias(Collection<Match> candidatas, Map<Long, Integer> ratingsLb,
-                                         int lo, int hi, Instant cutoff, String mapa, String civ,
-                                         int max, Random rnd) {
-        List<Match> conRec = new ArrayList<>(), resto = new ArrayList<>();
-        int no1v1 = 0, viejas = 0, otroMapa = 0, sinCiv = 0, sinRating = 0, fueraRango = 0;
-        for (Match m : candidatas) {
-            if (m.players.size() != 2 || m.mode == null || !m.mode.startsWith("1v1 Random")) { no1v1++; continue; }
-            if (m.finished == null || m.finished.isBefore(cutoff)) { viejas++; continue; }
-            if (mapa != null && (m.map == null || !m.map.equalsIgnoreCase(mapa))) { otroMapa++; continue; }
-            if (civ != null) {
-                boolean tiene = false;
-                for (MatchPlayer p : m.players)
-                    if (p.civ != null && civ.equalsIgnoreCase(p.civ.trim())) { tiene = true; break; }
-                if (!tiene) { sinCiv++; continue; }
-            }
-            boolean ambos = true, desconocido = false;
-            for (MatchPlayer p : m.players) {
-                Integer r = ratingsLb.get(p.id);
-                if (r == null) r = p.rating;
-                if (r == null) { desconocido = true; break; }
-                if (r < lo || r > hi) { ambos = false; break; }
-            }
-            if (desconocido) { sinRating++; continue; }
-            if (!ambos) { fueraRango++; continue; }
-            (m.povsConRec() > 0 ? conRec : resto).add(m);
-        }
-        log("filtro al azar: " + candidatas.size() + " candidatas -> " + no1v1 + " no 1v1, "
-                + viejas + " fuera de ventana, " + otroMapa + " otro mapa, " + sinCiv + " sin la civ, "
-                + sinRating + " sin rating conocido, " + fueraRango + " fuera de rango -> "
-                + (conRec.size() + resto.size()) + " válidas (" + conRec.size() + " declaran rec)");
-        Collections.shuffle(conRec, rnd);
-        Collections.shuffle(resto, rnd);
-        List<Match> in = new ArrayList<>(conRec);
-        in.addAll(resto);
-        List<Match> out = new ArrayList<>(in.subList(0, Math.min(in.size(), max)));
-        out.sort(Comparator.comparing((Match m) -> m.finished).reversed());
         return out;
     }
 
@@ -9822,71 +9691,6 @@ public class SpoilerFreeRecs extends JFrame {
                 }
             }
         }.execute();
-    }
-
-    /** Filtro GTE: 1v1 dentro de la ventana, sin mirar ELO (cualquiera vale).
-     *  Prioriza las que declaran rec y baraja: el orden no sigue patrón. */
-    static List<Match> filtrarGte(Collection<Match> candidatas, Instant cutoff, int max, Random rnd) {
-        List<Match> conRec = new ArrayList<>(), resto = new ArrayList<>();
-        int no1v1 = 0, viejas = 0;
-        for (Match m : candidatas) {
-            if (m.players.size() != 2 || m.mode == null || !m.mode.startsWith("1v1 Random")) { no1v1++; continue; }
-            if (m.finished == null || m.finished.isBefore(cutoff)) { viejas++; continue; }
-            (m.povsConRec() > 0 ? conRec : resto).add(m);
-        }
-        log("filtro GTE: " + candidatas.size() + " candidatas -> " + no1v1 + " no 1v1, " + viejas
-                + " fuera de ventana -> " + (conRec.size() + resto.size())
-                + " válidas (" + conRec.size() + " declaran rec)");
-        Collections.shuffle(conRec, rnd);
-        Collections.shuffle(resto, rnd);
-        List<Match> in = new ArrayList<>(conRec);
-        in.addAll(resto);
-        return new ArrayList<>(in.subList(0, Math.min(in.size(), max)));
-    }
-
-    /** Tramos de ranking para Guess the ELO, agudos hacia los extremos para
-     *  que la élite y el fondo del ladder salgan de verdad: top 0,5%, 0,5-5%,
-     *  5-25%, 25-60% y 60-100%. */
-    static int[][] tramosGte(int ult) {
-        int c1 = Math.max(1, ult / 200);
-        int c2 = Math.max(c1 + 1, ult / 20);
-        int c3 = Math.max(c2 + 1, ult / 4);
-        int c4 = Math.max(c3 + 1, ult * 6 / 10);
-        int fin = Math.max(c4 + 1, ult);
-        return new int[][]{ { 1, c1 }, { c1 + 1, c2 }, { c2 + 1, c3 }, { c3 + 1, c4 }, { c4 + 1, fin } };
-    }
-
-    /** Una franja al azar por partida, independiente: sin garantías por tanda
-     *  y sin patrón que se pueda deducir por descarte. */
-    static int[] franjasAleatorias(int slots, int tramos, Random rnd) {
-        int[] f = new int[slots];
-        for (int i = 0; i < slots; i++) f[i] = rnd.nextInt(tramos);
-        return f;
-    }
-
-    /** Ensambla la tanda: una partida por slot muestreado y relleno con
-     *  sobrantes si algún slot no aporta. Sin duplicados y barajada para que
-     *  la posición en la lista no delate nada. */
-    static List<Match> componerTanda(List<List<Match>> porTramo, int max, Random rnd) {
-        List<Match> tanda = new ArrayList<>();
-        List<Match> sobrantes = new ArrayList<>();
-        Set<Long> ids = new HashSet<>();
-        for (List<Match> tramo : porTramo) {
-            boolean puesto = false;
-            for (Match m : tramo) {
-                if (!ids.add(m.id)) continue;
-                if (!puesto) { tanda.add(m); puesto = true; }
-                else sobrantes.add(m);
-            }
-        }
-        Collections.shuffle(sobrantes, rnd);
-        for (Match m : sobrantes) {
-            if (tanda.size() >= max) break;
-            tanda.add(m);
-        }
-        if (tanda.size() > max) tanda = new ArrayList<>(tanda.subList(0, max));
-        Collections.shuffle(tanda, rnd);
-        return tanda;
     }
 
     /** Mayor número «Guess the ELO N» ya usado en ./recs, para continuar la
