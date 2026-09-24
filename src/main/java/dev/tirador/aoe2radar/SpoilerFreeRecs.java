@@ -32,6 +32,9 @@ package dev.tirador.aoe2radar;
 
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.cache.CacheMemoria;
+import dev.tirador.aoe2radar.cache.CacheService;
+import dev.tirador.aoe2radar.cache.Caducidad;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
@@ -54,10 +57,10 @@ import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
-import dev.tirador.aoe2radar.util.Json;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
+import dev.tirador.aoe2radar.util.Json;
 
 import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
@@ -494,7 +497,7 @@ public class SpoilerFreeRecs extends JFrame {
     javax.swing.Timer hoverTimer;
     long hoverPid;
     Point hoverPantalla;
-    final Map<Long, Object[]> perfilCardCache = new HashMap<>();   // pid -> { tsMs, htmlDatos, int[] spark }
+    final CacheMemoria<Long, Object[]> perfilCardCache = CacheService.SISTEMA.memoria(Caducidad.TARJETA);   // pid -> { htmlDatos, int[] spark }
     static final String TOP_LADDER = "\u2605 Top ladder";
     static final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
     record PaisItem(String nombre, String code) {
@@ -1090,8 +1093,8 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** Perfil del jugador (una llamada), con caché de 30 min: {ms, Map ladder→{rating, rango, máximo, victorias, derrotas}, país, clan, partidas totales}. */
     static Object[] perfilLadders(long pid) {
-        Object[] c = PERFIL_CACHE.get(pid);
-        if (c != null && System.currentTimeMillis() - (long) c[0] < 30 * 60_000L) return c;
+        Object[] c = PERFIL_CACHE.vigente(pid);
+        if (c != null) return c;
         Map<String, int[]> m = new HashMap<>();
         String pais = "", clan = "";
         long games = 0;
@@ -1117,7 +1120,7 @@ public class SpoilerFreeRecs extends JFrame {
             }
         } catch (Exception ex) { log("ladder: perfil " + pid + ": " + causa(ex)); return null; }
         c = new Object[]{ System.currentTimeMillis(), m, pais, clan, games };
-        PERFIL_CACHE.put(pid, c);
+        PERFIL_CACHE.poner(pid, c);
         return c;
     }
     // ----- «★ Top clan»: una vista más de la watchlist -----
@@ -3798,7 +3801,7 @@ public class SpoilerFreeRecs extends JFrame {
         boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
         if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
         else { actMostrarCuerpo(false); actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in.")); }
-        Object[] perfilCache = PERFIL_CACHE.get(pid);
+        Object[] perfilCache = PERFIL_CACHE.ultimo(pid);
         if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
         if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
         actCargando = true;
@@ -3820,7 +3823,7 @@ public class SpoilerFreeRecs extends JFrame {
                 if (desdeSfr != null) {
                     Actividad a = desdeSfr; String hastaF = hastaSfr; String paisF = paisSfr;
                     ACTIVIDAD_CACHE.put(pid, a);
-                    Object[] perfilConocido = PERFIL_CACHE.get(pid);
+                    Object[] perfilConocido = PERFIL_CACHE.ultimo(pid);
                     Object[] perfil = perfilConocido != null ? perfilConocido : perfilSintetico(pid, a, paisF);
                     SwingUtilities.invokeLater(() -> {
                         actCargando = false;
@@ -4301,7 +4304,7 @@ public class SpoilerFreeRecs extends JFrame {
         f.add(l, BorderLayout.WEST);
         JLabel datos = new JLabel();
         datos.setFont(datos.getFont().deriveFont(Font.PLAIN, 12f));
-        Object[] perfil = PERFIL_CACHE.get(pid);
+        Object[] perfil = PERFIL_CACHE.ultimo(pid);
         if (perfil == null && ELO_AYER.get(pid) != null) {   // del snapshot nocturno: sin llamada
             int[] sn = ELO_AYER.get(pid); Map<String, int[]> mm = new HashMap<>();
             if (sn[0] > 0) mm.put("rm_1v1", new int[]{ sn[0], 0, 0, 0, 0 }); if (sn[2] > 0) mm.put("rm_team", new int[]{ sn[2], 0, 0, 0, 0 });
@@ -4379,9 +4382,9 @@ public class SpoilerFreeRecs extends JFrame {
         } else { JMenuItem ya = new JMenuItem(t("(ya está en tu watchlist)", "(already in your watchlist)")); ya.setEnabled(false); menu.add(ya); }
         JMenuItem vinc = new JMenuItem(t("Cuentas vinculadas…", "Linked accounts…")); vinc.addActionListener(a -> mostrarVinculadas(pid, nombre)); menu.add(vinc);
         menu.addSeparator();
-        JMenuItem alias = new JMenuItem(t("Mostrar como…", "Show as…")); alias.addActionListener(a -> { pedirAlias(pid, nombre); actPintarCabecera(PERFIL_CACHE.get(pid)); }); menu.add(alias);
-        JMenuItem nota = new JMenuItem(t("Nota…", "Note…")); nota.addActionListener(a -> { pedirNota(pid, nombre); actPintarCabecera(PERFIL_CACHE.get(pid)); }); menu.add(nota);
-        if (notaDe(pid) != null) { JMenuItem bn = new JMenuItem(t("Borrar nota", "Delete note")); bn.addActionListener(a -> { borrarNota(pid, nombre); actPintarCabecera(PERFIL_CACHE.get(pid)); }); menu.add(bn); }
+        JMenuItem alias = new JMenuItem(t("Mostrar como…", "Show as…")); alias.addActionListener(a -> { pedirAlias(pid, nombre); actPintarCabecera(PERFIL_CACHE.ultimo(pid)); }); menu.add(alias);
+        JMenuItem nota = new JMenuItem(t("Nota…", "Note…")); nota.addActionListener(a -> { pedirNota(pid, nombre); actPintarCabecera(PERFIL_CACHE.ultimo(pid)); }); menu.add(nota);
+        if (notaDe(pid) != null) { JMenuItem bn = new JMenuItem(t("Borrar nota", "Delete note")); bn.addActionListener(a -> { borrarNota(pid, nombre); actPintarCabecera(PERFIL_CACHE.ultimo(pid)); }); menu.add(bn); }
         JMenuItem nicks = new JMenuItem(t("Nicks anteriores…", "Previous names…")); nicks.addActionListener(a -> nicksAnteriores(pid, nombre)); menu.add(nicks);
         menu.show(sobre, e.getX(), e.getY());
     }
@@ -4442,7 +4445,7 @@ public class SpoilerFreeRecs extends JFrame {
         Map<String, int[]> civs30 = new HashMap<>(), mapas30 = new HashMap<>();          // últimos 30 días
         Instant hace30 = Instant.now().minus(Duration.ofDays(30));
         int eloActualJugador = 0;
-        { Object[] pf = PERFIL_CACHE.get(actPid); if (pf != null && pf[1] instanceof Map<?, ?> pm && pm.get("rm_1v1") instanceof int[] v && v[0] > 0) eloActualJugador = v[0]; if (eloActualJugador == 0) { Integer e = eloWatch.get(actPid); if (e != null && e > 0) eloActualJugador = e; } }
+        { Object[] pf = PERFIL_CACHE.ultimo(actPid); if (pf != null && pf[1] instanceof Map<?, ?> pm && pm.get("rm_1v1") instanceof int[] v && v[0] > 0) eloActualJugador = v[0]; if (eloActualJugador == 0) { Integer e = eloWatch.get(actPid); if (e != null && e > 0) eloActualJugador = e; } }
         String[] franjas = null;
         Map<Long, Object[]> rivales = new HashMap<>(), aliados = new HashMap<>();   // pid → {nombre, n, w}
         String modoGrafica = "*".equals(actModo) ? modoPrincipal(a) : actModo;   // la gráfica de ELO va siempre por ladder
@@ -4576,7 +4579,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** ELO actual del ladder que corresponde a un modo (de la ficha del perfil); si no hay ficha, el de la partida más reciente más su diferencia. */
     long eloActualLadder(String modo, long[] masReciente) {
         String lb = modo == null ? null : (modo.toLowerCase(Locale.ROOT).contains("empire") || modo.toLowerCase(Locale.ROOT).startsWith("ew")) ? (modo.contains("1v1") ? "ew_1v1" : "ew_team") : modo.contains("1v1") ? "rm_1v1" : "rm_team";
-        Object[] perfil = PERFIL_CACHE.get(actPid);
+        Object[] perfil = PERFIL_CACHE.ultimo(actPid);
         if (perfil != null && lb != null && perfil[1] instanceof Map<?, ?> mp && mp.get(lb) instanceof int[] v && v[0] > 0) return v[0];
         return masReciente[1] + masReciente[2];
     }
@@ -5578,7 +5581,7 @@ public class SpoilerFreeRecs extends JFrame {
         Integer e = ELO_1V1.get(pid); if (e != null) return e > 0 ? e : null;
         Object[] f = liveFicha(pid); if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
         e = ELO_VINC.get(pid); if (e != null && e > 0) return e;
-        Object[] perfil = PERFIL_CACHE.get(pid); if (perfil != null && perfil[1] instanceof Map<?, ?> mp && mp.get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
+        Object[] perfil = PERFIL_CACHE.ultimo(pid); if (perfil != null && perfil[1] instanceof Map<?, ?> mp && mp.get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
         return null;
     }
     JMenuItem itemJugadorPartida(MatchPlayer p) {
@@ -11060,10 +11063,9 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void mostrarPerfilCard(long pid, String nombre, Point enPantalla, boolean fijar) {
-        Object[] cache = perfilCardCache.get(pid);
-        long ahora = System.currentTimeMillis();
-        if (cache != null && ahora - (Long) cache[0] < 10 * 60_000L) {
-            pintarCard((String) cache[1], (int[]) cache[2], enPantalla, pid, fijar);
+        Object[] cache = perfilCardCache.vigente(pid);
+        if (cache != null) {
+            pintarCard((String) cache[0], (int[]) cache[1], enPantalla, pid, fijar);
             return;
         }
         new SwingWorker<Object[], Void>() {
@@ -11140,7 +11142,7 @@ public class SpoilerFreeRecs extends JFrame {
             @Override protected void done() {
                 try {
                     Object[] r = get();
-                    perfilCardCache.put(pid, new Object[]{ System.currentTimeMillis(), r[0], r[1] });
+                    perfilCardCache.poner(pid, new Object[]{ r[0], r[1] });
                     if (fijar || ((hoverPid == pid || hoverPid == 0) && hoverProcede()))
                         pintarCard((String) r[0], (int[]) r[1], enPantalla, pid, fijar);
                 } catch (Exception ignored) { }

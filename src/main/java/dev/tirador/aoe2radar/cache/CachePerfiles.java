@@ -3,11 +3,15 @@ package dev.tirador.aoe2radar.cache;
 import java.util.List;
 import java.util.Map;
 
-/** Cachés en memoria de perfiles, cuentas vinculadas y familias (sin TTL propio: cada uso decide). */
+/**
+ * Cachés en memoria de perfiles, cuentas vinculadas y familias. PERFIL_CACHE caduca (Caducidad.PERFIL): vigente()
+ * para decidir si se vuelve a pedir /profiles, ultimo() para pintar lo que se sabe. Las vinculadas y familias son
+ * estado de la sesión, sin caducidad (irán con ProfileService).
+ */
 public final class CachePerfiles {
     private CachePerfiles() {}
 
-    public static final Map<Long, Object[]> PERFIL_CACHE = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {ms, ladders, país}
+    public static final CacheMemoria<Long, Object[]> PERFIL_CACHE = CacheService.SISTEMA.memoria(Caducidad.PERFIL);   // pid → {ms (ya no decide nada), ladders, país, clan, partidas}
 
     public static final Map<Long, List<Object[]>> VINCULADAS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();   // pid → {vid, nombre, país, partidas} (sesión)
     public static final Map<Long, Integer> ELO_VINC = new java.util.concurrent.ConcurrentHashMap<>();                  // vid → ELO 1v1 (sesión)
