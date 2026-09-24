@@ -1,9 +1,12 @@
 package dev.tirador.aoe2radar.api;
 
 import dev.tirador.aoe2radar.model.Clasificacion;
+import dev.tirador.aoe2radar.model.Directo;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Match;
+import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.model.Perfil;
+import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
@@ -23,10 +26,11 @@ import static dev.tirador.aoe2radar.util.Json.val;
 import static dev.tirador.aoe2radar.util.Json.when;
 
 /**
- * Los endpoints del companion que usa la app, con su URL construida en un solo sitio. Paso 1 de la migración: cada
- * método construye exactamente la URL que la app construía a mano y devuelve el JSON leído, igual que antes. Todos
- * pasan por ApiClient (freno, cancelación); todos reintentan ante 429 (textoCon429) salvo buscarPerfiles (texto).
- * Paso 2: devolver objetos del modelo.
+ * Los endpoints del companion que usa la app, con su URL construida en un solo sitio (la misma que la 1.1 construía a
+ * mano). Todos pasan por ApiClient (freno, cancelación); todos reintentan ante 429 (textoCon429) salvo buscarPerfiles
+ * (texto). Devuelven tipos del modelo: los conversores son puros (no aprenden país/canal, salvo parseMatch, ver DEUDA)
+ * y no inventan valores: lo que falta queda null (textos, Integer) o -1 (ids y contadores long); cada pantalla decide
+ * lo suyo. Fuera de aquí solo leen JSON del companion el socket (LiveService) y el código muerto rioGlobalMuerto.
  */
 public final class CompanionApi {
     public static final String TWITCH_LIVE = "https://api.aoe2companion.com/twitch/live";
@@ -35,8 +39,8 @@ public final class CompanionApi {
 
     public CompanionApi(ApiClient api) { this.api = api; }
 
-    /** GET /matches?profile_ids=…&page=…&per_page=… (ids: uno o varios separados por comas). Raíz del JSON. */
-    public Object matches(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
+    /** GET /matches?profile_ids=…&page=…&per_page=… (ids: uno o varios separados por comas). Raíz del JSON (interno). */
+    Object matches(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
         return Json.parse(api.textoCon429(Http.API + "/matches?profile_ids=" + ids + "&page=" + pagina + "&per_page=" + porPagina));
     }
 
@@ -68,8 +72,33 @@ public final class CompanionApi {
     }
 
     /** Como matches(String…) para un solo jugador. */
-    public Object matches(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+    Object matches(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
         return matches(String.valueOf(pid), pagina, porPagina);
+    }
+
+    /**
+     * GET /matches?[leaderboard_ids=…&]page=…&per_page=…: las partidas recientes de todo el ladder (el «río» de «Al
+     * azar»), convertida entera. leaderboard null: sin filtro de ladder.
+     */
+    public PaginaPartidas recientes(String leaderboard, int pagina, int porPagina) throws IOException, InterruptedException {
+        String filtro = leaderboard == null ? "" : "leaderboard_ids=" + leaderboard + "&";
+        return aPagina(Json.parse(api.textoCon429(Http.API + "/matches?" + filtro + "page=" + pagina + "&per_page=" + porPagina)));
+    }
+
+    /**
+     * Una página de partidas de un jugador, convertida entera (para paginaciones que recorren la página completa y
+     * deciden con «brutas» si es la última). Si el bucle puede cortar a media página, usar partidas(…), que es perezoso.
+     */
+    public PaginaPartidas pagina(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+        return aPagina(matches(pid, pagina, porPagina));
+    }
+
+    /** Raíz de /matches → PaginaPartidas: todas las partidas en orden (parseMatch, que aprende; ver DEUDA). */
+    static PaginaPartidas aPagina(Object root) {
+        List<Object> brutas = arr(val(obj(root), "matches"));
+        List<Match> legibles = new ArrayList<>();
+        for (Object o : brutas) { Match m = parseMatch(obj(o)); if (m != null) legibles.add(m); }
+        return new PaginaPartidas(List.copyOf(legibles), brutas.size());
     }
 
     /** GET /profiles/{pid}, ya convertido (ver aPerfil). */
@@ -167,17 +196,39 @@ public final class CompanionApi {
      * GET /profiles?search=…&page=1 (q sin espacios en los extremos, codificado en UTF-8). SIN reintento ante 429 (por
      * texto(), que sí lo cuenta al freno): es la búsqueda de nicks; si falla, la siguiente tecla o búsqueda lo repite.
      */
-    public Object buscarPerfiles(String q) throws IOException, InterruptedException {
-        return Json.parse(api.texto(Http.API + "/profiles?search=" + java.net.URLEncoder.encode(q.trim(), java.nio.charset.StandardCharsets.UTF_8) + "&page=1"));
+    public List<PerfilEncontrado> buscarPerfiles(String q) throws IOException, InterruptedException {
+        Object root = Json.parse(api.texto(Http.API + "/profiles?search=" + java.net.URLEncoder.encode(q.trim(), java.nio.charset.StandardCharsets.UTF_8) + "&page=1"));
+        List<PerfilEncontrado> out = new ArrayList<>();
+        for (Object o : arr(val(obj(root), "profiles"))) {
+            Map<String, Object> p = obj(o);
+            out.add(new PerfilEncontrado(lng(val(p, "profile_id", "profileId")), str(val(p, "name")),
+                    str(val(p, "country")), lng(val(p, "games"))));
+        }
+        return List.copyOf(out);
     }
 
-    /** Directos de AoE2 en Twitch según el companion (game=13389). */
-    public Object twitchDirectos() throws IOException, InterruptedException {
-        return Json.parse(api.textoCon429(TWITCH_LIVE + "?game=13389"));
+    /** Directos de AoE2 en Twitch según el companion (game=13389). La respuesta llega como lista o como {data: […]}. */
+    public List<Directo> twitchDirectos() throws IOException, InterruptedException {
+        Object root = Json.parse(api.textoCon429(TWITCH_LIVE + "?game=13389"));
+        List<Directo> out = new ArrayList<>();
+        for (Object o : root instanceof List<?> l ? l : arr(val(obj(root), "data"))) out.add(aDirecto(o));
+        return List.copyOf(out);
     }
 
-    /** El directo de un canal concreto (el nombre va en minúsculas, como en la 1.1). */
-    public Object twitchCanal(String canal) throws IOException, InterruptedException {
-        return Json.parse(api.textoCon429(TWITCH_LIVE + "?channel=" + canal.toLowerCase()));
+    /**
+     * El directo de un canal concreto (el nombre va en minúsculas, como en la 1.1): el primero de la lista, o el objeto
+     * si no llega lista. null si no hay ninguno. Que esté en directo lo dice tipo() («live»): lo mira la pantalla.
+     */
+    public Directo twitchCanal(String canal) throws IOException, InterruptedException {
+        Object root = Json.parse(api.textoCon429(TWITCH_LIVE + "?channel=" + canal.toLowerCase()));
+        Object primero = root instanceof List<?> l ? (l.isEmpty() ? null : l.get(0)) : root;
+        return primero == null ? null : aDirecto(primero);
+    }
+
+    /** Conversión pura de un directo: textos con str (null si faltan), viewers con lng (-1 si faltan). */
+    static Directo aDirecto(Object o) {
+        Map<String, Object> s = obj(o);
+        return new Directo(str(val(s, "user_login", "userLogin")), str(val(s, "user_name", "userName")),
+                str(val(s, "title")), str(val(s, "language")), lng(val(s, "viewer_count", "viewerCount")), str(val(s, "type")));
     }
 }

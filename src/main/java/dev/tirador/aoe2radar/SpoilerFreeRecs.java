@@ -37,6 +37,7 @@ import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
 import dev.tirador.aoe2radar.model.Clasificacion;
 import dev.tirador.aoe2radar.model.Comparado;
+import dev.tirador.aoe2radar.model.Directo;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.LadderHist;
@@ -45,7 +46,9 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Matchup;
 import dev.tirador.aoe2radar.model.PaginaLb;
+import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.model.Perfil;
+import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
@@ -207,7 +210,6 @@ import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.firstNonNull;
 import static dev.tirador.aoe2radar.util.Json.lng;
 import static dev.tirador.aoe2radar.util.Json.obj;
-import static dev.tirador.aoe2radar.util.Json.str;
 import static dev.tirador.aoe2radar.util.Json.val;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
@@ -2973,20 +2975,18 @@ public class SpoilerFreeRecs extends JFrame {
         boolean cancelado = false;
         for (int pag = desde; pag <= hasta; pag++) {
             if (cancelar.getAsBoolean()) { cancelado = true; break; }   // el usuario ya está mirando a otro: ni una llamada más
-            Object root = COMPANION.matches(pid, pag, PER_PAGE);
-            List<Object> ms = arr(val(obj(root), "matches"));
+            PaginaPartidas ms = COMPANION.pagina(pid, pag, PER_PAGE);
             ultimaPagina = pag;
-            if (ms.isEmpty()) { completo = true; break; }
+            if (ms.brutas() == 0) { completo = true; break; }
             boolean parar = false;
-            for (Object o : ms) {
-                Match m = parseMatch(obj(o));
-                if (m == null || m.started == null) continue;
+            for (Match m : ms.partidas()) {
+                if (m.started == null) continue;
                 if (m.started.isBefore(limite)) { parar = true; completo = true; continue; }
                 if (conocidos.contains(m.id)) { if (actualizar) parar = true; continue; }
                 nuevas.add(m);
                 conocidos.add(m.id);
             }
-            if (ms.size() < PER_PAGE) { completo = true; parar = true; }
+            if (ms.brutas() < PER_PAGE) { completo = true; parar = true; }
             List<Match> fusion = new ArrayList<>(mas ? previas : nuevas);
             if (mas) fusion.addAll(nuevas); else fusion.addAll(previas);
             Actividad parcialA = new Actividad(pid, nombre, fusion, completo && !(actualizar && !parar), actualizar ? Math.max(base.paginas(), pag) : ultimaPagina, System.currentTimeMillis());
@@ -8984,33 +8984,31 @@ public class SpoilerFreeRecs extends JFrame {
                     // ---- Río global: solo si el rango es una porción rentable del
                     // ladder y no hay filtro de civ (la dilución lo vuelve un pozo).
                     if (fraccion >= 0.12 && civSel == null && encontradas.size() < 10) {
-                        String[] variantesLb = { "leaderboard_ids=rm_1v1&", "leaderboard_ids=3&", "" };
+                        String[] variantesLb = { "rm_1v1", "3", null };   // null: sin filtro de ladder
                         int varLb = 0;
                         int maxPagRio = mapaSel != null ? 25 : 15;
                         int pagLeidas = 0;
                         for (int pag = 1; pag <= maxPagRio && encontradas.size() < 10 && !stopOperacion; pag++) {
                             publish(t("Leyendo partidas recientes del ladder\u2026 (p\u00e1g. ", "Reading recent ladder games\u2026 (page ")
                                     + pag + ", " + encontradas.size() + "/10)");
-                            String url = API + "/matches?" + variantesLb[varLb] + "page=" + pag + "&per_page=50";
-                            List<Object> ms;
+                            PaginaPartidas ms;
                             try {
-                                ms = arr(val(obj(Json.parse(httpText429(url))), "matches"));
+                                ms = COMPANION.recientes(variantesLb[varLb], pag, 50);   // con reintento ante 429, como antes
                             } catch (Exception ex) {
                                 log("al azar (r\u00edo): fallo en p\u00e1gina " + pag + " (variante " + varLb + "): " + causa(ex));
                                 if (varLb < variantesLb.length - 1 && pagLeidas == 0) { varLb++; pag = 0; continue; }
                                 break;
                             }
-                            if (ms.isEmpty() && pagLeidas == 0 && varLb < variantesLb.length - 1) {
+                            if (ms.brutas() == 0 && pagLeidas == 0 && varLb < variantesLb.length - 1) {
                                 varLb++;
                                 pag = 0;
                                 continue;
                             }
-                            if (ms.isEmpty()) break;
+                            if (ms.brutas() == 0) break;
                             pagLeidas++;
                             boolean algunaEnVentana = false;
-                            for (Object o : ms) {
-                                Match m = parseMatch(obj(o));
-                                if (m == null || m.finished == null) continue;
+                            for (Match m : ms.partidas()) {
+                                if (m.finished == null) continue;
                                 cacheAzar.putIfAbsent(m.id, m);
                                 if (!m.finished.isBefore(cutoff)) algunaEnVentana = true;
                                 if (cumpleAzar(m, lo, hi, cutoff, mapaSel, civSel) && idsRes.add(m.id))
@@ -10766,20 +10764,16 @@ public class SpoilerFreeRecs extends JFrame {
                 Map<String, String[]> envivo = new HashMap<>();   // clave lower -> {canal, título, viewers}
                 String h = CompanionApi.TWITCH_LIVE + "?game=13389";   // solo para el log: la URL real la construye COMPANION.twitchDirectos()
                 try {
-                    Object root = COMPANION.twitchDirectos();
-                    List<Object> lista = root instanceof List<?> l ? new ArrayList<>(l)
-                            : arr(val(obj(root), "data"));
-                    for (Object o : lista) {
-                        Map<String, Object> s = obj(o);
-                        String canal = String.valueOf(val(s, "user_login", "userLogin"));
+                    for (Directo s : COMPANION.twitchDirectos()) {
+                        String canal = String.valueOf(s.login());
                         if ("null".equals(canal) || canal.isBlank()) continue;
-                        String titulo = String.valueOf(firstNonNull(val(s, "title"), ""));
-                        long viewers = lng(val(s, "viewer_count", "viewerCount"));
+                        String titulo = String.valueOf(firstNonNull(s.titulo(), ""));
+                        long viewers = s.viewers();
                         String[] datos = { canal, titulo, String.valueOf(Math.max(0, viewers)) };
                         envivo.put(canal.toLowerCase(), datos);
-                        String un = String.valueOf(val(s, "user_name", "userName"));
+                        String un = String.valueOf(s.nombre());
                         if (!"null".equals(un) && !un.isBlank()) envivo.putIfAbsent(un.toLowerCase(), datos);
-                        String idioma = String.valueOf(firstNonNull(val(s, "language"), "?"));
+                        String idioma = String.valueOf(firstNonNull(s.idioma(), "?"));
                         completos.add(new String[]{ canal, "null".equals(un) || un.isBlank() ? canal : un,
                                 titulo, idioma.toLowerCase(), String.valueOf(Math.max(0, viewers)) });
                     }
@@ -10807,14 +10801,12 @@ public class SpoilerFreeRecs extends JFrame {
                     if (consultas++ >= 12) break;
                     String canal = CANAL_DE.get(p.id());
                     try {
-                        Object rootC = COMPANION.twitchCanal(canal);
-                        Object primero = rootC instanceof List<?> lc ? (lc.isEmpty() ? null : lc.get(0)) : rootC;
-                        if (primero != null) {
-                            Map<String, Object> s = obj(primero);
-                            String login = String.valueOf(val(s, "user_login", "userLogin"));
-                            if (!"null".equals(login) && !login.isBlank() && "live".equals(String.valueOf(val(s, "type")))) {
-                                String titulo = String.valueOf(firstNonNull(val(s, "title"), ""));
-                                long viewers = lng(val(s, "viewer_count", "viewerCount"));
+                        Directo s = COMPANION.twitchCanal(canal);
+                        if (s != null) {
+                            String login = String.valueOf(s.login());
+                            if (!"null".equals(login) && !login.isBlank() && "live".equals(String.valueOf(s.tipo()))) {
+                                String titulo = String.valueOf(firstNonNull(s.titulo(), ""));
+                                long viewers = s.viewers();
                                 res.put(p.id(), new String[]{ login, titulo, String.valueOf(Math.max(0, viewers)) });
                             }
                         }
@@ -11106,12 +11098,10 @@ public class SpoilerFreeRecs extends JFrame {
                     List<Integer> serie = new ArrayList<>();
                     for (int pag = 1; pag <= 2 && serie.size() <= 15; pag++) {
                         dormir(PAUSA_MS / 2);
-                        Object root = COMPANION.matches(pid, pag, PER_PAGE);
-                        List<Object> ms = arr(val(obj(root), "matches"));
-                        if (ms.isEmpty()) break;
-                        for (Object o : ms) {
-                            Match m = parseMatch(obj(o));
-                            if (m == null || m.finished == null || m.players.size() != 2
+                        PaginaPartidas ms = COMPANION.pagina(pid, pag, PER_PAGE);
+                        if (ms.brutas() == 0) break;
+                        for (Match m : ms.partidas()) {
+                            if (m.finished == null || m.players.size() != 2
                                     || m.mode == null || !m.mode.startsWith("1v1 Random")) continue;
                             for (MatchPlayer mp : m.players)
                                 if (mp.id == pid && mp.rating != null) serie.add(mp.rating);
@@ -12030,16 +12020,14 @@ public class SpoilerFreeRecs extends JFrame {
         status.setText(t("Buscando \"", "Searching \"") + q.trim() + "\"…");
         new SwingWorker<List<String[]>, Void>() {
             @Override protected List<String[]> doInBackground() throws Exception {
-                Object root = COMPANION.buscarPerfiles(q);   // sin reintento, como antes
                 List<String[]> out = new ArrayList<>();
-                for (Object o : arr(val(obj(root), "profiles"))) {
-                    Map<String, Object> p = obj(o);
-                    long id = lng(val(p, "profile_id", "profileId"));
+                for (PerfilEncontrado p : COMPANION.buscarPerfiles(q)) {   // sin reintento, como antes
+                    long id = p.pid();
                     if (id <= 0) continue;
-                    String name = str(val(p, "name"));
-                    String pais = str(val(p, "country"));
+                    String name = p.nombre();
+                    String pais = p.pais();
                     aprenderPais(id, pais);
-                    long games  = lng(val(p, "games"));
+                    long games  = p.partidas();
                     out.add(new String[]{ String.valueOf(id), name,
                             name + (pais != null ? "  [" + pais + "]" : "") + "  ·  " + id
                                  + (games > 0 ? "  ·  " + games + " partidas" : "") });
@@ -12568,15 +12556,13 @@ public class SpoilerFreeRecs extends JFrame {
     static List<String[]> buscarPerfilesApi(String q) {
         List<String[]> out = new ArrayList<>();
         try {
-            Object root = COMPANION.buscarPerfiles(q);   // sin reintento, como antes
-            for (Object o : arr(val(obj(root), "profiles"))) {
-                Map<String, Object> p = obj(o);
-                long id = lng(val(p, "profile_id", "profileId"));
+            for (PerfilEncontrado p : COMPANION.buscarPerfiles(q)) {   // sin reintento, como antes
+                long id = p.pid();
                 if (id <= 0) continue;
-                String name = str(val(p, "name"));
-                String pais = str(val(p, "country"));
+                String name = p.nombre();
+                String pais = p.pais();
                 aprenderPais(id, pais);
-                long games = lng(val(p, "games"));
+                long games = p.partidas();
                 out.add(new String[]{ String.valueOf(id), name, name + (pais != null ? "  [" + pais + "]" : "") + "  ·  " + id + (games > 0 ? "  ·  " + games + t(" partidas", " games") : "") });
             }
         } catch (Exception ex) { log("buscarPerfiles: " + causa(ex)); }

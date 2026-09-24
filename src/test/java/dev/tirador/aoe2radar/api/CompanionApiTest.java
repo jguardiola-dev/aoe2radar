@@ -3,8 +3,11 @@ package dev.tirador.aoe2radar.api;
 import dev.tirador.aoe2radar.cache.Canales;
 import dev.tirador.aoe2radar.cache.Paises;
 import dev.tirador.aoe2radar.model.Clasificacion;
+import dev.tirador.aoe2radar.model.Directo;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Match;
+import dev.tirador.aoe2radar.model.PaginaPartidas;
+import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Perfil;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -81,6 +84,50 @@ class CompanionApiTest {
         assertEquals(1, throttle.cuatrocientosVeintinueve, "pero el 429 sí cuenta al freno");
     }
 
+    @Test void buscarPerfilesConvierteSinFiltrar() throws Exception {
+        red.cuerpo = "{\"profiles\":[{\"profile_id\":9000001,\"name\":\"Hera\",\"country\":\"ca\",\"games\":10},"
+                + "{\"profileId\":9000002},\"ilegible\"]}";
+        List<PerfilEncontrado> r = companion.buscarPerfiles("hera");
+        assertEquals(3, r.size(), "sin filtrar: el pid <= 0 lo filtra la pantalla");
+        assertEquals(new PerfilEncontrado(9000001, "Hera", "ca", 10), r.get(0));
+        assertEquals(new PerfilEncontrado(9000002, null, null, -1), r.get(1), "clave alternativa profileId");
+        assertEquals(-1, r.get(2).pid());
+        assertNull(Paises.PAIS_DE.get(9000001L), "aprender el país es de la pantalla");
+    }
+
+    @Test void twitchDirectosEnLasDosFormas() throws Exception {
+        red.cuerpo = "[{\"user_login\":\"hera\",\"user_name\":\"Hera\",\"title\":\"t\",\"language\":\"en\",\"viewer_count\":900,\"type\":\"live\"}]";
+        assertEquals(List.of(new Directo("hera", "Hera", "t", "en", 900, "live")), companion.twitchDirectos());
+        red.cuerpo = "{\"data\":[{\"userLogin\":\"viper\",\"userName\":\"Viper\",\"viewerCount\":5}]}";
+        assertEquals(List.of(new Directo("viper", "Viper", null, null, 5, null)), companion.twitchDirectos(), "forma {data:[…]} y claves alternativas");
+        red.cuerpo = "{}";
+        assertTrue(companion.twitchDirectos().isEmpty());
+    }
+
+    @Test void twitchCanalPrimeroObjetoONull() throws Exception {
+        red.cuerpo = "[]";
+        assertNull(companion.twitchCanal("x"), "lista vacía: no hay directo");
+        red.cuerpo = "[{\"user_login\":\"a\",\"type\":\"live\"},{\"user_login\":\"b\"}]";
+        assertEquals("a", companion.twitchCanal("x").login(), "el primero de la lista");
+        red.cuerpo = "{\"user_login\":\"c\",\"type\":\"offline\"}";
+        assertEquals("offline", companion.twitchCanal("x").tipo(), "si no llega lista, el propio objeto");
+    }
+
+    @Test void recientesYPaginaReintentanEl429() throws Exception {
+        red.estados.add(429);
+        companion.recientes(null, 1, 50);
+        assertEquals(2, red.pedidas.size(), "río de «Al azar»: con reintento, como su httpText429 de la 1.1");
+        red.estados.add(429);
+        companion.pagina(1L, 1, 50);
+        assertEquals(4, red.pedidas.size(), "paginaciones: con reintento");
+        assertEquals(2, throttle.cuatrocientosVeintinueve);
+    }
+
+    @Test void twitchCanalConCuerpoNullEsNull() throws Exception {
+        red.cuerpo = "null";
+        assertNull(companion.twitchCanal("x"));
+    }
+
     @Test void twitch() throws Exception {
         companion.twitchDirectos();
         assertEquals("https://api.aoe2companion.com/twitch/live?game=13389", ultima());
@@ -125,6 +172,26 @@ class CompanionApiTest {
         assertEquals(13, it.next().id);
         assertFalse(it.hasNext());
         assertThrows(java.util.NoSuchElementException.class, it::next);
+    }
+
+    @Test void paginaCuentaLasBrutasYDaLasLegibles() throws Exception {
+        red.cuerpo = TRES_PARTIDAS;
+        PaginaPartidas p = companion.pagina(1L, 2, 50);
+        assertEquals(4, p.brutas(), "las brutas incluyen la ilegible: con ellas se decide si es la última página");
+        assertEquals(List.of(11L, 12L, 13L), p.partidas().stream().map(m -> m.id).toList());
+        assertEquals("https://data.aoe2companion.com/api/matches?profile_ids=1&page=2&per_page=50", ultima());
+        red.cuerpo = "{}";
+        assertEquals(0, companion.pagina(1L, 3, 50).brutas());
+    }
+
+    @Test void recientesConYSinFiltroDeLadder() throws Exception {
+        red.cuerpo = TRES_PARTIDAS;
+        assertEquals(4, companion.recientes("rm_1v1", 1, 50).brutas());
+        assertEquals("https://data.aoe2companion.com/api/matches?leaderboard_ids=rm_1v1&page=1&per_page=50", ultima());
+        companion.recientes("3", 2, 50);
+        assertEquals("https://data.aoe2companion.com/api/matches?leaderboard_ids=3&page=2&per_page=50", ultima());
+        companion.recientes(null, 1, 50);
+        assertEquals("https://data.aoe2companion.com/api/matches?page=1&per_page=50", ultima(), "las tres variantes del río, como la 1.1");
     }
 
     @Test void partidasSinPartidasEsVacia() throws Exception {
