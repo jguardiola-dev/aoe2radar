@@ -1946,23 +1946,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     SpoilerFreeRecs(String temaInicial) {
         super(NOMBRE + " " + VERSION + t(" — tu radar del AoE2 competitivo, sin spoilers · por ", " — your competitive AoE2 radar, spoiler-free · by ") + AUTOR);
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
-        aplicarVentanaGuardada();
-        addWindowListener(new WindowAdapter() {
-            @Override public void windowClosing(WindowEvent e) { guardarVentana(); socketVivo.cerrar(); }
-        });
-        addWindowFocusListener(new WindowAdapter() {
-            @Override public void windowLostFocus(WindowEvent e) { ocultarHoverCard(true); }
-        });
-        if (logo != null) {
-            // Varias escalas: Windows elige la adecuada para ventana y barra de
-            // tareas. El logo es vertical: se centra en un lienzo cuadrado
-            // transparente en vez de estirarlo (getScaledInstance lo deformaba).
-            List<Image> iconos = new ArrayList<>();
-            for (int s : new int[]{ 16, 24, 32, 48, 64, 128, 256 })
-                iconos.add(iconoCuadrado(logo, s));
-            setIconImages(iconos);
-        }
+        configurarVentana();
 
         // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
         playersList.setVisibleRowCount(12);
@@ -3441,6 +3425,29 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         vigilante.start();
         if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
             SwingUtilities.invokeLater(() -> { if (!modoTop() && playersModel.size() > 0) fetchMatches(fetchBtn); });
+    }
+
+    // Cierre, ventana recordada, foco perdido e iconos: ajustes del JFrame antes
+    // de construir ningun panel. Se separa del resto del constructor porque es
+    // configuracion de ventana, no construccion de paneles.
+    private void configurarVentana() {
+        setDefaultCloseOperation(EXIT_ON_CLOSE);
+        aplicarVentanaGuardada();
+        addWindowListener(new WindowAdapter() {
+            @Override public void windowClosing(WindowEvent e) { guardarVentana(); socketVivo.cerrar(); }
+        });
+        addWindowFocusListener(new WindowAdapter() {
+            @Override public void windowLostFocus(WindowEvent e) { ocultarHoverCard(true); }
+        });
+        if (logo != null) {
+            // Varias escalas: Windows elige la adecuada para ventana y barra de
+            // tareas. El logo es vertical: se centra en un lienzo cuadrado
+            // transparente en vez de estirarlo (getScaledInstance lo deformaba).
+            List<Image> iconos = new ArrayList<>();
+            for (int s : new int[]{ 16, 24, 32, 48, 64, 128, 256 })
+                iconos.add(iconoCuadrado(logo, s));
+            setIconImages(iconos);
+        }
     }
 
     // ----- Carpeta de recs ---------------------------------------------------
