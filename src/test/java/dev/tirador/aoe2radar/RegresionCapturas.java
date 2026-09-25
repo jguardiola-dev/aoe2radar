@@ -237,9 +237,9 @@ class RegresionCapturas {
         List<Long> ids = new ArrayList<>();
         for (var p : app.todosJugadores) ids.add(p.id());
         return "watch: vivo(1)=" + SpoilerFreeRecs.VIVO.matchDe(1L) + " todos=" + ids + " modelo=" + app.playersModel.size()
-                + " grupo=" + app.grupoActivo() + " top=" + app.modoTop()
-                + " titulo='" + (app.tituloWatch == null ? null : app.tituloWatch.getTitle()) + "'"
-                + " resumen='" + (app.resumenWatch == null ? null : app.resumenWatch.getText()) + "'";
+                + " grupo=" + app.watchlist.grupoActivo() + " top=" + app.watchlist.modoTop()
+                + " titulo='" + (app.watchlist.tituloWatch == null ? null : app.watchlist.tituloWatch.getTitle()) + "'"
+                + " resumen='" + (app.watchlist.resumenWatch == null ? null : app.watchlist.resumenWatch.getText()) + "'";
     }
     /** Un jugador de una partida inventada (T3-H, sin red): igual de plano que un MatchPlayer real de la API. */
     static MatchPlayer mp(long id, String nombre, String civ, int equipo, Boolean gano, Integer rating, Integer diff) {
@@ -280,7 +280,7 @@ class RegresionCapturas {
         new Robot().mouseMove(pantalla.x + pantalla.width - 5, pantalla.y + pantalla.height - 5);
         Thread.sleep(500);
         Paises.PAIS_DE.put(1L, "es"); Paises.PAIS_DE.put(2L, "es"); Paises.PAIS_DE.put(3L, "ar"); Paises.PAIS_DE.put(4L, "de");
-        SwingUtilities.invokeAndWait(() -> { app.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
+        SwingUtilities.invokeAndWait(() -> { app.watchlist.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
         Thread.sleep(400);
         // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar.
         // Se ignora la fila de cabecera entera (padre de directosContador), no solo sus etiquetas: el ancho de
@@ -422,14 +422,14 @@ class RegresionCapturas {
         SwingUtilities.invokeAndWait(() -> { app.liveNow.conEnCurso(Map::clear); app.liveNow.pintar(); });
         // menú contextual de la watchlist sobre un jugador en partida
         SpoilerFreeRecs.VIVO.marcarJugando(1L, 555L);
-        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new Player(1L, "12Tirador", "General")); app.todosJugadores.add(new Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
+        SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new Player(1L, "12Tirador", "General")); app.todosJugadores.add(new Player(3L, "pume", "General")); app.watchlist.rebuildGrupos(); app.watchlist.grupoCombo.setSelectedItem("Todos"); app.watchlist.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
         // La partida 555 es inventada: un refresco de la propia app la quita en ~1 s y el panel pasa a «0 jugando»
         // (registrado: vivo(1)=null en la foto en 5 de 5 pasadas). Si el refresco tardaba, la foto pillaba el estado
         // intermedio («1 jugando»). Se espera a que termine para fotografiar siempre el estado final. DEUDA.md.
         boolean[] enPartida = { true };
         for (int i = 0; i < 40 && enPartida[0]; i++) { Thread.sleep(250); SwingUtilities.invokeAndWait(() -> enPartida[0] = SpoilerFreeRecs.VIVO.jugando(1L)); }
         Thread.sleep(300);
-        SwingUtilities.invokeAndWait(() -> { Rectangle r = app.playersList.getCellBounds(0, 0); app.menuContextualWatchlist(app.playersModel.get(0), new java.awt.event.MouseEvent(app.playersList, java.awt.event.MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, r.x + 40, r.y + 8, 1, true)); });
+        SwingUtilities.invokeAndWait(() -> { Rectangle r = app.playersList.getCellBounds(0, 0); app.watchlist.menuContextualWatchlist(app.playersModel.get(0), new java.awt.event.MouseEvent(app.playersList, java.awt.event.MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, r.x + 40, r.y + 8, 1, true)); });
         Thread.sleep(700);
         foto("shot_menu.png");
         SwingUtilities.invokeAndWait(() -> javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
