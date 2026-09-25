@@ -30,7 +30,7 @@ import static dev.tirador.aoe2radar.util.Json.when;
  * mano). Todos pasan por ApiClient (freno, cancelación); todos reintentan ante 429 (textoCon429) salvo buscarPerfiles
  * (texto). Devuelven tipos del modelo: los conversores son puros (no aprenden país/canal, salvo parseMatch, ver DEUDA)
  * y no inventan valores: lo que falta queda null (textos, Integer) o -1 (ids y contadores long); cada pantalla decide
- * lo suyo. Fuera de aquí solo leen JSON del companion el socket (LiveService) y el código muerto rioGlobalMuerto.
+ * lo suyo. Fuera de aquí solo lee JSON del companion el socket (LiveService).
  */
 public final class CompanionApi {
     public static final String TWITCH_LIVE = "https://api.aoe2companion.com/twitch/live";

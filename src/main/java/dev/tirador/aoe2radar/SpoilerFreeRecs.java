@@ -33,6 +33,7 @@ package dev.tirador.aoe2radar;
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.SocketVivo;
+import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
@@ -61,6 +62,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
@@ -79,8 +81,6 @@ import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
 import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
 import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
-import static dev.tirador.aoe2radar.api.Freno.CONTROL;
-import static dev.tirador.aoe2radar.api.Freno.CONTROL_URL;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
@@ -92,7 +92,6 @@ import static dev.tirador.aoe2radar.api.Http.descargarBytes;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
 import static dev.tirador.aoe2radar.api.Http.req;
 import static dev.tirador.aoe2radar.api.Parseo.MAPA_IMG_PATRON;
-import static dev.tirador.aoe2radar.api.Parseo.parseMatch;
 import static dev.tirador.aoe2radar.api.Recs.descargarRec;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
 import static dev.tirador.aoe2radar.cache.Anotaciones.NOTAS;
@@ -6728,18 +6727,11 @@ public class SpoilerFreeRecs extends JFrame {
         return lo <= 0 ? puntos : s.substring(0, lo) + puntos;
     }
 
-    /** Consulta GitHub Releases (una llamada, sin claves) y enseña el botón si hay versión nueva. */
+    /** Consulta GitHub Releases (una llamada, sin claves) y enseña el botón si hay versión nueva. La red y la lectura
+     *  del JSON viven en service.ControlService#ultimaVersion; aquí solo quedan la UI y los diálogos. */
     void comprobarActualizacion(boolean manual) {
         new Thread(() -> {
-            String tag = null;
-            try {
-                Object root = Json.parse(httpText(RELEASES_API));
-                Object t = val(obj(root), "tag_name");
-                if (t != null) tag = String.valueOf(t).trim();
-            } catch (Exception ex) {
-                log("actualizaciones: " + causa(ex));
-            }
-            final String tagF = tag;
+            final String tagF = CONTROL_SERVICE.ultimaVersion(RELEASES_API);
             SwingUtilities.invokeLater(() -> {
                 if (tagF != null && versionMayor(tagF, VERSION)) {
                     String limpia = tagF.replaceFirst("^[vV]", "");
@@ -8991,30 +8983,6 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** httpText con hasta dos reintentos tras espera si el servidor limita (HTTP 429). Delega en ApiClient. */
     static String httpText429(String url) throws IOException, InterruptedException { return API_CLIENTE.textoCon429(url); }
-
-    /** Río global: partidas RM 1v1 recientes de todo el ladder, sin perfiles
-     *  (leaderboard_ids). Si el parámetro no estuviera soportado, devuelve
-     *  vacío y los perfiles sostienen la búsqueda. */
-    static List<Match> rioGlobalMuerto(int desde, int paginas) {
-        List<Match> out = new ArrayList<>();
-        for (int p = desde; p < desde + paginas; p++) {
-            try {
-                Object root = Json.parse(httpText(API + "/matches?leaderboard_ids=rm_1v1&page=" + p
-                        + "&per_page=" + PER_PAGE));
-                int antes = out.size();
-                for (Object o : arr(val(obj(root), "matches"))) {
-                    Match m = parseMatch(obj(o));
-                    if (m != null && m.finished != null) out.add(m);
-                }
-                if (out.size() == antes) break;
-                dormir(PAUSA_MS / 2);
-            } catch (Exception ex) {
-                log("río global: fallo en página " + p + ": " + causa(ex));
-                break;
-            }
-        }
-        return out;
-    }
 
     /** «Guess the ELO!»: 5 partidas 1v1 recientes muestreadas por tramos de
      *  todo el ladder, anónimas en la app. La ventana temporal es la misma
@@ -12209,26 +12177,26 @@ public class SpoilerFreeRecs extends JFrame {
         final SpoilerFreeRecs appF = app;
         if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(t("La API pide calma (429): la app pausa las consultas ", "The API asks for calm (429): the app pauses its requests for ") + seg + t(" s y sigue sola.", " s and carries on by itself.")));
     }
-    /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. */
+    /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
+     *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pintar en Swing. */
     static void cargarControl() {
-        try {
-            HttpRequest req = HttpRequest.newBuilder(URI.create(CONTROL_URL)).timeout(Duration.ofSeconds(20)).header("User-Agent", UA).GET().build();
-            HttpResponse<String> r = HTTP.send(req, HttpResponse.BodyHandlers.ofString());
-            if (r.statusCode() != 200) return;
-            Object root = Json.parse(r.body());
-            if (!(root instanceof Map<?, ?> m)) return;
-            CONTROL.clear();
-            for (Map.Entry<?, ?> en : m.entrySet()) if (en.getValue() != null) CONTROL.put(String.valueOf(en.getKey()), en.getValue());
-            log("control.json: " + CONTROL);
-            Object msg = CONTROL.get("mensaje");
-            if (msg instanceof String txt && !txt.isBlank() && !txt.equals(leerConfig("control_msg_visto", ""))) {
-                guardarConfig("control_msg_visto", txt);
-                SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
-                final SpoilerFreeRecs appF = app;
-                if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(txt));
-            }
-        } catch (Exception ex) { log("control.json: " + causa(ex)); }
+        String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""), txt -> guardarConfig("control_msg_visto", txt));
+        if (msg != null) {
+            SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
+            final SpoilerFreeRecs appF = app;
+            if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(msg));
+        }
     }
+    /** Transporte con el timeout de 20 s de control.json (distinto del normal, ya en la 1.1). El de la comprobación
+     *  de versión reutiliza TRANSPORTE (mismo timeout que httpText). Cableado junto al propio ControlService, no al
+     *  lado de COMPANION/LIVE/SERVICIO_PERFIL. */
+    static final Transporte TRANSPORTE_CONTROL = url -> {
+        HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20)).header("User-Agent", UA).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+        return new Transporte.Respuesta(r.statusCode(), r.body());
+    };
+    /** El «mando a distancia» y la comprobación de versión (service.ControlService). */
+    static final ControlService CONTROL_SERVICE = new ControlService(TRANSPORTE_CONTROL, TRANSPORTE);
     /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
     static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
