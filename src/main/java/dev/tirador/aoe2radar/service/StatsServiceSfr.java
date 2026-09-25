@@ -29,6 +29,12 @@ public final class StatsServiceSfr implements StatsService {
 
     @Override public VentanaStats ventana(String clave) { return CivStats.VENTANAS_STATS.get(clave); }
 
+    @Override public boolean tieneVentana(String clave) { return CivStats.VENTANAS_STATS.containsKey(clave); }
+
+    @Override public String[] modos() { return CivStats.MODOS_STATS; }
+
+    @Override public String[] clavesVentanas() { return CivStats.VENTANAS_STATS_KEYS; }
+
     @Override public Tendencias tendencias() { return CivStats.tendenciasStats; }
 
     @Override public boolean tramoEnRango(String tramo, List<String> tramos, String rango) {

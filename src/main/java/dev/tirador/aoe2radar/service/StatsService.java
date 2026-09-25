@@ -26,6 +26,15 @@ public interface StatsService {
     /** La ventana ya cargada por asegurar(), o null si aún no se pidió o falló. Sin red. */
     VentanaStats ventana(String clave);
 
+    /** ¿Ya está cargada la ventana «clave»? Para no repetir una descarga en curso o decidir si hace falta pedirla. Sin red. */
+    boolean tieneVentana(String clave);
+
+    /** Los modos de Civ Stats («rm_1v1», «rm_2v2»…), en el orden fijo de la app. Mismo array en cada llamada: no se copia. */
+    String[] modos();
+
+    /** Las claves de ventana disponibles («7», «30», «90», «365», «parche»), en el orden fijo de la app. Mismo array en cada llamada: no se copia. */
+    String[] clavesVentanas();
+
     /** Las tendencias mensuales ya cargadas por asegurar(.., true), o null si aún no. Sin red. */
     Tendencias tendencias();
 

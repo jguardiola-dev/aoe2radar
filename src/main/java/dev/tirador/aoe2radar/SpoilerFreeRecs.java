@@ -188,9 +188,7 @@ import static dev.tirador.aoe2radar.service.ReglasPartida.modoPrincipal;
 import static dev.tirador.aoe2radar.service.ReglasPartida.posicionEnEquipo;
 import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
 import static dev.tirador.aoe2radar.service.ReglasPartida.tramoDuracion;
-import static dev.tirador.aoe2radar.sfrdata.CivStats.MODOS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
-import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS_KEYS;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.activosDias;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.activosMinPartidas;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.clanes;
@@ -1719,14 +1717,14 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         civStatsPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
         JPanel norte = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
         stModoCombo = new JComboBox<>();
-        for (String m : MODOS_STATS) stModoCombo.addItem(modoNombre(m));
-        stModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(MODOS_STATS).indexOf(statsModo)));
-        stModoCombo.addActionListener(e -> { statsModo = MODOS_STATS[Math.max(0, stModoCombo.getSelectedIndex())]; guardarConfig("stats_modo", statsModo); stCivSeleccionada = null; statsFiltrosCambiados(true); });
+        for (String m : stats.modos()) stModoCombo.addItem(modoNombre(m));
+        stModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.modos()).indexOf(statsModo)));
+        stModoCombo.addActionListener(e -> { statsModo = stats.modos()[Math.max(0, stModoCombo.getSelectedIndex())]; guardarConfig("stats_modo", statsModo); stCivSeleccionada = null; statsFiltrosCambiados(true); });
         norte.add(stModoCombo);
         stVentanaCombo = new JComboBox<>();
-        for (String v : VENTANAS_STATS_KEYS) stVentanaCombo.addItem(ventanaNombre(v));
-        stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(statsVentana)));
-        stVentanaCombo.addActionListener(e -> { if (stRellenandoMapas) return; statsVentana = VENTANAS_STATS_KEYS[Math.max(0, stVentanaCombo.getSelectedIndex())]; guardarConfig("stats_ventana", statsVentana); abrirCivStats(); });
+        for (String v : stats.clavesVentanas()) stVentanaCombo.addItem(ventanaNombre(v));
+        stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.clavesVentanas()).indexOf(statsVentana)));
+        stVentanaCombo.addActionListener(e -> { if (stRellenandoMapas) return; statsVentana = stats.clavesVentanas()[Math.max(0, stVentanaCombo.getSelectedIndex())]; guardarConfig("stats_ventana", statsVentana); abrirCivStats(); });
         norte.add(stVentanaCombo);
         stMapaCombo = new JComboBox<>();
         stMapaCombo.setPrototypeDisplayValue("African Clearing (99.999)   ");
@@ -1873,7 +1871,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         tendBarra.add(conmut);
         stTendVentana = new JComboBox<>(new String[]{ t("3 meses", "3 months"), t("6 meses", "6 months"), t("12 meses", "12 months"), t("Parche actual", "Current patch") });
         stTendVentana.setSelectedIndex(Math.max(0, Math.min(3, Integer.parseInt(leerConfig("stats_tend_ventana", "2")))));
-        stTendVentana.addActionListener(e -> { guardarConfig("stats_tend_ventana", String.valueOf(stTendVentana.getSelectedIndex())); if (stTendVentana.getSelectedIndex() == 3 && !VENTANAS_STATS.containsKey("parche")) new Thread(() -> { stats.asegurar("parche", false); SwingUtilities.invokeLater(stTendencias::repaint); }, "civstats-parche").start(); else stTendencias.repaint(); });
+        stTendVentana.addActionListener(e -> { guardarConfig("stats_tend_ventana", String.valueOf(stTendVentana.getSelectedIndex())); if (stTendVentana.getSelectedIndex() == 3 && !stats.tieneVentana("parche")) new Thread(() -> { stats.asegurar("parche", false); SwingUtilities.invokeLater(stTendencias::repaint); }, "civstats-parche").start(); else stTendencias.repaint(); });
         tendBarra.add(stTendVentana);
         tendCaja.add(tendBarra, BorderLayout.NORTH);
         tendCaja.add(stTendencias, BorderLayout.CENTER);
@@ -2073,7 +2071,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Rellena mapas y tramos disponibles para el modo actual y repinta todo el cuadro de mando. */
     void statsFiltrosCambiados(boolean repintarTechTree) {
-        VentanaStats v = VENTANAS_STATS.get(statsVentana);
+        VentanaStats v = stats.ventana(statsVentana);
         if (v == null || civStatsPanel == null) return;
         stRellenandoMapas = true;
         try {
@@ -2254,7 +2252,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         String clave = fuente + "|" + statsModo + "|" + tendMapa + "|" + tendTramo + "|" + mes;
         Long c = totalesTendencia.get(clave);
         if (c != null) return c;
-        VentanaStats vTr = VENTANAS_STATS.get(statsVentana);
+        VentanaStats vTr = stats.ventana(statsVentana);
         List<String> tramosRango = new ArrayList<>();
         if (vTr != null) for (String tr : vTr.tramos()) if (stats.tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
         Map<String, Map<String, int[]>> tabla = switch (fuente) { case "mt" -> tn.filasMT(); case "mapa" -> tn.filasMapa(); case "tramo" -> tn.filasTramo(); default -> tn.filas(); };
@@ -2286,7 +2284,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             boolean pick = stTendPick != null && stTendPick.isSelected();
             boolean conMapa = !"*".equals(tendMapa), conTramo = !"*".equals(tendTramo);
             String fuente = conMapa && conTramo ? "mt" : conMapa ? "mapa" : conTramo ? "tramo" : "todo";
-            VentanaStats vTr = VENTANAS_STATS.get(statsVentana);
+            VentanaStats vTr = stats.ventana(statsVentana);
             List<String> tramosRango = new ArrayList<>();
             if (vTr != null) for (String tr : vTr.tramos()) if (stats.tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
             boolean hayFuente = tn != null && switch (fuente) {
@@ -2295,7 +2293,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 case "tramo" -> tn.filasTramo() != null && tramosRango.stream().anyMatch(tr -> tn.filasTramo().keySet().stream().anyMatch(k -> k.startsWith(statsModo + "|" + tr + "|")));
                 default -> true;
             };
-            VentanaStats vTit = VENTANAS_STATS.get(statsVentana);
+            VentanaStats vTit = stats.ventana(statsVentana);
             String titulo = (pick ? t("Tendencia del pick rate por mes", "Monthly pick rate trend") : t("Tendencia del winrate por mes", "Monthly win rate trend")) + "  ·  " + modoNombre(statsModo)
                     + " · " + (conMapa ? nombreMapaStats(vTit, tendMapa) : t("todos los mapas", "all maps")) + " · " + (conTramo ? tramoNombre(tendTramo) : t("todos los ELO", "all ELO"));
             g2.drawString(titulo, 4, 16);
@@ -2324,7 +2322,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             if (claves.isEmpty()) { g2.setColor(gris); g2.drawString(t("Selecciona civs en la tabla (Ctrl para varias) o marca «Las 5 más jugadas».", "Select civs in the table (Ctrl for several) or tick \u201C5 most played\u201D."), ml, ht / 2); g2.dispose(); return; }
             List<String> meses = new ArrayList<>(tn.meses());
             if (ventSel == 0 || ventSel == 1) { int n = ventSel == 0 ? 3 : 6; if (meses.size() > n) meses = new ArrayList<>(meses.subList(meses.size() - n, meses.size())); }
-            else if (ventSel == 3) { VentanaStats vp = VENTANAS_STATS.get("parche"); if (vp != null && vp.desde().length() >= 7) { String desde = vp.desde().substring(0, 7); meses.removeIf(mm -> mm.compareTo(desde) < 0); } }
+            else if (ventSel == 3) { VentanaStats vp = stats.ventana("parche"); if (vp != null && vp.desde().length() >= 7) { String desde = vp.desde().substring(0, 7); meses.removeIf(mm -> mm.compareTo(desde) < 0); } }
             if (meses.size() < 2) { g2.setColor(gris); g2.drawString(t("Aún no hay dos meses en esta ventana.", "Not two months in this window yet."), ml, ht / 2); g2.dispose(); return; }
             double lo = 100, hi = 0;
             Map<String, double[]> series = new LinkedHashMap<>();
@@ -2643,16 +2641,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         ttBanda.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(128, 128, 128, 70)), BorderFactory.createEmptyBorder(4, 8, 4, 8)));
         JPanel filtros = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 1));
         ttModoCombo = new JComboBox<>();
-        for (String m : MODOS_STATS) ttModoCombo.addItem(modoNombre(m));
-        ttModoCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; statsModo = MODOS_STATS[Math.max(0, ttModoCombo.getSelectedIndex())]; guardarConfig("stats_modo", statsModo); stCivSeleccionada = null; statsFiltrosCambiados(true); });
+        for (String m : stats.modos()) ttModoCombo.addItem(modoNombre(m));
+        ttModoCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; statsModo = stats.modos()[Math.max(0, ttModoCombo.getSelectedIndex())]; guardarConfig("stats_modo", statsModo); stCivSeleccionada = null; statsFiltrosCambiados(true); });
         ttMapaCombo = new JComboBox<>();
         ttMapaCombo.setPrototypeDisplayValue("African Clearing (99.999)   ");
         ttMapaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; Object cl = ttMapaCombo.getClientProperty("claves"); if (cl instanceof List<?> l && ttMapaCombo.getSelectedIndex() >= 0 && ttMapaCombo.getSelectedIndex() < l.size()) { statsMapa = String.valueOf(l.get(ttMapaCombo.getSelectedIndex())); guardarConfig("stats_mapa", statsMapa); statsFiltrosCambiados(true); } });
         ttRango = new SelectorRangoElo();
         ttRango.alCambiar = r -> { if (ttRellenandoFiltros) return; statsTramo = r; guardarConfig("stats_tramo", statsTramo); statsFiltrosCambiados(true); };
         ttVentanaCombo = new JComboBox<>();
-        for (String vv : VENTANAS_STATS_KEYS) ttVentanaCombo.addItem(ventanaNombre(vv));
-        ttVentanaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; statsVentana = VENTANAS_STATS_KEYS[Math.max(0, ttVentanaCombo.getSelectedIndex())]; guardarConfig("stats_ventana", statsVentana); if (stVentanaCombo != null) { stRellenandoMapas = true; try { stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(statsVentana))); } finally { stRellenandoMapas = false; } } ttCargarStats(); });
+        for (String vv : stats.clavesVentanas()) ttVentanaCombo.addItem(ventanaNombre(vv));
+        ttVentanaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; statsVentana = stats.clavesVentanas()[Math.max(0, ttVentanaCombo.getSelectedIndex())]; guardarConfig("stats_ventana", statsVentana); if (stVentanaCombo != null) { stRellenandoMapas = true; try { stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.clavesVentanas()).indexOf(statsVentana))); } finally { stRellenandoMapas = false; } } ttCargarStats(); });
         ttWrEstado = new JLabel();
         ttWrEstado.setFont(ttWrEstado.getFont().deriveFont(Font.PLAIN, 11f));
         ttWrEstado.setForeground(Color.GRAY);
@@ -2691,7 +2689,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Carga (en segundo plano) el resumen de la ventana actual y pinta el winrate en el tech tree. */
     void ttCargarStats() {
-        if (VENTANAS_STATS.containsKey(statsVentana)) { ttActualizarWr(); return; }
+        if (stats.tieneVentana(statsVentana)) { ttActualizarWr(); return; }
         ttWrEstado.setText(t("cargando…", "loading…"));
         String ventana = statsVentana;
         new Thread(() -> {
@@ -2706,12 +2704,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Recalcula el winrate por civ con los filtros compartidos, rellena los combos de la banda y repinta la línea. */
     void ttActualizarWr() {
-        VentanaStats v = VENTANAS_STATS.get(statsVentana);
+        VentanaStats v = stats.ventana(statsVentana);
         if (v == null || ttBanda == null) return;
         ttRellenandoFiltros = true;
         try {
-            ttModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(MODOS_STATS).indexOf(statsModo)));
-            ttVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(statsVentana)));
+            ttModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.modos()).indexOf(statsModo)));
+            ttVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.clavesVentanas()).indexOf(statsVentana)));
             Map<String, Integer> mapas = stats.partidasPorMapa(v, statsModo, statsTramo);
             List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
             lm.sort((a, b) -> b.getValue() - a.getValue());
@@ -2743,7 +2741,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     void ttActualizarBanda() {
         if (ttWrLabel == null) return;
         String civ = ttCivPedida;
-        VentanaStats v = VENTANAS_STATS.get(statsVentana);
+        VentanaStats v = stats.ventana(statsVentana);
         ttMapasPanel.removeAll();
         ttEmblema.setIcon(civ == null ? null : iconoCiv(civ, 40));
         if (civ == null || v == null) {

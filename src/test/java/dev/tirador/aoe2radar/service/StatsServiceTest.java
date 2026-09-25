@@ -165,4 +165,18 @@ class StatsServiceTest {
         assertEquals(esperado, stats.civPorMapa(v, "rm_1v1", "0-1000", "aztecs"));
         assertEquals(10, esperado.get("arabia").n());
     }
+
+    @Test void tieneVentanaDiceSiYaEstaCargadaSinPedirNadaALaRed() {
+        assertFalse(stats.tieneVentana("30"), "aún no se ha pedido");
+        assertNull(stats.asegurar("30", false));
+        assertTrue(stats.tieneVentana("30"));
+        assertFalse(stats.tieneVentana("90"), "esta no se ha pedido nunca");
+    }
+
+    @Test void modosYClavesVentanasSonLasDeCivStatsEnElMismoOrden() {
+        assertArrayEquals(CivStats.MODOS_STATS, stats.modos());
+        assertArrayEquals(CivStats.VENTANAS_STATS_KEYS, stats.clavesVentanas());
+        assertSame(CivStats.MODOS_STATS, stats.modos(), "mismo array, no una copia");
+        assertSame(CivStats.VENTANAS_STATS_KEYS, stats.clavesVentanas(), "mismo array, no una copia");
+    }
 }
