@@ -14,7 +14,8 @@ import java.util.function.LongPredicate;
  * Los vínculos entre cuentas del mismo jugador: el campo {@code vinculo} de Player es la clave común de una
  * familia, el id mínimo de sus miembros. Opera sobre la {@code List<Player>} que recibe (la app conserva la
  * lista como campo, la guarda con savePlayers y repinta con aplicarFiltroGrupo en ese mismo orden de hoy).
- * <p>Sin Swing, sin red: los métodos se pueden llamar desde cualquier hilo.
+ * <p>Sin Swing ni red; NO es seguro entre hilos: la lista debe tocarse desde un solo hilo (hoy ficharVarios la
+ * toca en segundo plano, ver DEUDA).
  */
 public final class Familias {
 

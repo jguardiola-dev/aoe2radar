@@ -50,6 +50,18 @@ class FamiliasTest {
         assertEquals(3L, jugadores.get(1).vinculo());
     }
 
+    @Test void marcarVinculoDejaIntactoAlQueNoEstaEnIds() {
+        Player ajeno = new Player(99, "Ajeno", "g", 42);
+        List<Player> jugadores = new ArrayList<>(List.of(
+                new Player(5, "Alfa", "g"),
+                new Player(3, "Beta", "g"),
+                ajeno));
+        boolean cambio = svc.marcarVinculo(jugadores, Set.of(5L, 3L));
+        assertTrue(cambio);
+        assertSame(ajeno, jugadores.get(2));
+        assertEquals(42L, jugadores.get(2).vinculo());
+    }
+
     // ----- sanearVinculosHuerfanos ------------------------------------------
 
     @Test void sanearVinculosHuerfanosDeshaceFamiliaDeUno() {
@@ -123,6 +135,27 @@ class FamiliasTest {
                 new Player(2, "Hermana", "g", 5));
         Map<Long, Integer> eloWatch = new HashMap<>(Map.of(1L, 1000));   // sin entrada para la hermana
         assertNull(svc.mejorAlt(1L, jugadores, null, eloWatch));
+    }
+
+    @Test void mejorAltFamiliaDeProfileServiceGanaElNombreAlVinculoLocal() {
+        List<Player> jugadores = List.of(
+                new Player(1, "Yo", "g", 5),
+                new Player(2, "NombreLocal", "g", 5));
+        Map<Long, String> familiaConsultada = Map.of(2L, "NombreServicio");
+        Map<Long, Integer> eloWatch = new HashMap<>(Map.of(1L, 1000, 2L, 1200));
+        String[] alt = svc.mejorAlt(1L, jugadores, familiaConsultada, eloWatch);
+        assertNotNull(alt);
+        assertArrayEquals(new String[]{ "NombreServicio", "1200", "2" }, alt);
+    }
+
+    @Test void mejorAltConPropioDesconocidoYHermanaConEloDevuelveLaHermana() {
+        List<Player> jugadores = List.of(
+                new Player(1, "Yo", "g", 5),
+                new Player(2, "Hermana", "g", 5));
+        Map<Long, Integer> eloWatch = new HashMap<>(Map.of(2L, 1300));   // sin entrada para el propio (1)
+        String[] alt = svc.mejorAlt(1L, jugadores, null, eloWatch);
+        assertNotNull(alt);
+        assertArrayEquals(new String[]{ "Hermana", "1300", "2" }, alt);
     }
 
     // ----- vincularExistentes --------------------------------------------------
