@@ -1,6 +1,5 @@
 package dev.tirador.aoe2radar.ui;
 
-import javax.swing.BorderFactory;
 import javax.swing.ImageIcon;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -55,7 +54,7 @@ public final class AcercaDe {
                 + "<span style='color:gray;font-size:90%'>"
                 + t("Datos: <b>aoe2companion</b> (Dennis Keil) · Tech tree: <b>aoe2techtree</b> (HSZemi, MIT) · Banderas: hampusborgos/country-flags<br>UI: <b>FlatLaf</b> (Apache 2.0) · Runtime: OpenJDK (GPLv2+CPE) · Espectación: <b>CaptureAge</b> · Directos: <b>Twitch</b><br>Inspiración: aoe2insights, aoe2recs, aoe2scout<br><br>",
                     "Data: <b>aoe2companion</b> (Dennis Keil) · Tech tree: <b>aoe2techtree</b> (HSZemi, MIT) · Flags: hampusborgos/country-flags<br>UI: <b>FlatLaf</b> (Apache 2.0) · Runtime: OpenJDK (GPLv2+CPE) · Spectating: <b>CaptureAge</b> · Streams: <b>Twitch</b><br>Inspiration: aoe2insights, aoe2recs, aoe2scout<br><br>")
-                + "Age of Empires II © Microsoft Corporation. aoe2radar was created under Microsoft's “Game Content Usage Rules” using assets from Age of Empires II, and it is not endorsed by or affiliated with Microsoft."
+                + "Age of Empires II © Microsoft Corporation. aoe2radar was created under Microsoft's \u201CGame Content Usage Rules\u201D using assets from Age of Empires II, and it is not endorsed by or affiliated with Microsoft."
                 + "</span></div></html>");
         texto.setHorizontalAlignment(SwingConstants.CENTER);
         p.add(texto, BorderLayout.CENTER);
