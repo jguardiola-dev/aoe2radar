@@ -35,11 +35,13 @@ class EloNocturnoTest {
         final Map<String, byte[]> archivos = new HashMap<>();
         final List<String> pedidos = new ArrayList<>();
         Runnable alDescargar = () -> { };
+        String cortarEn;   // este archivo sale como InterruptedException (Detener a mitad de descarga)
         @Override public Respuesta condicional(String url, String etag, int timeoutS) { throw new AssertionError("no es de la rama data"); }
-        @Override public byte[] bytes(String url, int timeoutS) throws IOException {
+        @Override public byte[] bytes(String url, int timeoutS) throws IOException, InterruptedException {
             String nombre = url.substring(BASE.length());
             pedidos.add(nombre);
             alDescargar.run();
+            if (nombre.equals(cortarEn)) throw new InterruptedException("detenido");
             byte[] b = archivos.get(nombre);
             if (b == null) throw new IOException("HTTP 404 " + url);
             return b;
@@ -223,6 +225,46 @@ class EloNocturnoTest {
         red.alDescargar = () -> elo.cargar();   // otro llamador entra mientras se descarga
         elo.cargar();
         assertEquals(List.of(AYER, HACE7), red.pedidos, "el segundo vuelve sin hacer nada");
+    }
+
+    @Test void siSeDetieneAntesDelDeAyerConservaLaMarcaYNoEsFallo() {
+        red.cortarEn = AYER;
+        try {
+            elo.cargar();
+            assertTrue(Thread.interrupted(), "la interrupción no se traga: quien llama se entera (y el test la limpia)");
+        } finally { Thread.interrupted(); }
+        assertEquals(List.of(AYER), red.pedidos, "tras el corte no se sigue con el de hace 7");
+        red.cortarEn = null;
+        elo.cargar();
+        assertTrue(enSegundoPlano.isEmpty(), "no fue un fallo: ni 5 min de espera ni segundo plano…");
+        assertEquals(List.of(AYER, AYER, HACE7), red.pedidos, "…se vuelve a pedir en línea al momento");
+        assertEquals(1905, elo.ayer.get(1L)[0]);
+    }
+
+    @Test void siSeDetieneEnElDeHaceSieteElDeAyerValeYConservaLaMarca() throws IOException {
+        red.cortarEn = HACE7;
+        try {
+            elo.cargar();
+            assertTrue(Thread.interrupted(), "la interrupción no se queda en el catch del de hace 7");
+        } finally { Thread.interrupted(); }
+        assertEquals(1905, elo.ayer.get(1L)[0]);
+        red.cortarEn = null;
+        reloj.ahora = t0() + 12 * HORA;   // caduca la copia: ahora decide «fallo», no el sello de éxito
+        elo.cargar();
+        assertTrue(enSegundoPlano.isEmpty(), "el de ayer llegó: fue un éxito y el refresco va en línea, no como reintento");
+        assertEquals(2, red.pedidos.stream().filter(AYER::equals).count());
+    }
+
+    @Test void sinJYCorteEnElDeHaceSieteSigueSiendoFallo() {
+        red.archivos.put(AYER, gz("{\"fecha\":\"2026-09-24\"}"));
+        red.cortarEn = HACE7;
+        try { elo.cargar(); } finally { Thread.interrupted(); }
+        red.cortarEn = null;
+        elo.cargar();
+        assertEquals(List.of(AYER, HACE7), red.pedidos, "el de ayer ya se leyó (mal): se apunta intento, nada en línea…");
+        reloj.avanzar(5 * MIN);
+        elo.cargar();
+        assertEquals(1, enSegundoPlano.size(), "…y es un fallo: reintento a los 5 min en segundo plano");
     }
 
     @Test void siElSegundoPlanoNoArrancaNoSeQuedaCargando() {

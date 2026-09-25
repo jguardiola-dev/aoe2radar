@@ -80,20 +80,34 @@ public final class EloNocturno {
         descargar();
     }
 
-    /** La descarga en sí (cargando ya está a true); en el finally se apunta si llegó, el intento y el fin, en ese orden. */
+    /**
+     * La descarga en sí (cargando ya está a true); en el finally se apunta si llegó, el intento y el fin, en ese orden.
+     * Una interrupción (cancelar la operación) no es un fallo del servidor: el hilo conserva su marca para que quien
+     * llama se detenga, y si el corte llega antes de terminar de leer el de ayer no se apunta intento (la siguiente llamada lo pide en línea,
+     * sin 5 min de espera en los que la forma saldría de la API).
+     */
     private void descargar() {
-        boolean llego = false;
+        boolean llego = false, ayerLeido = false, cortado = false;
         LocalDate hoy = hoyUtc.get();
         try {
             llego = leerAyer();
+            ayerLeido = true;   // llegara o no (sin «j»), el de ayer ya se intentó: un corte después no lo borra
             if (llego) diaCarga = hoy;
             String h7 = hoy.minusDays(7).toString();
             try {
                 if (leer("elo-" + h7 + ".json.gz", hace7, null)) fechaHace7 = h7;
-            } catch (Exception ex) { log("perfiles: elo hace 7: " + causa(ex)); }
+            } catch (InterruptedException ex) { throw ex; }
+            catch (Exception ex) { log("perfiles: elo hace 7: " + causa(ex)); }
             log("perfiles: elo_ayer " + fechaAyer + ": " + ayer.size() + " jugadores; hace 7: " + hace7.size());
+        } catch (InterruptedException ex) {
+            cortado = true;
+            Thread.currentThread().interrupt();
+            log(ayerLeido ? "perfiles: elo hace 7: detenido" : "perfiles: elo_ayer: detenido");
         } catch (Exception ex) { log("perfiles: elo_ayer: " + causa(ex)); }
-        finally { fallo = !llego; intento.marcar(); cargando.set(false); }
+        finally {
+            if (ayerLeido || !cortado) { fallo = !llego; intento.marcar(); }
+            cargando.set(false);
+        }
     }
 
     private boolean leerAyer() throws Exception {
