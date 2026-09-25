@@ -128,3 +128,8 @@
 | 2026-09-25 | ui.PerfilView.mostrarHistorialPerfil | lanza el hilo «historial-mas» (red) desde la vista, no desde el presentador (fiel a la 1.1 en hilo y caché) | 4 |
 | 2026-09-25 | ui.PerfilPresenter.Pantalla.marcarVinculadasPedidas | se llama fuera del EDT (hilo perfil-hoy, como la 1.1): es el único método de Pantalla así; documentarlo o moverlo a enUi | 4 |
 | 2026-09-25 | Perfil: hayTop250 / idsTop250 | leen el top de Live now con su candado (conTop); la 1.1 leía isEmpty sin candado. Inofensivo | 4 |
+| 2026-09-25 | RegresionCapturas: shot_watchlist | depende de la fase del parpadeo del cursor del buscador y de cuándo se repinta «N jugadores»: si el arranque se desplaza unos ms, los primeros intentos fallan (0,012 %) y el reintento pasa. Hacerla determinista (esperar al texto del resumen; cursor sin parpadeo en la foto y en la referencia) | 4 |
+| 2026-09-25 | Mi partida: estado del log | posición, sesión y throttle sin volatile; cada tick de 2 s lanza un hilo «log-juego» nuevo sin guarda anti-solape (como la 1.1) | 4 |
+| 2026-09-25 | TemaApp.sistemaEnOscuro | lanza `reg query` dentro de aplicarTema, en el EDT (arranque y menú Tema), como la 1.1 | 4 |
+| 2026-09-25 | grupos de la watchlist (TreeSet de grupos disponibles) | el mismo bloque existe en menuContextualWatchlist, gruposParaFichar (Acciones de MenusJugadorSwing) y el Anfitrion de DialogosJugador: unificar en una sola pieza al sacar la watchlist | 3 |
+| 2026-09-25 | Delegados de la tanda 3 | la ventana conserva delegados de una línea (menús, diálogos, tema, Acerca de, Mi partida, azar) para no tocar a sus llamadores; se quitan al sacar la watchlist y la tabla | 3 |
