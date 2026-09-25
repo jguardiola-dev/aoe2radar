@@ -273,12 +273,12 @@ public final class WatchlistView {
     private JPanel parClan, parClanGuardados; private JTextField clanField; private JPopupMenu clanPopup;
     private JComboBox<String> clanesGuardadosCombo; private JButton clanEstrella; private boolean rellenandoClanes;
 
-    private final FiltroLista filtroLista = new FiltroLista(VIVO);
+    private final FiltroLista filtroLista = new FiltroLista(VIVO);   // qué fila se ve y en qué orden (sin Swing)
     private final Set<Long> vinculosExpandidos = new HashSet<>();
-    private final Map<Long, Character> marcaFila = new HashMap<>();
-    private final Map<Long, Boolean> vivoFamilia = new HashMap<>();
+    private final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
+    private final Map<Long, Boolean> vivoFamilia = new HashMap<>();   // principal -> alguna cuenta viva
     private final List<Player> topLadder = new ArrayList<>();
-    private final Map<Long, Long> lastTop = new HashMap<>();
+    private final Map<Long, Long> lastTop = new HashMap<>();   // pid -> última partida (ms), del leaderboard
     private long topCargado;
     private volatile boolean cargandoTop, vigilandoTop;
     private final Path topCache;
@@ -617,7 +617,7 @@ public final class WatchlistView {
         grupoCombo.addActionListener(e -> onGrupoElegido());
         grupoCombo.setFont(grupoCombo.getFont().deriveFont(Font.BOLD));
         grupoFila.add(grupoCombo);
-        soloVivosBtn = new JToggleButton("● " + t("Jugando", "Playing"));
+        soloVivosBtn = new JToggleButton("\u25CF " + t("Jugando", "Playing"));
         soloVivosBtn.setToolTipText(t(
                 "Detecta partidas EN CURSO de cualquier modo (1v1, TG, lo que sea). Límites: partidas de más de 3 h se consideran colgadas, y las salas personalizadas a veces no aparecen hasta terminar.",
                 "Detects games IN PROGRESS of any mode (1v1, TG, anything). Limits: games over 3 h are treated as hung, and custom lobbies sometimes only show up once finished."));
@@ -943,7 +943,6 @@ public final class WatchlistView {
         left.setPreferredSize(new Dimension(280, 0));
     }
 
-    /** Grupos donde se puede fichar a alguien: General, los que ya tienen gente y los guardados en config. */
     /** Grupos donde se puede fichar a alguien: «General», los grupos con gente ahora mismo y los guardados en
      *  config (idéntico al bloque que arma menuContextualWatchlist/menuDeJugador/mostrarVinculadas). */
     public Set<String> gruposParaFichar() {
@@ -954,13 +953,13 @@ public final class WatchlistView {
         return gs;
     }
 
-    /** Subtexto de quien está en partida, con el estilo de Live now. Se recorta a la anchura disponible. */
+    /** Subtexto de quien está en partida, con el estilo de Live now: rival en color normal, civs en gris, mapa y reloj en ámbar. Se recorta a la anchura: primero cae el reloj, luego las civs, y al final se acorta el rival. */
     private String subtextoVivo(long pid, FontMetrics fm, int px) {
         Match m = VIVO.partida(pid);
         String amb = temaOscuroActivo ? "#ffd56a" : "#b06a00";
         if (m == null || !anfitrion.enCursoReal(m)) {
             String info = VIVO.info(pid);
-            return "<font color='#8a8a8a'>" + escapeHtml(dev.tirador.aoe2radar.util.Formato.truncarPx(info != null ? info : t("partida en curso — detalle en el próximo tick", "game in progress — details next tick"), fm, px)) + "</font>";
+            return "<font color='#8a8a8a'>" + escapeHtml(dev.tirador.aoe2radar.util.Formato.truncarPx(info != null ? info : t("partida en curso \u2014 detalle en el próximo tick", "game in progress \u2014 details next tick"), fm, px)) + "</font>";
         }
         MatchPlayer yo = null; for (MatchPlayer mp : m.players) if (mp.id == pid) yo = mp;
         List<String> rivales = new ArrayList<>();
@@ -968,20 +967,21 @@ public final class WatchlistView {
         for (MatchPlayer mp : m.players) { if (mp.id == pid) continue; if (yo != null && mp.team == yo.team) continue; rivales.add(anfitrion.nombreVisible(mp.id, mp.name) + (mp.rating != null ? " (" + mp.rating + ")" : "")); rivalUnico = mp; }
         boolean unoContraUno = m.players.size() == 2 && rivales.size() == 1;
         String prefijo = unoContraUno ? "vs " : "TG " + (m.players.size() / 2) + "v" + (m.players.size() / 2);
-        String rival = unoContraUno ? String.join(", ", rivales) : "";
-        String civs = unoContraUno && yo != null && yo.civ != null && rivalUnico != null && rivalUnico.civ != null ? yo.civ + "–" + rivalUnico.civ : "";
-        String mapa = "";
-        String reloj = "";
-        java.util.function.Function<String[], String> plano = partes -> partes[0] + partes[1] + (partes[2].isEmpty() ? "" : " " + partes[2]) + (mapa.isEmpty() ? "" : " · " + mapa) + (partes[3].isEmpty() ? "" : " · " + partes[3]);
+        String rival = unoContraUno ? String.join(", ", rivales) : "";   // en equipos, los nombres van en el clic derecho
+        String civs = unoContraUno && yo != null && yo.civ != null && rivalUnico != null && rivalUnico.civ != null ? yo.civ + "\u2013" + rivalUnico.civ : "";
+        String mapa = "";   // el mapa va ya en la línea del nick
+        String reloj = "";  // sin reloj: molestaba
+        // recorte por anchura, midiendo el texto plano
+        java.util.function.Function<String[], String> plano = partes -> partes[0] + partes[1] + (partes[2].isEmpty() ? "" : " " + partes[2]) + (mapa.isEmpty() ? "" : " \u00B7 " + mapa) + (partes[3].isEmpty() ? "" : " \u00B7 " + partes[3]);
         String[] partes = { prefijo, rival, civs, reloj };
         if (fm.stringWidth(plano.apply(partes)) > px) partes[3] = "";
         if (fm.stringWidth(plano.apply(partes)) > px) partes[2] = "";
-        while (fm.stringWidth(plano.apply(partes)) > px && partes[1].length() > 4) partes[1] = partes[1].substring(0, partes[1].length() - 2).trim() + "…";
+        while (fm.stringWidth(plano.apply(partes)) > px && partes[1].length() > 4) partes[1] = partes[1].substring(0, partes[1].length() - 2).trim() + "\u2026";
         StringBuilder h = new StringBuilder();
         h.append("<font color='#8a8a8a'>").append(escapeHtml(partes[0])).append("</font>").append(escapeHtml(partes[1]));
         if (!partes[2].isEmpty()) h.append(" <font color='#8a8a8a'>").append(escapeHtml(partes[2])).append("</font>");
-        if (!mapa.isEmpty()) h.append(" <font color='#8a8a8a'>·</font> <font color='").append(amb).append("'>").append(escapeHtml(mapa)).append("</font>");
-        if (!partes[3].isEmpty()) h.append(" <font color='#8a8a8a'>·</font> <font color='").append(amb).append("'>").append(partes[3]).append("</font>");
+        if (!mapa.isEmpty()) h.append(" <font color='#8a8a8a'>\u00B7</font> <font color='").append(amb).append("'>").append(escapeHtml(mapa)).append("</font>");
+        if (!partes[3].isEmpty()) h.append(" <font color='#8a8a8a'>\u00B7</font> <font color='").append(amb).append("'>").append(partes[3]).append("</font>");
         return h.toString();
     }
 
@@ -990,7 +990,6 @@ public final class WatchlistView {
         return formaVisible && p.x >= wL - elo - 72 && p.x <= wL - elo;
     }
 
-    /** El campo filtra el combo de al lado; nadie más escribe en él, así que no puede realimentarse. */
     /** El campo filtra el combo de al lado; nadie más escribe en él, así que
      *  no puede realimentarse (la lección del cuelgue de la 4.41). */
     private void instalarFiltroPais() {
@@ -1050,7 +1049,6 @@ public final class WatchlistView {
     /** Copia del top actual (ladder/país/clan): la consulta sincronizarSocket (cromo) para vigilar también el top. */
     public List<Player> topLadderSnapshot() { synchronized (topLadder) { return new ArrayList<>(topLadder); } }
 
-    /** ¿Qué texto hay pintado bajo el punto p en la fila idx? Pregunta a la vista HTML real del renderer. */
     /** ¿Qué texto hay pintado bajo el punto p en la fila idx? Pregunta a la vista HTML
      *  real del renderer (exacto sea cual sea el ancho), o "" si no hay texto ahí. */
     private String textoBajo(int idx, Point p) {
@@ -1082,7 +1080,6 @@ public final class WatchlistView {
         }
     }
 
-    /** ¿El punto p cae sobre la sublínea «\u270E nota» de la fila idx? */
     /** ¿El punto p cae sobre la sublínea «\u270E nota» de la fila idx (toda la línea, no solo el lápiz)? */
     private boolean sobreNota(int idx, Point p) {
         try {
@@ -1110,7 +1107,7 @@ public final class WatchlistView {
         }
     }
 
-    // ===== Forma reciente (±ELO en una ventana de horas; 1v1 ranked) ====================================
+    // ----- Forma reciente (±ELO en una ventana de horas; 1v1 ranked) --------------
 
     static String formaLarga(Forma f) {
         if (f.partidas() == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
@@ -1197,7 +1194,7 @@ public final class WatchlistView {
         if (formaBtn == null) return;
         int n = playersList.getSelectedIndices().length;
         String quien = n > 0 ? n + t(" seleccionado" + (n > 1 ? "s" : ""), " selected")
-                             : t("todos · ", "all · ") + playersModel.size();
+                             : t("todos \u00B7 ", "all \u00B7 ") + playersModel.size();
         formaBtn.setText(t("Ver forma", "Recent form") + " (" + quien + ")");
     }
 
@@ -1219,7 +1216,7 @@ public final class WatchlistView {
         if (f != null && f.racha() >= 2) { n = f.racha(); gana = f.rachaGana(); }
         else if (modoTop() && TOP_STREAK.containsKey(pid) && Math.abs(TOP_STREAK.get(pid)) >= 2) { n = Math.abs(TOP_STREAK.get(pid)); gana = TOP_STREAK.get(pid) > 0; }
         if (n == 0) return "";
-        return " · " + n + (gana ? t(" victorias seguidas", " wins in a row") : t(" derrotas seguidas", " losses in a row"));
+        return " \u00B7 " + n + (gana ? t(" victorias seguidas", " wins in a row") : t(" derrotas seguidas", " losses in a row"));
     }
 
     public String tipForma(long pid) {
@@ -1227,18 +1224,18 @@ public final class WatchlistView {
         StringBuilder sb = new StringBuilder(ventanaForma <= 24 ? t("Últimas 24 h: ", "Last 24 h: ") : t("Últimos 7 días: ", "Last 7 days: "));
         if (f == null) sb.append(t("sin consultar (selecciónalo y pulsa Ver forma)", "not fetched (select them and press Recent form)"));
         else if (f.partidas() == 0) sb.append(t("sin partidas 1v1", "no 1v1 games"));
-        else sb.append(f.w()).append("-").append(f.l()).append(" · ").append(f.diff() >= 0 ? "+" : "").append(f.diff()).append(rachaTexto(pid, f));
+        else sb.append(f.w()).append("-").append(f.l()).append(" \u00B7 ").append(f.diff() >= 0 ? "+" : "").append(f.diff()).append(rachaTexto(pid, f));
         int[] l10 = TOP_LAST10.get(pid);
-        if (modoTop() && l10 != null) sb.append(" · ").append(t("últimas 10: ", "last 10: ")).append(l10[0]).append("-").append(l10[1]);
+        if (modoTop() && l10 != null) sb.append(" \u00B7 ").append(t("últimas 10: ", "last 10: ")).append(l10[0]).append("-").append(l10[1]);
         return sb.toString();
     }
 
     // ===== Campanas: aviso cuando alguien de una vista marcada entra en partida =========================
 
     private String idVistaCampana() {
-        if (modoClan()) return "★clan|" + (clanField == null ? "" : clanField.getText().trim().toLowerCase(Locale.ROOT));
-        if (modoPais()) return "★pais|" + paisSel();
-        if (modoTop()) return "★ladder";
+        if (modoClan()) return "\u2605clan|" + (clanField == null ? "" : clanField.getText().trim().toLowerCase(Locale.ROOT));
+        if (modoPais()) return "\u2605pais|" + paisSel();
+        if (modoTop()) return "\u2605ladder";
         return "grupo|" + String.valueOf(grupoCombo.getSelectedItem());
     }
 
@@ -1258,10 +1255,9 @@ public final class WatchlistView {
         boolean activo = campanas.alternar(id);
         refrescarCampanaBtn();
         refrescarCampanas();
-        status.setText(activo ? t("Avisos activados para «", "Alerts on for “") + id.replace("★", "★ ").replace("|", " ") + t("»: te avisaré cuando alguien entre en partida.", "”: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
+        status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + id.replace("\u2605", "\u2605 ").replace("|", " ") + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
     }
 
-    /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. */
     /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, pais y clan. */
     public void refrescarCampanas() {
         Set<String> s = campanas.campanas();
@@ -1275,7 +1271,6 @@ public final class WatchlistView {
         }, "campanas").start();
     }
 
-    /** «Mi partida»: si el que entra en partida soy yo, aviso con el rival y accesos a su perfil y al cara a cara. */
     /** «Mi partida»: si el que entra en partida soy yo (mi_pid), aviso con el rival (bandera, ELO, civ) y accesos a su perfil y al cara a cara. */
     public void avisarMiPartida(long pid, Match m) {
         if (!campanas.tocaAvisarMiPartida(pid, m)) return;
@@ -1284,7 +1279,7 @@ public final class WatchlistView {
         if (yo0 == null) return;
         final MatchPlayer yo = yo0;
         List<MatchPlayer> rivales = new ArrayList<>(); for (MatchPlayer p : m.players) if (p.team != yo.team) rivales.add(p);
-        StringBuilder txt = new StringBuilder("● " + t("Tu partida ha empezado", "Your game has started") + " · " + (m.map == null ? "" : m.map) + " · " + dev.tirador.aoe2radar.service.ReglasPartida.modoCorto(m) + " · " + t("vs ", "vs "));
+        StringBuilder txt = new StringBuilder("\u25CF " + t("Tu partida ha empezado", "Your game has started") + " \u00B7 " + (m.map == null ? "" : m.map) + " \u00B7 " + dev.tirador.aoe2radar.service.ReglasPartida.modoCorto(m) + " \u00B7 " + t("vs ", "vs "));
         for (int i = 0; i < rivales.size(); i++) { MatchPlayer r = rivales.get(i); if (i > 0) txt.append(", "); txt.append(anfitrion.nombreVisible(r.id, r.name)); Integer e1 = menus.elo1v1Conocido(r.id); if (e1 == null && r.rating != null) e1 = r.rating; if (e1 != null) txt.append(" (").append(e1).append(")"); if (r.civ != null) txt.append(" ").append(r.civ); }
         final MatchPlayer rival = rivales.isEmpty() ? null : rivales.get(0);
         List<Object[]> fichas = new ArrayList<>(); for (MatchPlayer r : rivales) { Integer e1 = menus.elo1v1Conocido(r.id); if (e1 == null) e1 = r.rating; fichas.add(new Object[]{ r.id, anfitrion.nombreVisible(r.id, r.name) + (r.civ != null ? "  ·  " + r.civ : ""), e1 }); }
@@ -1305,7 +1300,7 @@ public final class WatchlistView {
         if (!campanas.tocaAvisar(pid, m, campanaIds)) return;
         String nombre = anfitrion.nombreVisible(pid, anfitrion.ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : anfitrion.ahoraNombre(pid));
         String resumen = enlacePartidas.resumenVivo(m, pid);
-        String texto = "● " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " · " + resumen : "");
+        String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " \u00B7 " + resumen : "");
         SwingUtilities.invokeLater(() -> anfitrion.mostrarToast(texto, m.id));   // solo dentro de la app: nada de notificaciones de Windows
     }
 
@@ -1353,13 +1348,12 @@ public final class WatchlistView {
                 guardarConfig("clan_tag", tag);
                 aplicarFiltroGrupo();
                 actualizarIndicadoresVivos();
-                status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called “") + tag + t("» (elige uno de las sugerencias).", "” (pick one from the suggestions).")
+                status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
                         : t("Clan ", "Clan ") + tag + ": " + res.miembros().size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
             });
         }, "top-clan").start();
     }
 
-    /** Carga el top N del leaderboard (nick, ELO, última partida) con caché de 10 min, y dispara un barrido de vivos. */
     /** Barrido de la Watchlist al abrir: para cada seguido, una consulta ligera
      *  que detecta partida en curso (finished vacío) y su ELO actual (rating de
      *  su último 1v1 terminado). Solo toca la lista, nunca la tabla: los
@@ -1522,7 +1516,6 @@ public final class WatchlistView {
         }.execute();
     }
 
-    /** La cuenta hermana con MÁS ELO conocido que la propia, o null. */
     /** La cuenta hermana con MÁS ELO conocido que la propia, o null.
      *  Bebe de los vínculos guardados y de las familias consultadas. */
     private String[] mejorAlt(long pid) {
@@ -1659,7 +1652,7 @@ public final class WatchlistView {
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
-        status.setText(p.name() + t(" añadido a «", " added to “") + g + t("» de tu watchlist.", "” in your watchlist."));
+        status.setText(p.name() + t(" añadido a «", " added to \u201C") + g + t("» de tu watchlist.", "\u201D in your watchlist."));
         ofrecerVinculadasTrasAlta(p.id(), p.name(), g);
     }
 
@@ -1678,7 +1671,7 @@ public final class WatchlistView {
         rebuildGrupos();
         aplicarFiltroGrupo();
         refrescarWatchlist();
-        status.setText(nuevos.size() + t(" jugadores añadidos a «", " players added to “") + g + "».");
+        status.setText(nuevos.size() + t(" jugadores añadidos a «", " players added to \u201C") + g + "\u00bb.");
         if (nuevos.isEmpty()) return;
         int r = JOptionPane.showConfirmDialog(ventana,
                 t("¿Buscar las cuentas vinculadas de los ", "Look up the linked accounts of the ") + nuevos.size()
@@ -1690,10 +1683,10 @@ public final class WatchlistView {
         final int[] anadidas = { 0 };
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
-                anfitrion.marcarHiloOperacionActual();
+                anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 for (Player p : nuevos) {
                     if (anfitrion.detenerOperacion()) break;
-                    publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "…");
+                    publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "\u2026");
                     try {
                         List<Perfil.Vinculada> vinc = perfiles.vinculadas(p.id());
                         SwingUtilities.invokeAndWait(() -> {
@@ -1717,7 +1710,7 @@ public final class WatchlistView {
                 if (miSerial != anfitrion.opSerial()) return;
                 anfitrion.trabajando(false);
                 savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-                status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to “") + g + "».");
+                status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + "\u00bb.");
             }
         }.execute();
     }
@@ -1733,7 +1726,7 @@ public final class WatchlistView {
     private void moverVarios(List<Player> lista, String g) {
         int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
         savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-        status.setText(n + t(" jugadores movidos a «", " players moved to “") + g + "».");
+        status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + "\u00bb.");
     }
 
     /** Pregunta a qué grupo fichar (preseleccionado el activo), con «Nuevo grupo…». null = cancelado. */
@@ -1742,7 +1735,7 @@ public final class WatchlistView {
         gs.add(GRUPO_GENERAL);
         for (Player x : todosJugadores) gs.add(x.grupo());
         gs.addAll(gruposConfig());
-        String nuevoO = t("+ Nuevo grupo…", "+ New group…");
+        String nuevoO = t("+ Nuevo grupo\u2026", "+ New group\u2026");
         List<String> ops = new ArrayList<>(gs);
         ops.add(nuevoO);
         JComboBox<String> cb = new JComboBox<>(ops.toArray(String[]::new));
@@ -1767,7 +1760,6 @@ public final class WatchlistView {
         return sel;
     }
 
-    /** Rellena el combo con «Todos», los grupos existentes y «+ Nuevo grupo…», conservando la selección guardada. */
     /** Rellena el combo con «Todos», los grupos existentes y «+ Nuevo grupo…»,
      *  conservando la selección guardada. */
     public void rebuildGrupos() {
@@ -1922,8 +1914,6 @@ public final class WatchlistView {
 
     public boolean containsPlayerId(long id) { return listaSeguidos.contiene(todosJugadores, id); }
 
-    /** Amplía la lista con todas las cuentas vinculadas de cada jugador (salvo hijas seleccionadas explícitamente). */
-    /** Amplía la lista con todas las cuentas de cada familia presente. */
     /** Suma a la lista todas las cuentas vinculadas de cada jugador — salvo
      *  las hijas seleccionadas explícitamente, que van solas (control fino). */
     public List<Player> conFamilias(List<Player> base) {
@@ -1936,7 +1926,6 @@ public final class WatchlistView {
         return new ArrayList<>(out.values());
     }
 
-    /** Tooltip de la columna Jugador: si la cuenta es hermana de una familia, dice de quién. Null si no aplica. */
     /** Tooltip de la columna Jugador: si la cuenta es hermana de una familia,
      *  dice de quién. Null si no aplica. */
     public String tipCuentaVinculada(Match m) {
@@ -2077,22 +2066,21 @@ public final class WatchlistView {
         for (Player p : (modoTop() ? topLadder : todosJugadores))
             if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && VIVO.jugando(p.id())) nAmbito++;
         if (soloVivosBtn != null)
-            soloVivosBtn.setText("● " + t("Jugando", "Playing") + (nAmbito > 0 ? " (" + nAmbito + ")" : ""));
+            soloVivosBtn.setText("\u25CF " + t("Jugando", "Playing") + (nAmbito > 0 ? " (" + nAmbito + ")" : ""));
             soloVivosBtn.setToolTipText(null);   // sin tooltip: el chip se explica solo
             if (resumenWatch != null) {
                 int totalAmbito = 0;
                 for (int i = 0; i < playersModel.size(); i++) totalAmbito++;
-                resumenWatch.setText(totalAmbito + t(" jugadores", " players") + " · " + nAmbito + t(" jugando", " playing"));
+                resumenWatch.setText(totalAmbito + t(" jugadores", " players") + " \u00B7 " + nAmbito + t(" jugando", " playing"));
             }
         tituloWatch.setTitle(nVivos == 0 ? "Watchlist"
-                : "Watchlist — " + nVivos + t(" jugando", " playing"));
+                : "Watchlist \u2014 " + nVivos + t(" jugando", " playing"));
         if (soloVivosBtn != null && soloVivosBtn.isSelected()) aplicarFiltroGrupo();
         if (watchPanel != null) watchPanel.repaint();
     }
 
     // ===== Alta de jugadores =============================================================================
 
-    /** Tras fichar a alguien: si tiene cuentas vinculadas, ofrecer añadirlas todas al mismo grupo de una vez. */
     /** Tras fichar a alguien: si tiene cuentas vinculadas, ofrecer añadirlas
      *  todas al mismo grupo de una vez. */
     public void ofrecerVinculadasTrasAlta(long profileId, String nombre, String grupo) {
@@ -2142,11 +2130,10 @@ public final class WatchlistView {
         }.execute();
     }
 
-    /** Un jugador concreto elegido de una sugerencia: las mismas tres opciones del buscador, sin repetir la búsqueda. */
     /** Un jugador concreto elegido de una sugerencia: en Perfil se abre directamente; en el resto, las mismas tres opciones del buscador, sin repetir la búsqueda. */
     public void jugadorElegido(long pid, String nombre) {
         if (anfitrion.perfilAbierto()) { navegacion.abrirPerfil(pid, nombre); return; }
-        String verO = t("Ver sus partidas", "View their games"), perfO = t("Ver perfil", "View profile"), addO = t("Añadir al grupo…", "Add to group…"), canO = t("Cancelar", "Cancel");
+        String verO = t("Ver sus partidas", "View their games"), perfO = t("Ver perfil", "View profile"), addO = t("Añadir al grupo\u2026", "Add to group\u2026"), canO = t("Cancelar", "Cancel");
         int r0 = JOptionPane.showOptionDialog(ventana, nombre + "  ·  " + pid, t("Resultados", "Results"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, new Object[]{ perfO, verO, addO, canO }, perfO);
         if (r0 == 0) navegacion.abrirPerfil(pid, nombre);
         else if (r0 == 1) {
@@ -2197,7 +2184,7 @@ public final class WatchlistView {
                             name + (pais != null ? "  [" + pais + "]" : "") + "  ·  " + id
                                  + (games > 0 ? "  ·  " + games + " partidas" : "") });
                 }
-                agregarLocalesSinRepetir(out, busqueda.local(q.trim()));
+                agregarLocalesSinRepetir(out, busqueda.local(q.trim()));   // la API primero (conoce el nick actual, aunque el volcado aún no); después el índice local, sin repetir
                 return out;
             }
             @Override protected void done() {
@@ -2211,7 +2198,7 @@ public final class WatchlistView {
                     pnl.add(cbSel, BorderLayout.CENTER);
                     String verO = t("Ver sus partidas", "View their games");
                     String perfO = t("Ver perfil", "View profile");
-                    String addO = t("Añadir al grupo…", "Add to group…");
+                    String addO = t("Añadir al grupo\u2026", "Add to group\u2026");
                     String canO = t("Cancelar", "Cancel");
                     boolean perfilAbierto = anfitrion.perfilAbierto();
                     int r0;
@@ -2235,7 +2222,7 @@ public final class WatchlistView {
                                 if (ei != null) SwingUtilities.invokeLater(() -> {
                                     eloWatch.put(p.id(), ei);
                                     playersList.repaint();
-                                    enlacePartidas.refrescarSujetos(enlacePartidas.ultimosSujetos(), enlacePartidas.invitado() != null);
+                                    enlacePartidas.refrescarSujetos(enlacePartidas.ultimosSujetos(), enlacePartidas.invitado() != null);   // el ELO recién llegado, a la cabecera
                                 });
                             }).start();
                             enlacePartidas.fetchMatches();
@@ -2344,7 +2331,7 @@ public final class WatchlistView {
                 gsTop.addAll(gruposConfig());
                 for (String g : gsTop) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> ficharDesdeTop(p, g)); anadir.add(it); }
                 anadir.addSeparator();
-                JMenuItem nuevoGT = new JMenuItem(t("+ Nuevo grupo…", "+ New group…"));
+                JMenuItem nuevoGT = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
                 nuevoGT.addActionListener(a -> { String g = elegirGrupoDialog(p.name()); if (g != null) ficharDesdeTop(p, g); });
                 anadir.add(nuevoGT);
                 menu.add(anadir);
@@ -2353,7 +2340,7 @@ public final class WatchlistView {
                     JMenu anadirVarios = new JMenu(t("Añadir los ", "Add the ") + selTop.size() + t(" seleccionados a", " selected to"));
                     for (String g : gsTop) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> ficharVarios(selTop, g)); anadirVarios.add(it); }
                     anadirVarios.addSeparator();
-                    JMenuItem nuevoGV = new JMenuItem(t("+ Nuevo grupo…", "+ New group…"));
+                    JMenuItem nuevoGV = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
                     nuevoGV.addActionListener(a -> { String g = elegirGrupoDialog(selTop.size() + t(" jugadores", " players")); if (g != null) ficharVarios(selTop, g); });
                     anadirVarios.add(nuevoGV);
                     menu.add(anadirVarios);
@@ -2382,7 +2369,7 @@ public final class WatchlistView {
                 JMenu moverVarios = new JMenu(t("Mover los ", "Move the ") + selW.size() + t(" seleccionados a", " selected to"));
                 for (String g : gruposExistentes()) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> moverVarios(selW, g)); moverVarios.add(it); }
                 moverVarios.addSeparator();
-                JMenuItem nuevoGM = new JMenuItem(t("+ Nuevo grupo…", "+ New group…"));
+                JMenuItem nuevoGM = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
                 nuevoGM.addActionListener(a -> { String g = elegirGrupoDialog(selW.size() + t(" jugadores", " players")); if (g != null) moverVarios(selW, g); });
                 moverVarios.add(nuevoGM);
                 menu.add(moverVarios);
@@ -2510,11 +2497,11 @@ public final class WatchlistView {
                     log("perfil card: sparkline falló con " + pid + ": " + causa(ex));
                 }
                 StringBuilder h = new StringBuilder("<html><b>").append(escapeHtml(nombre)).append("</b>");
-                if (!pais.isBlank()) h.append("  · ").append(pais);
-                if (!clan.isBlank()) h.append("  · ").append(escapeHtml(clan));
+                if (!pais.isBlank()) h.append("  \u00B7 ").append(pais);
+                if (!clan.isBlank()) h.append("  \u00B7 ").append(escapeHtml(clan));
                 h.append("<br>");
                 if (rating != null) h.append(t("ELO 1v1: <b>", "1v1 ELO: <b>")).append(rating).append("</b>");
-                if (maxRating != null) h.append(t("  · máx ", "  · peak ")).append(maxRating);
+                if (maxRating != null) h.append(t("  \u00B7 máx ", "  \u00B7 peak ")).append(maxRating);
                 h.append("<br>");
                 if (wins != null && losses != null && wins + losses > 0)
                     h.append(t("Winrate 1v1: ", "1v1 winrate: "))

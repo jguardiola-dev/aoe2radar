@@ -236,24 +236,24 @@ class WatchlistViewTest {
     // ===== grupos / filtro =====================================================================================
 
     @Test void grupoActivo_todosEsNull() {
-        watchlist.grupoCombo.setSelectedItem(t("Todos", "All"));
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(t("Todos", "All")), watchlist.grupoCombo);
         assertNull(watchlist.grupoActivo());
     }
 
     @Test void grupoActivo_grupoPersonalizado() {
         watchlist.grupoCombo.addItem("Amigos");
-        watchlist.grupoCombo.setSelectedItem("Amigos");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("Amigos"), watchlist.grupoCombo);
         assertEquals("Amigos", watchlist.grupoActivo());
     }
 
     @Test void grupoDestino_generalSiNoHayGrupoActivo() {
-        watchlist.grupoCombo.setSelectedItem(t("Todos", "All"));
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(t("Todos", "All")), watchlist.grupoCombo);
         assertEquals(WatchlistView.GRUPO_GENERAL, watchlist.grupoDestino());
     }
 
     @Test void grupoDestino_usaElGrupoActivo() {
         watchlist.grupoCombo.addItem("Pros");
-        watchlist.grupoCombo.setSelectedItem("Pros");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("Pros"), watchlist.grupoCombo);
         assertEquals("Pros", watchlist.grupoDestino());
     }
 
@@ -281,7 +281,7 @@ class WatchlistViewTest {
 
     @Test void vistaActualId_combinaGrupoYPais() {
         watchlist.grupoCombo.addItem("Amigos");
-        watchlist.grupoCombo.setSelectedItem("Amigos");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("Amigos"), watchlist.grupoCombo);
         // fuera de ★ país, el país no entra en el id: solo grupo + «|»
         assertEquals("Amigos|", watchlist.vistaActualId());
     }

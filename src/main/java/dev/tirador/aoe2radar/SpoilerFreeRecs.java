@@ -352,8 +352,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // ----- Modelo ------------------------------------------------------------
 
-    static final String GRUPO_GENERAL = "General";
-
     /** Añade a los catálogos los mapas y civs de las partidas recibidas y
      *  persiste las novedades. */
     static void aprenderCatalogos(Collection<Match> ms) {
@@ -1374,7 +1372,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public String resumenVivo(Match m, long pid) { return SpoilerFreeRecs.resumenVivo(m, pid); }
             @Override public String refNombre(Match m) { return SpoilerFreeRecs.refNombre(m); }
             @Override public void repintarTabla() { table.repaint(); }
-            @Override public void fijarObjetivo(Player p, String vistaId) { objetivoForzado = p; invitado = p; vistaDelInvitado = vistaId; }
+            @Override public void fijarObjetivo(Player p, String vistaId) { objetivoForzado = p;   // aunque ya esté en un grupo (entonces no es invitado, pero sí el objetivo)
+                invitado = p; vistaDelInvitado = vistaId; }
             @Override public Player invitado() { return invitado; }
             @Override public void limpiarInvitado() { invitado = null; }
             @Override public String vistaDelInvitado() { return vistaDelInvitado; }
@@ -3178,8 +3177,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Delegado: ver ui.MiPartidaPanel.iniciarVigilancia. Nombre conservado para quien lo llama (constructor). */
     void iniciarVigilanciaLogJuego() { miPartida.iniciarVigilancia(); }
-    /** Delegado: ver ui.MiPartidaPanel.mostrarSuperposicion. Nombre conservado para avisarMiPartida. */
-    void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { miPartida.mostrarSuperposicion(texto, fichas, ms); }
     /** Delegado: ver ui.MiPartidaPanel.abrirMiPerfil. Nombre conservado para el botón "Mi perfil". */
     void abrirMiPerfil() { miPartida.abrirMiPerfil(); }
     /** Delegado: ver ui.MiPartidaPanel.preguntarMiNick. Nombre conservado para "Cambiar de cuenta". */
@@ -3568,11 +3565,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Búsqueda de jugadores por nombre en el companion: {id, nombre, etiqueta legible}. Delegados de service.BusquedaPerfiles
      *  (BUSQUEDA): la lógica vive allí, aquí solo queda la fachada para no tocar los cinco buscadores de la interfaz
-     *  (ni addPlayerDialog, que usa buscarLocal con su propio orden) ahora. */
+     *  que quedan en esta clase (addPlayerDialog se movió a ui.WatchlistView y usa BusquedaPerfiles directamente). */
     /** Sugerencias al teclear: el índice local si tiene algo (sin llamada); si no, la API. */
     static List<String[]> sugerirPerfiles(String q) { return BUSQUEDA.sugerir(q); }
     /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. Así un nick cambiado hace poco (que el volcado aún no conoce) también aparece. */
     static List<String[]> buscarPerfiles(String q) { return BUSQUEDA.buscar(q); }
-    /** Sugerencias locales del índice nocturno de nombres (top 40.000): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero. */
-    static List<String[]> buscarLocal(String q) { return BUSQUEDA.local(q); }
 }
