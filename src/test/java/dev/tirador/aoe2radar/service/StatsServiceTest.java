@@ -1,6 +1,7 @@
 package dev.tirador.aoe2radar.service;
 
 import dev.tirador.aoe2radar.cache.CacheService;
+import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.sfrdata.CivStats;
@@ -135,5 +136,33 @@ class StatsServiceTest {
         assertEquals(CalculoStats.duracionMedia(6000, 10), stats.duracionMedia(6000, 10));
         assertArrayEquals(CalculoStats.wilson(6, 10), stats.wilson(6, 10));
         assertTrue(stats.tramoEnRango("0-1000", v.tramos(), "*"));
+    }
+
+    @Test void tramoEnRangoConUnRangoRealDaFalsoOVerdaderoIgualQueCalculoStats() {
+        assertNull(stats.asegurar("30", false));
+        VentanaStats v = stats.ventana("30");
+        // "1000+" como rango: solo el tramo "1000+" entra, "0-1000" se queda fuera.
+        assertFalse(stats.tramoEnRango("0-1000", v.tramos(), "1000+"));
+        assertEquals(CalculoStats.tramoEnRango("0-1000", v.tramos(), "1000+"), stats.tramoEnRango("0-1000", v.tramos(), "1000+"));
+        assertTrue(stats.tramoEnRango("1000+", v.tramos(), "1000+"));
+        assertEquals(CalculoStats.tramoEnRango("1000+", v.tramos(), "1000+"), stats.tramoEnRango("1000+", v.tramos(), "1000+"));
+    }
+
+    @Test void partidasPorMapaConModoYTramoDistintosCoincideConCalculoStats() {
+        assertNull(stats.asegurar("30", false));
+        VentanaStats v = stats.ventana("30");
+        // modo y tramo con valores distintos entre sí: si el delegado los intercambiara, esto lo notaría.
+        Map<String, Integer> esperado = CalculoStats.partidasPorMapa(v, "rm_1v1", "0-1000");
+        assertEquals(esperado, stats.partidasPorMapa(v, "rm_1v1", "0-1000"));
+        assertEquals(Integer.valueOf(10), esperado.get("arabia"), "20 filas de civ / 2 jugadores por partida en 1v1");
+    }
+
+    @Test void civPorMapaConModoTramoYCivDistintosCoincideConCalculoStats() {
+        assertNull(stats.asegurar("30", false));
+        VentanaStats v = stats.ventana("30");
+        // modo, tramo y civ, los tres distintos entre sí: si el delegado desordenara los argumentos, esto lo notaría.
+        Map<String, CivAgg> esperado = CalculoStats.civPorMapa(v, "rm_1v1", "0-1000", "aztecs");
+        assertEquals(esperado, stats.civPorMapa(v, "rm_1v1", "0-1000", "aztecs"));
+        assertEquals(10, esperado.get("arabia").n());
     }
 }
