@@ -39,7 +39,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Harness de capturas (antes TTShot): test de caracterización de la UI.
- * Arranca la app, recorre las pestañas y compara 23 capturas con las referencias de src/test/resources/capturas.
+ * Arranca la app, recorre las pestañas y compara 29 capturas con las referencias de src/test/resources/capturas.
  *
  * - Primera ejecución: graba las referencias y pasa. Con -Dcapturas.regrabar=true se regrabarán a propósito
  *   (solo tras un cambio visual intencionado; nunca para «hacer pasar» un rojo).
@@ -90,7 +90,7 @@ class RegresionCapturas {
     @Test void capturas() throws Exception {
         correr();
         if (!REINTENTADAS.isEmpty()) System.out.println("AVISO: capturas que pasaron al reintentar: " + REINTENTADAS);
-        assertTrue(fotos == 23, "se esperaban 23 capturas y se hicieron " + fotos);
+        assertTrue(fotos == 29, "se esperaban 29 capturas y se hicieron " + fotos);
         assertTrue(FALLOS.isEmpty(), FALLOS.size() + " capturas distintas de su referencia:\n  " + String.join("\n  ", FALLOS));
     }
 
@@ -241,6 +241,32 @@ class RegresionCapturas {
                 + " titulo='" + (app.tituloWatch == null ? null : app.tituloWatch.getTitle()) + "'"
                 + " resumen='" + (app.resumenWatch == null ? null : app.resumenWatch.getText()) + "'";
     }
+    /** Un jugador de una partida inventada (T3-H, sin red): igual de plano que un MatchPlayer real de la API. */
+    static MatchPlayer mp(long id, String nombre, String civ, int equipo, Boolean gano, Integer rating, Integer diff) {
+        MatchPlayer p = new MatchPlayer();
+        p.id = id; p.name = nombre; p.civ = civ; p.team = equipo; p.won = gano; p.rating = rating; p.ratingDiff = diff;
+        return p;
+    }
+    /** Una partida inventada con fecha FIJA (no relativa a «ahora»): la columna Fecha pinta «dd/MM HH:mm»
+     *  (FechaCell, sin reloj inyectable) y con instantes fijos la foto no cambia entre ejecuciones ni de un día
+     *  para otro. */
+    static Match partida(long id, java.time.Instant inicio, int minutos, String modo, String mapa, MatchPlayer... jugadores) {
+        Match m = new Match();
+        m.id = id; m.started = inicio; m.finished = inicio.plusSeconds(minutos * 60L);
+        m.mode = modo; m.map = mapa;
+        for (MatchPlayer p : jugadores) m.players.add(p);
+        return m;
+    }
+    /** configBtn es una variable LOCAL de construirBarraSuperior (no un campo de la ventana): se busca por su
+     *  texto en el árbol de componentes en vez de exponerlo como campo (la tarea prohíbe tocar src/main). */
+    static JButton buscarBoton(Container raiz, String texto) {
+        for (Component c : raiz.getComponents()) {
+            if (c instanceof JButton b && texto.equals(b.getText())) return b;
+            if (c instanceof Container hijo) { JButton r = buscarBoton(hijo, texto); if (r != null) return r; }
+        }
+        return null;
+    }
+
     static void correr() throws Exception {
         SpoilerFreeRecs.main(new String[0]);
         for (int i = 0; i < 60 && app() == null; i++) Thread.sleep(250);
@@ -429,5 +455,106 @@ class RegresionCapturas {
         foto("shot_lista_completa.png");
         cerrarDialogos();
         System.out.println("civstats 2000+ mapa: filas " + app.civStats.stModelo.getRowCount() + " | estado: " + app.civStats.stEstado.getText() + " | mapa=" + app.filtroStats.mapa() + " tramo=" + app.filtroStats.tramo());
+
+        // ===== T3-H: PARTIDAS y CROMO — hoy sin ninguna captura; se fotografía el comportamiento ACTUAL (base
+        // 26b29c7) antes de extraer la vista. Se inyecta en `all`/`view` por el MISMO camino que usa
+        // fetchMatches.done() (SpoilerFreeRecs ~5551-5566): limpiar SUJETOS, pintar la cabecera «Partidas de:»
+        // con refrescarSujetos(...), volcar en `all` y dejar que refreshModeCombo()/applyFilters() hagan el
+        // resto (asignan refId, marcan enDisco/enJuego, llenan `view`). Nada de red: no se toca fetchBtn.
+        SwingUtilities.invokeAndWait(() -> app.mostrarDirectos(false));   // pestaña Partidas; con `all` vacío enseña la guía
+        Thread.sleep(400);
+        foto("shot_guia.png");
+        java.time.Instant basePartidas = java.time.Instant.parse("2024-03-10T18:00:00Z");
+        java.util.List<Match> partidasInventadas = new java.util.ArrayList<>(java.util.List.of(
+                partida(8001, basePartidas, 28, "1v1 Random Map", "Arabia",
+                        mp(1L, "12Tirador", "Aztecas", 1, true, 1905, 18),
+                        mp(9101L, "Viper", "Britanos", 2, false, 2200, -14)),
+                partida(8002, basePartidas.plusSeconds(86400), 27, "1v1 Random Map", "Arena",
+                        mp(3L, "pume", "Francos", 1, false, 1980, -9),
+                        mp(9102L, "Hera", "Mongoles", 2, true, 2100, 11)),
+                partida(8003, basePartidas.plusSeconds(2 * 86400), 45, "Team Random Map", "Cuatro Lagos",
+                        mp(2L, "Turpiacho", "Mayas", 1, true, 1610, 15),
+                        mp(9103L, "DauT", "Hunos", 1, true, 1700, null),
+                        mp(9104L, "Nicov", "Vikingos", 2, false, 1650, null),
+                        mp(9105L, "Tatoh", "Romanos", 2, false, 1600, null)),
+                partida(8004, basePartidas.plusSeconds(3 * 86400), 33, "1v1 Random Map", "Bosque Negro",
+                        mp(1L, "12Tirador", "Mongoles", 1, false, 1890, -15),
+                        mp(3L, "pume", "Francos", 2, true, 1995, 15)),
+                partida(8005, basePartidas.plusSeconds(4 * 86400), 40, "1v1 Random Map", "Nómada",
+                        mp(2L, "Turpiacho", "Vikingos", 1, true, 1625, 15),
+                        mp(9106L, "Liereyy", "Britanos", 2, false, 1500, -10)),
+                partida(8006, basePartidas.plusSeconds(5 * 86400), 52, "Team Random Map", "Acrópolis",
+                        mp(1L, "12Tirador", "Hunos", 1, true, 1920, 12),
+                        mp(9107L, "Vinchester", "Mayas", 1, true, 1750, null),
+                        mp(9108L, "JorDan", "Aztecas", 1, true, 1680, null),
+                        mp(9109L, "Capoch", "Francos", 2, false, 1700, null),
+                        mp(9110L, "Mr_Yo", "Romanos", 2, false, 1650, null),
+                        mp(9111L, "Yo", "Mongoles", 2, false, 1600, null)),
+                partida(8007, basePartidas.plusSeconds(6 * 86400), 31, "1v1 Random Map", "Isla",
+                        mp(3L, "pume", "Romanos", 1, true, 2000, 20),
+                        mp(9112L, "Tatoh", "Hunos", 2, false, 1900, -18))
+        ));
+        // mismo orden que produce fetchMatches.doInBackground(): la más reciente primero
+        partidasInventadas.sort(java.util.Comparator.comparing((Match m) -> m.finished).reversed());
+        java.util.List<Player> sujetosPartidas = java.util.List.of(
+                new Player(1L, "12Tirador", "", 0L), new Player(2L, "Turpiacho", "", 0L), new Player(3L, "pume", "", 0L));
+        SwingUtilities.invokeAndWait(() -> {
+            SpoilerFreeRecs.SUJETOS.clear();
+            app.filtroSujetos.clear();
+            for (Player p : sujetosPartidas) SpoilerFreeRecs.SUJETOS.add(p.id());
+            app.refrescarSujetos(sujetosPartidas, false);   // cabecera «Partidas de:», antes de llenar la tabla (igual que fetchMatches)
+            app.all.clear();
+            app.all.addAll(partidasInventadas);
+            app.refreshModeCombo();
+            app.applyFilters();
+        });
+        System.out.println("partidas filas tabla: " + app.tableModel.getRowCount());
+        Thread.sleep(500);
+        foto("shot_partidas.png");
+        // shot_partidas_sujetos.png: NO hace falta. refrescarSujetos() ya pintó la cabecera «Partidas de:» antes
+        // de esta foto (mismo orden que fetchMatches.done()), así que shot_partidas.png ya la enseña.
+        SwingUtilities.invokeAndWait(() -> app.resultadosBtn.doClick());   // «Mostrar resultados»: el único punto con spoilers
+        Thread.sleep(500);
+        foto("shot_partidas_resultados.png");
+        SwingUtilities.invokeAndWait(() -> app.resultadosBtn.doClick());   // vuelve a tapar antes de la foto del menú
+        Thread.sleep(300);
+        SwingUtilities.invokeAndWait(() -> {
+            Rectangle r = app.table.getCellRect(0, 0, true);   // fila 0: la más reciente tras el orden por fecha
+            app.table.dispatchEvent(new java.awt.event.MouseEvent(app.table, java.awt.event.MouseEvent.MOUSE_RELEASED,
+                    System.currentTimeMillis(), 0, r.x + r.width / 2, r.y + r.height / 2, 1, true));   // popupTrigger=true: dispara el mismo menú que un clic derecho real
+        });
+        Thread.sleep(700);
+        foto("shot_partidas_menu.png");
+        SwingUtilities.invokeAndWait(() -> javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
+        SwingUtilities.invokeAndWait(app::cerrarBusqueda);   // deja `all`/`view`/SUJETOS/cabecera como los encontró
+        Thread.sleep(300);
+
+        // ----- Cromo: menú Configuración y Acerca de (T3-H) — sin ninguna captura hasta ahora en esta zona.
+        // El idioma del harness siempre es "es" (BeforeAll): el texto del botón es literal.
+        JButton[] configBtnRef = new JButton[1];
+        SwingUtilities.invokeAndWait(() -> configBtnRef[0] = buscarBoton(app.getContentPane(), "Configuración ▾"));
+        SwingUtilities.invokeAndWait(() -> configBtnRef[0].doClick());
+        Thread.sleep(500);
+        foto("shot_config_menu.png");
+        SwingUtilities.invokeAndWait(() -> javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
+        Thread.sleep(200);
+        // showAbout() abre un JOptionPane MODAL: con invokeAndWait, la propia llamada no volvería hasta cerrar
+        // el diálogo (bloquearía el test). Se lanza con invokeLater y se espera a que la ventana aparezca.
+        SwingUtilities.invokeLater(app::showAbout);
+        JDialog[] acercaD = new JDialog[1];
+        for (int i = 0; i < 60 && acercaD[0] == null; i++) {
+            Thread.sleep(100);
+            SwingUtilities.invokeAndWait(() -> {
+                for (Window w : Window.getWindows()) if (w instanceof JDialog d && d.isVisible() && "Acerca de".equals(d.getTitle())) acercaD[0] = d;
+            });
+        }
+        Thread.sleep(300);
+        foto("shot_acerca.png");
+        cerrarDialogos();
+
+        // Se vuelve a Civ Stats (la pestaña activa antes de este bloque): mostrarDirectos(false) la había
+        // deseleccionado. abrirCivStats() no pide nada por red: sfr-data ya está en caché de esta ejecución.
+        SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());
+        Thread.sleep(400);
     }
 }
