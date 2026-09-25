@@ -41,33 +41,29 @@ public final class DescargaRecs implements RecService {
     @Override public Resultado procesar(Match m, Set<Long> trackedIds, boolean enviarAlJuego, Path savegame, BooleanSupplier cancelado) {
         avisarSiUi("RecService.procesar");
         Path archivo = destino.apply(m);
-        Estado estado;
-        String causaFallo = null;
-        if (Files.exists(archivo)) {
-            estado = Estado.YA_EN_DISCO;
-        } else {
-            String ultimaCausa = "sin candidatos con rec";
-            boolean guardada = false;
-            for (long pid : candidatos(m, trackedIds)) {
-                if (cancelado.getAsBoolean()) { ultimaCausa = "cancelada"; break; }
-                byte[] datos = descargador.apply(m.id, pid);
-                if (datos != null) {
-                    try {
-                        Files.write(archivo, datos);
-                        guardada = true;
-                        break;
-                    } catch (IOException ex) {
-                        ultimaCausa = causa(ex);
-                        log("no se pudo escribir " + archivo + ": " + ultimaCausa);
-                    }
-                } else {
-                    ultimaCausa = "sin rec válida";
+        // Igual que la 1.1 (download(), ~12036): sin comprobar si `archivo` ya existe. Cada llamada vuelve a
+        // probar los candidatos y sobrescribe. Ver DEUDA (RecService: no reintentar si ya está en disco).
+        String ultimaCausa = "sin candidatos con rec";
+        boolean guardada = false;
+        for (long pid : candidatos(m, trackedIds)) {
+            if (cancelado.getAsBoolean()) { ultimaCausa = "cancelada"; break; }
+            byte[] datos = descargador.apply(m.id, pid);
+            if (datos != null) {
+                try {
+                    Files.write(archivo, datos);
+                    guardada = true;
+                    break;
+                } catch (IOException ex) {
+                    ultimaCausa = causa(ex);
+                    log("no se pudo escribir " + archivo + ": " + ultimaCausa);
                 }
-                pausa.accept(pausaMs);
+            } else {
+                ultimaCausa = "sin rec válida";
             }
-            estado = guardada ? Estado.DESCARGADA : Estado.FALLO;
-            if (!guardada) causaFallo = ultimaCausa;
+            pausa.accept(pausaMs);
         }
+        Estado estado = guardada ? Estado.DESCARGADA : Estado.FALLO;
+        String causaFallo = guardada ? null : ultimaCausa;
         boolean enJuego = estado != Estado.FALLO && enviarAlJuego && savegame != null && copiarAlJuego.test(m, savegame);
         return new Resultado(estado, enJuego, causaFallo);
     }

@@ -17,8 +17,8 @@ import java.util.function.BooleanSupplier;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * RecService: descarga una partida (o no, si ya la tiene), la guarda en disco y, si toca, la copia al savegame. Sin
- * red (descarga falsa) y con disco real en un @TempDir (el nombre de archivo y el contenido importan).
+ * RecService: descarga la rec de una partida, la guarda en disco y, si toca, la copia al savegame. Sin red
+ * (descarga falsa) y con disco real en un @TempDir (el nombre de archivo y el contenido importan).
  */
 class RecServiceTest {
 
@@ -66,14 +66,17 @@ class RecServiceTest {
         assertEquals(1, descarga.pids.size(), "un solo candidato (el de referencia) basta si acierta a la primera");
     }
 
-    @Test void yaEnDiscoNoSeDescarga() throws IOException {
+    /** Test de caracterización: así es la 1.1 (download(), ~12036), no un contrato deseado. Si su rec ya está en
+     *  disco, procesar() la vuelve a descargar y la sobrescribe; no hay comprobación de «ya en disco» (ver
+     *  DEUDA: RecService, propuesta de no reintentar si ya está en disco, pendiente de decidir con Jorge). */
+    @Test void siYaHabiaUnaRecEnDiscoSeVuelveADescargarYSeSobrescribe() throws IOException {
         Match m = partida(2, 100);
         Path archivo = tempDir.resolve("rec-2.aoe2record");
         Files.writeString(archivo, "ya estaba");
         RecService.Resultado r = service.procesar(m, Set.of(), false, null, sinCancelar);
-        assertEquals(RecService.Estado.YA_EN_DISCO, r.estado());
-        assertTrue(descarga.pids.isEmpty(), "no se llamó a la descarga");
-        assertEquals("ya estaba", Files.readString(archivo), "el archivo no se tocó");
+        assertEquals(RecService.Estado.DESCARGADA, r.estado());
+        assertFalse(descarga.pids.isEmpty(), "se vuelve a llamar a la descarga aunque ya hubiera archivo");
+        assertArrayEquals(descarga.datos, Files.readAllBytes(archivo), "el archivo se sobrescribe");
     }
 
     @Test void falloDeDescargaNoDejaNadaAMedias() {

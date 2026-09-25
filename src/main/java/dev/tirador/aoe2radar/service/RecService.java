@@ -15,7 +15,7 @@ import java.util.function.BooleanSupplier;
 public interface RecService {
 
     /** Qué pasó con la rec de la partida. */
-    enum Estado { DESCARGADA, YA_EN_DISCO, FALLO }
+    enum Estado { DESCARGADA, FALLO }
 
     /**
      * estado: ver Estado. enJuego: si en ESTA llamada la rec quedó copiada al savegame (solo puede darse si
@@ -24,12 +24,12 @@ public interface RecService {
     record Resultado(Estado estado, boolean enJuego, String causa) {}
 
     /**
-     * Procesa una partida: si su rec ya está en disco, no la vuelve a descargar (YA_EN_DISCO); si no, prueba sus
-     * candidatos a POV (el de referencia, seguidos con rec, seguidos, resto — ver DescargaRecs.candidatos) hasta
-     * guardar una rec válida (DESCARGADA) o agotarlos (FALLO, con la causa del último intento).
-     * <p>Si enviarAlJuego es true y savegame no es null, copia la rec (la recién descargada o la que ya hubiera)
-     * al savegame y lo marca en el resultado; si copiar falla, enJuego queda false (sin que eso sea un FALLO: la
-     * rec sigue en disco).
+     * Procesa una partida: prueba sus candidatos a POV (el de referencia, seguidos con rec, seguidos, resto — ver
+     * DescargaRecs.candidatos) hasta guardar una rec válida (DESCARGADA) o agotarlos (FALLO, con la causa del
+     * último intento). Igual que la 1.1: si la rec ya estaba en disco, se vuelve a descargar y se sobrescribe (no
+     * hay comprobación de «ya en disco»; ver DEUDA sobre la mejora propuesta y no aplicada).
+     * <p>Si enviarAlJuego es true y savegame no es null, copia la rec recién descargada al savegame y lo marca en
+     * el resultado; si copiar falla, enJuego queda false (sin que eso sea un FALLO: la rec sigue en disco).
      * <p>cancelado se mira entre un candidato y el siguiente: si ya está a true no se prueban más y el resultado
      * es FALLO.
      */
