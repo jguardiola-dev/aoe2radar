@@ -168,6 +168,8 @@ class WatchlistViewTest {
         @Override public void reiniciarThrottleDirectos() { }
         @Override public void vigilarTwitchDirectos() { }
         @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { }
+        @Override public void actualizarSocketExtra(Set<Long> ids) { }
+        @Override public String ahoraNombre(long pid) { return String.valueOf(pid); }
     }
 
     List<Player> todosJugadores;
@@ -227,7 +229,8 @@ class WatchlistViewTest {
                 new MenusFalso(), dialogos, new NavegacionFalsa(),
                 Tareas.SWING, enlace, anfitrion,
                 todosJugadores, playersModel, playersList, eloWatch, gamesWatch, new HashMap<>(), new HashMap<>(),
-                new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel());
+                new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
+                java.nio.file.Path.of("players_test.txt"), java.nio.file.Path.of("top_cache_test.txt"), 300L, 50);
     }
 
     // ===== grupos / filtro =====================================================================================
@@ -254,16 +257,24 @@ class WatchlistViewTest {
         assertEquals("Pros", watchlist.grupoDestino());
     }
 
+    /** Quita los listeners del combo antes de tocarlo: onGrupoElegido() lanzaría cargarTopLadder/cargarTopClan
+     *  (SwingWorker real, red) o refrescarWatchlist si no se quita — ningún test puede lanzar hilos de red. */
+    private static void sinListeners(Runnable accion, javax.swing.JComboBox<String> combo) {
+        var listeners = combo.getActionListeners();
+        for (var l : listeners) combo.removeActionListener(l);
+        accion.run();
+    }
+
     @Test void modoTop_paraLosTresTops() {
         watchlist.grupoCombo.addItem(WatchlistView.TOP_LADDER);
-        watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER);
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
         assertTrue(watchlist.modoTop());
         assertFalse(watchlist.modoClan());
     }
 
     @Test void modoClan_soloParaTopClan() {
-        watchlist.grupoCombo.addItem("★ Top clan".replace('★', '★'));
-        watchlist.grupoCombo.setSelectedItem("★ Top clan");
+        watchlist.grupoCombo.addItem("★ Top clan");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
         assertTrue(watchlist.modoTop());
         assertTrue(watchlist.modoClan());
     }
@@ -285,7 +296,7 @@ class WatchlistViewTest {
         todosJugadores.add(new Player(1L, "Uno", "Amigos"));
         todosJugadores.add(new Player(2L, "Dos", "Pros"));
         watchlist.rebuildGrupos();
-        watchlist.grupoCombo.setSelectedItem("Amigos");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("Amigos"), watchlist.grupoCombo);
         watchlist.aplicarFiltroGrupo();
         assertEquals(1, playersModel.size());
         assertEquals(1L, playersModel.get(0).id());
@@ -297,7 +308,7 @@ class WatchlistViewTest {
         todosJugadores.add(new Player(1L, "Uno", "Amigos"));
         todosJugadores.add(new Player(2L, "Dos", "Pros"));
         watchlist.rebuildGrupos();
-        watchlist.grupoCombo.setSelectedItem(t("Todos", "All"));
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(t("Todos", "All")), watchlist.grupoCombo);
         watchlist.aplicarFiltroGrupo();
         assertEquals(2, playersModel.size());
     }

@@ -299,7 +299,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 @Override public void refrescarTabla() { tableModel.fireTableDataChanged(); }
                 @Override public void ajustarColumnasTabla() { ajustarColumnas(); }
                 @Override public void actualizarControles() { actualizarControlesTabla(); }
-                @Override public void refrescarSujetos() { SpoilerFreeRecs.this.refrescarSujetos(ultimosSujetos, invitado != null); }
+                @Override public void refrescarSujetos() { SpoilerFreeRecs.this.refrescarSujetos(ultimosSujetos, invitado != null); }   // el ELO recién llegado, a la cabecera
                 @Override public void mostrarEstado(String texto) { status.setText(texto); }
                 @Override public boolean enWatchlist(long pid) { return watchlist.containsPlayerId(pid); }
                 @Override public void ponerEloWatch(long pid, int elo) { eloWatch.put(pid, elo); }
@@ -500,10 +500,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
     /** Quién está en partida ahora (ver service.EstadoVivo): un solo dueño para el socket, los barridos y la UI. */
     static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
-    boolean mostrarEloWatch = Boolean.parseBoolean(leerConfig("elo_watchlist", "true"));
+    /** Fuerza la carga de la clase ui.WatchlistView AQUÍ, en la inicialización estática de SpoilerFreeRecs — el
+     *  mismo punto relativo donde TOP_LADDER/TOP_PAIS/TOP_CLAN/PAISES vivían en la 1.1 — para que esos static
+     *  se evalúen ANTES de que main() fije IDIOMA (por eso salen siempre en español, aunque el sistema esté en
+     *  inglés). Es una rareza de orden de carga ya existente en la 1.1; decisión de Opus: conservarla tal cual
+     *  al sacar la Watchlist, no corregirla de paso. Ver docs/DEUDA.md. */
+    static final PaisItem[] PAISES = dev.tirador.aoe2radar.ui.WatchlistView.PAISES;
     javax.swing.Timer vigilante;      // barrido periódico del «en directo» (nunca del ELO)
-    boolean vigilando = false;
-    JPanel watchPanel;
     final JSpinner hoursSpinner = new JSpinner(new SpinnerNumberModel(
             Math.min(24, Integer.parseInt(leerConfig("ventana_n", leerConfig("horas", "24")))), 1, 24, 1));
     final JComboBox<String> unidadCombo = new JComboBox<>(new String[]{ t("horas", "hours"), t("días", "days"), t("semanas", "weeks") });
@@ -812,6 +815,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Forma reciente (±ELO): la lógica y el estado viven en ui.WatchlistView; este campo se inyecta porque
      *  se construye después de COMPANION (static) y antes que la propia Watchlist. */
+    /** Campo de instancia (no static): se inicializa después de COMPANION, que es static (SpoilerFreeRecs paso FormService). */
     final FormService formaService = new FormaCompanion(COMPANION, Snapshots.ELO, Reloj.SISTEMA);
 
     final Set<Long> reveladas = new HashSet<>();   // ojos abiertos fila a fila; se olvidan con cada tabla nueva
@@ -1211,8 +1215,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             return sb + (m.map == null || m.map.isBlank() ? "" : " \u00B7 " + m.map);
         } catch (Exception e) { return null; }
     }
-    JButton detenerDescBtn, continuarBtn, addJugBtn;
-    javax.swing.JTextField buscaNick;
+    JButton detenerDescBtn, continuarBtn;
     JPanel recsCards;   // «tabla» o «guia» (estado vacío que enseña el flujo)
     JButton guiaBtn;    // el «Buscar partidas» de la guía: dice lo mismo que el principal
 
@@ -1239,40 +1242,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (recsCards != null) ((CardLayout) recsCards.getLayout()).show(recsCards, guia ? "guia" : "tabla");
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
     }
-    boolean avisoTopMostrado;   // el popup del top caído: solo la primera vez por sesión
     JButton actualizarBtn;      // «Nueva versión X — Descargar», solo si existe una mayor
 
-    /** Subtexto de quien está en partida, con el estilo de Live now: rival en color normal, civs en gris, mapa y reloj en ámbar. Se recorta a la anchura: primero cae el reloj, luego las civs, y al final se acorta el rival. */
-    String subtextoVivo(long pid, FontMetrics fm, int px) {
-        Match m = VIVO.partida(pid);
-        String amb = temaOscuroActivo ? "#ffd56a" : "#b06a00";
-        if (m == null || !enCursoReal(m)) {
-            String info = VIVO.info(pid);
-            return "<font color='#8a8a8a'>" + escapeHtml(truncarPx(info != null ? info : t("partida en curso \u2014 detalle en el próximo tick", "game in progress \u2014 details next tick"), fm, px)) + "</font>";
-        }
-        MatchPlayer yo = null; for (MatchPlayer mp : m.players) if (mp.id == pid) yo = mp;
-        List<String> rivales = new ArrayList<>();
-        MatchPlayer rivalUnico = null;
-        for (MatchPlayer mp : m.players) { if (mp.id == pid) continue; if (yo != null && mp.team == yo.team) continue; rivales.add(nombreVisible(mp.id, mp.name) + (mp.rating != null ? " (" + mp.rating + ")" : "")); rivalUnico = mp; }
-        boolean unoContraUno = m.players.size() == 2 && rivales.size() == 1;
-        String prefijo = unoContraUno ? "vs " : "TG " + (m.players.size() / 2) + "v" + (m.players.size() / 2);
-        String rival = unoContraUno ? String.join(", ", rivales) : "";   // en equipos, los nombres van en el clic derecho
-        String civs = unoContraUno && yo != null && yo.civ != null && rivalUnico != null && rivalUnico.civ != null ? yo.civ + "\u2013" + rivalUnico.civ : "";
-        String mapa = "";   // el mapa va ya en la línea del nick
-        String reloj = "";  // sin reloj: molestaba
-        // recorte por anchura, midiendo el texto plano
-        java.util.function.Function<String[], String> plano = partes -> partes[0] + partes[1] + (partes[2].isEmpty() ? "" : " " + partes[2]) + (mapa.isEmpty() ? "" : " \u00B7 " + mapa) + (partes[3].isEmpty() ? "" : " \u00B7 " + partes[3]);
-        String[] partes = { prefijo, rival, civs, reloj };
-        if (fm.stringWidth(plano.apply(partes)) > px) partes[3] = "";
-        if (fm.stringWidth(plano.apply(partes)) > px) partes[2] = "";
-        while (fm.stringWidth(plano.apply(partes)) > px && partes[1].length() > 4) partes[1] = partes[1].substring(0, partes[1].length() - 2).trim() + "\u2026";
-        StringBuilder h = new StringBuilder();
-        h.append("<font color='#8a8a8a'>").append(escapeHtml(partes[0])).append("</font>").append(escapeHtml(partes[1]));
-        if (!partes[2].isEmpty()) h.append(" <font color='#8a8a8a'>").append(escapeHtml(partes[2])).append("</font>");
-        if (!mapa.isEmpty()) h.append(" <font color='#8a8a8a'>\u00B7</font> <font color='").append(amb).append("'>").append(escapeHtml(mapa)).append("</font>");
-        if (!partes[3].isEmpty()) h.append(" <font color='#8a8a8a'>\u00B7</font> <font color='").append(amb).append("'>").append(partes[3]).append("</font>");
-        return h.toString();
-    }
 
     // truncarPx: ver util.Formato (recorte con puntos suspensivos, compartido por Live now y la watchlist).
 
@@ -1321,7 +1292,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     void pedirNota(long pid, String nombre) { dialogos.pedirNota(pid, nombre); }
 
     void pedirAlias(long pid, String original) { dialogos.pedirAlias(pid, original); }
+    /** Diálogo de cuentas vinculadas: selección múltiple y grupo de destino. */
     void mostrarVinculadas(long profileId, String nombre) { dialogos.mostrarVinculadas(profileId, nombre); }
+    /** Historial de alias que guarda Steam para la cuenta (endpoint público
+     *  de la comunidad, vía el steamId del companion). Solo bajo demanda. */
     void nicksAnteriores(long pid, String nombre) { dialogos.nicksAnteriores(pid, nombre); }
     JButton pararDescargasBtn;
     static final Set<Long> SUJETOS = java.util.concurrent.ConcurrentHashMap.newKeySet();   // los buscados: negrita y cabecera
@@ -1342,15 +1316,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     JPanel centroCards;
     /** La pestaña Directos (card "directos", Twitch): ver ui.DirectosView. */
     DirectosView directos;
-    final Set<Long> vinculosExpandidos = new HashSet<>();
-    final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
-    final Map<Long, Boolean> vivoFamilia = new HashMap<>();   // principal -> alguna cuenta viva
-    final FiltroLista filtroLista = new FiltroLista(VIVO);   // qué fila se ve y en qué orden (sin Swing)
-    final List<Player> topLadder = new ArrayList<>();
-    final Map<Long, Long> lastTop = new HashMap<>();   // pid -> última partida (ms), del leaderboard
-    long topCargado;
-    volatile boolean cargandoTop, vigilandoTop;
-    static final Path TOP_CACHE = CONFIG_FILE.resolveSibling("top_cache.txt");
 
     static JPanel par(java.awt.Component... cs) {
         JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
@@ -1464,6 +1429,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public void reiniciarThrottleDirectos() { directos.reiniciarThrottle(); }
             @Override public void vigilarTwitchDirectos() { directos.vigilarTwitch(); }
             @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { miPartida.mostrarSuperposicion(texto, fichas, ms); }
+            @Override public void actualizarSocketExtra(Set<Long> ids) {
+                if (liveNow != null) { for (Object[] f : liveNow.topSnapshot()) ids.add((Long) f[0]); liveNow.socketExtra.retainAll(ids); liveNow.socketExtra.addAll(ids); }
+            }
+            @Override public String ahoraNombre(long pid) { return liveNow.ahoraNombre(pid); }
         };
     }
 
@@ -1476,7 +1445,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 barridoVivos, ELO_1V1, menus, dialogos, this,
                 Tareas.SWING, watchlistEnlacePartidas(), watchlistAnfitrion(),
                 todosJugadores, playersModel, playersList, eloWatch, gamesWatch, twitchLive, ALIASES,
-                status, progreso, all, sujetosPanel);
+                status, progreso, all, sujetosPanel, PLAYERS_FILE, Config.CONFIG_FILE.resolveSibling("top_cache.txt"),
+                PAUSA_MS, PER_PAGE);
         JPanel left = watchlist.panel();
 
         JPanel top = construirBarraSuperior(temaInicial);
@@ -1739,12 +1709,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         configMenu.add(letraMenu);
         configMenu.addSeparator();
         JCheckBoxMenuItem eloWatchItem = new JCheckBoxMenuItem(
-                t("Mostrar ELO en la Watchlist", "Show ELO in the Watchlist"), mostrarEloWatch);
+                t("Mostrar ELO en la Watchlist", "Show ELO in the Watchlist"), watchlist.mostrarEloWatch);
         eloWatchItem.setToolTipText(t("El ELO se actualiza solo al abrir la app, nunca al buscar, para no chivar resultados",
                 "ELO refreshes only when the app opens, never on search, so results are never given away"));
         eloWatchItem.addActionListener(e -> {
-            mostrarEloWatch = eloWatchItem.isSelected();
-            guardarConfig("elo_watchlist", String.valueOf(mostrarEloWatch));
+            watchlist.mostrarEloWatch = eloWatchItem.isSelected();
+            guardarConfig("elo_watchlist", String.valueOf(watchlist.mostrarEloWatch));
             playersList.repaint();
         });
         configMenu.add(buscarAbrirItem);
@@ -1972,7 +1942,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 .put(KeyStroke.getKeyStroke(KeyEvent.VK_F, java.awt.event.InputEvent.CTRL_DOWN_MASK), "sfrBuscar");
         getRootPane().getActionMap().put("sfrBuscar", new AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (buscaNick != null) { buscaNick.requestFocusInWindow(); buscaNick.selectAll(); }
+                watchlist.enfocarBuscador();
             }
         });
         getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
@@ -2381,8 +2351,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         add(split, BorderLayout.CENTER);
     }
 
-    /** ¿Es un fondo (no un control) donde un clic debe soltar la selección de la lista? Mezcla el conocimiento de
-     *  varias áreas (watchlist, tabla, directos, ratings): candidato a que cada vista aporte su propio predicado. */
+    /** ¿Es un fondo (no un control) donde un clic debe soltar la selección de la lista? */
     boolean esFondoDeseleccionable(Component c) {
         if (c instanceof AbstractButton || c instanceof javax.swing.text.JTextComponent || c instanceof JComboBox
                 || c instanceof JList || c instanceof JTable || c instanceof javax.swing.table.JTableHeader
@@ -2395,6 +2364,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (table != null && SwingUtilities.isDescendingFrom(c, table)) return false;
         if (directos != null && directos.tablaDirectos != null && SwingUtilities.isDescendingFrom(c, directos.tablaDirectos)) return false;
         if (ratings != null && SwingUtilities.isDescendingFrom(c, ratings.panel())) return false;   // mirar las campanas no suelta la selección (sus puntos desaparecerían)
+        // los visores de las tablas (hueco bajo sus filas) tampoco: seleccionar partidas no debe cambiar el filtro de la lista
         for (Component p = c; p != null; p = p.getParent())
             if (p instanceof JScrollPane sp && sp.getViewport() != null
                     && (sp.getViewport().getView() == table || (directos != null && sp.getViewport().getView() == directos.tablaDirectos))) return false;
@@ -2478,9 +2448,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         try { Desktop.getDesktop().browse(URI.create(url)); }
         catch (Exception ex) { status.setText(t("No se pudo abrir el navegador: ", "Couldn't open the browser: ") + causa(ex)); }
     }
-
-    /** El «río» de Top ladder usa este throttle propio (independiente del de Twitch, ver ui.DirectosPresenter). */
-    long ultimoTopMs;
 
     /** La zona central alterna entre la tabla de recs y los directos. */
     void mostrarDirectos(boolean mostrar) {
@@ -3236,7 +3203,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (objetivoForzado != null) {
             sel.add(objetivoForzado);   // «Ver sus partidas» de alguien concreto: manda él, esté o no en un grupo
             objetivoForzado = null;
-        } else if (invitado != null) {
+        } else if (invitado != null) {   // tocar una fila = el sujeto es ahora este; el invitado se despide
             sel.add(invitado);   // persiste: sigue flotando tras la búsqueda
         } else if (objetivoEtiqueta != null && playersList.getSelectedIndices().length == 0) {
             sel.add(objetivoEtiqueta);   // lo que dice el botón es lo que se busca
