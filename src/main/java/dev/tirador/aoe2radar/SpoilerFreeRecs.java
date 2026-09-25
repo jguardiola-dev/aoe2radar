@@ -68,6 +68,7 @@ import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.DescargaRecs;
 import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.service.Familias;
 import dev.tirador.aoe2radar.service.FormaCompanion;
 import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
@@ -9756,26 +9757,14 @@ public class SpoilerFreeRecs extends JFrame {
         }.execute();
     }
 
+    /** Familias: vínculos entre cuentas del mismo jugador (ver service.Familias). Campo de instancia, junto al
+     *  código que lo usa (no junto a COMPANION/LIVE/SERVICIO_PERFIL: es un servicio sin red). */
+    final Familias familiaSvc = new Familias();
+
     /** La cuenta hermana con MÁS ELO conocido que la propia, o null.
      *  Bebe de los vínculos guardados y de las familias consultadas. */
     String[] mejorAlt(long pid) {
-        Integer propio = eloWatch.get(pid);
-        Map<Long, String> cand = new HashMap<>();
-        for (Player x : todosJugadores)
-            if (x.id() == pid && x.vinculo() != 0)
-                for (Player y : todosJugadores)
-                    if (y.vinculo() == x.vinculo() && y.id() != pid) cand.put(y.id(), y.name());
-        Map<Long, String> cc = SERVICIO_PERFIL.familia(pid);
-        if (cc != null) cand.putAll(cc);
-        long mejorId = 0; Integer mejorElo = null; String mejorNombre = null;
-        for (Map.Entry<Long, String> e : cand.entrySet()) {
-            Integer el = eloWatch.get(e.getKey());
-            if (el == null) continue;
-            if (mejorElo == null || el > mejorElo) { mejorElo = el; mejorId = e.getKey(); mejorNombre = e.getValue(); }
-        }
-        if (mejorId == 0 || mejorElo == null) return null;
-        if (propio != null && mejorElo <= propio) return null;
-        return new String[]{ mejorNombre, String.valueOf(mejorElo), String.valueOf(mejorId) };
+        return familiaSvc.mejorAlt(pid, todosJugadores, SERVICIO_PERFIL.familia(pid), eloWatch);
     }
 
 
@@ -9787,9 +9776,7 @@ public class SpoilerFreeRecs extends JFrame {
             @Override protected void done() {
                 List<Perfil.Vinculada> vinc;
                 try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
-                Set<Long> familia = new HashSet<>();
-                familia.add(p.id());
-                for (Perfil.Vinculada v : vinc) if (containsPlayerId(v.pid())) familia.add(v.pid());
+                Set<Long> familia = familiaSvc.vincularExistentes(p.id(), vinc, SpoilerFreeRecs.this::containsPlayerId);
                 if (familia.size() < 2) {
                     status.setText(t("No sigues ninguna otra cuenta vinculada de ", "You don't follow any other linked account of ")
                             + p.name() + t(". Usa «Cuentas vinculadas…» para añadirlas.", ". Use “Linked accounts…” to add them."));
@@ -9974,32 +9961,11 @@ public class SpoilerFreeRecs extends JFrame {
     /** Un vinculo que agrupa a UNA sola cuenta es un fantasma (p. ej. de
      *  cuando el companion devolvía al propio jugador como vinculada). */
     void sanearVinculosHuerfanos() {
-        Map<Long, Integer> cuenta = new HashMap<>();
-        for (Player p : todosJugadores)
-            if (p.vinculo() != 0) cuenta.merge(p.vinculo(), 1, Integer::sum);
-        boolean cambio = false;
-        for (int i = 0; i < todosJugadores.size(); i++) {
-            Player p = todosJugadores.get(i);
-            if (p.vinculo() != 0 && cuenta.getOrDefault(p.vinculo(), 0) < 2) {
-                todosJugadores.set(i, new Player(p.id(), p.name(), p.grupo(), 0));
-                cambio = true;
-            }
-        }
-        if (cambio) savePlayers();
+        if (familiaSvc.sanearVinculosHuerfanos(todosJugadores)) savePlayers();
     }
 
     void marcarVinculo(Set<Long> ids) {
-        if (ids.size() < 2) return;
-        long clave = ids.stream().mapToLong(Long::longValue).min().orElse(0L);
-        boolean cambio = false;
-        for (int i = 0; i < todosJugadores.size(); i++) {
-            Player x = todosJugadores.get(i);
-            if (ids.contains(x.id()) && x.vinculo() != clave) {
-                todosJugadores.set(i, new Player(x.id(), x.name(), x.grupo(), clave));
-                cambio = true;
-            }
-        }
-        if (cambio) { savePlayers(); aplicarFiltroGrupo(); }   // el vínculo sobrevive al cierre
+        if (familiaSvc.marcarVinculo(todosJugadores, ids)) { savePlayers(); aplicarFiltroGrupo(); }   // el vínculo sobrevive al cierre
     }
 
     /** Amplía la lista con todas las cuentas de cada familia presente. */
