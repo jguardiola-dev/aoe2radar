@@ -5032,7 +5032,14 @@ public class SpoilerFreeRecs extends JFrame {
                     final int hechos = Math.min(d + LOTE, top.size());
                     SwingUtilities.invokeLater(() -> ahoraEstado.setText(t("Consultando… ", "Checking… ") + hechos + " / " + top.size()));
                 }
-                synchronized (ahoraEnCurso) { ahoraEnCurso.clear(); ahoraEnCurso.putAll(vivos); }
+                // una partida que se sabe terminada (socket, espectar) no vuelve con la foto del barrido. Candados anidados en
+                // este orden (liveTerminadas → ahoraEnCurso → VIVO, que es hoja): nadie los coge al revés
+                synchronized (liveTerminadas) {
+                    synchronized (ahoraEnCurso) {
+                        vivos.values().removeIf(m -> liveTerminadas.containsKey(m.id) || VIVO.terminada(m.id));
+                        ahoraEnCurso.clear(); ahoraEnCurso.putAll(vivos);
+                    }
+                }
                 for (Map.Entry<Long, Match> en : vivos.entrySet()) VIVO.guardarPartida(en.getKey(), en.getValue());
                 ahoraUltimaMs = System.currentTimeMillis();
                 SwingUtilities.invokeLater(this::ahoraPintar);
@@ -6591,7 +6598,7 @@ public class SpoilerFreeRecs extends JFrame {
             if (c.error() != null) log("socket: no se pudo confirmar la partida " + m.id + ": " + causa(c.error()));
             boolean viva = c.veredicto() != LiveService.Veredicto.TERMINADA;   // sin datos: el beneficio de la duda
             if (!viva) { log("socket: partida " + m.id + " ya terminada según la API: fantasma ignorado"); return; }
-            for (long pid : pids) { String resumen = resumenVivo(m, pid); VIVO.marcarJugando(pid, m.id, resumen); VIVO.guardarPartida(pid, m); liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
+            for (long pid : pids) { if (VIVO.terminada(m.id)) continue; String resumen = resumenVivo(m, pid); if (!VIVO.marcarJugando(pid, m.id, resumen)) continue;   /* terminada entretanto: ni Live now ni avisos */ VIVO.guardarPartida(pid, m); liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
             SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); table.repaint(); });
         }, "socket-confirmar").start();
     }
@@ -6613,9 +6620,9 @@ public class SpoilerFreeRecs extends JFrame {
             List<Long> candidatos = new ArrayList<>();
             for (MatchPlayer mp : m.players) {
                 if (!ids.contains(mp.id)) continue;
-                if (m.finished != null) { VIVO.marcarFuera(mp.id); liveEvento(mp.id, m, true); cambio = true; }
+                if (m.finished != null) { VIVO.apuntarTerminada(m.id); VIVO.marcarFuera(mp.id); liveEvento(mp.id, m, true); cambio = true; }
                 // en curso DE VERDAD: empezada (no un lobby), sin terminar y hace menos de 3 h
-                else if (candidatoSocket(m, Instant.now()) && !Long.valueOf(m.id).equals(VIVO.matchDe(mp.id))) candidatos.add(mp.id);
+                else if (candidatoSocket(m, Instant.now()) && !VIVO.terminada(m.id) && !Long.valueOf(m.id).equals(VIVO.matchDe(mp.id))) candidatos.add(mp.id);
             }
             if (!candidatos.isEmpty()) confirmarEventoSocket(m, candidatos);   // la API tiene la última palabra (fantasmas fuera)
         }
@@ -10948,8 +10955,7 @@ public class SpoilerFreeRecs extends JFrame {
                 for (Object[] c : chunks) {
                     long id = (Long) c[0];
                     if (c[1] != null) {
-                        VIVO.marcarJugando(id, (Long) c[1]);
-                        if (c.length > 3 && c[3] != null) VIVO.ponerInfo(id, (String) c[3]);
+                        if (VIVO.marcarJugando(id, (Long) c[1]) && c.length > 3 && c[3] != null) VIVO.ponerInfo(id, (String) c[3]);
                     } else { VIVO.marcarFuera(id); }
                     if (c[2] != null) eloWatch.put(id, (Integer) c[2]);
                 }

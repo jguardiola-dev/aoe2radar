@@ -282,7 +282,7 @@ class EstadoVivoTest {
                     Random rnd = new Random(semilla);
                     for (int i = 0; i < iteraciones; i++) {
                         long pid = rnd.nextInt(pids);
-                        long mid = rnd.nextInt(matches);
+                        long mid = (i / 300) * matches + rnd.nextInt(matches);   // partidas nuevas cada 300 vueltas: con C4 una quitada ya no vuelve, y sin esto el test dejaría de escribir
                         switch (rnd.nextInt(4)) {
                             case 0 -> e.marcarJugando(pid, mid);
                             case 1 -> e.marcarFuera(pid);
@@ -324,5 +324,38 @@ class EstadoVivoTest {
                 assertNull(e.rival(pid), "pid " + pid + " no jugando debería tener rival null");
             }
         }
+    }
+
+    // ===== una partida terminada no vuelve (LiveService C4: gana el dato más reciente) =====
+
+    @Test void unaPartidaQuitadaNoVuelveAMarcarseJugando() {
+        EstadoVivo e = new EstadoVivo(reloj());
+        e.marcarJugando(1, 555);
+        e.quitarPartida(555);                                         // el socket: matchRemoved
+        assertFalse(e.marcarJugando(1, 555, "vs X"), "un barrido con la foto de antes no la resucita");
+        assertFalse(e.jugando(1));
+        assertNull(e.info(1));
+        assertTrue(e.marcarJugando(1, 556), "otra partida sí");
+        assertEquals(556L, e.matchDe(1));
+    }
+
+    @Test void apuntarTerminadaSinQuitarTambienBloquea() {
+        EstadoVivo e = new EstadoVivo(reloj());
+        e.apuntarTerminada(555);                                      // el socket: matchUpdated con finished
+        assertFalse(e.marcarJugando(2, 555));
+        assertFalse(e.jugando(2));
+        assertTrue(e.terminada(555));
+    }
+
+    @Test void lasTerminadasSeOlvidanALasTresHoras() {
+        RelojFalso r = reloj();
+        EstadoVivo e = new EstadoVivo(r);
+        e.apuntarTerminada(555);
+        r.ahora = HORA + Duration.ofHours(3).toMillis() - 1;
+        e.apuntarTerminada(1);                                        // limpia al apuntar: la 555 aún no ha cumplido 3 h
+        assertTrue(e.terminada(555));
+        r.ahora = HORA + Duration.ofHours(3).toMillis();
+        e.apuntarTerminada(2);
+        assertFalse(e.terminada(555), "a las 3 h justas ya no se recuerda (ninguna partida «en curso» dura más)");
     }
 }

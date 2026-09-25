@@ -4,14 +4,17 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.util.Reloj;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
+import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * Quién está en partida AHORA, con un solo dueño. Lo escriben el socket, la confirmación de fantasmas y los barridos
@@ -35,19 +38,45 @@ public final class EstadoVivo {
     private final Map<Long, Match> partida = new HashMap<>();
     private final Map<Long, Rival> rival = new HashMap<>();
     private final Map<Long, Long> vistoMs = new HashMap<>();
+    /** Partidas que se sabe que terminaron (id → cuándo se supo), 3 h: una partida terminada no vuelve a estar en curso. */
+    private final Map<Long, Long> terminadas = new LinkedHashMap<>();
 
     public EstadoVivo(Reloj reloj) { this.reloj = reloj; }
 
     // ----- escrituras -----
 
-    /** Está en la partida matchId (sin tocar su texto). */
-    public synchronized void marcarJugando(long pid, long matchId) { matchDe.put(pid, matchId); }
+    /**
+     * Está en la partida matchId (sin tocar su texto). Si ya se sabe que esa partida terminó, no hace nada: un barrido
+     * con una foto anterior no la resucita (gana el dato más reciente, decisión de Jorge). Devuelve si la apuntó.
+     */
+    public synchronized boolean marcarJugando(long pid, long matchId) {
+        if (terminada(matchId)) { anotarRechazo(pid, matchId); return false; }
+        matchDe.put(pid, matchId);
+        return true;
+    }
 
-    /** Está en la partida matchId con este texto (null: sin texto; en la 1.1, NullPointerException). */
-    public synchronized void marcarJugando(long pid, long matchId, String texto) {
+    /** Como marcarJugando(pid, matchId), con este texto (null: sin texto; en la 1.1, NullPointerException). */
+    public synchronized boolean marcarJugando(long pid, long matchId, String texto) {
+        if (terminada(matchId)) { anotarRechazo(pid, matchId); return false; }
         matchDe.put(pid, matchId);
         ponerInfoSinCandado(pid, texto);
+        return true;
     }
+
+    /** Para medir en uso real si el companion manda «terminada» de partidas vivas (el riesgo de esta regla, ver DEUDA). */
+    private static void anotarRechazo(long pid, long matchId) {
+        log("vivo: la partida " + matchId + " ya se dio por terminada: no se marca a " + pid + " como jugando");
+    }
+
+    /** Se sabe que la partida matchId ha terminado (y no vuelve): la recuerda 3 h, lo que dura una partida «en curso». */
+    public synchronized void apuntarTerminada(long matchId) {
+        long ahora = reloj.ahoraMs();
+        terminadas.put(matchId, ahora);
+        terminadas.values().removeIf(ms -> ahora - ms >= Duration.ofHours(3).toMillis());
+    }
+
+    /** ¿Se sabe que la partida matchId terminó? */
+    public synchronized boolean terminada(long matchId) { return terminadas.containsKey(matchId); }
 
     /** Solo el texto de la sublínea (null: sin texto). */
     public synchronized void ponerInfo(long pid, String texto) { ponerInfoSinCandado(pid, texto); }
@@ -63,8 +92,9 @@ public final class EstadoVivo {
         rival.remove(pid);
     }
 
-    /** La partida matchId ha terminado: fuera todos los que estaban en ella. Devuelve quiénes eran. */
+    /** La partida matchId ha terminado: fuera todos los que estaban en ella (y se apunta como terminada). Devuelve quiénes eran. */
     public synchronized List<Long> quitarPartida(long matchId) {
+        apuntarTerminada(matchId);
         List<Long> fuera = new ArrayList<>();
         for (Map.Entry<Long, Long> e : matchDe.entrySet()) if (e.getValue() == matchId) fuera.add(e.getKey());
         for (long pid : fuera) marcarFuera(pid);
