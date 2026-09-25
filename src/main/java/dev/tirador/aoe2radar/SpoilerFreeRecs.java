@@ -1789,7 +1789,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             SwingUtilities.invokeLater(() -> {
                 if (err != null) { ttWrEstado.setText(t("sin datos (", "no data (") + err + ")"); return; }
                 ttWrEstado.setText("");
-                if (civStats != null && civStats.construida()) civStats.filtrosCambiados(true); else ttActualizarWr();
+                if (civStats != null) civStats.filtrosCambiados(true); else ttActualizarWr();
             });
         }, "techtree-stats").start();
     }

@@ -85,6 +85,7 @@ import static dev.tirador.aoe2radar.ui.Listas.Celda;
 import static dev.tirador.aoe2radar.ui.Listas.Pct;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
+import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
 import static dev.tirador.aoe2radar.util.Formato.miles;
 import static dev.tirador.aoe2radar.util.Formato.pct1;
@@ -148,9 +149,6 @@ public final class CivStatsView {
 
     /** El panel de la pestaña, para el CardLayout de la ventana. */
     public JPanel panel() { return civStatsPanel; }
-
-    /** ¿Ya está construido el panel? Lo usa el tech tree para saber si puede pedir un repintado. */
-    public boolean construida() { return civStatsPanel != null; }
 
     /** Las dos filas miden lo que mide su contenido (listas enteras a la vista), en cualquier pantalla. */
     void ajustarFilasCivStats() {
@@ -324,7 +322,7 @@ public final class CivStatsView {
         JPanel conmut = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0)); conmut.setOpaque(false); conmut.add(stTendWr); conmut.add(stTendPick);
         tendBarra.add(conmut);
         stTendVentana = new JComboBox<>(new String[]{ t("3 meses", "3 months"), t("6 meses", "6 months"), t("12 meses", "12 months"), t("Parche actual", "Current patch") });
-        stTendVentana.setSelectedIndex(Math.max(0, Math.min(3, Integer.parseInt(dev.tirador.aoe2radar.util.Config.leerConfig("stats_tend_ventana", "2")))));
+        stTendVentana.setSelectedIndex(Math.max(0, Math.min(3, Integer.parseInt(leerConfig("stats_tend_ventana", "2")))));
         stTendVentana.addActionListener(e -> { guardarConfig("stats_tend_ventana", String.valueOf(stTendVentana.getSelectedIndex())); if (stTendVentana.getSelectedIndex() == 3) presentador.cargarParcheSiHaceFalta(); else stTendencias.repaint(); });
         tendBarra.add(stTendVentana);
         tendCaja.add(tendBarra, BorderLayout.NORTH);
@@ -345,7 +343,7 @@ public final class CivStatsView {
         filaMatriz.setAlignmentX(0f); filaMatriz.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
         filaMatriz.add(stTituloMatriz, BorderLayout.WEST);
         JPanel botonesMatriz = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
-        for (String[] z : new String[][]{ { "−", "menos" }, { "+", "mas" }, { "⛶ " + t("Ampliar", "Enlarge"), "grande" } }) {
+        for (String[] z : new String[][]{ { "\u2212", "menos" }, { "+", "mas" }, { "\u26F6 " + t("Ampliar", "Enlarge"), "grande" } }) {
             JButton zb = new JButton(z[0]);
             zb.setFocusable(false); zb.setMargin(new Insets(0, 6, 0, 6)); zb.putClientProperty("JButton.buttonType", "roundRect");
             zb.setToolTipText(z[1].equals("grande") ? t("La matriz en una ventana a pantalla completa (Esc para cerrar)", "The matrix in a full-screen window (Esc to close)") : t("Tamaño de las celdas (también Ctrl + rueda sobre la matriz)", "Cell size (also Ctrl + wheel over the matrix)"));
@@ -519,7 +517,7 @@ public final class CivStatsView {
             listas.mostrarTablaCompleta(t("Más jugadas", "Most played") + " · " + modoNombre(filtroStats.modo()), new String[]{ t("Civ", "Civ"), "Pick", t("Partidas", "Games"), "WR" }, filas, 1);
         })); }
         stMejorPorMapa.removeAll();
-        stMejorPorMapa.add(tituloSeccion(t("Mejor civ por mapa", "Best civ per map"), t("En cada mapa del pool, la civ con mejor winrate con el modo y el tramo elegidos: mínimo 20 partidas de esa civ en ese mapa, y gana la que tiene mejor límite inferior del intervalo de confianza (no la muestra pequeña con suerte). El número gris son sus partidas: por debajo de 100, orientativo. Responde a «qué me cojo en este mapa».", "For each map in the pool, the civ with the best win rate with the chosen mode and bracket: at least 20 games of that civ on that map, and the winner is the best lower bound of the confidence interval (not a lucky small sample). The grey number is its games: under 100, indicative only. Answers “what should I pick on this map”.")));
+        stMejorPorMapa.add(tituloSeccion(t("Mejor civ por mapa", "Best civ per map"), t("En cada mapa del pool, la civ con mejor winrate con el modo y el tramo elegidos: mínimo 20 partidas de esa civ en ese mapa, y gana la que tiene mejor límite inferior del intervalo de confianza (no la muestra pequeña con suerte). El número gris son sus partidas: por debajo de 100, orientativo. Responde a «qué me cojo en este mapa».", "For each map in the pool, the civ with the best win rate with the chosen mode and bracket: at least 20 games of that civ on that map, and the winner is the best lower bound of the confidence interval (not a lucky small sample). The grey number is its games: under 100, indicative only. Answers \u201Cwhat should I pick on this map\u201D.")));
         Map<String, Integer> mapas = stats.partidasPorMapa(v, filtroStats.modo(), filtroStats.tramo());   // con tramo elegido, solo las partidas de ese tramo
         List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
         lm.sort((a, b) -> b.getValue() - a.getValue());
@@ -686,7 +684,7 @@ public final class CivStatsView {
                 porCiv.entrySet().stream().sorted((x, y) -> Long.compare(y.getValue(), x.getValue())).limit(5).forEach(en -> claves.add(en.getKey()));
             }
             for (String c : stCivsSeleccionadas) if (!claves.contains(c)) claves.add(c);
-            if (claves.isEmpty()) { g2.setColor(gris); g2.drawString(t("Selecciona civs en la tabla (Ctrl para varias) o marca «Las 5 más jugadas».", "Select civs in the table (Ctrl for several) or tick “5 most played”."), ml, ht / 2); g2.dispose(); return; }
+            if (claves.isEmpty()) { g2.setColor(gris); g2.drawString(t("Selecciona civs en la tabla (Ctrl para varias) o marca «Las 5 más jugadas».", "Select civs in the table (Ctrl for several) or tick \u201C5 most played\u201D."), ml, ht / 2); g2.dispose(); return; }
             List<String> meses = new ArrayList<>(tn.meses());
             if (ventSel == 0 || ventSel == 1) { int n = ventSel == 0 ? 3 : 6; if (meses.size() > n) meses = new ArrayList<>(meses.subList(meses.size() - n, meses.size())); }
             else if (ventSel == 3) { VentanaStats vp = stats.ventana("parche"); if (vp != null && vp.desde().length() >= 7) { String desde = vp.desde().substring(0, 7); meses.removeIf(mm -> mm.compareTo(desde) < 0); } }
