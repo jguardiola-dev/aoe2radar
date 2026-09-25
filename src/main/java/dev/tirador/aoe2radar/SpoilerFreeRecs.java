@@ -1950,348 +1950,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         JPanel left = construirWatchlist();
 
-        // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
-        fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
-        modeCombo.setPrototypeDisplayValue("RM Team MegaRandom XL");
-        modeCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
-        JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));   // fija: nada salta de sitio
-        JPanel filaVistas = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 0));
-        unidadCombo.setSelectedIndex(Math.max(0, Math.min(2, Integer.parseInt(leerConfig("ventana_unidad", "0")))));
-        unidadCombo.setFocusable(false);
-        unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 año)", "Unit of the search window (up to 1 year)"));
-        hoursSpinner.setToolTipText(t("Ventana de búsqueda: hasta 1 año. Las ventanas largas piden más páginas por jugador (tope: 300 partidas/jugador, se avisa).",
-                "Search window: up to 1 year. Long windows fetch more pages per player (cap: 300 games/player, you get a warning)."));
-        unidadCombo.addActionListener(e -> {
-            guardarConfig("ventana_unidad", String.valueOf(unidadCombo.getSelectedIndex()));
-            int u = unidadCombo.getSelectedIndex(), max = u == 0 ? 24 : u == 1 ? 7 : 1;   // el techo, en la unidad elegida: 24 h, 7 días o 1 semana
-            SpinnerNumberModel sm = (SpinnerNumberModel) hoursSpinner.getModel();
-            sm.setMaximum(max);
-            if ((int) hoursSpinner.getValue() > max) hoursSpinner.setValue(max);
-        });
-        { int u0 = unidadCombo.getSelectedIndex(); int max0 = u0 == 0 ? 24 : u0 == 1 ? 7 : 1; ((SpinnerNumberModel) hoursSpinner.getModel()).setMaximum(max0); if ((int) hoursSpinner.getValue() > max0) hoursSpinner.setValue(max0); }
-        fila1.add(par(new JLabel(t("Últimas", "Last")), hoursSpinner, unidadCombo));
-        parModo = par(new JLabel(t("Modo:", "Mode:")), modeCombo);   // los dos parámetros, pegados al botón que lanzan
-        fila1.add(parModo);
-        rivalField = new JTextField(11);
-        rivalField.putClientProperty("JTextField.placeholderText", t("Rival…", "Opponent…"));
-        rivalField.putClientProperty("JTextField.showClearButton", true);
-        rivalField.setToolTipText(t("Filtra la tabla por el rival (en equipos, cualquiera del equipo contrario). Escribe para ver sugerencias.",
-                "Filters the table by opponent (in team games, anyone on the other team). Type to see suggestions."));
-        rivalPopup = new JPopupMenu();
-        rivalPopup.setFocusable(false);
-        rivalField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { filtroRival = normalizarNick(rivalField.getText()); applyFilters(); sugerirRivales(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        rivalField.addKeyListener(new KeyAdapter() {
-            @Override public void keyPressed(KeyEvent e) {
-                if (!rivalPopup.isVisible() || rivalPopup.getComponentCount() == 0) return;
-                if (e.getKeyCode() == KeyEvent.VK_DOWN) { ((JMenuItem) rivalPopup.getComponent(0)).doClick(); e.consume(); }
-                else if (e.getKeyCode() == KeyEvent.VK_ENTER) { ((JMenuItem) rivalPopup.getComponent(0)).doClick(); e.consume(); }
-                else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) rivalPopup.setVisible(false);
-            }
-        });
-        rivalField.addFocusListener(new FocusAdapter() { @Override public void focusLost(FocusEvent e) { rivalPopup.setVisible(false); } });
-        parRival = par(new JLabel(t("Rival:", "Opponent:")), rivalField);
-        fila1.add(parRival);
-        mapaCombo.setToolTipText(t("Filtra la tabla por mapa (sobre las partidas cargadas, sin llamadas)", "Filters the table by map (over the loaded games, no requests)"));
-        periodoCombo.setToolTipText(t("Filtra la tabla por fecha de la partida (sobre las partidas cargadas)", "Filters the table by game date (over the loaded games)"));
-        mapaCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
-        periodoCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
-        fila1.add(par(new JLabel(t("Mapa:", "Map:")), mapaCombo));
-        fila1.add(par(new JLabel(t("Periodo:", "Period:")), periodoCombo));
-        fila1.add(fetchBtn);
-        JSeparator sepModos = new JSeparator(SwingConstants.VERTICAL);
-        sepModos.setPreferredSize(new Dimension(1, 24));
-
-        azarBtn.setToolTipText(t("Hasta 10 partidas 1v1 recientes del ladder con ambos jugadores en el rango de ELO elegido", "Up to 10 recent 1v1s from the ladder with both players inside your ELO range"));
-
-        azarBtn.addActionListener(e -> buscarAleatorias());
-        fila1.add(azarBtn);
-        gteBtn.setToolTipText(t("5 partidas 1v1 recientes de cualquier ELO, anónimas: adivina el ELO y compruébalo con «Revelar resultado…»", "5 recent anonymous 1v1s from any ELO: guess the ELO, then check with “Reveal result…”"));
-
-        gteBtn.addActionListener(e -> buscarGte());
-        fila1.add(gteBtn);
-        atrasBtn = new JButton("\u2190");
-        atrasBtn.setFocusable(false); atrasBtn.setMargin(new Insets(2, 8, 2, 8)); atrasBtn.putClientProperty("JButton.buttonType", "roundRect");
-        atrasBtn.setToolTipText(t("Atrás: vuelve a la vista anterior (también el botón lateral del ratón)", "Back: return to the previous view (also the mouse's back button)"));
-        atrasBtn.setEnabled(false);
-        atrasBtn.addActionListener(e -> volverAtras());
-        filaVistas.add(atrasBtn);
-        adelanteBtn = new JButton("\u2192");
-        adelanteBtn.setFocusable(false); adelanteBtn.setMargin(new Insets(2, 8, 2, 8)); adelanteBtn.putClientProperty("JButton.buttonType", "roundRect");
-        adelanteBtn.setToolTipText(t("Adelante (también el botón lateral del ratón)", "Forward (also the mouse's forward button)"));
-        adelanteBtn.setEnabled(false);
-        adelanteBtn.addActionListener(e -> irAdelante());
-        filaVistas.add(adelanteBtn);
-        recsBtn = pestana(t("Partidas", "Games"), iconoVista("partidas"));
-        recsBtn.addActionListener(e -> {   // desde un perfil: la tabla pasa a ser de ese jugador (búsqueda de sus partidas recientes), salvo que ya lo sea
-            if (perfil.pidAbierto() > 0 && objetivoEtiqueta != null && objetivoEtiqueta.id() == perfil.pidAbierto() && perfil.historialEnTabla() != perfil.pidAbierto() && (ultimosSujetos.size() != 1 || ultimosSujetos.get(0).id() != perfil.pidAbierto()) && fetchWorker == null)
-                SwingUtilities.invokeLater(() -> fetchMatches(fetchBtn));
-        });
-        recsBtn.setSelected(true);
-        recsBtn.setToolTipText(t("La tabla de partidas de tu watchlist (recs sin spoilers)", "Your watchlist's games table (spoiler-free recs)"));
-        recsBtn.addActionListener(e -> { if (!recsBtn.isSelected()) { recsBtn.setSelected(true); return; } mostrarDirectos(false); });
-        filaVistas.add(recsBtn);
-        directosBtn = pestana("Twitch", iconoVista("directos"));
-        directosBtn.setToolTipText(t("Todos los canales dando AoE2 en Twitch ahora mismo",
-                "Every channel streaming AoE2 on Twitch right now"));
-        directosBtn.addActionListener(e -> { if (!directosBtn.isSelected()) { directosBtn.setSelected(true); return; } mostrarDirectos(true); });
-        ahoraBtn = pestana("Live now", iconoVista("ahora"));
-        ahoraBtn.setToolTipText(t("Partidas en curso de los 250 mejores del ladder 1v1, en vivo: bandos, mapa, reloj, Twitch, espectar; y las terminadas en las últimas 2 h con su rec", "Ongoing games of the top 250 of the 1v1 ladder, live: sides, map, clock, Twitch, spectate; and those finished in the last 2 h with their rec"));
-        ahoraBtn.addActionListener(e -> { if (!ahoraBtn.isSelected()) { ahoraBtn.setSelected(true); return; } abrirAhora(); });
-        filaVistas.add(ahoraBtn);
-        filaVistas.add(directosBtn);
-        perfilBtn = pestana(t("Perfil", "Profile"), iconoVista("perfil"));
-        perfilBtn.setToolTipText(t("Perfil y actividad del último año del jugador seleccionado en la watchlist (o de cualquier nick): ELO, forma, calendario, civs, mapas y rivales",
-                "Profile and last year's activity of the player selected in the watchlist (or any nick): ELO, form, calendar, civs, maps and rivals"));
-        perfilBtn.addActionListener(e -> { if (!perfilBtn.isSelected()) { perfilBtn.setSelected(true); return; } perfilDesdeBoton(); });
-        filaVistas.add(perfilBtn);
-        ladderBtn = pestana("Ratings", iconoVista("ratings"));
-        ladderBtn.setToolTipText(t("Distribución de ELO por ladder, percentiles, dispersión 1v1 × equipos y comparador de jugadores (volcado diario de aoe2companion)",
-                "ELO distribution per ladder, percentiles, 1v1 × team scatter and player comparison (aoe2companion daily dump)"));
-        ladderBtn.addActionListener(e -> { if (!ladderBtn.isSelected()) { ladderBtn.setSelected(true); return; } abrirLadder(); });
-        filaVistas.add(ladderBtn);
-        civStatsBtn = pestana("Civ Stats", iconoVista("civstats"));
-        civStatsBtn.setToolTipText(t("Winrate y pick rate por civilización, mapa y tramo de ELO; matchups y tendencias (volcados diarios de aoe2companion)",
-                "Win rate and pick rate by civilization, map and ELO bracket; matchups and trends (aoe2companion daily dumps)"));
-        civStatsBtn.addActionListener(e -> { if (!civStatsBtn.isSelected()) { civStatsBtn.setSelected(true); return; } abrirCivStats(); });
-        filaVistas.add(civStatsBtn);
-        techTreeBtn = pestana("Tech tree", TechTreeView.iconoBoton());
-        techTreeBtn.setIconTextGap(6);
-        techTreeBtn.setToolTipText(t("Árbol tecnológico de cada civilización (datos de aoe2techtree, se actualizan solos)",
-                "Every civilization's tech tree (data from aoe2techtree, updates itself)"));
-        techTreeBtn.addActionListener(e -> { if (!techTreeBtn.isSelected()) { techTreeBtn.setSelected(true); return; } abrirTechTree(null); });
-        filaVistas.add(techTreeBtn);
-        filaVistas.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(128, 128, 128, 70)));
-
-        JButton configBtn = new JButton(t("Configuración ▾", "Settings ▾"));
-        configMenu = new JPopupMenu();
-
-        JMenu idiomaMenu = new JMenu(t("Idioma", "Language"));
-        ButtonGroup gIdioma = new ButtonGroup();
-        for (String[] par : new String[][]{ { "Español", "es" }, { "English", "en" } }) {
-            String valor = par[1];
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(IDIOMA));
-            it.addActionListener(e -> {
-                guardarConfig("idioma", valor);
-                JOptionPane.showMessageDialog(this,
-                        valor.equals("es") ? "El idioma se aplicará la próxima vez que abras la aplicación."
-                                           : "The language will apply the next time you open the app.",
-                        valor.equals("es") ? "Idioma" : "Language", JOptionPane.INFORMATION_MESSAGE);
-            });
-            gIdioma.add(it);
-            idiomaMenu.add(it);
-        }
-
-        JMenu temaMenu = new JMenu(t("Tema", "Theme"));
-        ButtonGroup gTema = new ButtonGroup();
-        for (String[] par : new String[][]{ { t("Sistema", "System"), TEMA_SISTEMA }, { t("Claro", "Light"), TEMA_CLARO }, { t("Oscuro", "Dark"), TEMA_OSCURO } }) {
-            String valor = par[1];
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(temaInicial));
-            it.addActionListener(e -> { guardarConfig("tema", valor); aplicarTema(valor, this); });
-            gTema.add(it);
-            temaMenu.add(it);
-        }
-        temaMenu.setEnabled(flatLafDisponible);
-
-        JMenu letraMenu = new JMenu(t("Letra", "Font size"));
-        ButtonGroup gLetra = new ButtonGroup();
-        String letraSel = leerConfig("letra", "grande");
-        for (String[] par : new String[][]{ { t("Pequeño", "Small"), "normal" }, { t("Normal", "Normal"), "grande" }, { t("Grande", "Large"), "muygrande" } }) {
-            String valor = par[1];
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(letraSel));
-            it.addActionListener(e -> {
-                guardarConfig("letra", valor);
-                aplicarTema(temaValido(leerConfig("tema", TEMA_SISTEMA)), this);
-            });
-            gLetra.add(it);
-            letraMenu.add(it);
-        }
-        letraMenu.setEnabled(flatLafDisponible);
-
-        JCheckBoxMenuItem buscarAbrirItem = new JCheckBoxMenuItem(t("Buscar al abrir", "Search on startup"),
-                Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")));
-        buscarAbrirItem.setToolTipText(t("Al abrir la app, busca partidas de tus seguidos automáticamente", "Search your watchlist automatically when the app opens"));
-        buscarAbrirItem.addActionListener(e ->
-                guardarConfig("buscar_al_abrir", String.valueOf(buscarAbrirItem.isSelected())));
-
-        JCheckBoxMenuItem autoWinItem = new JCheckBoxMenuItem(t("Ejecutar al iniciar Windows", "Run at Windows startup"),
-                Boolean.parseBoolean(leerConfig("autoarranque", "false")));
-        if (rutaExePropia() == null) {
-            autoWinItem.setEnabled(false);
-            autoWinItem.setSelected(false);
-            autoWinItem.setToolTipText(t("Disponible solo ejecutando el " + NOMBRE + ".exe empaquetado",
-                    "Only available when running the packaged " + NOMBRE + ".exe"));
-        } else {
-            autoWinItem.setToolTipText(t("Añade la app al arranque de tu usuario de Windows (sin permisos especiales)",
-                    "Adds the app to your Windows user startup (no special permissions)"));
-            autoWinItem.addActionListener(e -> {
-                boolean ok = fijarAutoArranque(autoWinItem.isSelected());
-                if (!ok) {
-                    autoWinItem.setSelected(false);
-                    status.setText(t("No se pudo cambiar el autoarranque (¿antivirus?).",
-                            "Could not change startup entry (antivirus?)."));
-                }
-                guardarConfig("autoarranque", String.valueOf(autoWinItem.isSelected()));
-            });
-        }
-
-        JCheckBoxMenuItem iniMinItem = new JCheckBoxMenuItem(t("Iniciar minimizada", "Start minimized"),
-                Boolean.parseBoolean(leerConfig("inicio_min", "false")));
-        iniMinItem.setToolTipText(t("La ventana arranca minimizada en la barra de tareas",
-                "The window starts minimized to the taskbar"));
-        iniMinItem.addActionListener(e ->
-                guardarConfig("inicio_min", String.valueOf(iniMinItem.isSelected())));
-
-        autoSgItem.setToolTipText(t("Tras cada descarga, copia también la rec a la carpeta savegame del juego", "After each download, also copy the rec to the game savegame folder"));
-        autoSgItem.addActionListener(e -> {
-            if (autoSgItem.isSelected() && obtenerSavegame(true) == null) {
-                autoSgItem.setSelected(false);
-                return;
-            }
-            guardarConfig("autosavegame", String.valueOf(autoSgItem.isSelected()));
-        });
-
-        JMenuItem carpetaItem = new JMenuItem(t("Cambiar carpeta savegame…", "Change savegame folder…"));
-        carpetaItem.addActionListener(e -> {
-            Path p = elegirSavegameManual();
-            if (p != null) { status.setText(t("Carpeta savegame: ", "Savegame folder: ") + p); applyFilters(); }
-        });
-
-        JMenuItem aboutItem = new JMenuItem(t("Acerca de…", "About…"));
-        aboutItem.addActionListener(e -> showAbout());
-
-        configMenu.add(idiomaMenu);
-        configMenu.add(temaMenu);
-        configMenu.add(letraMenu);
-        configMenu.addSeparator();
-        JCheckBoxMenuItem eloWatchItem = new JCheckBoxMenuItem(
-                t("Mostrar ELO en la Watchlist", "Show ELO in the Watchlist"), mostrarEloWatch);
-        eloWatchItem.setToolTipText(t("El ELO se actualiza solo al abrir la app, nunca al buscar, para no chivar resultados",
-                "ELO refreshes only when the app opens, never on search, so results are never given away"));
-        eloWatchItem.addActionListener(e -> {
-            mostrarEloWatch = eloWatchItem.isSelected();
-            guardarConfig("elo_watchlist", String.valueOf(mostrarEloWatch));
-            playersList.repaint();
-        });
-        configMenu.add(buscarAbrirItem);
-        configMenu.add(autoWinItem);
-        configMenu.add(iniMinItem);
-        configMenu.add(eloWatchItem);
-        configMenu.add(autoSgItem);
-        JCheckBoxMenuItem usarCaItem = new JCheckBoxMenuItem(t("Usar CaptureAge", "Use CaptureAge"),
-                Boolean.parseBoolean(leerConfig("usar_ca", "false")));
-        usarCaItem.setToolTipText(t("Al espectar un directo, lanza también CaptureAge (se engancha solo al juego).",
-                "When spectating, also launches CaptureAge (it hooks onto the game by itself)."));
-        usarCaItem.addActionListener(e -> {
-            guardarConfig("usar_ca", String.valueOf(usarCaItem.isSelected()));
-            if (usarCaItem.isSelected() && rutaCaptureAge() == null)
-                status.setText(t("CaptureAge no aparece en la ruta estándar: usa «Cambiar ruta de CaptureAge…».",
-                        "CaptureAge isn't at the standard path: use \u201CChange CaptureAge path\u2026\u201D."));
-        });
-        configMenu.add(usarCaItem);
-        JMenuItem rutaCaItem = new JMenuItem(t("Cambiar ruta de CaptureAge…", "Change CaptureAge path…"));
-        rutaCaItem.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            Path actual = rutaCaptureAge();
-            if (actual != null) fc.setSelectedFile(actual.toFile());
-            fc.setDialogTitle(t("Elegir CaptureAge.exe", "Pick CaptureAge.exe"));
-            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                guardarConfig("ca_ruta", fc.getSelectedFile().getAbsolutePath());
-                status.setText(t("Ruta de CaptureAge guardada: ", "CaptureAge path saved: ")
-                        + fc.getSelectedFile().getAbsolutePath());
-            }
-        });
-        configMenu.add(rutaCaItem);
-        JMenu vigMenu = new JMenu(t("Vigilancia de vivos", "Live watch interval"));
-        ButtonGroup vg = new ButtonGroup();
-        String tickActual = leerConfig("tick_min", "1");
-        for (String mins : new String[]{"1", "2", "5"}) {
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(t("Cada ", "Every ") + mins + " min", mins.equals(tickActual));
-            it.addActionListener(e -> {
-                guardarConfig("tick_min", mins);
-                if (vigilante != null) { vigilante.setDelay(tickMs()); vigilante.setInitialDelay(tickMs()); vigilante.restart(); }
-            });
-            vg.add(it);
-            vigMenu.add(it);
-        }
-        vigMenu.setToolTipText(t("Cada cuánto se refrescan los puntos rojos (1 min por defecto; sube si el servicio anda flojo).",
-                "How often live dots refresh (1 min by default; raise it if the service is struggling)."));
-        configMenu.add(vigMenu);
-        cargarAliases();
-        cargarNotas();
-        JMenu topMenu = new JMenu(t("Top ladder", "Top ladder"));
-        ButtonGroup topGrp = new ButtonGroup();
-        for (int n : new int[]{ 25, 50, 100 }) {
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem("Top " + n,
-                    String.valueOf(n).equals(leerConfig("top_n", "50")));
-            it.addActionListener(e -> {
-                guardarConfig("top_n", String.valueOf(n));
-                if (modoTop()) { topCargado = 0; cargarTopLadder(true); }
-            });
-            topGrp.add(it);
-            topMenu.add(it);
-        }
-        configMenu.add(topMenu);
-        configMenu.add(carpetaItem);
-        configMenu.addSeparator();
-        JMenuItem updItem = new JMenuItem(t("Buscar actualizaciones…", "Check for updates…"));
-        updItem.addActionListener(e -> comprobarActualizacion(true));
-        configMenu.add(updItem);
-        configMenu.add(aboutItem);
-        configBtn.addActionListener(e -> configMenu.show(configBtn, 0, configBtn.getHeight()));
-        JPanel esquina = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));   // Configuración: arriba a la derecha, siempre
-        JButton miPerfilBtn = new JButton(t("Mi perfil", "My profile"));
-        miPerfilBtn.setFocusable(false); miPerfilBtn.putClientProperty("JButton.buttonType", "roundRect");
-        miPerfilBtn.setToolTipText(t("Tu propio perfil (la primera vez te pide tu nick y lo recuerda; clic derecho para cambiar de cuenta). Con tu nick guardado, la app te avisa de tus partidas.", "Your own profile (asks your nick the first time and remembers it; right-click to change account). With your nick saved, the app notifies you about your games."));
-        miPerfilBtn.addActionListener(e -> abrirMiPerfil());
-        miPerfilBtn.addMouseListener(new MouseAdapter() {   // clic derecho: cambiar de cuenta
-            @Override public void mousePressed(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
-            @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
-            void menu(MouseEvent e) {
-                JPopupMenu pm = new JPopupMenu();
-                JMenuItem otra = new JMenuItem(t("Cambiar de cuenta…", "Change account…")); otra.addActionListener(a -> { guardarConfig("mi_pid", ""); preguntarMiNick(); }); pm.add(otra);
-                pm.show(miPerfilBtn, e.getX(), e.getY());
-            }
-        });
-        esquina.add(miPerfilBtn);
-        esquina.add(configBtn);
-
-        JPanel fila2 = new JPanel(new BorderLayout(8, 0));
-        fila2.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 10));
-        nota = new JLabel(t("Sin spoilers: nunca se muestra ganador, ±ELO ni duración. Doble clic en una fila = descargar.", "Spoiler-free: winner, ±ELO and duration are never shown. Double-click a row = download."));
-        resultadosBtn = new JToggleButton(t("Mostrar resultados", "Show results"));
-        resultadosBtn.setFocusable(false);
-        resultadosBtn.setToolTipText(t("Modo consulta: el ganador de cada partida en dorado (±ELO y duración en el tooltip). Siempre arranca apagado.",
-                "Lookup mode: each game's winner in gold (±ELO and duration in the tooltip). Always starts off."));
-        resultadosBtn.addActionListener(e -> {
-            mostrarResultados = resultadosBtn.isSelected();
-            actualizarNotaSpoilers();
-            tableModel.fireTableDataChanged();
-        });
-        fila2.add(nota, BorderLayout.CENTER);
-        fila2.add(resultadosBtn, BorderLayout.EAST);   // sobre la columna Rec, donde vive su efecto
-        filaNota = fila2;
-
-        JPanel filasIzq = new JPanel();
-        filasIzq.setLayout(new BoxLayout(filasIzq, BoxLayout.Y_AXIS));
-        fila1.setAlignmentX(Component.LEFT_ALIGNMENT); filaVistas.setAlignmentX(Component.LEFT_ALIGNMENT);
-        filasIzq.add(fila1);
-        filasIzq.add(filaVistas);
-        JPanel barraSuperior = new JPanel(new BorderLayout());
-        barraSuperior.add(filasIzq, BorderLayout.CENTER);
-        JPanel esquinaArriba = new JPanel(new BorderLayout());
-        esquinaArriba.add(esquina, BorderLayout.NORTH);
-        barraSuperior.add(esquinaArriba, BorderLayout.EAST);
-        JPanel top = new JPanel();
-        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
-        barraSuperior.setAlignmentX(Component.LEFT_ALIGNMENT); fila2.setAlignmentX(Component.LEFT_ALIGNMENT);
-        top.add(barraSuperior);
-        top.add(fila2);
-        setMinimumSize(new Dimension(1100, 640));
+        JPanel top = construirBarraSuperior(temaInicial);
 
         // Tabla de partidas
         table = new JTable(tableModel) {
@@ -3456,6 +3115,355 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         left.add(leftButtons, BorderLayout.SOUTH);
         left.setPreferredSize(new Dimension(280, 0));
         return left;
+    }
+
+    // La barra de arriba: ventana de horas/buscar, filtros, pestanas de vistas,
+    // flechas de historial y el menu Configuracion (idioma, tema, letra...). Recibe
+    // temaInicial porque el menu de Tema marca la opcion ya activa al abrir.
+    private JPanel construirBarraSuperior(String temaInicial) {
+        // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
+        fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
+        modeCombo.setPrototypeDisplayValue("RM Team MegaRandom XL");
+        modeCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
+        JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));   // fija: nada salta de sitio
+        JPanel filaVistas = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 0));
+        unidadCombo.setSelectedIndex(Math.max(0, Math.min(2, Integer.parseInt(leerConfig("ventana_unidad", "0")))));
+        unidadCombo.setFocusable(false);
+        unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 año)", "Unit of the search window (up to 1 year)"));
+        hoursSpinner.setToolTipText(t("Ventana de búsqueda: hasta 1 año. Las ventanas largas piden más páginas por jugador (tope: 300 partidas/jugador, se avisa).",
+                "Search window: up to 1 year. Long windows fetch more pages per player (cap: 300 games/player, you get a warning)."));
+        unidadCombo.addActionListener(e -> {
+            guardarConfig("ventana_unidad", String.valueOf(unidadCombo.getSelectedIndex()));
+            int u = unidadCombo.getSelectedIndex(), max = u == 0 ? 24 : u == 1 ? 7 : 1;   // el techo, en la unidad elegida: 24 h, 7 días o 1 semana
+            SpinnerNumberModel sm = (SpinnerNumberModel) hoursSpinner.getModel();
+            sm.setMaximum(max);
+            if ((int) hoursSpinner.getValue() > max) hoursSpinner.setValue(max);
+        });
+        { int u0 = unidadCombo.getSelectedIndex(); int max0 = u0 == 0 ? 24 : u0 == 1 ? 7 : 1; ((SpinnerNumberModel) hoursSpinner.getModel()).setMaximum(max0); if ((int) hoursSpinner.getValue() > max0) hoursSpinner.setValue(max0); }
+        fila1.add(par(new JLabel(t("Últimas", "Last")), hoursSpinner, unidadCombo));
+        parModo = par(new JLabel(t("Modo:", "Mode:")), modeCombo);   // los dos parámetros, pegados al botón que lanzan
+        fila1.add(parModo);
+        rivalField = new JTextField(11);
+        rivalField.putClientProperty("JTextField.placeholderText", t("Rival…", "Opponent…"));
+        rivalField.putClientProperty("JTextField.showClearButton", true);
+        rivalField.setToolTipText(t("Filtra la tabla por el rival (en equipos, cualquiera del equipo contrario). Escribe para ver sugerencias.",
+                "Filters the table by opponent (in team games, anyone on the other team). Type to see suggestions."));
+        rivalPopup = new JPopupMenu();
+        rivalPopup.setFocusable(false);
+        rivalField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            void cambio() { filtroRival = normalizarNick(rivalField.getText()); applyFilters(); sugerirRivales(); }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+        });
+        rivalField.addKeyListener(new KeyAdapter() {
+            @Override public void keyPressed(KeyEvent e) {
+                if (!rivalPopup.isVisible() || rivalPopup.getComponentCount() == 0) return;
+                if (e.getKeyCode() == KeyEvent.VK_DOWN) { ((JMenuItem) rivalPopup.getComponent(0)).doClick(); e.consume(); }
+                else if (e.getKeyCode() == KeyEvent.VK_ENTER) { ((JMenuItem) rivalPopup.getComponent(0)).doClick(); e.consume(); }
+                else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) rivalPopup.setVisible(false);
+            }
+        });
+        rivalField.addFocusListener(new FocusAdapter() { @Override public void focusLost(FocusEvent e) { rivalPopup.setVisible(false); } });
+        parRival = par(new JLabel(t("Rival:", "Opponent:")), rivalField);
+        fila1.add(parRival);
+        mapaCombo.setToolTipText(t("Filtra la tabla por mapa (sobre las partidas cargadas, sin llamadas)", "Filters the table by map (over the loaded games, no requests)"));
+        periodoCombo.setToolTipText(t("Filtra la tabla por fecha de la partida (sobre las partidas cargadas)", "Filters the table by game date (over the loaded games)"));
+        mapaCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
+        periodoCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
+        fila1.add(par(new JLabel(t("Mapa:", "Map:")), mapaCombo));
+        fila1.add(par(new JLabel(t("Periodo:", "Period:")), periodoCombo));
+        fila1.add(fetchBtn);
+        JSeparator sepModos = new JSeparator(SwingConstants.VERTICAL);
+        sepModos.setPreferredSize(new Dimension(1, 24));
+
+        azarBtn.setToolTipText(t("Hasta 10 partidas 1v1 recientes del ladder con ambos jugadores en el rango de ELO elegido", "Up to 10 recent 1v1s from the ladder with both players inside your ELO range"));
+
+        azarBtn.addActionListener(e -> buscarAleatorias());
+        fila1.add(azarBtn);
+        gteBtn.setToolTipText(t("5 partidas 1v1 recientes de cualquier ELO, anónimas: adivina el ELO y compruébalo con «Revelar resultado…»", "5 recent anonymous 1v1s from any ELO: guess the ELO, then check with “Reveal result…”"));
+
+        gteBtn.addActionListener(e -> buscarGte());
+        fila1.add(gteBtn);
+        atrasBtn = new JButton("\u2190");
+        atrasBtn.setFocusable(false); atrasBtn.setMargin(new Insets(2, 8, 2, 8)); atrasBtn.putClientProperty("JButton.buttonType", "roundRect");
+        atrasBtn.setToolTipText(t("Atrás: vuelve a la vista anterior (también el botón lateral del ratón)", "Back: return to the previous view (also the mouse's back button)"));
+        atrasBtn.setEnabled(false);
+        atrasBtn.addActionListener(e -> volverAtras());
+        filaVistas.add(atrasBtn);
+        adelanteBtn = new JButton("\u2192");
+        adelanteBtn.setFocusable(false); adelanteBtn.setMargin(new Insets(2, 8, 2, 8)); adelanteBtn.putClientProperty("JButton.buttonType", "roundRect");
+        adelanteBtn.setToolTipText(t("Adelante (también el botón lateral del ratón)", "Forward (also the mouse's forward button)"));
+        adelanteBtn.setEnabled(false);
+        adelanteBtn.addActionListener(e -> irAdelante());
+        filaVistas.add(adelanteBtn);
+        recsBtn = pestana(t("Partidas", "Games"), iconoVista("partidas"));
+        recsBtn.addActionListener(e -> {   // desde un perfil: la tabla pasa a ser de ese jugador (búsqueda de sus partidas recientes), salvo que ya lo sea
+            if (perfil.pidAbierto() > 0 && objetivoEtiqueta != null && objetivoEtiqueta.id() == perfil.pidAbierto() && perfil.historialEnTabla() != perfil.pidAbierto() && (ultimosSujetos.size() != 1 || ultimosSujetos.get(0).id() != perfil.pidAbierto()) && fetchWorker == null)
+                SwingUtilities.invokeLater(() -> fetchMatches(fetchBtn));
+        });
+        recsBtn.setSelected(true);
+        recsBtn.setToolTipText(t("La tabla de partidas de tu watchlist (recs sin spoilers)", "Your watchlist's games table (spoiler-free recs)"));
+        recsBtn.addActionListener(e -> { if (!recsBtn.isSelected()) { recsBtn.setSelected(true); return; } mostrarDirectos(false); });
+        filaVistas.add(recsBtn);
+        directosBtn = pestana("Twitch", iconoVista("directos"));
+        directosBtn.setToolTipText(t("Todos los canales dando AoE2 en Twitch ahora mismo",
+                "Every channel streaming AoE2 on Twitch right now"));
+        directosBtn.addActionListener(e -> { if (!directosBtn.isSelected()) { directosBtn.setSelected(true); return; } mostrarDirectos(true); });
+        ahoraBtn = pestana("Live now", iconoVista("ahora"));
+        ahoraBtn.setToolTipText(t("Partidas en curso de los 250 mejores del ladder 1v1, en vivo: bandos, mapa, reloj, Twitch, espectar; y las terminadas en las últimas 2 h con su rec", "Ongoing games of the top 250 of the 1v1 ladder, live: sides, map, clock, Twitch, spectate; and those finished in the last 2 h with their rec"));
+        ahoraBtn.addActionListener(e -> { if (!ahoraBtn.isSelected()) { ahoraBtn.setSelected(true); return; } abrirAhora(); });
+        filaVistas.add(ahoraBtn);
+        filaVistas.add(directosBtn);
+        perfilBtn = pestana(t("Perfil", "Profile"), iconoVista("perfil"));
+        perfilBtn.setToolTipText(t("Perfil y actividad del último año del jugador seleccionado en la watchlist (o de cualquier nick): ELO, forma, calendario, civs, mapas y rivales",
+                "Profile and last year's activity of the player selected in the watchlist (or any nick): ELO, form, calendar, civs, maps and rivals"));
+        perfilBtn.addActionListener(e -> { if (!perfilBtn.isSelected()) { perfilBtn.setSelected(true); return; } perfilDesdeBoton(); });
+        filaVistas.add(perfilBtn);
+        ladderBtn = pestana("Ratings", iconoVista("ratings"));
+        ladderBtn.setToolTipText(t("Distribución de ELO por ladder, percentiles, dispersión 1v1 × equipos y comparador de jugadores (volcado diario de aoe2companion)",
+                "ELO distribution per ladder, percentiles, 1v1 × team scatter and player comparison (aoe2companion daily dump)"));
+        ladderBtn.addActionListener(e -> { if (!ladderBtn.isSelected()) { ladderBtn.setSelected(true); return; } abrirLadder(); });
+        filaVistas.add(ladderBtn);
+        civStatsBtn = pestana("Civ Stats", iconoVista("civstats"));
+        civStatsBtn.setToolTipText(t("Winrate y pick rate por civilización, mapa y tramo de ELO; matchups y tendencias (volcados diarios de aoe2companion)",
+                "Win rate and pick rate by civilization, map and ELO bracket; matchups and trends (aoe2companion daily dumps)"));
+        civStatsBtn.addActionListener(e -> { if (!civStatsBtn.isSelected()) { civStatsBtn.setSelected(true); return; } abrirCivStats(); });
+        filaVistas.add(civStatsBtn);
+        techTreeBtn = pestana("Tech tree", TechTreeView.iconoBoton());
+        techTreeBtn.setIconTextGap(6);
+        techTreeBtn.setToolTipText(t("Árbol tecnológico de cada civilización (datos de aoe2techtree, se actualizan solos)",
+                "Every civilization's tech tree (data from aoe2techtree, updates itself)"));
+        techTreeBtn.addActionListener(e -> { if (!techTreeBtn.isSelected()) { techTreeBtn.setSelected(true); return; } abrirTechTree(null); });
+        filaVistas.add(techTreeBtn);
+        filaVistas.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(128, 128, 128, 70)));
+
+        JButton configBtn = new JButton(t("Configuración ▾", "Settings ▾"));
+        configMenu = new JPopupMenu();
+
+        JMenu idiomaMenu = new JMenu(t("Idioma", "Language"));
+        ButtonGroup gIdioma = new ButtonGroup();
+        for (String[] par : new String[][]{ { "Español", "es" }, { "English", "en" } }) {
+            String valor = par[1];
+            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(IDIOMA));
+            it.addActionListener(e -> {
+                guardarConfig("idioma", valor);
+                JOptionPane.showMessageDialog(this,
+                        valor.equals("es") ? "El idioma se aplicará la próxima vez que abras la aplicación."
+                                           : "The language will apply the next time you open the app.",
+                        valor.equals("es") ? "Idioma" : "Language", JOptionPane.INFORMATION_MESSAGE);
+            });
+            gIdioma.add(it);
+            idiomaMenu.add(it);
+        }
+
+        JMenu temaMenu = new JMenu(t("Tema", "Theme"));
+        ButtonGroup gTema = new ButtonGroup();
+        for (String[] par : new String[][]{ { t("Sistema", "System"), TEMA_SISTEMA }, { t("Claro", "Light"), TEMA_CLARO }, { t("Oscuro", "Dark"), TEMA_OSCURO } }) {
+            String valor = par[1];
+            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(temaInicial));
+            it.addActionListener(e -> { guardarConfig("tema", valor); aplicarTema(valor, this); });
+            gTema.add(it);
+            temaMenu.add(it);
+        }
+        temaMenu.setEnabled(flatLafDisponible);
+
+        JMenu letraMenu = new JMenu(t("Letra", "Font size"));
+        ButtonGroup gLetra = new ButtonGroup();
+        String letraSel = leerConfig("letra", "grande");
+        for (String[] par : new String[][]{ { t("Pequeño", "Small"), "normal" }, { t("Normal", "Normal"), "grande" }, { t("Grande", "Large"), "muygrande" } }) {
+            String valor = par[1];
+            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(letraSel));
+            it.addActionListener(e -> {
+                guardarConfig("letra", valor);
+                aplicarTema(temaValido(leerConfig("tema", TEMA_SISTEMA)), this);
+            });
+            gLetra.add(it);
+            letraMenu.add(it);
+        }
+        letraMenu.setEnabled(flatLafDisponible);
+
+        JCheckBoxMenuItem buscarAbrirItem = new JCheckBoxMenuItem(t("Buscar al abrir", "Search on startup"),
+                Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")));
+        buscarAbrirItem.setToolTipText(t("Al abrir la app, busca partidas de tus seguidos automáticamente", "Search your watchlist automatically when the app opens"));
+        buscarAbrirItem.addActionListener(e ->
+                guardarConfig("buscar_al_abrir", String.valueOf(buscarAbrirItem.isSelected())));
+
+        JCheckBoxMenuItem autoWinItem = new JCheckBoxMenuItem(t("Ejecutar al iniciar Windows", "Run at Windows startup"),
+                Boolean.parseBoolean(leerConfig("autoarranque", "false")));
+        if (rutaExePropia() == null) {
+            autoWinItem.setEnabled(false);
+            autoWinItem.setSelected(false);
+            autoWinItem.setToolTipText(t("Disponible solo ejecutando el " + NOMBRE + ".exe empaquetado",
+                    "Only available when running the packaged " + NOMBRE + ".exe"));
+        } else {
+            autoWinItem.setToolTipText(t("Añade la app al arranque de tu usuario de Windows (sin permisos especiales)",
+                    "Adds the app to your Windows user startup (no special permissions)"));
+            autoWinItem.addActionListener(e -> {
+                boolean ok = fijarAutoArranque(autoWinItem.isSelected());
+                if (!ok) {
+                    autoWinItem.setSelected(false);
+                    status.setText(t("No se pudo cambiar el autoarranque (¿antivirus?).",
+                            "Could not change startup entry (antivirus?)."));
+                }
+                guardarConfig("autoarranque", String.valueOf(autoWinItem.isSelected()));
+            });
+        }
+
+        JCheckBoxMenuItem iniMinItem = new JCheckBoxMenuItem(t("Iniciar minimizada", "Start minimized"),
+                Boolean.parseBoolean(leerConfig("inicio_min", "false")));
+        iniMinItem.setToolTipText(t("La ventana arranca minimizada en la barra de tareas",
+                "The window starts minimized to the taskbar"));
+        iniMinItem.addActionListener(e ->
+                guardarConfig("inicio_min", String.valueOf(iniMinItem.isSelected())));
+
+        autoSgItem.setToolTipText(t("Tras cada descarga, copia también la rec a la carpeta savegame del juego", "After each download, also copy the rec to the game savegame folder"));
+        autoSgItem.addActionListener(e -> {
+            if (autoSgItem.isSelected() && obtenerSavegame(true) == null) {
+                autoSgItem.setSelected(false);
+                return;
+            }
+            guardarConfig("autosavegame", String.valueOf(autoSgItem.isSelected()));
+        });
+
+        JMenuItem carpetaItem = new JMenuItem(t("Cambiar carpeta savegame…", "Change savegame folder…"));
+        carpetaItem.addActionListener(e -> {
+            Path p = elegirSavegameManual();
+            if (p != null) { status.setText(t("Carpeta savegame: ", "Savegame folder: ") + p); applyFilters(); }
+        });
+
+        JMenuItem aboutItem = new JMenuItem(t("Acerca de…", "About…"));
+        aboutItem.addActionListener(e -> showAbout());
+
+        configMenu.add(idiomaMenu);
+        configMenu.add(temaMenu);
+        configMenu.add(letraMenu);
+        configMenu.addSeparator();
+        JCheckBoxMenuItem eloWatchItem = new JCheckBoxMenuItem(
+                t("Mostrar ELO en la Watchlist", "Show ELO in the Watchlist"), mostrarEloWatch);
+        eloWatchItem.setToolTipText(t("El ELO se actualiza solo al abrir la app, nunca al buscar, para no chivar resultados",
+                "ELO refreshes only when the app opens, never on search, so results are never given away"));
+        eloWatchItem.addActionListener(e -> {
+            mostrarEloWatch = eloWatchItem.isSelected();
+            guardarConfig("elo_watchlist", String.valueOf(mostrarEloWatch));
+            playersList.repaint();
+        });
+        configMenu.add(buscarAbrirItem);
+        configMenu.add(autoWinItem);
+        configMenu.add(iniMinItem);
+        configMenu.add(eloWatchItem);
+        configMenu.add(autoSgItem);
+        JCheckBoxMenuItem usarCaItem = new JCheckBoxMenuItem(t("Usar CaptureAge", "Use CaptureAge"),
+                Boolean.parseBoolean(leerConfig("usar_ca", "false")));
+        usarCaItem.setToolTipText(t("Al espectar un directo, lanza también CaptureAge (se engancha solo al juego).",
+                "When spectating, also launches CaptureAge (it hooks onto the game by itself)."));
+        usarCaItem.addActionListener(e -> {
+            guardarConfig("usar_ca", String.valueOf(usarCaItem.isSelected()));
+            if (usarCaItem.isSelected() && rutaCaptureAge() == null)
+                status.setText(t("CaptureAge no aparece en la ruta estándar: usa «Cambiar ruta de CaptureAge…».",
+                        "CaptureAge isn't at the standard path: use \u201CChange CaptureAge path\u2026\u201D."));
+        });
+        configMenu.add(usarCaItem);
+        JMenuItem rutaCaItem = new JMenuItem(t("Cambiar ruta de CaptureAge…", "Change CaptureAge path…"));
+        rutaCaItem.addActionListener(e -> {
+            JFileChooser fc = new JFileChooser();
+            Path actual = rutaCaptureAge();
+            if (actual != null) fc.setSelectedFile(actual.toFile());
+            fc.setDialogTitle(t("Elegir CaptureAge.exe", "Pick CaptureAge.exe"));
+            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+                guardarConfig("ca_ruta", fc.getSelectedFile().getAbsolutePath());
+                status.setText(t("Ruta de CaptureAge guardada: ", "CaptureAge path saved: ")
+                        + fc.getSelectedFile().getAbsolutePath());
+            }
+        });
+        configMenu.add(rutaCaItem);
+        JMenu vigMenu = new JMenu(t("Vigilancia de vivos", "Live watch interval"));
+        ButtonGroup vg = new ButtonGroup();
+        String tickActual = leerConfig("tick_min", "1");
+        for (String mins : new String[]{"1", "2", "5"}) {
+            JRadioButtonMenuItem it = new JRadioButtonMenuItem(t("Cada ", "Every ") + mins + " min", mins.equals(tickActual));
+            it.addActionListener(e -> {
+                guardarConfig("tick_min", mins);
+                if (vigilante != null) { vigilante.setDelay(tickMs()); vigilante.setInitialDelay(tickMs()); vigilante.restart(); }
+            });
+            vg.add(it);
+            vigMenu.add(it);
+        }
+        vigMenu.setToolTipText(t("Cada cuánto se refrescan los puntos rojos (1 min por defecto; sube si el servicio anda flojo).",
+                "How often live dots refresh (1 min by default; raise it if the service is struggling)."));
+        configMenu.add(vigMenu);
+        cargarAliases();
+        cargarNotas();
+        JMenu topMenu = new JMenu(t("Top ladder", "Top ladder"));
+        ButtonGroup topGrp = new ButtonGroup();
+        for (int n : new int[]{ 25, 50, 100 }) {
+            JRadioButtonMenuItem it = new JRadioButtonMenuItem("Top " + n,
+                    String.valueOf(n).equals(leerConfig("top_n", "50")));
+            it.addActionListener(e -> {
+                guardarConfig("top_n", String.valueOf(n));
+                if (modoTop()) { topCargado = 0; cargarTopLadder(true); }
+            });
+            topGrp.add(it);
+            topMenu.add(it);
+        }
+        configMenu.add(topMenu);
+        configMenu.add(carpetaItem);
+        configMenu.addSeparator();
+        JMenuItem updItem = new JMenuItem(t("Buscar actualizaciones…", "Check for updates…"));
+        updItem.addActionListener(e -> comprobarActualizacion(true));
+        configMenu.add(updItem);
+        configMenu.add(aboutItem);
+        configBtn.addActionListener(e -> configMenu.show(configBtn, 0, configBtn.getHeight()));
+        JPanel esquina = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));   // Configuración: arriba a la derecha, siempre
+        JButton miPerfilBtn = new JButton(t("Mi perfil", "My profile"));
+        miPerfilBtn.setFocusable(false); miPerfilBtn.putClientProperty("JButton.buttonType", "roundRect");
+        miPerfilBtn.setToolTipText(t("Tu propio perfil (la primera vez te pide tu nick y lo recuerda; clic derecho para cambiar de cuenta). Con tu nick guardado, la app te avisa de tus partidas.", "Your own profile (asks your nick the first time and remembers it; right-click to change account). With your nick saved, the app notifies you about your games."));
+        miPerfilBtn.addActionListener(e -> abrirMiPerfil());
+        miPerfilBtn.addMouseListener(new MouseAdapter() {   // clic derecho: cambiar de cuenta
+            @Override public void mousePressed(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
+            @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
+            void menu(MouseEvent e) {
+                JPopupMenu pm = new JPopupMenu();
+                JMenuItem otra = new JMenuItem(t("Cambiar de cuenta…", "Change account…")); otra.addActionListener(a -> { guardarConfig("mi_pid", ""); preguntarMiNick(); }); pm.add(otra);
+                pm.show(miPerfilBtn, e.getX(), e.getY());
+            }
+        });
+        esquina.add(miPerfilBtn);
+        esquina.add(configBtn);
+
+        JPanel fila2 = new JPanel(new BorderLayout(8, 0));
+        fila2.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 10));
+        nota = new JLabel(t("Sin spoilers: nunca se muestra ganador, ±ELO ni duración. Doble clic en una fila = descargar.", "Spoiler-free: winner, ±ELO and duration are never shown. Double-click a row = download."));
+        resultadosBtn = new JToggleButton(t("Mostrar resultados", "Show results"));
+        resultadosBtn.setFocusable(false);
+        resultadosBtn.setToolTipText(t("Modo consulta: el ganador de cada partida en dorado (±ELO y duración en el tooltip). Siempre arranca apagado.",
+                "Lookup mode: each game's winner in gold (±ELO and duration in the tooltip). Always starts off."));
+        resultadosBtn.addActionListener(e -> {
+            mostrarResultados = resultadosBtn.isSelected();
+            actualizarNotaSpoilers();
+            tableModel.fireTableDataChanged();
+        });
+        fila2.add(nota, BorderLayout.CENTER);
+        fila2.add(resultadosBtn, BorderLayout.EAST);   // sobre la columna Rec, donde vive su efecto
+        filaNota = fila2;
+
+        JPanel filasIzq = new JPanel();
+        filasIzq.setLayout(new BoxLayout(filasIzq, BoxLayout.Y_AXIS));
+        fila1.setAlignmentX(Component.LEFT_ALIGNMENT); filaVistas.setAlignmentX(Component.LEFT_ALIGNMENT);
+        filasIzq.add(fila1);
+        filasIzq.add(filaVistas);
+        JPanel barraSuperior = new JPanel(new BorderLayout());
+        barraSuperior.add(filasIzq, BorderLayout.CENTER);
+        JPanel esquinaArriba = new JPanel(new BorderLayout());
+        esquinaArriba.add(esquina, BorderLayout.NORTH);
+        barraSuperior.add(esquinaArriba, BorderLayout.EAST);
+        JPanel top = new JPanel();
+        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
+        barraSuperior.setAlignmentX(Component.LEFT_ALIGNMENT); fila2.setAlignmentX(Component.LEFT_ALIGNMENT);
+        top.add(barraSuperior);
+        top.add(fila2);
+        setMinimumSize(new Dimension(1100, 640));
+        return top;
     }
 
     // ----- Carpeta de recs ---------------------------------------------------
