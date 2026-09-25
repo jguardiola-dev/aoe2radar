@@ -424,7 +424,7 @@ class RegresionCapturas {
         Thread.sleep(1500);
         foto("shot_matriz_grande.png");
         cerrarDialogos();
-        SwingUtilities.invokeAndWait(() -> app.mostrarListaCompleta("prueba", cuerpo -> { for (int i = 0; i < 30; i++) cuerpo.add(app.filaBarra("fila " + i, i / 30.0, "50 %", Color.GRAY, null)); }));
+        SwingUtilities.invokeAndWait(() -> app.listas.mostrarListaCompleta("prueba", cuerpo -> { for (int i = 0; i < 30; i++) cuerpo.add(app.listas.filaBarra("fila " + i, i / 30.0, "50 %", Color.GRAY, null)); }));
         Thread.sleep(800);
         foto("shot_lista_completa.png");
         cerrarDialogos();
