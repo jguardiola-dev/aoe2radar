@@ -43,10 +43,12 @@ public final class TechTreePresenter {
         /** No se pudo descargar el árbol de "civ". */
         void errorArbol(String civ, String motivo);
 
-        /** El tamaño de celda con el que hay que precargar los iconos antes de pintar (lee el visor, sin red). */
+        /** El tamaño de celda con el que hay que precargar los iconos antes de pintar (lee el visor, sin red);
+         *  se llama fuera del EDT, en el hilo techtree-civ, como en la 1.1; lee Swing (ver DEUDA). */
         int celdaPx();
 
-        /** A memoria (o a la cola de descarga si falta) el icono tipo/id a ese tamaño: no se usa el resultado aquí, solo precalienta la caché. */
+        /** A memoria (o a la cola de descarga si falta) el icono tipo/id a ese tamaño: no se usa el resultado aquí, solo precalienta la caché;
+         *  se llama fuera del EDT, en el hilo techtree-civ, como en la 1.1; lee Swing (ver DEUDA). */
         void precalentarIcono(String tipo, long id, int px);
 
         /** Ya bajaron más iconos de la cola: repinta lo que esté visible con ellos. */
@@ -62,7 +64,6 @@ public final class TechTreePresenter {
     private final TechTreeService tt;
     private final StatsService stats;
     private final FiltroStats filtroStats;
-    private final Navegacion navegacion;   // no la usa hoy el Tech tree (no navega a otra vista), pero es la inyección común de la fase 3
     private final Tareas tareas;
     private final Pantalla pantalla;
     private final TechTreeView.Anfitrion anfitrion;
@@ -76,12 +77,11 @@ public final class TechTreePresenter {
     // La última civ pedida a pedirArbol(): si el árbol de una civ vieja llega tarde, no se pinta.
     private volatile String civEnCurso;
 
-    public TechTreePresenter(TechTreeService tt, StatsService stats, FiltroStats filtroStats, Navegacion navegacion, Tareas tareas,
+    public TechTreePresenter(TechTreeService tt, StatsService stats, FiltroStats filtroStats, Tareas tareas,
                               Pantalla pantalla, TechTreeView.Anfitrion anfitrion, TechTreeView.EnlaceCivStats enlaceCivStats) {
         this.tt = tt;
         this.stats = stats;
         this.filtroStats = filtroStats;
-        this.navegacion = navegacion;
         this.tareas = tareas;
         this.pantalla = pantalla;
         this.anfitrion = anfitrion;

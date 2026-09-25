@@ -101,7 +101,7 @@ final class TechTreeArbol {
                     if (!lleno) continue;
                     if (prev >= 0 && r - prev <= 2) {
                         Component arriba = cs[prev * cols + c];
-                        boolean disp = celda.getForeground() == null || !(celda instanceof JLabel lb && "×".equals(lb.getText()));
+                        boolean disp = celda.getForeground() == null || !(celda instanceof JLabel lb && "\u00D7".equals(lb.getText()));
                         Color marcoAbajo = celda instanceof JComponent jc && jc.getBorder() instanceof javax.swing.border.LineBorder lbrd ? lbrd.getLineColor() : Color.GRAY;
                         boolean noDisp = marcoAbajo.getAlpha() < 255;   // las no disponibles llevan marco rojo translúcido
                         g2.setColor(noDisp ? new Color(0xe5, 0x73, 0x73, 60) : (temaOscuroActivo ? new Color(0xc9, 0x8a, 0x3b, 120) : new Color(0x8a, 0x5e, 0x1e, 140)));

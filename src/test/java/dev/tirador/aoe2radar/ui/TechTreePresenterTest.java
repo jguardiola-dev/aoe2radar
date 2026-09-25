@@ -119,11 +119,7 @@ class TechTreePresenterTest {
         pantalla = new PantallaFake();
         anfitrion = new AnfitrionFake();
         enlaceCivStats = new EnlaceCivStatsFake();
-        return new TechTreePresenter(tt, stats, filtroStats, new Navegacion() {
-            @Override public void abrirTechTree(String civ) { }
-            @Override public void abrirCivStats() { }
-            @Override public void abrirLadder() { }
-        }, tareas, pantalla, anfitrion, enlaceCivStats);
+        return new TechTreePresenter(tt, stats, filtroStats, tareas, pantalla, anfitrion, enlaceCivStats);
     }
 
     @Test void cargarDatosOk() {
@@ -170,11 +166,7 @@ class TechTreePresenterTest {
                 return Map.of("civ", civ);
             }
         };
-        ref[0] = new TechTreePresenter(tt, stats, filtroStats, new Navegacion() {
-            @Override public void abrirTechTree(String civ) { }
-            @Override public void abrirCivStats() { }
-            @Override public void abrirLadder() { }
-        }, Tareas.EN_LINEA, pantalla, anfitrion, enlaceCivStats);
+        ref[0] = new TechTreePresenter(tt, stats, filtroStats, Tareas.EN_LINEA, pantalla, anfitrion, enlaceCivStats);
         ref[0].pedirArbol("vieja");
         assertEquals("nueva", pantalla.civArbolListo);   // solo se pintó la última, nunca "vieja"
     }
@@ -255,11 +247,7 @@ class TechTreePresenterTest {
             @Override public void enUi(Runnable trabajo) { trabajo.run(); }
         };
         tt.errorAsegurar = "sin datos";   // corta pronto: no hace falta simular el catálogo entero
-        p = new TechTreePresenter(tt, stats, filtroStats, new Navegacion() {
-            @Override public void abrirTechTree(String civ) { }
-            @Override public void abrirCivStats() { }
-            @Override public void abrirLadder() { }
-        }, tareas, pantalla, anfitrion, enlaceCivStats);
+        p = new TechTreePresenter(tt, stats, filtroStats, tareas, pantalla, anfitrion, enlaceCivStats);
         p.precargar();
         assertTrue(anfitrion.precalentado);
         assertEquals(List.of("precalentar", "demonio:techtree-precarga"), orden);

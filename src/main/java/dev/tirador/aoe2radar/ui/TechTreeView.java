@@ -143,7 +143,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     private final TechTreePresenter presenter;
 
     /** Icono (ImageIcon: tipo Swing) ya escalado, de memoria; vive aquí porque la caché de la 1.1 era estática pero
-     *  con una única ventana por app el resultado es el mismo (ver docs/DEUDA.md, "estáticos nuevos" de la fase 3). */
+     *  con una única ventana por app el resultado es el mismo (ver docs/DEUDA.md, fase 3, cachés de iconos de estático a instancia). */
     private final Map<String, ImageIcon> ttIconos = new ConcurrentHashMap<>();
 
     JPanel techTreePanel, ttArbolPanel, ttFichaCards;
@@ -187,7 +187,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         this.listas = listas;
         this.anfitrion = anfitrion;
         this.enlaceCivStats = enlaceCivStats;
-        this.presenter = new TechTreePresenter(tt, stats, filtroStats, navegacion, tareas, this, anfitrion, enlaceCivStats);
+        this.presenter = new TechTreePresenter(tt, stats, filtroStats, tareas, this, anfitrion, enlaceCivStats);
         construirPanelTechTree();
     }
 
@@ -568,6 +568,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
                 super.paintComponent(g);
                 int celda = ttCeldaActual, cab = TT_CAB, paso = celda + TT_VGAP;
                 Graphics2D g2 = (Graphics2D) g.create();
+                Color fondo = getBackground();
                 g2.setPaint(new GradientPaint(0, 0, temaOscuroActivo ? new Color(0x26, 0x25, 0x23) : new Color(0xf7, 0xf3, 0xea), 0, getHeight(), temaOscuroActivo ? new Color(0x1c, 0x1c, 0x1b) : new Color(0xea, 0xe4, 0xd6)));
                 g2.fillRect(0, 0, getWidth(), getHeight());
                 int k = 0;
@@ -609,9 +610,9 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         Toolkit.getDefaultToolkit().addAWTEventListener(ev -> {
             if (!(ev instanceof MouseEvent me) || ttScroll == null || !ttScroll.isShowing()) return;
             Component c = me.getComponent();
-            if (!(javax.swing.SwingUtilities.isRightMouseButton(me) || javax.swing.SwingUtilities.isMiddleMouseButton(me))) return;
-            if (c == null || !javax.swing.SwingUtilities.isDescendingFrom(c, ttScroll)) return;
             if (me.getID() == MouseEvent.MOUSE_PRESSED) {
+                if (!(javax.swing.SwingUtilities.isRightMouseButton(me) || javax.swing.SwingUtilities.isMiddleMouseButton(me))) return;
+                if (c == null || !javax.swing.SwingUtilities.isDescendingFrom(c, ttScroll)) return;
                 arrastre[0] = me.getLocationOnScreen(); arrastre[1] = ttScroll.getViewport().getViewPosition();
                 ttScroll.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
             } else if (me.getID() == MouseEvent.MOUSE_DRAGGED && arrastre[0] != null) {
