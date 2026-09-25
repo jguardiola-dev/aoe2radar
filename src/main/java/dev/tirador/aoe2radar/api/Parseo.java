@@ -24,7 +24,6 @@ public final class Parseo {
     private Parseo() {}
 
     public static volatile String MAPA_IMG_PATRON;   // p. ej. https://…/maps/{clave}.png, deducido de la primera URL que contiene la clave del mapa
-    static final java.util.concurrent.atomic.AtomicInteger COLOR_SLOT_DISTINTOS = new java.util.concurrent.atomic.AtomicInteger();
 
     /** Convierte el JSON de una partida. El resultado (won, rating, rating_diff)
      *  se guarda SOLO en memoria, para «Revelar resultado…». */
@@ -79,7 +78,6 @@ public final class Parseo {
         mp.name = String.valueOf(firstNonNull(str(val(p, "name")), "?"));
         if (val(p, "color") instanceof Number cn) mp.color = cn.intValue();
         if (val(p, "slot") instanceof Number sn) mp.slot = sn.intValue();
-        if (mp.color != null && mp.slot != null && !mp.color.equals(mp.slot)) COLOR_SLOT_DISTINTOS.incrementAndGet();   // contador de control: en ranked deberían coincidir
         aprenderPais(mp.id, val(p, "country"));
         Object civ = val(p, "civ_name", "civName");
         if (civ == null) civ = val(p, "civ");
