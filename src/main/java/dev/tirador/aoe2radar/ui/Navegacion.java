@@ -14,4 +14,13 @@ public interface Navegacion {
 
     /** Abre Ratings. */
     void abrirLadder();
+
+    /** Abre el perfil de pid (nombre: el que se muestra mientras carga). */
+    void abrirPerfil(long pid, String nombre);
+
+    /** Abre el perfil de pid en una pestaña nueva del perfil. */
+    void abrirPerfilEnPestana(long pid, String nombre);
+
+    /** Abre Live now. */
+    void abrirAhora();
 }

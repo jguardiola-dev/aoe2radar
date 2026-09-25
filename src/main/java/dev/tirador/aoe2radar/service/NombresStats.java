@@ -8,6 +8,7 @@ import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttData;
 import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttNombreCiv;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Json.obj;
+import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
 
 /**
  * Nombres legibles de Civ Stats y Tech tree (modo, ventana, tramo de ELO, civ, mapa): traducen las claves que
@@ -83,4 +84,11 @@ public final class NombresStats {
         if (x.endsWith("es") && x.length() > 5) x = x.substring(0, x.length() - 2); else if (x.endsWith("s") && x.length() > 4) x = x.substring(0, x.length() - 1);
         return x;
     }
+
+    public static String nombreMapaClave(String clave) {
+        for (VentanaStats v : VENTANAS_STATS.values()) { String n = v.nombresMapas().get(clave); if (n != null) return n; }
+        String n = nombreMapaStats(null, clave);
+        return n.isEmpty() ? n : Character.toUpperCase(n.charAt(0)) + n.substring(1);
+    }
+    public static String posicionNombre(String p) { return "pocket".equals(p) ? "Pocket" : t("Flanco", "Flank"); }
 }

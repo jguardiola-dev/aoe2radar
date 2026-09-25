@@ -12,6 +12,10 @@ import java.awt.Font;
 
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.RenderingHints;
+import java.awt.image.BufferedImage;
 
 /**
  * Piezas de interfaz sueltas que usan varias vistas (títulos de sección, colores del tema, la paleta del
@@ -71,4 +75,31 @@ public final class Componentes {
     }
 
     public static String etiquetaK(double v) { return v >= 1000 ? (v % 1000 == 0 ? (long) (v / 1000) + "k" : String.format(java.util.Locale.ROOT, "%.1fk", v / 1000)) : String.valueOf((long) v); }
+
+    public static String colorVivoHex() {
+        return temaOscuroActivo ? "ff6b5e" : "d32f2f";
+    }
+
+    /** Dorado legible para la fila EN DIRECTO de la tabla, según el tema. */
+    public static Color colorVivoTabla() {
+        return temaOscuroActivo ? new Color(0xFF, 0xC9, 0x4D) : new Color(0xB0, 0x78, 0x00);
+    }
+
+    /** Icono cuadrado de lado {@code lado}: el logo entero, centrado y a escala
+     *  proporcional sobre fondo transparente. Nunca se estira ni se recorta. */
+    public static Image iconoCuadrado(Image src, int lado) {
+        int w = src.getWidth(null), h = src.getHeight(null);
+        if (w <= 0 || h <= 0) return src;
+        double f = Math.min(lado / (double) w, lado / (double) h);
+        int nw = Math.max(1, (int) Math.round(w * f));
+        int nh = Math.max(1, (int) Math.round(h * f));
+        BufferedImage out = new BufferedImage(lado, lado, BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g = out.createGraphics();
+        g.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BICUBIC);
+        g.setRenderingHint(RenderingHints.KEY_RENDERING,     RenderingHints.VALUE_RENDER_QUALITY);
+        g.setRenderingHint(RenderingHints.KEY_ANTIALIASING,  RenderingHints.VALUE_ANTIALIAS_ON);
+        g.drawImage(src, (lado - nw) / 2, (lado - nh) / 2, nw, nh, null);
+        g.dispose();
+        return out;
+    }
 }

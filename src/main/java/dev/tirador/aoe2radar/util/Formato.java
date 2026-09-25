@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.util;
 import java.util.Locale;
 
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
+import java.time.Duration;
 
 public final class Formato {
     private Formato() {}
@@ -22,4 +23,6 @@ public final class Formato {
     }
 
     public static String miles(long n) { return java.text.NumberFormat.getIntegerInstance("en".equals(IDIOMA) ? Locale.US : Locale.forLanguageTag("es-ES")).format(n); }
+
+    public static String reloj(Duration d) { long s = Math.max(0, d.getSeconds()); return String.format("%d:%02d", s / 60, s % 60); }
 }

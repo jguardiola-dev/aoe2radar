@@ -16,6 +16,7 @@ import java.util.Map;
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.cache.Anotaciones.nombreVisible;
 import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
+import static dev.tirador.aoe2radar.util.I18n.t;
 
 /** Reglas del dominio sobre partidas y jugadores: coincidencia de rival, modo de ladder, posiciones, tramos y franjas. */
 public final class ReglasPartida {
@@ -113,5 +114,14 @@ public final class ReglasPartida {
             }
             m.fantasma = f;
         }
+    }
+
+    /** Modo corto de una partida: «1v1 RM», «TG 3v3», «1v1 EW», «DM 2v2», «Custom»… */
+    public static String modoCorto(Match m) {
+        String modo = m.mode == null ? "" : m.mode.toLowerCase(Locale.ROOT);
+        int n = m.players.size();
+        String tam = n <= 2 ? "1v1" : (n / 2) + "v" + (n / 2);
+        String tipo = modo.contains("empire") ? "EW" : modo.contains("death") || modo.contains(" dm") ? "DM" : modo.contains("unranked") || modo.contains("custom") ? t("Unranked", "Unranked") : "RM";
+        return n > 2 && tipo.equals("RM") ? "TG " + tam : tam + " " + tipo;
     }
 }
