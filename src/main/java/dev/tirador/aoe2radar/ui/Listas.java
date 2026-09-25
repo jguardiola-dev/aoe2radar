@@ -40,7 +40,6 @@ import static dev.tirador.aoe2radar.ui.Componentes.colorSecundario;
 import static dev.tirador.aoe2radar.ui.Componentes.colorWr;
 import static dev.tirador.aoe2radar.ui.Componentes.tituloSeccion;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
-import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
 import static dev.tirador.aoe2radar.util.Formato.miles;
 import static dev.tirador.aoe2radar.util.Formato.pct1;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -125,7 +124,7 @@ public final class Listas {
 
     /** Enlace «ver los N…» al pie de una lista recortada. */
     public JButton enlaceVerTodo(int total, Runnable abrir) {
-        JButton b = new JButton(t("ver los ", "see all ") + total + "…");
+        JButton b = new JButton(t("ver los ", "see all ") + total + "\u2026");
         b.setFocusable(false); b.setMargin(new Insets(0, 4, 0, 4)); b.putClientProperty("JButton.buttonType", "borderless");
         b.setFont(b.getFont().deriveFont(Font.PLAIN, 11f));
         b.setForeground(temaOscuroActivo ? new Color(0x7f, 0xb3, 0xe0) : new Color(0x2f, 0x5f, 0x8f));

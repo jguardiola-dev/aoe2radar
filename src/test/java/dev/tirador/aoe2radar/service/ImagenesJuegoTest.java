@@ -6,7 +6,8 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.List;
 
 import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
@@ -20,10 +21,25 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Rutas de disco de banderas, civs y mapas (ver service.ImagenesJuego): sin red, sin Swing. BANDERAS_DIR es una
- * ruta relativa fija («banderas»), así que estos tests crean sus archivos bajo el directorio de trabajo del
- * harness (target/harness, ver surefire) y los borran al terminar.
+ * ruta relativa fija («banderas»): NO se puede borrar entera al terminar (fuera del harness sería la carpeta de
+ * banderas de verdad), así que cada test apunta en {@link #creados} solo los archivos que crea y el
+ * {@code @AfterEach} borra uno a uno esos, igual que ui.IconosTest.
  */
 class ImagenesJuegoTest {
+
+    final List<Path> creados = new ArrayList<>();
+
+    @AfterEach void limpiar() throws IOException {
+        for (Path p : creados) Files.deleteIfExists(p);
+        creados.clear();
+    }
+
+    private Path archivo(Path destino) throws IOException {
+        Files.createDirectories(destino.getParent());
+        Files.writeString(destino, "png");
+        creados.add(destino);
+        return destino;
+    }
 
     // ----- claveMapa ---------------------------------------------------
 
@@ -52,26 +68,14 @@ class ImagenesJuegoTest {
 
     // ----- rutaBandera ---------------------------------------------------
 
-    @AfterEach void limpiarBanderas() throws IOException {
-        if (Files.exists(BANDERAS_DIR)) {
-            try (var s = Files.walk(BANDERAS_DIR)) {
-                s.sorted(Comparator.reverseOrder()).forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) { } });
-            }
-        }
-    }
-
     @Test void rutaBanderaDirectaEnBanderasDir() throws IOException {
-        Files.createDirectories(BANDERAS_DIR);
-        Path esperado = BANDERAS_DIR.resolve("zz.png");
-        Files.writeString(esperado, "png");
-        assertEquals(esperado, rutaBandera("zz"));
+        Path esperado = archivo(BANDERAS_DIR.resolve("rutadirectatest.png"));
+        assertEquals(esperado, rutaBandera("rutadirectatest"));
     }
 
     @Test void rutaBanderaAnidadaComoElExtraerTodoDeWindows() throws IOException {
-        Files.createDirectories(BANDERAS_DIR.resolve("banderas"));
-        Path esperado = BANDERAS_DIR.resolve("banderas").resolve("yy.png");
-        Files.writeString(esperado, "png");
-        assertEquals(esperado, rutaBandera("yy"));
+        Path esperado = archivo(BANDERAS_DIR.resolve("banderas").resolve("rutaanidadatest.png"));
+        assertEquals(esperado, rutaBandera("rutaanidadatest"));
     }
 
     @Test void rutaBanderaNullSiNoHayArchivoEnNinguno() {

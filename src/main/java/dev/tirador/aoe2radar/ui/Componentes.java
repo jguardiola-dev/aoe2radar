@@ -28,7 +28,7 @@ public final class Componentes {
     public static JLabel tituloSeccion(String texto) { return tituloSeccion(texto, null); }
 
     public static JLabel tituloSeccion(String texto, String tooltip) {
-        JLabel l = new JLabel(tooltip == null ? texto : texto + "  ⓘ");
+        JLabel l = new JLabel(tooltip == null ? texto : texto + "  \u24D8");
         l.setAlignmentX(0f);
         if (tooltip != null) l.setToolTipText("<html><div style='width:320px'>" + escapeHtml(tooltip) + "</div></html>");
         l.setFont(l.getFont().deriveFont(Font.BOLD, 13f));
