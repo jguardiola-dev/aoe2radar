@@ -1,5 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
+import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.Perfil;
 
@@ -13,6 +14,12 @@ import java.util.Map;
  * ver util.Hilos). Los que dicen «sin red» se pueden llamar desde cualquier hilo.
  */
 public interface ProfileService {
+
+    /**
+     * Historial por API (50 partidas por página): páginas como máximo, las del primer vistazo, las de «Cargar más» y el
+     * mínimo. Por API, lo mínimo: 100 partidas al abrir; el resto solo si lo pides.
+     */
+    int ACT_MAX_PAGINAS = 20, ACT_PAGINAS_RAPIDAS = 2, ACT_MAS_PAGINAS = 4, ACT_MIN = 3;
 
     /**
      * La ficha del companion (/profiles/{pid}): si hay una de menos de 30 min (Caducidad.PERFIL) la devuelve sin red;
@@ -53,4 +60,11 @@ public interface ProfileService {
      * familia): id → nombre («—» si se conoció desde la otra punta). null si ninguna. Sin red.
      */
     Map<Long, String> familia(long pid);
+
+    /**
+     * «Nocturno primero»: el año del jugador desde el paquete de sfr-data, sin la API (ver AnioDesdeSfr). null si no
+     * está en el alcance de sfr-data (entonces toca la API). nombreSiFalta: el nombre si el paquete no lo trae. Puede ir
+     * a la red (sfr-data); un fallo sale como excepción y quien llama decide (lo anota y sigue con la API).
+     */
+    AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception;
 }

@@ -7,16 +7,28 @@ import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
+import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.Perfil;
+import dev.tirador.aoe2radar.sfrdata.DescargaSfr;
+import dev.tirador.aoe2radar.sfrdata.EloNocturno;
+import dev.tirador.aoe2radar.sfrdata.PerfilesSfr;
+import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -60,7 +72,7 @@ class PerfilesCompanionTest {
     final Map<Long, Object> canalAprendido = new HashMap<>();
     final Map<Long, Object> paisAprendido = new HashMap<>();
     final PerfilesCompanion servicio = new PerfilesCompanion(api, fichas,
-            (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v));
+            (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), null);   // el año de sfr-data se prueba en AnioDesdeSfrTest
 
     /** Cuántas veces se pidió /profiles/{pid} a la red. */
     long peticiones(long pid) {
@@ -342,5 +354,61 @@ class PerfilesCompanionTest {
         assertTrue(v.isEmpty());
         assertNotNull(servicio.vinculadasConocidas(90L), "recuerda una lista vacía, no deja el estado en null");
         assertTrue(servicio.vinculadasConocidas(90L).isEmpty());
+    }
+
+    // ===================== 11. anioSfr: compone AnioDesdeSfr, como en AnioDesdeSfrTest =====================
+
+    @TempDir Path dirSfr;
+
+    static byte[] gz(String json) {
+        try {
+            ByteArrayOutputStream bo = new ByteArrayOutputStream();
+            try (GZIPOutputStream g = new GZIPOutputStream(bo)) { g.write(json.getBytes(StandardCharsets.UTF_8)); }
+            return bo.toByteArray();
+        } catch (IOException e) { throw new AssertionError(e); }
+    }
+
+    /** Red falsa para sfr-data (elo y perfiles), por URL completa; sin disco ni red de verdad. */
+    static final class RedSfrFalsa implements DescargaSfr {
+        final Map<String, byte[]> archivos = new HashMap<>();
+        @Override public Respuesta condicional(String url, String etag, int timeoutS) { throw new AssertionError("no usado por anioSfr"); }
+        @Override public byte[] bytes(String url, int timeoutS) throws IOException {
+            byte[] b = archivos.get(url);
+            if (b == null) throw new IOException("HTTP 404 " + url);
+            return b;
+        }
+    }
+
+    static final SfrDataClient.Etags SIN_ETAGS_SFR = new SfrDataClient.Etags() {
+        @Override public String leer(String n) { return ""; }
+        @Override public void guardar(String n, String e) { }
+    };
+
+    /** Un PerfilesCompanion con un AnioDesdeSfr real montado sobre red falsa (mismo montaje que AnioDesdeSfrTest). */
+    PerfilesCompanion servicioConAnioSfr(RedSfrFalsa redSfr) {
+        SfrDataClient sfrElo = new SfrDataClient(dirSfr, redSfr, SIN_ETAGS_SFR, new CacheService(reloj), () -> "https://elo/");
+        EloNocturno elo = new EloNocturno(sfrElo, new CacheService(reloj), Runnable::run, () -> LocalDate.of(2026, 9, 25));
+        SfrDataClient sfrPerfiles = new SfrDataClient(dirSfr, redSfr, SIN_ETAGS_SFR, new CacheService(reloj), () -> "https://perfiles/");
+        PerfilesSfr perfiles = new PerfilesSfr(sfrPerfiles, new CacheService(reloj));
+        NombresJuego nombres = new NombresJuego() {
+            @Override public String mapa(String clave) { return "Mapa:" + clave; }
+            @Override public String civ(String clave) { return "Civ:" + clave; }
+        };
+        AnioDesdeSfr anio = new AnioDesdeSfr(elo, perfiles, new HashMap<>(), nombres, reloj);
+        return new PerfilesCompanion(api, fichas, (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), anio);
+    }
+
+    @Test void anioSfrDevuelveLoQueDevuelveLeerYNullSiElJugadorNoEsta() throws Exception {
+        RedSfrFalsa redSfr = new RedSfrFalsa();
+        redSfr.archivos.put("https://elo/elo_ayer.json.gz", gz("{\"fecha\":\"2026-09-24\",\"j\":{}}"));
+        redSfr.archivos.put("https://perfiles/index.json", "{\"v\":1,\"shards\":256,\"hasta\":\"2026-09-22\"}".getBytes(StandardCharsets.UTF_8));
+        redSfr.archivos.put("https://perfiles/shard-044.json.gz", gz("{\"jugadores\":{\"300\":{\"n\":\"Jorge\",\"m\":[]}}}"));
+        PerfilesCompanion conAnio = servicioConAnioSfr(redSfr);
+
+        AnioSfr r = conAnio.anioSfr(300L, "n");
+        assertNotNull(r, "300 está en el paquete: anioSfr trae lo mismo que AnioDesdeSfr.leer");
+        assertEquals("Jorge", r.actividad().nombre(), "la actividad del paquete viaja tal cual");
+
+        assertNull(conAnio.anioSfr(44L, "n"), "44 cae en el mismo shard (44 % 256 = 44) pero no está en «jugadores»: null");
     }
 }

@@ -36,6 +36,7 @@ import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
 import dev.tirador.aoe2radar.model.Actividad;
+import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
 import dev.tirador.aoe2radar.model.Clasificacion;
@@ -58,12 +59,16 @@ import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
+import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
 import dev.tirador.aoe2radar.service.ProfileService;
+import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 import dev.tirador.aoe2radar.util.Json;
+import dev.tirador.aoe2radar.util.Reloj;
 
 import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
@@ -147,13 +152,15 @@ import static dev.tirador.aoe2radar.service.Juego.carpetaLogsJuego;
 import static dev.tirador.aoe2radar.service.Juego.copiarASavegame;
 import static dev.tirador.aoe2radar.service.Juego.detectarSavegames;
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
+import static dev.tirador.aoe2radar.service.ProfileService.ACT_MAS_PAGINAS;
+import static dev.tirador.aoe2radar.service.ProfileService.ACT_MAX_PAGINAS;
+import static dev.tirador.aoe2radar.service.ProfileService.ACT_MIN;
+import static dev.tirador.aoe2radar.service.ProfileService.ACT_PAGINAS_RAPIDAS;
 import static dev.tirador.aoe2radar.service.ReglasPartida.DURACION_TRAMOS;
-import static dev.tirador.aoe2radar.service.ReglasPartida.LADDERS_IDX;
 import static dev.tirador.aoe2radar.service.ReglasPartida.LADDER_IDS;
 import static dev.tirador.aoe2radar.service.ReglasPartida.franjaDe;
 import static dev.tirador.aoe2radar.service.ReglasPartida.franjasCentradas;
 import static dev.tirador.aoe2radar.service.ReglasPartida.marcarFantasmas;
-import static dev.tirador.aoe2radar.service.ReglasPartida.modoDeLadder;
 import static dev.tirador.aoe2radar.service.ReglasPartida.modoPrincipal;
 import static dev.tirador.aoe2radar.service.ReglasPartida.posicionEnEquipo;
 import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
@@ -179,8 +186,6 @@ import static dev.tirador.aoe2radar.sfrdata.Snapshots.ELO_HACE7;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.NOMBRES_AYER;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.cargarEloAyer;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.muestraAyer;
-import static dev.tirador.aoe2radar.sfrdata.Snapshots.perfilesIndex;
-import static dev.tirador.aoe2radar.sfrdata.Snapshots.perfilesShard;
 import static dev.tirador.aoe2radar.techtree.TechTreeDatos.TT_DIR;
 import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttArbol;
 import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttAsegurarDatos;
@@ -2920,7 +2925,6 @@ public class SpoilerFreeRecs extends JFrame {
     // mapas, rivales, aliados y tramos). Solo agregados con un mínimo de partidas: nunca el
     // resultado de una partida suelta.
     // =====================================================================================
-    static final int ACT_MAX_PAGINAS = 20, ACT_PAGINAS_RAPIDAS = 2, ACT_MAS_PAGINAS = 4, ACT_MIN = 3;   // por API, lo mínimo: 100 partidas al abrir; el resto solo si lo pides
 
     /**
      * Descarga historial página a página y avisa tras cada página con el estado parcial.
@@ -3554,70 +3558,12 @@ public class SpoilerFreeRecs extends JFrame {
     final Map<Long, Integer> gamesWatch = new java.util.concurrent.ConcurrentHashMap<>();
     boolean actOrigenSfr; String actHastaSfr; JButton actHoyBtn; JLabel actHastaLabel;
 
-    String nombreMapaClave(String clave) {
+    static String nombreMapaClave(String clave) {
         for (VentanaStats v : VENTANAS_STATS.values()) { String n = v.nombresMapas().get(clave); if (n != null) return n; }
         String n = nombreMapaStats(null, clave);
         return n.isEmpty() ? n : Character.toUpperCase(n.charAt(0)) + n.substring(1);
     }
     static String posicionNombre(String p) { return "pocket".equals(p) ? "Pocket" : t("Flanco", "Flank"); }
-    /** Construye la Actividad (año completo) de un jugador a partir de su entrada en el paquete. null si no está en el alcance. */
-    Actividad actividadDesdeShard(long pid, Map<String, Object> shard) {
-        boolean v2 = shard.get("v") instanceof Number vn && vn.intValue() >= 2;
-        List<Object> partidasRaw; String nombre = "", pais = "";
-        List<Object> civsDic = v2 ? arr(shard.get("civs")) : List.of(), mapasDic = v2 ? arr(shard.get("mapas")) : List.of();
-        if (v2) {
-            Object j = shard.get("j");
-            if (!(j instanceof Map<?, ?> jm) || jm.get(String.valueOf(pid)) == null) return null;
-            partidasRaw = arr(jm.get(String.valueOf(pid)));
-            String[] nn = NOMBRES_AYER.get(pid); if (nn != null) { nombre = nn[0]; pais = nn[1]; }
-        } else {
-            Object jugadores = shard.get("jugadores");
-            if (!(jugadores instanceof Map<?, ?> jm)) return null;
-            Object entrada = jm.get(String.valueOf(pid));
-            if (!(entrada instanceof Map<?, ?> em)) return null;
-            nombre = em.get("n") == null ? "" : String.valueOf(em.get("n")); pais = em.get("c") == null ? "" : String.valueOf(em.get("c"));
-            partidasRaw = arr(em.get("m"));
-        }
-        if (!pais.isBlank()) PAIS_DE.put(pid, pais);
-        List<Match> partidas = new ArrayList<>();
-        for (Object o : partidasRaw) {
-            List<Object> f = arr(o);
-            Match m = new Match();
-            m.id = lng(f.get(0));
-            long ini = lng(f.get(1)), fin = lng(f.get(2));
-            m.started = ini > 0 ? Instant.ofEpochSecond(ini) : null;
-            m.finished = fin > 0 ? Instant.ofEpochSecond(fin) : null;
-            String lb = v2 ? (f.get(3) instanceof Number ln && ln.intValue() >= 0 && ln.intValue() < LADDERS_IDX.length ? LADDERS_IDX[ln.intValue()] : "?") : String.valueOf(f.get(3));
-            m.mode = modoDeLadder(lb);
-            String mapaClave = v2 ? (f.get(4) instanceof Number mn && mn.intValue() >= 0 && mn.intValue() < mapasDic.size() ? String.valueOf(mapasDic.get(mn.intValue())) : "") : String.valueOf(f.get(4));
-            m.map = mapaClave.isBlank() || "unknown".equalsIgnoreCase(mapaClave) ? t("Mapa desconocido", "Unknown map") : nombreMapaClave(mapaClave);
-            m.mapaClave = mapaClave;
-            for (Object jo : arr(f.get(5))) {
-                List<Object> j = arr(jo);
-                MatchPlayer mp = new MatchPlayer();
-                mp.id = lng(j.get(0));
-                String civK;
-                if (v2) {   // [pid, civIdx, equipo, rating, diff, won]: nombres del índice nocturno
-                    String[] nj = NOMBRES_AYER.get(mp.id); mp.name = nj != null ? nj[0] : "#" + mp.id;
-                    civK = j.get(1) instanceof Number cn && cn.intValue() >= 0 && cn.intValue() < civsDic.size() ? String.valueOf(civsDic.get(cn.intValue())) : "";
-                    mp.team = (int) lng(j.get(2)); mp.rating = j.get(3) instanceof Number n && n.intValue() > 0 ? n.intValue() : null; mp.ratingDiff = j.get(4) instanceof Number n2 ? n2.intValue() : null;
-                    long won = lng(j.get(5)); mp.won = won < 0 ? null : won == 1;
-                    if (j.size() > 6 && j.get(6) instanceof Number sl && sl.intValue() > 0) mp.slot = sl.intValue();
-                } else {   // [pid, nombre, civ, equipo, rating, diff, won]
-                    mp.name = String.valueOf(j.get(1)); civK = String.valueOf(j.get(2));
-                    mp.team = (int) lng(j.get(3)); mp.rating = j.get(4) instanceof Number n ? n.intValue() : null; mp.ratingDiff = j.get(5) instanceof Number n2 ? n2.intValue() : null;
-                    long won = lng(j.get(6)); mp.won = won < 0 ? null : won == 1;
-                }
-                mp.civ = civK.isBlank() ? null : nombreCivStats(civK);
-                if (mp.id == pid && (mp.name.isBlank() || mp.name.startsWith("#")) && !nombre.isBlank()) mp.name = nombre;
-                m.players.add(mp);
-            }
-            m.refId = pid;
-            partidas.add(m);
-        }
-        partidas.sort((a, b) -> { Instant x = a.started == null ? Instant.EPOCH : a.started, y = b.started == null ? Instant.EPOCH : b.started; return y.compareTo(x); });
-        return new Actividad(pid, nombre.isBlank() ? actNombre : nombre, partidas, true, ACT_MAX_PAGINAS, System.currentTimeMillis());
-    }
     /** Ficha de cabecera sin llamada: el ELO más reciente que conocemos (watchlist, o el de su última partida por ladder). */
     FichaPerfil perfilSintetico(long pid, Actividad a, String pais) {
         Map<String, int[]> m = new HashMap<>();
@@ -3784,9 +3730,8 @@ public class SpoilerFreeRecs extends JFrame {
                 // 1) sfr-data: el año completo del paquete, sin tocar la API
                 Actividad desdeSfr = null; String hastaSfr = null; String paisSfr = null;
                 try {
-                    cargarEloAyer();   // nombres y países (formato v2 los toma del índice nocturno)
-                    Map<String, Object> shard = perfilesShard(pid);
-                    if (shard != null) { desdeSfr = actividadDesdeShard(pid, shard); hastaSfr = String.valueOf(shard.getOrDefault("hasta", perfilesIndex() == null ? "" : perfilesIndex().get("hasta"))); paisSfr = PAIS_DE.get(pid); }
+                    AnioSfr anio = SERVICIO_PERFIL.anioSfr(pid, actNombre);
+                    if (anio != null) { desdeSfr = anio.actividad(); hastaSfr = anio.hasta(); paisSfr = anio.pais(); }
                 } catch (Exception ex) { log("perfiles: " + causa(ex)); }
                 if (desdeSfr != null) {
                     Actividad a = desdeSfr; String hastaF = hastaSfr; String paisF = paisSfr;
@@ -4214,7 +4159,7 @@ public class SpoilerFreeRecs extends JFrame {
         h2hCuerpo.add(Box.createVerticalStrut(10));
         new Thread(() -> {
             Actividad ar = ACTIVIDAD_CACHE.get(rivalPid);
-            if (ar == null) { try { cargarEloAyer(); Map<String, Object> sh = perfilesShard(rivalPid); if (sh != null) { ar = actividadDesdeShard(rivalPid, sh); if (ar != null) ACTIVIDAD_CACHE.put(rivalPid, ar); } } catch (Exception ex) { log("h2h rival: " + causa(ex)); } }
+            if (ar == null) { try { AnioSfr an = SERVICIO_PERFIL.anioSfr(rivalPid, actNombre); if (an != null) { ar = an.actividad(); ACTIVIDAD_CACHE.put(rivalPid, ar); } } catch (Exception ex) { log("h2h rival: " + causa(ex)); } }   // actNombre: ver DEUDA (nombre del rival)
             final Actividad arF = ar;
             SwingUtilities.invokeLater(() -> {
                 if (h2hPidActual != rivalPid) return;
@@ -12439,7 +12384,11 @@ public class SpoilerFreeRecs extends JFrame {
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
     static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
-    static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c));
+    static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
+            new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
+                @Override public String mapa(String clave) { return nombreMapaClave(clave); }
+                @Override public String civ(String clave) { return nombreCivStats(clave); }
+            }, Reloj.SISTEMA));
 
     static String httpText(String url) throws IOException, InterruptedException { return API_CLIENTE.texto(url); }
 

@@ -2,6 +2,7 @@ package dev.tirador.aoe2radar.service;
 
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
+import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.Perfil;
 
@@ -30,10 +31,11 @@ public final class PerfilesCompanion implements ProfileService {
     private final CompanionApi api;
     private final CacheMemoria<Long, FichaPerfil> fichas;
     private final BiConsumer<Long, Object> aprenderCanal, aprenderPais;
+    private final AnioDesdeSfr anio;
 
     public PerfilesCompanion(CompanionApi api, CacheMemoria<Long, FichaPerfil> fichas,
-                             BiConsumer<Long, Object> aprenderCanal, BiConsumer<Long, Object> aprenderPais) {
-        this.api = api; this.fichas = fichas; this.aprenderCanal = aprenderCanal; this.aprenderPais = aprenderPais;
+                             BiConsumer<Long, Object> aprenderCanal, BiConsumer<Long, Object> aprenderPais, AnioDesdeSfr anio) {
+        this.api = api; this.fichas = fichas; this.aprenderCanal = aprenderCanal; this.aprenderPais = aprenderPais; this.anio = anio;
     }
 
     @Override public FichaPerfil ficha(long pid) {
@@ -131,4 +133,9 @@ public final class PerfilesCompanion implements ProfileService {
     @Override public Integer eloVinculada(long vid) { return elosVinculadas.get(vid); }
 
     @Override public Map<Long, String> familia(long pid) { return familias.get(pid); }
+
+    @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception {
+        avisarSiUi("ProfileService.anioSfr");
+        return anio.leer(pid, nombreSiFalta);
+    }
 }
