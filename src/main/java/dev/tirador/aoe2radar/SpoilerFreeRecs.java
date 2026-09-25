@@ -34,6 +34,7 @@ import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Recs;
 import dev.tirador.aoe2radar.api.SocketVivo;
+import dev.tirador.aoe2radar.api.SteamApi;
 import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
@@ -64,6 +65,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.Anotaciones;
 import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.DescargaRecs;
 import dev.tirador.aoe2radar.service.EloSesion;
@@ -6707,9 +6709,13 @@ public class SpoilerFreeRecs extends JFrame {
         catch (Exception e) { return 60_000; }
     }
 
+    /** Poner/quitar/leer alias y notas, con la persistencia inyectada (service.Anotaciones): un solo estado
+     *  compartido con cache.Anotaciones, cuyos mapas ALIASES/NOTAS se le pasan tal cual. Los diálogos se quedan
+     *  aquí, en la app. */
+    static final Anotaciones ANOTACIONES = new Anotaciones(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
+
     void borrarNota(long pid, String nombre) {
-        NOTAS.remove(pid);
-        guardarConfig("nota_" + pid, "");
+        ANOTACIONES.ponerNota(pid, "");
         playersList.repaint();
         refrescarAlturasWatch();
         tableModel.fireTableDataChanged();
@@ -6719,18 +6725,18 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void pedirNota(long pid, String nombre) {
-        JTextArea area = new JTextArea(NOTAS.getOrDefault(pid, ""), 4, 34);
+        String notaActual = ANOTACIONES.notaDe(pid);
+        JTextArea area = new JTextArea(notaActual != null ? notaActual : "", 4, 34);
         area.setLineWrap(true); area.setWrapStyleWord(true);
         String guardarO = t("Guardar", "Save"), borrarO = t("Borrar", "Delete"), cancelarO = t("Cancelar", "Cancel");
-        boolean tenia = NOTAS.containsKey(pid);
+        boolean tenia = notaActual != null;
         Object[] ops = tenia ? new Object[]{ guardarO, borrarO, cancelarO } : new Object[]{ guardarO, cancelarO };
         int r = JOptionPane.showOptionDialog(this, new Object[]{
                 t("Nota sobre ", "Note about ") + nombre + t(" (solo la ves tú):", " (only you see it):"),
                 new JScrollPane(area) }, t("Nota", "Note"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, ops, guardarO);
         if (r < 0 || ops[r].equals(cancelarO)) return;
         String nota = ops[r].equals(borrarO) ? "" : area.getText().trim().replace("\n", " ");
-        if (nota.isEmpty()) NOTAS.remove(pid); else NOTAS.put(pid, nota);
-        guardarConfig("nota_" + pid, nota);
+        ANOTACIONES.ponerNota(pid, nota);
         playersList.repaint();
         refrescarAlturasWatch();   // la sublínea de la nota nace o muere: re-medir
         tableModel.fireTableDataChanged();
@@ -6738,15 +6744,14 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void pedirAlias(long pid, String original) {
-        String actual = ALIASES.getOrDefault(pid, "");
+        String actual = ANOTACIONES.aliasDe(pid);
         String nuevo = (String) JOptionPane.showInputDialog(this,
                 t("Nombre con el que quieres ver a ", "Name you want to see for ") + original
                         + t(" en toda la app (vacío = quitar el alias):", " across the app (empty = remove alias):"),
-                t("Mostrar como\u2026", "Show as\u2026"), JOptionPane.PLAIN_MESSAGE, null, null, actual);
+                t("Mostrar como\u2026", "Show as\u2026"), JOptionPane.PLAIN_MESSAGE, null, null, actual != null ? actual : "");
         if (nuevo == null) return;
         nuevo = nuevo.trim();
-        if (nuevo.isEmpty() || nuevo.equals(original)) ALIASES.remove(pid); else ALIASES.put(pid, nuevo);
-        guardarConfig("alias_" + pid, nuevo);
+        ANOTACIONES.ponerAlias(pid, original, nuevo);
         playersList.repaint();
         tableModel.fireTableDataChanged();
         refrescarSujetos(ultimosSujetos, invitado != null);
@@ -8929,9 +8934,6 @@ public class SpoilerFreeRecs extends JFrame {
         return p * 2;
     }
 
-    /** httpText con hasta dos reintentos tras espera si el servidor limita (HTTP 429). Delega en ApiClient. */
-    static String httpText429(String url) throws IOException, InterruptedException { return API_CLIENTE.textoCon429(url); }
-
     /** «Guess the ELO!»: 5 partidas 1v1 recientes muestreadas por tramos de
      *  todo el ladder, anónimas en la app. La ventana temporal es la misma
      *  configurada para «Al azar por ELO…». */
@@ -10103,6 +10105,11 @@ public class SpoilerFreeRecs extends JFrame {
         if (i < filasDir.size()) abrirUrl("https://twitch.tv/" + filasDir.get(i)[0]);
     }
 
+    /** El endpoint de Steam (api.SteamApi), aparte del companion. Campo de instancia, no static: así no importa el
+     *  orden de texto frente a API_CLIENTE (static, definido más abajo) — se crea cuando ya existe la ventana, y para
+     *  entonces la clase entera (con sus static) ya está inicializada. */
+    final SteamApi STEAM = new SteamApi(API_CLIENTE);
+
     /** Historial de alias que guarda Steam para la cuenta (endpoint público
      *  de la comunidad, vía el steamId del companion). Solo bajo demanda. */
     void nicksAnteriores(long pid, String nombre) {
@@ -10118,17 +10125,7 @@ public class SpoilerFreeRecs extends JFrame {
                                    "This account has no Steam link on the companion: no history available.");
                         return null;
                     }
-                    Object aliases = Json.parse(httpText429(
-                            "https://steamcommunity.com/profiles/" + steamId + "/ajaxaliases"));
-                    List<String[]> out = new ArrayList<>();
-                    if (aliases instanceof List<?> l)
-                        for (Object o : l) {
-                            Map<String, Object> a = obj(o);
-                            String n = String.valueOf(firstNonNull(val(a, "newname"), ""));
-                            String cuando = String.valueOf(firstNonNull(val(a, "timechanged"), ""));
-                            if (!n.isBlank()) out.add(new String[]{ n, cuando });
-                        }
-                    return out;
+                    return STEAM.alias(steamId);
                 } catch (Exception ex) {
                     motivo = t("No se pudo consultar el historial (perfil de Steam privado o servicio caído).",
                                "Could not fetch the history (private Steam profile or service down).");
@@ -12137,8 +12134,6 @@ public class SpoilerFreeRecs extends JFrame {
             }, Reloj.SISTEMA),
             new HistorialPerfil(COMPANION, ACTIVIDAD_CACHE, pid -> cargarActividad(pid), a -> guardarActividad(a), ms -> dormir(ms), PER_PAGE, PAUSA_MS, Reloj.SISTEMA),
             new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA));
-
-    static String httpText(String url) throws IOException, InterruptedException { return API_CLIENTE.texto(url); }
 
     static void dormir(long ms) {
         long fin = System.currentTimeMillis() + ms;
