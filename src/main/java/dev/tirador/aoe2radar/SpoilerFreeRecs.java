@@ -304,10 +304,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             new dev.tirador.aoe2radar.ui.DialogosJugador.Anfitrion() {
                 @Override public void repintarLista() { playersList.repaint(); }
                 @Override public void refrescarAlturas() { refrescarAlturasWatch(); }
-                @Override public void refrescarTabla() { tableModel.fireTableDataChanged(); }
-                @Override public void ajustarColumnasTabla() { ajustarColumnas(); }
+                @Override public void refrescarTabla() { partidas.refrescarTabla(); }
+                @Override public void ajustarColumnasTabla() { partidas.ajustarColumnas(); }
                 @Override public void actualizarControles() { actualizarControlesTabla(); }
-                @Override public void refrescarSujetos() { SpoilerFreeRecs.this.refrescarSujetos(ultimosSujetos, invitado != null); }
+                @Override public void refrescarSujetos() { partidas.refrescarSujetos(partidas.ultimosSujetos, invitado != null); }
                 @Override public void mostrarEstado(String texto) { status.setText(texto); }
                 @Override public boolean enWatchlist(long pid) { return containsPlayerId(pid); }
                 @Override public void ponerEloWatch(long pid, int elo) { eloWatch.put(pid, elo); }
@@ -356,7 +356,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final AzarService azarService = new AzarServiceCompanion(COMPANION, civ -> SpoilerFreeRecs.this.techTree.claveCivDeNombre(civ),
             Snapshots::muestraAyer, ms -> dormir(ms), PER_PAGE, PAUSA_MS);
 
-    static String todosModos() { return t("Todos los modos", "All modes"); }
 
     // ----- Modelo ------------------------------------------------------------
 
@@ -376,122 +375,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (nc) guardarConfig("civs_vistas", String.join(",", CIVS_CAT));
     }
 
-    // ----- Presentación de Match (texto/HTML de las columnas; los datos viven en Match) -----
-    static String enfrentamiento(Match m) { return enfrentamiento(m, false); }
-
-    static String enfrentamiento(Match m, boolean conResultados) {
-        boolean revelar = conResultados && m.finished != null;   // en GTE solo con su ojo: nombres, ELO y ganador
-        Map<Integer, List<String>> porEquipo = new TreeMap<>();
-        Map<Integer, Boolean> equipoGano = new TreeMap<>();
-        int anon = 0;
-        for (MatchPlayer p : m.players) {
-            String nombre = m.gte > 0 && !conResultados ? t("Jugador ", "Player ") + (++anon) : nombreVisible(p.id, p.name);
-            if (m.gte > 0 && conResultados && p.rating != null) nombre += " " + p.rating;   // la solución del GTE
-            String extra = p.civ != null && !p.civ.isBlank() ? p.civ : "";
-            if (m.azar && m.gte == 0 && p.rating != null)
-                extra = extra.isEmpty() ? String.valueOf(p.rating) : extra + ", " + p.rating;
-            String pieza = nombre + (extra.isEmpty() ? "" : " (" + extra + ")");
-            if (revelar) {
-                pieza = escapeHtml(pieza);
-                if (SUJETOS.contains(p.id)) pieza = "<b>" + pieza + "</b>";   // la negrita dice la autoría
-                if (p.ratingDiff != null) {
-                    String col = p.ratingDiff >= 0
-                            ? (temaOscuroActivo ? "#6abf69" : "#2e7d32")
-                            : (temaOscuroActivo ? "#e57373" : "#c62828");
-                    pieza += " <font color='" + col + "'>" + (p.ratingDiff >= 0 ? "+" : "")
-                            + p.ratingDiff + "</font>";
-                }
-            }
-            porEquipo.computeIfAbsent(p.team, k -> new ArrayList<>()).add(pieza);
-            if (Boolean.TRUE.equals(p.won)) equipoGano.put(p.team, true);
-        }
-        List<String> lados = new ArrayList<>();
-        boolean algunGanador = equipoGano.containsValue(true);
-        for (Map.Entry<Integer, List<String>> e : porEquipo.entrySet()) {
-            String lado = String.join(", ", e.getValue());
-            if (revelar && algunGanador && Boolean.TRUE.equals(equipoGano.get(e.getKey())))
-                lado = "\u2726 " + lado;   // corona discreta: el color vive en la columna Jugador
-            lados.add(lado);
-        }
-        String s = String.join("  vs  ", lados);
-        return revelar ? "<html>" + s + "</html>" : s;
-    }
-
-    /** Nombre del jugador seguido de referencia (columna «Jugador»). */
-    static String refNombre(Match m) { return refNombre(m, false); }
-
-    static String refNombre(Match m, boolean revelado) {
-        if (m.gte > 0 && !revelado) return "GTE " + m.gte;
-        for (MatchPlayer p : m.players) if (p.id == m.refId) return nombreVisible(p.id, p.name);
-        return "?";
-    }
-
-    /** «2364 \u2192 2378 (+14)»: el rating con el que entró y con el que salió. */
-    static String eloAntesDespues(MatchPlayer p) {   // devuelve HTML (sin envoltorio): gris + diff en verde/rojo
-        if (p == null || p.rating == null) return "";
-        if (p.ratingDiff == null) return " <font color='#8a8a8a'>" + p.rating + "</font>";
-        String colD = p.ratingDiff > 0 ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : p.ratingDiff < 0 ? (temaOscuroActivo ? "#e57373" : "#c62828") : "#8a8a8a";
-        return " <font color='" + colD + "'>(" + (p.ratingDiff >= 0 ? "+" : "") + p.ratingDiff + ")</font> <font color='#8a8a8a'>"
-                + p.rating + " \u2192 " + (p.rating + p.ratingDiff) + "</font>";
-    }
-
-    static String rivalTexto(Match m) { return rivalTexto(m, false); }
-
-    /** Columna Rival: en 1v1 el otro (con su ELO antes → después si la fila está revelada); en equipos «2v2 \u00B7 vs A, B». */
-    static String rivalTexto(Match m, boolean revelado) {
-        if (m.gte > 0 && !revelado) return "";
-        MatchPlayer yo = null;
-        for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
-        if (yo == null) return "";
-        if (m.players.size() == 2) {
-            for (MatchPlayer p : m.players) if (p.id != m.refId) {
-                if (!revelado) return nombreVisible(p.id, p.name);
-                String colR = Boolean.TRUE.equals(p.won) ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : (temaOscuroActivo ? "#e57373" : "#c62828");
-                return "<html><font color='" + colR + "'>" + (Boolean.TRUE.equals(p.won) ? "\u2726 " : "") + escapeHtml(nombreVisible(p.id, p.name))
-                        + eloAntesDespues(p) + "</font></html>";
-            }
-            return "";
-        }
-        Map<Integer, Integer> porEquipo = new TreeMap<>();
-        for (MatchPlayer p : m.players) porEquipo.merge(p.team, 1, Integer::sum);
-        StringBuilder tam = new StringBuilder();
-        for (int n : porEquipo.values()) { if (tam.length() > 0) tam.append('v'); tam.append(n); }
-        List<String> riv = new ArrayList<>();
-        for (MatchPlayer p : m.players) if (p.team != yo.team) riv.add(nombreVisible(p.id, p.name));
-        return tam + " \u00B7 vs " + String.join(", ", riv);
-    }
-
-    /** El veredicto del buscado, en su columna: verde con \u2726 si ganó,
-     *  rojo si perdió; a pelo en vivas, colgadas y GTE. */
-    static String refConVeredicto(Match m) {
-        String nombre = refNombre(m, true);
-        if (m.finished == null) return nombre;
-        Boolean gano = null;
-        for (MatchPlayer p : m.players) if (p.id == m.refId) { gano = p.won; break; }
-        if (gano == null) return nombre;
-        String col = gano ? (temaOscuroActivo ? "#6abf69" : "#2e7d32")
-                          : (temaOscuroActivo ? "#e57373" : "#c62828");
-        MatchPlayer yo = null;
-        for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
-        return "<html><font color='" + col + "'>" + (gano ? "\u2726 " : "")
-                + escapeHtml(nombre)
-                + eloAntesDespues(yo)
-                + "</font></html>";
-    }
-
-    /** Celdas ordenables que se pintan como texto. En curso real = «EN DIRECTO»
-     *  arriba del todo; fantasmas de crash = «—» en su sitio cronológico. */
-    record FechaCell(Instant t, Instant orden) implements Comparable<FechaCell> {
-        static final DateTimeFormatter F =
-                DateTimeFormatter.ofPattern("dd/MM HH:mm").withZone(ZoneId.systemDefault());
-        FechaCell(Instant t) { this(t, null); }
-        Instant clave() { return t != null ? t : (orden != null ? orden : Instant.MAX); }
-        @Override public int compareTo(FechaCell o) { return clave().compareTo(o.clave()); }
-        @Override public String toString() {
-            if (t != null) return F.format(t);
-            return orden != null ? "\u2014" : dev.tirador.aoe2radar.util.I18n.t("EN DIRECTO", "LIVE");
-        }
-    }
+    // Presentación de Match (enfrentamiento/refNombre/eloAntesDespues/rivalTexto/refConVeredicto/FechaCell):
+    // movida a ui.PartidasTexto (fase 3, tanda 3, oleada B). SUJETOS: movido a ui.PartidasView.SUJETOS.
 
     // ----- Estado UI ---------------------------------------------------------
     final List<Player> todosJugadores = new ArrayList<>();          // fuente de verdad (todos los grupos)
@@ -525,12 +410,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             Math.min(24, Integer.parseInt(leerConfig("ventana_n", leerConfig("horas", "24")))), 1, 24, 1));
     final JComboBox<String> unidadCombo = new JComboBox<>(new String[]{ t("horas", "hours"), t("días", "days"), t("semanas", "weeks") });
 
-    /** «36 h», «3 días», «2 semanas»: la ventana en la unidad que se lee mejor. */
-    static String textoVentana(int horas) {
-        if (horas % (24 * 7) == 0 && horas >= 24 * 7) { int w = horas / (24 * 7); return w + (w == 1 ? t(" semana", " week") : t(" semanas", " weeks")); }
-        if (horas % 24 == 0 && horas >= 48) return (horas / 24) + t(" días", " days");
-        return horas + " h";
-    }
 
     /** La ventana de búsqueda en horas: número × unidad (recordados entre sesiones). */
     int horasVentana() {
@@ -538,27 +417,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         int u = unidadCombo.getSelectedIndex();
         return Math.min(24 * 7, n * (u == 1 ? 24 : u == 2 ? 24 * 7 : 1));   // techo: una semana; el histórico completo vive en el perfil («Todas las partidas del perfil»)
     }
-    final JComboBox<String> modeCombo = new JComboBox<>(new String[]{ todosModos() });
-    final JComboBox<String> mapaCombo = new JComboBox<>(new String[]{ t("Todos los mapas", "All maps") });   // filtro de mapa sobre las partidas cargadas
-    final JComboBox<String> periodoCombo = new JComboBox<>(new String[]{ t("Todo", "All"), t("7 días", "7 days"), t("30 días", "30 days"), t("90 días", "90 days"), t("365 días", "365 days") });   // filtro de periodo
     boolean actualizandoMapas;
-    final MatchesTableModel tableModel = new MatchesTableModel();
-    JTable table;   // no final: se asigna en construirTablaPartidas(), no en el constructor (T3-A1)
     final JLabel status = new JLabel(t("Listo.", "Ready.")) {
         @Override public void setText(String texto) {   // si no cabe, el tooltip lo enseña entero
             super.setText(texto);
             setToolTipText(texto == null || texto.isBlank() ? null : texto);
         }
     };
-    final JButton dlSel = new JButton(t("Descargar seleccionadas", "Download selected"));
-    final JButton dlAll = new JButton(t("Descargar todas", "Download all"));
-    final JButton fetchBtn = new JButton(t("Buscar partidas", "Search games"));
-    final JButton azarBtn  = new JButton(t("Al azar por ELO…", "Random by ELO…"));
-    final JButton gteBtn   = new JButton("Guess the ELO!");
     final JButton cafeBtn  = new JButton("\u2615 " + t("Invítame a un café", "Buy me a coffee"));
     final JProgressBar progreso = new JProgressBar();
-    final List<Match> all  = new ArrayList<>();   // todo lo consultado en la ventana
-    final List<Match> view = new ArrayList<>();   // lo que pasa los filtros (lo que ve la tabla)
     final Image logo = cargarLogo();
     final JCheckBoxMenuItem autoSgItem = new JCheckBoxMenuItem(t("Enviar al juego al descargar", "Send to game after download"),
             Boolean.parseBoolean(leerConfig("autosavegame", "false")));
@@ -568,7 +435,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     JLabel resumenWatch;   // «50 jugadores · 6 en directo»
     JButton delBtn;
     JLabel cabLabel;
-    volatile SwingWorker<?, ?> fetchWorker;
     Player invitado;
     String vistaDelInvitado = "";
 
@@ -604,164 +470,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     JComboBox<PaisItem> paisCombo;
     javax.swing.JTextField buscaPais;
     JPanel parPais, sujetosPanel;
-    List<Player> ultimosSujetos = List.of();
-    final Set<Long> filtroSujetos = new HashSet<>();   // chips activos de la cabecera; vacío = todas las partidas de los buscados
-    String vistaDeSujetos = "";
 
-    /** Cabecera fija sobre la watchlist: los sujetos de la búsqueda, fuera
-     *  del scroll e imposibles de perder de vista. Solo con ≤4 sujetos. */
-    void refrescarSujetos(List<Player> tracked, boolean esInvitadoIn) {
-        ultimosSujetos = tracked == null ? List.of() : List.copyOf(tracked);
-        if (todasPerfilBtn != null) todasPerfilBtn.setVisible(ultimosSujetos.size() == 1 && ultimosSujetos.get(0).id() > 0);   // «Todas las partidas del perfil» solo cuando la búsqueda es de un jugador
-        final boolean esInvitado = esInvitadoIn
-                || (invitado != null && ultimosSujetos.size() == 1 && ultimosSujetos.get(0).id() == invitado.id());
-        sujetosPanel.removeAll();
-        filtroSujetos.retainAll(ultimosSujetos.stream().map(Player::id).collect(java.util.stream.Collectors.toSet()));
-        if (ultimosSujetos.isEmpty()) {
-            sujetosPanel.setVisible(false);
-            sujetosPanel.revalidate(); sujetosPanel.repaint();
-            return;
-        }
-        final boolean muchos = ultimosSujetos.size() > 10;
-        Color sep = temaOscuroActivo ? new Color(0x5a, 0x5a, 0x5a) : new Color(0xc0, 0xc0, 0xc0);
-        Color gris = temaOscuroActivo ? new Color(0x9a, 0x9a, 0x9a) : new Color(0x66, 0x66, 0x66);
-        log("cabecera sujetos: " + ultimosSujetos.size() + " · invitado=" + esInvitado);
-        JLabel tit = new JLabel(t("Partidas de:", "Games of:"));
-        tit.setFont(tit.getFont().deriveFont(Font.PLAIN, 11f));
-        tit.setForeground(gris);
-        tit.setBorder(BorderFactory.createEmptyBorder(3, 6, 1, 0));
-        JButton cerrarBusq = new JButton("\u00D7");
-        cerrarBusq.setFocusable(false);
-        cerrarBusq.setMargin(new Insets(0, 5, 0, 5));
-        cerrarBusq.putClientProperty("JButton.buttonType", "roundRect");
-        cerrarBusq.setToolTipText(t("Cerrar esta búsqueda: vacía la tabla", "Close this search: clears the table"));
-        cerrarBusq.addActionListener(e -> cerrarBusqueda());
-        JPanel filaTit = new JPanel(new BorderLayout(6, 0));
-        filaTit.setOpaque(false);
-        filaTit.add(tit, BorderLayout.WEST);
-        filaTit.add(cerrarBusq, BorderLayout.EAST);
-        filaTit.setAlignmentX(Component.LEFT_ALIGNMENT);
-        sujetosPanel.add(filaTit);
-        JPanel chipsSujetos = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
-        chipsSujetos.setOpaque(false);
-        chipsSujetos.setAlignmentX(Component.LEFT_ALIGNMENT);
-        chipsSujetos.addMouseListener(new MouseAdapter() {   // clic en el hueco entre chips = todas las partidas
-            @Override public void mousePressed(MouseEvent e) {
-                if (SwingUtilities.isLeftMouseButton(e) && !filtroSujetos.isEmpty()) { filtroSujetos.clear(); refrescarSujetos(ultimosSujetos, esInvitadoIn); applyFilters(); }
-            }
-        });
-        if (muchos) {   // más de 10: «todo el grupo (N)» y un «Filtrar ▾» con casillas
-            JLabel todos = new JLabel("<html><i>" + escapeHtml(vistaActualId().split("\\|")[0]) + "</i> <font color='#8a8a8a'>(" + ultimosSujetos.size() + ")</font></html>");
-            todos.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
-            JButton filtrarBtn = new JButton(t("Filtrar \u25BE", "Filter \u25BE"));
-            filtrarBtn.setFocusable(false); filtrarBtn.setMargin(new Insets(1, 6, 1, 6));
-            filtrarBtn.putClientProperty("JButton.buttonType", "roundRect");
-            filtrarBtn.addActionListener(e -> {
-                JPopupMenu pm = new JPopupMenu();
-                JMenuItem todosIt = new JMenuItem(t("Todas las partidas", "All games"));
-                todosIt.addActionListener(a -> { filtroSujetos.clear(); refrescarSujetos(ultimosSujetos, esInvitadoIn); applyFilters(); });
-                pm.add(todosIt); pm.addSeparator();
-                for (Player s : ultimosSujetos) {
-                    JCheckBoxMenuItem it = new JCheckBoxMenuItem(nombreVisible(s.id(), s.name()), filtroSujetos.contains(s.id()));
-                    it.addActionListener(a -> { if (it.isSelected()) filtroSujetos.add(s.id()); else filtroSujetos.remove(s.id()); refrescarSujetos(ultimosSujetos, esInvitadoIn); applyFilters(); });
-                    pm.add(it);
-                }
-                pm.show(filtrarBtn, 0, filtrarBtn.getHeight());
-            });
-            chipsSujetos.add(todos); chipsSujetos.add(filtrarBtn);
-            if (!filtroSujetos.isEmpty()) {
-                JLabel act = new JLabel("<font color='#8a8a8a'>" + filtroSujetos.size() + t(" filtrados", " filtered") + "</font>");
-                act.setText("<html>" + act.getText() + "</html>");
-                chipsSujetos.add(act);
-            }
-        }
-        for (Player s : muchos ? List.<Player>of() : ultimosSujetos) {
-            Integer elo = eloWatch.get(s.id());
-            JLabel l = new JLabel("<html><i>" + escapeHtml(nombreVisible(s.id(), s.name())) + "</i>"
-                    + (elo != null ? " <font color='#8a8a8a'>\u00B7 " + elo + "</font>" : "") + "</html>");
-            final boolean activo = filtroSujetos.contains(s.id());
-            l.setOpaque(activo);
-            if (activo) l.setBackground(temaOscuroActivo ? new Color(0x4a, 0x3a, 0x1e) : new Color(0xf3, 0xe3, 0xc0));   // chip seleccionado
-            l.setBorder(BorderFactory.createCompoundBorder(
-                    BorderFactory.createLineBorder(activo ? (temaOscuroActivo ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f)) : new Color(0, 0, 0, 0), 1, true),
-                    BorderFactory.createEmptyBorder(1, 6, 1, 6)));
-            l.setToolTipText(t("Clic: ver solo sus partidas (Ctrl+clic: varios; otro clic: todas) — clic derecho: perfil, nicks, grupos\u2026",
-                    "Click: only their games (Ctrl+click: several; click again: all) — right-click: profile, names, groups\u2026"));
-            l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            final long pid = s.id(); final String nom = s.name();
-            l.addMouseListener(new MouseAdapter() {
-                void popup(MouseEvent e) {
-                    JPopupMenu pm = new JPopupMenu();
-                    JMenu jm = menuDeJugador(pid, nom);
-                    for (Component c : jm.getMenuComponents()) pm.add(c);
-                    if (esInvitado) {
-                        pm.addSeparator();
-                        JMenuItem quitar = new JMenuItem(t("Quitar filtro (dejar de ver sus partidas)",
-                                "Remove filter (stop viewing their games)"));
-                        quitar.addActionListener(a -> {
-                            invitado = null;
-                            refrescarSujetos(List.of(), false);
-                            aplicarFiltroGrupo();
-                        });
-                        pm.add(quitar);
-                    }
-                    pm.show(l, e.getX(), e.getY());
-                }
-                @Override public void mousePressed(MouseEvent e)  { if (e.isPopupTrigger()) popup(e); }
-                @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) popup(e); }
-                @Override public void mouseClicked(MouseEvent e)  {
-                    if (e.getButton() != MouseEvent.BUTTON1) return;
-                    if (e.getClickCount() == 2) { abrirPerfil(pid, nom); return; }
-                    if (e.getClickCount() != 1) return;
-                    if (e.isControlDown()) { if (!filtroSujetos.remove(pid)) filtroSujetos.add(pid); }   // varios
-                    else if (filtroSujetos.size() == 1 && filtroSujetos.contains(pid)) filtroSujetos.clear();   // otro clic = todas
-                    else { filtroSujetos.clear(); filtroSujetos.add(pid); }
-                    refrescarSujetos(ultimosSujetos, esInvitadoIn);
-                    applyFilters();
-                }
-            });
-            String grupoYa = ultimosSujetos.size() == 1 ? grupoDeJugador(pid) : null;
-            if (ultimosSujetos.size() == 1 && grupoYa != null && !esInvitado) {   // ya fichado: se dice, no se esconde
-                JLabel ya = new JLabel("\u2605 " + t("en ", "in ") + (grupoYa.isBlank() ? t("tu watchlist", "your watchlist") : grupoYa));
-                ya.setFont(ya.getFont().deriveFont(Font.PLAIN, 11f));
-                ya.setForeground(gris);
-                JPanel filaYa = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-                filaYa.setOpaque(false);
-                filaYa.add(l);
-                filaYa.add(ya);
-                chipsSujetos.add(filaYa);
-            } else if (ultimosSujetos.size() == 1 && grupoYa == null) {   // único y sin fichar: invitado o alguien del top
-                JButton addInv = new JButton(t("+ Añadir al grupo", "+ Add to group"));
-                addInv.setFont(addInv.getFont().deriveFont(11f));
-                addInv.setMargin(new Insets(1, 6, 1, 6));
-                addInv.setFocusable(false);
-                addInv.setToolTipText(t("Ficha a este jugador en uno de tus grupos", "Add this player to one of your groups"));
-                addInv.addActionListener(e -> {
-                    JPopupMenu pm = new JPopupMenu();
-                    JMenu jm = menuDeJugador(pid, nom);
-                    for (Component c : jm.getMenuComponents())
-                        if (c instanceof JMenu sub && sub.getText() != null && sub.getText().toLowerCase().startsWith(t("añadir", "add")))
-                            for (Component cc : sub.getMenuComponents()) pm.add(cc);
-                    if (pm.getComponentCount() == 0) for (Component c : jm.getMenuComponents()) pm.add(c);
-                    pm.show(addInv, 0, addInv.getHeight());
-                });
-                JPanel fila = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-                fila.setOpaque(false);
-                fila.add(l);
-                fila.add(addInv);
-                chipsSujetos.add(fila);
-            } else chipsSujetos.add(l);
-        }
-        sujetosPanel.add(chipsSujetos);
-        JPanel raya = new JPanel();
-        raya.setMaximumSize(new Dimension(Integer.MAX_VALUE, 5));
-        raya.setPreferredSize(new Dimension(10, 5));
-        raya.setOpaque(false);
-        raya.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, sep));
-        sujetosPanel.add(raya);
-        sujetosPanel.setVisible(true);
-        sujetosPanel.revalidate(); sujetosPanel.repaint();
-    }
     volatile boolean rearmandoPais;
     List<PaisItem> catalogoOrdenado = List.of();
 
@@ -800,14 +509,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     String topFirma = "";
     final Map<Long, Integer> rankTop = new HashMap<>();
     final Map<Long, String[]> twitchLive = new HashMap<>();   // pid -> { canal, título, viewers }; escribe ui.DirectosView, leen Live now/Perfil
-    JToggleButton directosBtn, resultadosBtn;
-    volatile boolean topeAlcanzado;   // la búsqueda tocó el tope de páginas/partidas: se avisa en el status
-    JTextField rivalField;            // filtro por rival (sobre las partidas cargadas, sin llamadas)
+    JToggleButton directosBtn;
     Player objetivoForzado;           // jugador concreto pedido con «Ver sus partidas» (una sola búsqueda)
-    JPanel parModo, parRival;         // solo visibles cuando hay partidas que filtrar
 
-    /** «Mostrar resultados», Modo y Rival solo cuando la tabla tiene partidas a la vista. */
-    JPanel filaNota, filaBotonesInferiores;   // solo tienen sentido con la tabla de partidas a la vista
 
     /** Una pestaña de la barra de vistas: estilo «tab» de FlatLaf (subrayado en la activa), icono y sin foco. */
     static JToggleButton pestana(String texto, Icon icono) {
@@ -854,51 +558,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     JToggleButton recsBtn;                    // pestaña «Partidas»
     void actualizarControlesTabla() {
-        boolean tablaVisible = recsCards != null && recsCards.isShowing() && !(directosBtn != null && directosBtn.isSelected()) && !(techTreeBtn != null && techTreeBtn.isSelected()) && !(ladderBtn != null && ladderBtn.isSelected()) && !(civStatsBtn != null && civStatsBtn.isSelected()) && !(perfil != null && perfil.abierto()) && !(liveNow != null && liveNow.ahoraAbierta);
-        boolean hay = tablaVisible && !all.isEmpty();
-        if (filaNota != null) filaNota.setVisible(tablaVisible);
-        if (filaBotonesInferiores != null) filaBotonesInferiores.setVisible(tablaVisible);
+        boolean tablaVisible = partidas.recsCards != null && partidas.recsCards.isShowing() && !(directosBtn != null && directosBtn.isSelected()) && !(techTreeBtn != null && techTreeBtn.isSelected()) && !(ladderBtn != null && ladderBtn.isSelected()) && !(civStatsBtn != null && civStatsBtn.isSelected()) && !(perfil != null && perfil.abierto()) && !(liveNow != null && liveNow.ahoraAbierta);
+        boolean hay = tablaVisible && partidas.hayPartidas();
+        if (partidas.filaNota != null) partidas.filaNota.setVisible(tablaVisible);
+        if (partidas.filaBotonesInferiores != null) partidas.filaBotonesInferiores.setVisible(tablaVisible);
         status.setVisible(tablaVisible || (directosBtn != null && directosBtn.isSelected()));   // los mensajes de estado, solo donde se usan
         sincronizarPestanas(tablaVisible);
-        if (resultadosBtn != null) resultadosBtn.setVisible(hay);
-        if (parModo != null) parModo.setVisible(hay);
-        if (parRival != null) parRival.setVisible(hay);
+        if (partidas.resultadosBtn != null) partidas.resultadosBtn.setVisible(hay);
+        if (partidas.parModo != null) partidas.parModo.setVisible(hay);
+        if (partidas.parRival != null) partidas.parRival.setVisible(hay);
     }
-    JPopupMenu rivalPopup;
-    String filtroRival = "";
-
-    /** Sugerencias: rivales de la búsqueda actual que contienen lo tecleado, con su número de partidas. */
-    void sugerirRivales() {
-        rivalPopup.setVisible(false);
-        rivalPopup.removeAll();
-        if (filtroRival.length() < 1 || all.isEmpty()) return;
-        Map<String, Integer> cuenta = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (Match m : all) {
-            if (m.gte > 0) continue;
-            asignarRef(m);
-            MatchPlayer yo = null;
-            for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
-            for (MatchPlayer p : m.players) {
-                if (p.id == m.refId) continue;
-                if (yo != null && m.players.size() > 2 && p.team == yo.team) continue;
-                String vis = nombreVisible(p.id, p.name);
-                if (normalizarNick(vis).contains(filtroRival) || normalizarNick(p.name).contains(filtroRival)) cuenta.merge(vis, 1, Integer::sum);
-            }
-        }
-        if (cuenta.isEmpty()) return;
-        List<Map.Entry<String, Integer>> lista = new ArrayList<>(cuenta.entrySet());
-        lista.sort((a, b) -> b.getValue() - a.getValue());
-        int n = 0;
-        for (Map.Entry<String, Integer> en : lista) {
-            if (n++ >= 8) break;
-            if (normalizarNick(en.getKey()).equals(filtroRival) && lista.size() == 1) return;   // ya es exacto: sin popup
-            JMenuItem it = new JMenuItem(en.getKey() + "  (" + en.getValue() + ")");
-            it.addActionListener(a -> { rivalField.setText(en.getKey()); rivalPopup.setVisible(false); });
-            rivalPopup.add(it);
-        }
-        rivalPopup.show(rivalField, 0, rivalField.getHeight());
-    }
-    boolean mostrarResultados;   // modo consulta: SIEMPRE renace apagado
 
     // ----- Forma reciente (±ELO en una ventana de horas; 1v1 ranked) --------------
 
@@ -1064,23 +733,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return v;
     }
 
-    final Set<Long> reveladas = new HashSet<>();   // ojos abiertos fila a fila; se olvidan con cada tabla nueva
 
-    boolean revelada(Match m) { return (mostrarResultados && m.gte == 0) || reveladas.contains(m.id); }   // el global no destapa GTE
 
     /** Cada tabla nueva nace tapada: se apaga el modo consulta y se cierran los ojos. */
-    void taparResultados() {
-        boolean cambia = mostrarResultados || !reveladas.isEmpty();
-        mostrarResultados = false;
-        reveladas.clear();
-        if (resultadosBtn != null && resultadosBtn.isSelected()) resultadosBtn.setSelected(false);
-        if (cambia) { actualizarNotaSpoilers(); if (tableModel != null) tableModel.fireTableDataChanged(); }
-    }
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    volatile int fallosFetch;   // jugadores sin respuesta en la última búsqueda
 
     static final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
-    JComboBox<String> topNCombo; boolean rellenandoTopN; JPanel norteWatchRef; JButton todasPerfilBtn;
+    JComboBox<String> topNCombo; boolean rellenandoTopN; JPanel norteWatchRef;
     JPanel parClan, parClanGuardados; JTextField clanField; JPopupMenu clanPopup; JComboBox<String> clanesGuardadosCombo; JButton clanEstrella; boolean rellenandoClanes;
     List<String> clanesGuardados() { List<String> l = new ArrayList<>(); for (String x : leerConfig("clanes_guardados", "").split(",")) if (!x.isBlank()) l.add(x.trim()); return l; }
     void refrescarClanesGuardados() {
@@ -1141,7 +800,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ladder");
         ratings.alAbrirAntes();
-        taparResultados(); apagarForma();
+        partidas.taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
         ratings.alAbrirDespues();
     }
@@ -1170,7 +829,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "civstats");
         civStats.subirArriba();
-        taparResultados(); apagarForma();
+        partidas.taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
         civStats.alAbrir();
     }
@@ -1192,7 +851,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     void perfilDesdeBoton() {
         List<Player> sel = playersList.getSelectedValuesList();
         if (!sel.isEmpty()) abrirPerfil(sel.get(0).id(), nombreVisible(sel.get(0).id(), sel.get(0).name()));
-        else if (ultimosSujetos.size() == 1 && recsCards != null && recsCards.isShowing()) abrirPerfil(ultimosSujetos.get(0).id(), nombreVisible(ultimosSujetos.get(0).id(), ultimosSujetos.get(0).name()));   // «Partidas de: X» → su perfil
+        else if (partidas.ultimosSujetos.size() == 1 && partidas.recsCards != null && partidas.recsCards.isShowing()) abrirPerfil(partidas.ultimosSujetos.get(0).id(), nombreVisible(partidas.ultimosSujetos.get(0).id(), partidas.ultimosSujetos.get(0).name()));   // «Partidas de: X» → su perfil
         else if (perfil.pidAbierto() > 0 && ACTIVIDAD_CACHE.containsKey(perfil.pidAbierto())) abrirPerfil(perfil.pidAbierto(), perfil.nombreAbierto());
         else abrirPerfil(0, "");
     }
@@ -1213,7 +872,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         perfil.marcarAbierta();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "perfil");
         subirArriba(perfil.panel());
-        taparResultados(); apagarForma();
+        partidas.taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
         perfil.alAbrir(pid, nombre);
     }
@@ -1244,7 +903,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         liveNow.marcarAbierta();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ahora");
         liveNow.alAbrirAntes();
-        taparResultados(); apagarForma();
+        partidas.taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
         liveNow.alAbrirDespues();
     }
@@ -1476,7 +1135,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (perfilBtn != null) perfilBtn.setSelected(false);
         if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         ((CardLayout) centroCards.getLayout()).show(centroCards, "techtree");
-        taparResultados(); apagarForma();
+        partidas.taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
         if (splitPrincipal != null && ttDivisorPrevio < 0) {   // la watchlist se pliega: el árbol necesita el ancho
             ttDivisorPrevio = splitPrincipal.getDividerLocation();
@@ -1529,7 +1188,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             boolean viva = c.veredicto() != LiveService.Veredicto.TERMINADA;   // sin datos: el beneficio de la duda
             if (!viva) { log("socket: partida " + m.id + " ya terminada según la API: fantasma ignorado"); return; }
             for (long pid : pids) { if (VIVO.terminada(m.id)) continue; String resumen = resumenVivo(m, pid); if (!VIVO.marcarJugando(pid, m.id, resumen)) continue;   /* terminada entretanto: ni Live now ni avisos */ VIVO.guardarPartida(pid, m); if (liveNow != null) liveNow.liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
-            SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); table.repaint(); });
+            SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); partidas.table.repaint(); });
         }, "socket-confirmar").start();
     }
 
@@ -1556,7 +1215,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             }
             if (!candidatos.isEmpty()) confirmarEventoSocket(m, candidatos);   // la API tiene la última palabra (fantasmas fuera)
         }
-        if (cambio) SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); table.repaint(); });
+        if (cambio) SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); partidas.table.repaint(); });
     }
 
     /** Resumen compacto de la partida en curso, para la sublínea y el tooltip:
@@ -1583,32 +1242,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     JButton detenerDescBtn, continuarBtn, addJugBtn;
     javax.swing.JTextField buscaNick;
-    JPanel recsCards;   // «tabla» o «guia» (estado vacío que enseña el flujo)
-    JButton guiaBtn;    // el «Buscar partidas» de la guía: dice lo mismo que el principal
 
-    /** El botón principal dice lo que va a hacer. */
-    Player objetivoEtiqueta;   // el jugador que nombra el botón «Buscar partidas (X)»: se busca a él, esté donde esté la vista
-    void actualizarTextoBuscar() {
-        if (fetchWorker != null) return;   // en marcha dice «Detener»
-        String quien;
-        objetivoEtiqueta = null;
-        if (invitado != null) quien = nombreVisible(invitado.id(), invitado.name());
-        else if (perfil.pidAbierto() > 0 && playersList.getSelectedIndices().length == 0 && (perfil.abierto() || modoTop())) { quien = perfil.nombreAbierto(); objetivoEtiqueta = new Player(perfil.pidAbierto(), perfil.nombreAbierto(), ""); }   // el perfil abierto (o el último visto, si en el top no hay nadie seleccionado)
-        else {
-            int n = playersList.getSelectedIndices().length;
-            if (n > 0) quien = n + t(" seleccionado" + (n > 1 ? "s" : ""), " selected");
-            else if (modoTop()) quien = t("selecciona a alguien", "select someone");
-            else quien = t("todo el grupo", "whole group");
-        }
-        fetchBtn.setText(t("Buscar partidas", "Search games") + " (" + quien + ")");
-        if (guiaBtn != null) guiaBtn.setText(fetchBtn.getText());
-        actualizarTextoForma();
-    }
 
-    void mostrarGuiaVacia(boolean guia) {
-        if (recsCards != null) ((CardLayout) recsCards.getLayout()).show(recsCards, guia ? "guia" : "tabla");
-        SwingUtilities.invokeLater(this::actualizarControlesTabla);
-    }
     boolean avisoTopMostrado;   // el popup del top caído: solo la primera vez por sesión
     JButton actualizarBtn;      // «Nueva versión X — Descargar», solo si existe una mayor
 
@@ -1691,21 +1326,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     void pedirNota(long pid, String nombre) { dialogos.pedirNota(pid, nombre); }
 
     void pedirAlias(long pid, String original) { dialogos.pedirAlias(pid, original); }
-    JButton pararDescargasBtn;
-    static final Set<Long> SUJETOS = java.util.concurrent.ConcurrentHashMap.newKeySet();   // los buscados: negrita y cabecera
 
-    void actualizarNotaSpoilers() {
-        boolean oscuro = temaOscuroActivo;
-        if (mostrarResultados) {
-            nota.setText(t("\u2726 Mostrando resultados: Jugador en verde si ganó y rojo si perdió, con su ±ELO; enfrentamiento completo y duración, en el tooltip de la fila.",
-                           "\u2726 Showing results: Player in green if they won, red if they lost, with their ±ELO; full matchup and duration in the row tooltip."));
-            nota.setForeground(oscuro ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f));
-        } else {
-            nota.setText(t("Sin spoilers: nunca se muestra ganador, ±ELO ni duración. Doble clic en una fila = descargar.",
-                           "Spoiler-free: winner, ±ELO and duration are never shown. Double-click a row = download."));
-            ajustarGrises(oscuro);   // devuelve a la nota su gris de siempre
-        }
-    }
     JSplitPane splitPrincipal;
     JPanel centroCards;
     /** La pestaña Directos (card "directos", Twitch): ver ui.DirectosView. */
@@ -1826,7 +1447,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return paisActual != null ? paisActual.code() : leerConfig("top_pais", "es");
     }
 
-    JLabel nota, firma;                       // grises regulados según el tema
+    JLabel firma;                       // grises regulados según el tema
     JLabel watchPista1, watchPista2, watchPista3;   // explicación visible de la Watchlist
     boolean actualizandoCombos = false;
 
@@ -1866,7 +1487,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         JPanel top = construirBarraSuperior(temaInicial);
 
-        construirTablaPartidas();
+        partidas.construirTabla();
 
         JPanel bottom = construirBarraInferior();
 
@@ -1907,7 +1528,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
         playersList.setVisibleRowCount(12);
         playersList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) { applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); if (perfil != null) perfil.sincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
+            if (!e.getValueIsAdjusting()) { partidas.applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); if (perfil != null) perfil.sincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
         });
         delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
 
@@ -2007,9 +1628,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                         Player ph = playersModel.get(idxH);
                         if (invitado != null) {   // tocar una fila = el sujeto es ahora este; el invitado se despide
                             invitado = null;
-                            SUJETOS.clear();
-                            refrescarSujetos(List.of(), false);
-                            actualizarTextoBuscar();
+                            dev.tirador.aoe2radar.ui.PartidasView.SUJETOS.clear();
+                            partidas.refrescarSujetos(List.of(), false);
+                            partidas.actualizarTextoBuscar();
                         }
                         if (bajo.contains("\u270E") || sobreNota(idxH, e.getPoint())) { pedirNota(ph.id(), ph.name()); return; }
                         int wL = playersList.getWidth() - 22, eloW = anchoCeldaElo(wL);
@@ -2059,7 +1680,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 if (e.getClickCount() == 1 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
                     int idx1 = playersList.locationToIndex(e.getPoint());
                     boolean sobreFila = idx1 >= 0 && playersList.getCellBounds(idx1, idx1).contains(e.getPoint());
-                    if (!sobreFila) { playersList.clearSelection(); actualizarTextoBuscar(); }   // como el Explorador: clic en el vacío = sin selección
+                    if (!sobreFila) { playersList.clearSelection(); partidas.actualizarTextoBuscar(); }   // como el Explorador: clic en el vacío = sin selección
                     return;
                 }
                 if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
@@ -2069,7 +1690,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                         String bajo = textoBajo(idx, e.getPoint());
                         if (bajo.contains("TW") || bajo.contains("\u21A5") || bajo.contains("\u270E") || sobreNota(idx, e.getPoint())) return;   // el clic simple ya actuó
                         playersList.setSelectedIndex(idx);   // doble clic = sus partidas, SIEMPRE (espectar vive en el clic derecho)
-                        fetchMatches(fetchBtn);
+                        partidas.fetchMatches(partidas.fetchBtn);
                     }
                 }
             }
@@ -2090,7 +1711,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             }
             savePlayers();
             rebuildGrupos();
-            applyFilters();
+            partidas.applyFilters();
         });
         JPanel row2 = new JPanel(new GridLayout(1, 1, 4, 0));
         row2.add(delBtn);   // «Quitar filtro» sobra: la selección se suelta clicando en el fondo
@@ -2464,7 +2085,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public void mousePressed(MouseEvent e) {
                 if (SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
                     playersList.clearSelection();
-                    actualizarTextoBuscar();
+                    partidas.actualizarTextoBuscar();
                 }
             }
         });
@@ -2495,9 +2116,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // temaInicial porque el menú de Tema marca la opción ya activa al abrir.
     private JPanel construirBarraSuperior(String temaInicial) {
         // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
-        fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
-        modeCombo.setPrototypeDisplayValue("RM Team MegaRandom XL");
-        modeCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
         JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));   // fija: nada salta de sitio
         JPanel filaVistas = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 0));
         unidadCombo.setSelectedIndex(Math.max(0, Math.min(2, Integer.parseInt(leerConfig("ventana_unidad", "0")))));
@@ -2514,50 +2132,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         });
         { int u0 = unidadCombo.getSelectedIndex(); int max0 = u0 == 0 ? 24 : u0 == 1 ? 7 : 1; ((SpinnerNumberModel) hoursSpinner.getModel()).setMaximum(max0); if ((int) hoursSpinner.getValue() > max0) hoursSpinner.setValue(max0); }
         fila1.add(par(new JLabel(t("Últimas", "Last")), hoursSpinner, unidadCombo));
-        parModo = par(new JLabel(t("Modo:", "Mode:")), modeCombo);   // los dos parámetros, pegados al botón que lanzan
-        fila1.add(parModo);
-        rivalField = new JTextField(11);
-        rivalField.putClientProperty("JTextField.placeholderText", t("Rival…", "Opponent…"));
-        rivalField.putClientProperty("JTextField.showClearButton", true);
-        rivalField.setToolTipText(t("Filtra la tabla por el rival (en equipos, cualquiera del equipo contrario). Escribe para ver sugerencias.",
-                "Filters the table by opponent (in team games, anyone on the other team). Type to see suggestions."));
-        rivalPopup = new JPopupMenu();
-        rivalPopup.setFocusable(false);
-        rivalField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { filtroRival = normalizarNick(rivalField.getText()); applyFilters(); sugerirRivales(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        rivalField.addKeyListener(new KeyAdapter() {
-            @Override public void keyPressed(KeyEvent e) {
-                if (!rivalPopup.isVisible() || rivalPopup.getComponentCount() == 0) return;
-                if (e.getKeyCode() == KeyEvent.VK_DOWN) { ((JMenuItem) rivalPopup.getComponent(0)).doClick(); e.consume(); }
-                else if (e.getKeyCode() == KeyEvent.VK_ENTER) { ((JMenuItem) rivalPopup.getComponent(0)).doClick(); e.consume(); }
-                else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) rivalPopup.setVisible(false);
-            }
-        });
-        rivalField.addFocusListener(new FocusAdapter() { @Override public void focusLost(FocusEvent e) { rivalPopup.setVisible(false); } });
-        parRival = par(new JLabel(t("Rival:", "Opponent:")), rivalField);
-        fila1.add(parRival);
-        mapaCombo.setToolTipText(t("Filtra la tabla por mapa (sobre las partidas cargadas, sin llamadas)", "Filters the table by map (over the loaded games, no requests)"));
-        periodoCombo.setToolTipText(t("Filtra la tabla por fecha de la partida (sobre las partidas cargadas)", "Filters the table by game date (over the loaded games)"));
-        mapaCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
-        periodoCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
-        fila1.add(par(new JLabel(t("Mapa:", "Map:")), mapaCombo));
-        fila1.add(par(new JLabel(t("Periodo:", "Period:")), periodoCombo));
-        fila1.add(fetchBtn);
-        JSeparator sepModos = new JSeparator(SwingConstants.VERTICAL);
-        sepModos.setPreferredSize(new Dimension(1, 24));
-
-        azarBtn.setToolTipText(t("Hasta 10 partidas 1v1 recientes del ladder con ambos jugadores en el rango de ELO elegido", "Up to 10 recent 1v1s from the ladder with both players inside your ELO range"));
-
-        azarBtn.addActionListener(e -> buscarAleatorias());
-        fila1.add(azarBtn);
-        gteBtn.setToolTipText(t("5 partidas 1v1 recientes de cualquier ELO, anónimas: adivina el ELO y compruébalo con «Revelar resultado…»", "5 recent anonymous 1v1s from any ELO: guess the ELO, then check with “Reveal result…”"));
-
-        gteBtn.addActionListener(e -> buscarGte());
-        fila1.add(gteBtn);
+        partidas.agregarFilaConsulta(fila1);   // modo, rival (sugerencias), mapa, periodo, Buscar partidas, Al azar por ELO, Guess the ELO: ver ui.PartidasView
         atrasBtn = new JButton("\u2190");
         atrasBtn.setFocusable(false); atrasBtn.setMargin(new Insets(2, 8, 2, 8)); atrasBtn.putClientProperty("JButton.buttonType", "roundRect");
         atrasBtn.setToolTipText(t("Atrás: vuelve a la vista anterior (también el botón lateral del ratón)", "Back: return to the previous view (also the mouse's back button)"));
@@ -2572,8 +2147,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         filaVistas.add(adelanteBtn);
         recsBtn = pestana(t("Partidas", "Games"), iconoVista("partidas"));
         recsBtn.addActionListener(e -> {   // desde un perfil: la tabla pasa a ser de ese jugador (búsqueda de sus partidas recientes), salvo que ya lo sea
-            if (perfil.pidAbierto() > 0 && objetivoEtiqueta != null && objetivoEtiqueta.id() == perfil.pidAbierto() && perfil.historialEnTabla() != perfil.pidAbierto() && (ultimosSujetos.size() != 1 || ultimosSujetos.get(0).id() != perfil.pidAbierto()) && fetchWorker == null)
-                SwingUtilities.invokeLater(() -> fetchMatches(fetchBtn));
+            if (perfil.pidAbierto() > 0 && partidas.objetivoEtiqueta != null && partidas.objetivoEtiqueta.id() == perfil.pidAbierto() && perfil.historialEnTabla() != perfil.pidAbierto() && (partidas.ultimosSujetos.size() != 1 || partidas.ultimosSujetos.get(0).id() != perfil.pidAbierto()) && partidas.fetchWorker == null)
+                SwingUtilities.invokeLater(() -> partidas.fetchMatches(partidas.fetchBtn));
         });
         recsBtn.setSelected(true);
         recsBtn.setToolTipText(t("La tabla de partidas de tu watchlist (recs sin spoilers)", "Your watchlist's games table (spoiler-free recs)"));
@@ -2692,7 +2267,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         autoSgItem.setToolTipText(t("Tras cada descarga, copia también la rec a la carpeta savegame del juego", "After each download, also copy the rec to the game savegame folder"));
         autoSgItem.addActionListener(e -> {
-            if (autoSgItem.isSelected() && obtenerSavegame(true) == null) {
+            if (autoSgItem.isSelected() && partidas.obtenerSavegame(true) == null) {
                 autoSgItem.setSelected(false);
                 return;
             }
@@ -2701,8 +2276,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         JMenuItem carpetaItem = new JMenuItem(t("Cambiar carpeta savegame…", "Change savegame folder…"));
         carpetaItem.addActionListener(e -> {
-            Path p = elegirSavegameManual();
-            if (p != null) { status.setText(t("Carpeta savegame: ", "Savegame folder: ") + p); applyFilters(); }
+            Path p = partidas.elegirSavegameManual();
+            if (p != null) { status.setText(t("Carpeta savegame: ", "Savegame folder: ") + p); partidas.applyFilters(); }
         });
 
         JMenuItem aboutItem = new JMenuItem(t("Acerca de…", "About…"));
@@ -2804,21 +2379,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         esquina.add(miPerfilBtn);
         esquina.add(configBtn);
 
-        JPanel fila2 = new JPanel(new BorderLayout(8, 0));
-        fila2.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 10));
-        nota = new JLabel(t("Sin spoilers: nunca se muestra ganador, ±ELO ni duración. Doble clic en una fila = descargar.", "Spoiler-free: winner, ±ELO and duration are never shown. Double-click a row = download."));
-        resultadosBtn = new JToggleButton(t("Mostrar resultados", "Show results"));
-        resultadosBtn.setFocusable(false);
-        resultadosBtn.setToolTipText(t("Modo consulta: el ganador de cada partida en dorado (±ELO y duración en el tooltip). Siempre arranca apagado.",
-                "Lookup mode: each game's winner in gold (±ELO and duration in the tooltip). Always starts off."));
-        resultadosBtn.addActionListener(e -> {
-            mostrarResultados = resultadosBtn.isSelected();
-            actualizarNotaSpoilers();
-            tableModel.fireTableDataChanged();
-        });
-        fila2.add(nota, BorderLayout.CENTER);
-        fila2.add(resultadosBtn, BorderLayout.EAST);   // sobre la columna Rec, donde vive su efecto
-        filaNota = fila2;
+        JPanel fila2 = partidas.construirFilaNota();   // nota sin-spoilers + «Mostrar resultados»: ver ui.PartidasView
 
         JPanel filasIzq = new JPanel();
         filasIzq.setLayout(new BoxLayout(filasIzq, BoxLayout.Y_AXIS));
@@ -2839,283 +2400,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return top;
     }
 
-    // La tabla de partidas: el JTable con sus renderers (fila en vivo en negrita,
-    // el ojo de «revelar resultado»), el menú contextual por fila y los atajos de
-    // teclado (Enter descarga, Ctrl+F busca, F5 refresca Directos).
-    private void construirTablaPartidas() {
-        // Tabla de partidas
-        table = new JTable(tableModel) {
-            @Override public String getToolTipText(MouseEvent ev) {
-                int r = rowAtPoint(ev.getPoint());
-                if (r < 0) return null;
-                int mr = convertRowIndexToModel(r);
-                if (mr < 0 || mr >= view.size()) return null;
-                Match m = view.get(mr);
-                int mc = convertColumnIndexToModel(columnAtPoint(ev.getPoint()));
-                if (mc == 1 && notaDe(m.refId) != null) return t("Nota: ", "Note: ") + notaDe(m.refId);
-                if (mc == 5 && m.players.size() == 2)
-                    for (MatchPlayer mp : m.players)
-                        if (mp.id != m.refId && notaDe(mp.id) != null) return t("Nota: ", "Note: ") + notaDe(mp.id);
-                if (enCursoReal(m))
-                    return t("EN DIRECTO — doble clic para espectar", "LIVE — double-click to spectate");
-                String enf = enfrentamiento(m, revelada(m));
-                if (revelada(m)) {   // revelada: el enfrentamiento con resultados, y la duración
-                    String tr = tipResultado(m);
-                    if (tr != null) return "<html>" + (enf.startsWith("<html>") ? enf.substring(6, enf.length() - 7) : escapeHtml(enf))
-                            + "<br>" + escapeHtml(tr) + "</html>";
-                }
-                return enf;
-            }
-            @Override public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
-                Component c = super.prepareRenderer(renderer, row, column);
-                int mr = convertRowIndexToModel(row);
-                boolean viva = mr >= 0 && mr < view.size() && enCursoReal(view.get(mr));
-                // Los renderers son compartidos: color y fuente se fijan SIEMPRE,
-                // en ambas ramas, para que la fila viva no contamine al resto.
-                c.setFont(viva ? getFont().deriveFont(Font.BOLD) : getFont());
-                if (!isRowSelected(row))
-                    c.setForeground(viva ? colorVivoTabla() : getForeground());
-                if (c instanceof JLabel jl && convertColumnIndexToModel(column) == 1
-                        && mr >= 0 && mr < view.size())   // cuenta hermana: quién es su matriz
-                    jl.setToolTipText(tipCuentaVinculada(view.get(mr)));
-                return c;
-            }
-        };
-        table.setRowHeight(24);
-        table.setAutoCreateRowSorter(true);   // clic en cabecera para ordenar
-        table.getColumnModel().getColumn(0).setPreferredWidth(90);    // Fecha
-        table.getColumnModel().getColumn(1).setPreferredWidth(130);   // Jugador
-        table.getColumnModel().getColumn(2).setPreferredWidth(95);    // Civ
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);   // Modo
-        table.getColumnModel().getColumn(4).setPreferredWidth(110);   // Mapa
-        table.getColumnModel().getColumn(5).setPreferredWidth(230);   // Rival
-        table.getColumnModel().getColumn(6).setPreferredWidth(95);    // Civ rival
-        table.getColumnModel().getColumn(7).setPreferredWidth(100);   // Rec
-        table.getColumnModel().getColumn(8).setPreferredWidth(80);    // Resultado (ojo por fila)
-        {   // anchos guardados (en orden del modelo)
-            String[] anchos = leerConfig("tabla_anchos", "").split(",");
-            if (anchos.length == table.getColumnCount()) for (int i = 0; i < anchos.length; i++) { try { int a = Integer.parseInt(anchos[i].trim()); if (a >= 20) table.getColumnModel().getColumn(i).setPreferredWidth(a); } catch (NumberFormatException ignored) { } }
-        }
-        DefaultTableCellRenderer ojoR = new DefaultTableCellRenderer() {
-            @Override public Component getTableCellRendererComponent(JTable tb, Object v, boolean sel, boolean foc, int row, int col) {
-                JLabel l = (JLabel) super.getTableCellRendererComponent(tb, v, sel, foc, row, col);
-                l.setHorizontalAlignment(SwingConstants.CENTER);
-                boolean abierto = "\u25C9".equals(String.valueOf(v));
-                l.setFont(l.getFont().deriveFont(abierto ? Font.BOLD : Font.PLAIN, 14f));
-                if (!sel) l.setForeground(abierto ? (temaOscuroActivo ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f))
-                                                  : new Color(0x8a, 0x8a, 0x8a));
-                l.setToolTipText(v == null || String.valueOf(v).isBlank() ? null
-                        : (abierto ? t("Clic: volver a tapar el resultado", "Click: hide the result again")
-                                   : t("Clic: revelar el resultado de esta partida", "Click: reveal this game's result")));
-                return l;
-            }
-        };
-        table.getColumnModel().getColumn(8).setCellRenderer(ojoR);
-        aplicarOrdenColumnas(leerConfig("tabla_orden", ORDEN_COLUMNAS_DEFECTO));
-        javax.swing.Timer guardaCols = new javax.swing.Timer(800, ev -> guardarColumnas());
-        guardaCols.setRepeats(false);
-        table.getColumnModel().addColumnModelListener(new javax.swing.event.TableColumnModelListener() {   // orden y anchos se recuerdan
-            @Override public void columnMoved(javax.swing.event.TableColumnModelEvent e) { if (e.getFromIndex() != e.getToIndex()) guardaCols.restart(); }
-            @Override public void columnMarginChanged(javax.swing.event.ChangeEvent e) { guardaCols.restart(); }
-            @Override public void columnAdded(javax.swing.event.TableColumnModelEvent e) { }
-            @Override public void columnRemoved(javax.swing.event.TableColumnModelEvent e) { }
-            @Override public void columnSelectionChanged(javax.swing.event.ListSelectionEvent e) { }
-        });
-        DefaultTableCellRenderer centrado = new DefaultTableCellRenderer();
-        centrado.setHorizontalAlignment(SwingConstants.CENTER);
-        for (int ci : new int[]{ 0, 2, 3, 4, 6 }) table.getColumnModel().getColumn(ci).setCellRenderer(centrado);   // Fecha, Civ, Modo, Mapa, Civ rival
-        table.getTableHeader().addMouseListener(new MouseAdapter() {   // doble clic en el borde de una columna = ajustar al contenido
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) return;
-                int x = 0;
-                for (int c = 0; c < table.getColumnCount(); c++) {
-                    x += table.getColumnModel().getColumn(c).getWidth();
-                    if (Math.abs(e.getX() - x) <= 4) { ajustarColumna(c); return; }
-                }
-            }
-        });
-        // Atajos: Enter en la tabla descarga la selección; Ctrl+F va al buscador; F5 refresca los directos
-        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sfrDescargar");
-        table.getActionMap().put("sfrDescargar", new AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (dlSel.isEnabled() && !selectedRows().isEmpty()) download(selectedRows());
-            }
-        });
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F, java.awt.event.InputEvent.CTRL_DOWN_MASK), "sfrBuscar");
-        getRootPane().getActionMap().put("sfrBuscar", new AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (buscaNick != null) { buscaNick.requestFocusInWindow(); buscaNick.selectAll(); }
-            }
-        });
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "sfrRefrescar");
-        getRootPane().getActionMap().put("sfrRefrescar", new AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                directos.refrescarForzado();
-                if (directosBtn != null && directosBtn.isSelected()) status.setText(t("Refrescando directos…", "Refreshing streams…"));
-            }
-        });
-        table.addMouseListener(new MouseAdapter() {
-            @Override public void mousePressed(MouseEvent e)  { maybePopupTabla(e); }
-            @Override public void mouseReleased(MouseEvent e) { maybePopupTabla(e); }
-            void maybePopupTabla(MouseEvent e) {
-                if (!e.isPopupTrigger()) return;
-                int r = table.rowAtPoint(e.getPoint());
-                if (r < 0) return;
-                if (!table.isRowSelected(r)) table.setRowSelectionInterval(r, r);
-                int mr = table.convertRowIndexToModel(r);
-                if (mr < 0 || mr >= view.size()) return;
-                Match m = view.get(mr);
-                JPopupMenu menu = new JPopupMenu();
-                if (m.gte == 0) {   // en Guess the ELO no: el perfil chivaría el ELO
-                    List<MatchPlayer> conId = new ArrayList<>();
-                    for (MatchPlayer mp : m.players) if (mp.id > 0) conId.add(mp);
-                    if (!conId.isEmpty()) {
-                        MatchPlayer titular = null; for (MatchPlayer mp : conId) if (mp.id == m.refId) titular = mp;
-                        if (conId.size() <= 2)
-                            for (MatchPlayer mp : conId) { Integer e1 = elo1v1Conocido(mp.id); if (e1 == null) e1 = mp.rating; JMenu mj = menuDeJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "")); mj.setIcon(iconoBandera(paisDe(mp.id))); menu.add(mj); }
-                        else if (titular != null) {   // equipos: aliados y rivales del titular, como en la watchlist
-                            for (MatchPlayer mp : conId) if (mp.id == titular.id) menu.add(menuDeJugador(mp.id, mp.name));
-                            JMenu al = new JMenu(t("Aliados", "Allies")), ri = new JMenu(t("Rivales", "Opponents"));
-                            for (MatchPlayer mp : conId) { if (mp.id == titular.id) continue; String pos = posicionEnEquipo(m, mp); JMenu dst = mp.team == titular.team ? al : ri; Integer e1 = elo1v1Conocido(mp.id); JMenu sub = menuDeJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "") + (pos == null ? "" : "  \u00B7 " + posicionNombre(pos))); sub.setIcon(iconoBandera(paisDe(mp.id))); dst.add(sub); }
-                            if (al.getItemCount() > 0) menu.add(al); if (ri.getItemCount() > 0) menu.add(ri);
-                        } else {
-                            JMenu js = new JMenu(t("Jugadores de la partida", "Match players"));
-                            for (MatchPlayer mp : conId) js.add(menuDeJugador(mp.id, mp.name));
-                            menu.add(js);
-                        }
-                        menu.addSeparator();
-                    }
-                }
-                if (enCursoReal(m)) {
-                    JMenuItem esp = new JMenuItem(t("Espectar en directo", "Spectate live"));
-                    esp.addActionListener(a -> espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id));
-                    menu.add(esp);
-                    if (rutaCaptureAge() != null) {
-                        JMenuItem espCa = new JMenuItem(t("Espectar con CaptureAge", "Spectate with CaptureAge"));
-                        espCa.addActionListener(a -> {
-                            lanzarCaptureAge(null);   // acción explícita: no depende de la casilla
-                            espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
-                        });
-                        menu.add(espCa);
-                    }
-                } else {
-                    if (m.enDisco) {
-                        JMenuItem env = new JMenuItem(t("Enviar al juego", "Send to game"));
-                        env.addActionListener(a -> enviarASavegame(List.of(m)));
-                        menu.add(env);
-                    } else {
-                        JMenuItem dl = new JMenuItem(t("Descargar", "Download"));
-                        dl.addActionListener(a -> download(List.of(m)));
-                        menu.add(dl);
-                    }
-                    menu.addSeparator();
-                    JMenuItem rev = new JMenuItem(t("Revelar resultado\u2026", "Reveal result\u2026"));
-                    rev.addActionListener(a -> revelarResultado());
-                    menu.add(rev);
-                    if (m.gte == 0) {   // el tech tree de cada civ de la partida, a un clic
-                        java.util.LinkedHashSet<String> civsP = new java.util.LinkedHashSet<>();
-                        for (MatchPlayer mp : m.players) if (mp.civ != null && !mp.civ.isBlank()) civsP.add(mp.civ);
-                        if (civsP.size() <= 2) {
-                            for (String cv : civsP) { JMenuItem it = new JMenuItem("Tech tree: " + cv); it.addActionListener(a -> abrirTechTree(cv)); menu.add(it); }
-                        } else {
-                            JMenu sub = new JMenu("Tech tree");
-                            for (String cv : civsP) { JMenuItem it = new JMenuItem(cv); it.addActionListener(a -> abrirTechTree(cv)); sub.add(it); }
-                            menu.add(sub);
-                        }
-                    }
-                    if (m.gte == 0) {
-                        JMenuItem ana = new JMenuItem(t("Análisis de la partida (¡spoilers!)\u2026",
-                                "Match analysis (spoilers!)\u2026"));
-                        ana.addActionListener(a -> {
-                            int ok = JOptionPane.showConfirmDialog(SpoilerFreeRecs.this,
-                                    t("Se abrirá el análisis completo en aoe2insights: resultado, estrategias y minimapa.\n¿Seguro?",
-                                      "This opens the full analysis on aoe2insights: result, strategies and minimap.\nSure?"),
-                                    t("Análisis con spoilers", "Analysis with spoilers"),
-                                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-                            if (ok == JOptionPane.YES_OPTION)
-                                abrirUrl("https://www.aoe2insights.com/match/" + m.id + "/");
-                        });
-                        menu.add(ana);
-                    }
-                }
-                menu.show(table, e.getX(), e.getY());
-            }
-            @Override public void mouseClicked(MouseEvent e) {
-                int r0 = table.rowAtPoint(e.getPoint()), c0 = table.columnAtPoint(e.getPoint());
-                if (SwingUtilities.isLeftMouseButton(e) && r0 >= 0 && c0 >= 0 && table.convertColumnIndexToModel(c0) == 8) {
-                    if (e.getClickCount() != 1) return;   // el doble clic sobre el ojo no descarga
-                    int mr0 = table.convertRowIndexToModel(r0);
-                    if (mr0 < 0 || mr0 >= view.size()) return;
-                    Match m0 = view.get(mr0);
-                    if (m0.finished == null) return;
-                    if (!reveladas.remove(m0.id)) reveladas.add(m0.id);
-                    tableModel.fireTableRowsUpdated(mr0, mr0);
-                    return;
-                }
-                if (e.getClickCount() != 2 || !dlSel.isEnabled() || e.isControlDown() || e.isShiftDown()) return;
-                int r = table.rowAtPoint(e.getPoint());
-                if (r < 0) return;
-                int mr = table.convertRowIndexToModel(r);
-                if (mr < 0 || mr >= view.size()) return;
-                Match m = view.get(mr);
-                if (enCursoReal(m)) {
-                    if (confirmarEspectar(refNombre(m))) espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
-                    return;
-                }
-                else if (m.finished == null)
-                    status.setText(t("Esa partida quedó colgada en el servidor (crash): no hay rec que bajar.",
-                            "That game hung on the server (crash): there's no rec to download."));
-                else download(List.of(m));
-            }
-        });
-    }
-
+    // La tabla de partidas: construirTablaPartidas() movida a ui.PartidasView.construirTabla().
     // La franja inferior: los botones de descargar/enviar al juego, el menú de
     // carpetas, la firma y donacion, y la barra de estado (progreso, detener,
     // continuar buscando). Devuelve el panel para el centro de la ventana.
     private JPanel construirBarraInferior() {
-        // Botones inferiores + savegame + firma + donación
-        JButton abrir  = new JButton(t("Abrir carpeta recs descargadas", "Open downloaded recs folder"));
-        JButton vaciar = new JButton(t("Vaciar recs", "Empty recs folder"));
-        dlSel.addActionListener(e -> download(selectedRows()));
-        dlAll.addActionListener(e -> download(allRows()));
-        abrir.addActionListener(e -> abrirCarpeta());
-        vaciar.addActionListener(e -> vaciarRecs());
-        JPanel btns1 = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-        JButton carpetasBtn = new JButton(t("Carpetas \u25BE", "Folders \u25BE"));
-        carpetasBtn.setFocusable(false);
-        carpetasBtn.addActionListener(e -> {
-            JPopupMenu pm = new JPopupMenu();
-            JMenuItem i1 = new JMenuItem(abrir.getText());  i1.addActionListener(a -> abrir.doClick());
-            JMenuItem i2 = new JMenuItem(abrirSgTxt());     i2.addActionListener(a -> abrirSavegame());
-            JMenuItem i3 = new JMenuItem(vaciar.getText()); i3.addActionListener(a -> vaciar.doClick());
-            pm.add(i1); pm.add(i2); pm.addSeparator(); pm.add(i3);
-            pm.show(carpetasBtn, 0, carpetasBtn.getHeight());
-        });
-        btns1.add(dlSel); btns1.add(dlAll);
-
-        JButton enviarSg = new JButton(t("Enviar al juego", "Send to game"));
-        enviarSg.setToolTipText(t("Envía las recs seleccionadas al juego: las ya descargadas se copian; las que falten se descargan y se envían en la misma acción", "Sends the selected recs to the game: downloaded ones are copied; missing ones are downloaded and sent in one go"));
-        enviarSg.addActionListener(e -> enviarInteligente(selectedRows()));
-        JPanel btns2 = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-        btns1.add(enviarSg);       // acciones sobre partidas, en la primera fila
-        todasPerfilBtn = new JButton(t("Todas las partidas del perfil", "All games of the profile"));
-        todasPerfilBtn.setFocusable(false); todasPerfilBtn.putClientProperty("JButton.buttonType", "roundRect");
-        todasPerfilBtn.setToolTipText(t("Abre el perfil del jugador buscado con su histórico completo en páginas (del último año, sin llamadas si está en sfr-data)", "Opens the searched player's profile with their full history in pages (last year, no requests when in sfr-data)"));
-        todasPerfilBtn.addActionListener(e -> { if (ultimosSujetos.size() == 1) { Player p = ultimosSujetos.get(0); abrirPerfil(p.id(), nombreVisible(p.id(), p.name())); javax.swing.Timer tt = new javax.swing.Timer(900, ev -> { if (perfil.pidAbierto() == p.id()) perfil.mostrarHistorialPerfil(p.id(), nombreVisible(p.id(), p.name())); }); tt.setRepeats(false); tt.start(); } });
-        todasPerfilBtn.setVisible(false);
-        btns1.add(todasPerfilBtn);
-        btns2.add(carpetasBtn);    // carpetas, en la segunda, bajo un solo botón
-
-        JPanel filasBtns = new JPanel();
-        filasBtns.setLayout(new BoxLayout(filasBtns, BoxLayout.Y_AXIS));
-        filasBtns.add(btns1);
-        filasBtns.add(btns2);
-        filaBotonesInferiores = filasBtns;
-
+        JPanel filasBtns = partidas.construirBotonesInferiores();   // dlSel/dlAll/carpetas/enviarSg/todasPerfilBtn: ver ui.PartidasView
         firma = new JLabel("<html>" + AUTOR + " · <u>" + TWITCH + "</u></html>");
         firma.setFont(firma.getFont().deriveFont(Font.PLAIN, 11f));
         firma.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
@@ -3165,7 +2455,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         continuarBtn.setVisible(false);
         continuarBtn.setToolTipText(t("Reanuda el azar con los mismos filtros, sin re-diálogo: el muestreo recuerda lo ya leído.",
                 "Resumes the random search with the same filters, no dialog: sampling remembers what it already read."));
-        continuarBtn.addActionListener(e -> buscarAleatorias(true));
+        continuarBtn.addActionListener(e -> partidas.buscarAleatorias(true));
         oeste.add(continuarBtn);
         JPanel filaEstado = new JPanel(new BorderLayout());
         filaEstado.add(oeste, BorderLayout.WEST);
@@ -3186,26 +2476,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         JPanel center = new JPanel(new BorderLayout());
         center.add(top, BorderLayout.NORTH);
         centroCards = new JPanel(new CardLayout());
-        recsCards = new JPanel(new CardLayout());
-        recsCards.add(new JScrollPane(table), "tabla");
-        JPanel guia = new JPanel(new GridBagLayout());
-        JLabel guiaTxt = new JLabel("<html><div style='text-align:center'>"
-                + "<b>" + t("Así funciona", "How it works") + "</b><br><br>"
-                + t("1. Elige jugadores en la lista de la izquierda, o escribe un nick en el buscador.", "1. Pick players in the list on the left, or type a nick in the search box.") + "<br>"
-                + t("2. Pulsa <b>Buscar partidas</b>.", "2. Press <b>Search games</b>.") + "<br>"
-                + t("3. Doble clic en una partida para descargarla — sin spoilers.", "3. Double-click a game to download it — spoiler-free.")
-                + "</div></html>");
-        guiaTxt.setHorizontalAlignment(SwingConstants.CENTER);
-        guiaBtn = new JButton(t("Buscar partidas", "Search games"));
-        guiaBtn.addActionListener(e -> fetchBtn.doClick());
-        GridBagConstraints gc = new GridBagConstraints();
-        gc.gridx = 0; gc.gridy = 0; gc.insets = new Insets(0, 0, 14, 0);
-        guia.add(guiaTxt, gc);
-        gc.gridy = 1; gc.insets = new Insets(0, 0, 0, 0);
-        guia.add(guiaBtn, gc);
-        recsCards.add(guia, "guia");
-        centroCards.add(recsCards, "recs");
-        mostrarGuiaVacia(true);   // sin partidas todavía: la guía (la vista inicial sigue siendo Directos)
+        partidas.construirCards();   // recsCards «tabla»/«guia», guiaBtn: ver ui.PartidasView
+        centroCards.add(partidas.panel(), "recs");
         directos = new DirectosView(TWITCH_SERVICE, twitchLive, Tareas.SWING, new DirectosView.Anfitrion() {
             @Override public List<Player> visibles() {
                 List<Player> out = new ArrayList<>();
@@ -3231,7 +2503,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public boolean confirmarEspectar(String quien) { return SpoilerFreeRecs.this.confirmarEspectar(quien); }
             @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
             @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-            @Override public void descargar(List<Match> partidas, boolean enviarAlJuego, Runnable alTerminar) { descargaSinCambiarVista = true; alTerminarDescarga = alTerminar; download(partidas, enviarAlJuego); }
+            @Override public void descargar(List<Match> lista, boolean enviarAlJuego, Runnable alTerminar) { partidas.descargarSinCambiarVista(lista, enviarAlJuego, alTerminar); }
             @Override public void estadoGlobal(String texto) { status.setText(texto); }
         });
         centroCards.add(liveNow.panel(), "ahora");
@@ -3281,7 +2553,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     @Override public void nicksAnteriores(long pid, String nombre) { SpoilerFreeRecs.this.nicksAnteriores(pid, nombre); }
                     @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
                     @Override public void registrarDestino(long pid, String nombre) { SpoilerFreeRecs.this.registrarDestino(new Destino("perfil", pid, nombre, null)); }
-                    @Override public void actualizarTextoBuscar() { SpoilerFreeRecs.this.actualizarTextoBuscar(); }
+                    @Override public void actualizarTextoBuscar() { partidas.actualizarTextoBuscar(); }
                     @Override public JToggleButton crearBotonPestana(String texto, Icon icono) { return pestana(texto, icono); }
                     @Override public void traerAlFrente() { toFront(); requestFocus(); }
                     @Override public void mostrarEstadoGlobal(String texto) { status.setText(texto); }
@@ -3289,24 +2561,18 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
                     @Override public boolean confirmarEspectar(String nombre) { return SpoilerFreeRecs.this.confirmarEspectar(nombre); }
                     @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
-                    @Override public void cargarPartidasEnTabla(List<Match> partidas, Player sujeto) {
-                        SUJETOS.clear(); SUJETOS.add(sujeto.id());
-                        vistaDeSujetos = vistaActualId();
-                        refrescarSujetos(List.of(sujeto), false);
-                        all.clear(); all.addAll(partidas);
+                    @Override public void cargarPartidasEnTabla(List<Match> lista, Player sujeto) {
                         playersList.clearSelection();
-                        refreshModeCombo();
-                        applyFilters();
-                        mostrarGuiaVacia(false);
+                        partidas.cargarPartidasEnTabla(lista, sujeto, vistaActualId());
                         mostrarDirectos(false);
                     }
                     @Override public void buscarPartidasDe(long pid, String nombre) {
                         Player p = new Player(pid, nombre, grupoDestino());
                         objetivoForzado = p; invitado = p; vistaDelInvitado = vistaActualId();
-                        playersList.clearSelection(); aplicarFiltroGrupo(); mostrarDirectos(false); fetchMatches(fetchBtn);
+                        playersList.clearSelection(); aplicarFiltroGrupo(); mostrarDirectos(false); partidas.fetchMatches(partidas.fetchBtn);
                     }
-                    @Override public void descargarSinCambiarVista(List<Match> partidas, boolean enviar, Runnable alTerminar) {
-                        descargaSinCambiarVista = true; alTerminarDescarga = alTerminar; download(partidas, enviar);
+                    @Override public void descargarSinCambiarVista(List<Match> lista, boolean enviar, Runnable alTerminar) {
+                        partidas.descargarSinCambiarVista(lista, enviar, alTerminar);
                     }
                 },
                 ACTIVIDAD_CACHE, eloWatch, ALIASES, CANAL_DE, ELO_AYER, NOMBRES_AYER, twitchLive, dev.tirador.aoe2radar.cache.Anotaciones::notaDe,
@@ -3350,7 +2616,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             Point p = SwingUtilities.convertPoint(c, me.getPoint(), getLayeredPane());
             Component bajo = SwingUtilities.getDeepestComponentAt(getLayeredPane(), p.x, p.y);
             if (bajo == null || !esFondoDeseleccionable(bajo)) return;
-            if (!playersList.isSelectionEmpty()) { playersList.clearSelection(); actualizarTextoBuscar(); }
+            if (!playersList.isSelectionEmpty()) { playersList.clearSelection(); partidas.actualizarTextoBuscar(); }
         }, AWTEvent.MOUSE_EVENT_MASK);
         add(split, BorderLayout.CENTER);
     }
@@ -3362,14 +2628,14 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         cargarCanales();
         loadPlayers();
         sanearVinculosHuerfanos();
-        getRootPane().setDefaultButton(fetchBtn);   // acción primaria: acento y Enter
+        getRootPane().setDefaultButton(partidas.fetchBtn);   // acción primaria: acento y Enter
         ajustarGrises(flatLafDisponible && temaOscuroActivo);
         ajustarBotonesEspeciales(flatLafDisponible && temaOscuroActivo);
         ajustarFuentesSecundarias();
-        table.getInputMap(JComponent.WHEN_FOCUSED)
+        partidas.table.getInputMap(JComponent.WHEN_FOCUSED)
              .put(KeyStroke.getKeyStroke("ENTER"), "descargarSeleccion");
-        table.getActionMap().put("descargarSeleccion", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { download(selectedRows()); }
+        partidas.table.getActionMap().put("descargarSeleccion", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { partidas.download(partidas.selectedRows()); }
         });
         refrescarWatchlist();
         SwingUtilities.invokeLater(() -> {
@@ -3415,384 +2681,23 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         vigilante.setInitialDelay(tickMs());
         vigilante.start();
         if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
-            SwingUtilities.invokeLater(() -> { if (!modoTop() && playersModel.size() > 0) fetchMatches(fetchBtn); });
+            SwingUtilities.invokeLater(() -> { if (!modoTop() && playersModel.size() > 0) partidas.fetchMatches(partidas.fetchBtn); });
     }
 
-    // ----- Carpeta de recs ---------------------------------------------------
-    void abrirCarpeta() {
-        try {
-            Files.createDirectories(RECS_DIR);
-            Desktop.getDesktop().open(RECS_DIR.toFile());
-        } catch (Exception ex) {
-            status.setText(t("No se pudo abrir la carpeta: ", "Couldn't open the folder: ") + causa(ex));
-        }
-    }
 
-    void vaciarRecs() {
-        List<Path> files = new ArrayList<>();
-        try {
-            if (Files.isDirectory(RECS_DIR))
-                try (var st = Files.list(RECS_DIR)) {
-                    st.filter(f -> f.getFileName().toString().endsWith(".aoe2record")).forEach(files::add);
-                }
-        } catch (IOException ex) {
-            status.setText(t("Error leyendo la carpeta: ", "Error reading the folder: ") + causa(ex));
-            return;
-        }
-        if (files.isEmpty()) { status.setText(t("La carpeta recs ya está vacía.", "The recs folder is already empty.")); return; }
-        int r = JOptionPane.showConfirmDialog(this,
-                t("Se borrarán ", "This will delete ") + files.size()
-                        + t(" recs de la carpeta recs.\n¿Continuar?", " recs from the recs folder.\nContinue?"),
-                t("Vaciar recs", "Empty recs"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (r != JOptionPane.YES_OPTION) return;
-        int ok = 0;
-        for (Path f : files) { try { Files.delete(f); ok++; } catch (IOException ignored) {} }
-        for (Match m : all) { m.enDisco = false; if (m.estado.startsWith("✓")) m.estado = ""; }
-        tableModel.fireTableDataChanged();
-        status.setText(ok + " recs borradas.");
-    }
 
-    // ----- Savegame del juego y donación -------------------------------------
-    /** Carpeta savegame activa: la de config si sigue existiendo; si no, la
-     *  detectada (única = se guarda sola). En modo interactivo pregunta cuando
-     *  hay varias o ninguna; sin interactivo devuelve null sin molestar. */
-    Path obtenerSavegame(boolean interactivo) {
-        String cfg = leerConfig("savegame", null);
-        if (cfg != null && Files.isDirectory(Path.of(cfg))) return Path.of(cfg);
-        List<Path> dets = detectarSavegames();
-        if (dets.size() == 1) {
-            guardarConfig("savegame", dets.get(0).toString());
-            return dets.get(0);
-        }
-        if (!interactivo) return null;
-        if (dets.size() > 1) {
-            Object sel = JOptionPane.showInputDialog(this,
-                    t("Hay varios perfiles del juego. Elige tu carpeta savegame:",
-                      "There are several game profiles. Pick your savegame folder:"),
-                    t("Carpeta savegame", "Savegame folder"), JOptionPane.PLAIN_MESSAGE, null, dets.toArray(), dets.get(0));
-            if (sel == null) return null;
-            guardarConfig("savegame", sel.toString());
-            return (Path) sel;
-        }
-        JOptionPane.showMessageDialog(this,
-                t("No encuentro la carpeta savegame del juego.\nElígela a mano:\n…\\Games\\Age of Empires 2 DE\\<perfil>\\savegame",
-                  "Couldn't find the game's savegame folder.\nPick it manually:\n…\\Games\\Age of Empires 2 DE\\<profile>\\savegame"));
-        return elegirSavegameManual();
-    }
 
-    Path elegirSavegameManual() {
-        JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle(t("Elige la carpeta savegame de AoE2 DE", "Pick the AoE2 DE savegame folder"));
-        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        String actual = leerConfig("savegame", null);
-        Path base = actual != null ? Path.of(actual)
-                : Path.of(System.getProperty("user.home", "."), "Games", "Age of Empires 2 DE");
-        if (Files.isDirectory(base)) fc.setCurrentDirectory(base.toFile());
-        if (fc.showOpenDialog(this) != JFileChooser.APPROVE_OPTION) return null;
-        Path p = fc.getSelectedFile().toPath();
-        guardarConfig("savegame", p.toString());
-        return p;
-    }
 
     /** Enviar al juego: copia lo descargado y descarga+envía lo que falte. */
-    void enviarInteligente(List<Match> objetivo) {
-        if (objetivo.isEmpty()) { status.setText(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
-        for (Match m : objetivo) (Files.exists(destino(m)) ? enDisco : faltan).add(m);
-        if (!enDisco.isEmpty()) enviarASavegame(enDisco);
-        if (!faltan.isEmpty()) download(faltan, true);
-    }
 
-    void enviarASavegame(List<Match> objetivo) {
-        if (objetivo.isEmpty()) { status.setText(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        Path sg = obtenerSavegame(true);
-        if (sg == null) { status.setText(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        int ok = 0, sinRec = 0, yaEstaban = 0;
-        for (Match m : objetivo) {
-            if (!Files.exists(destino(m))) { sinRec++; continue; }
-            boolean ya = Files.exists(sg.resolve(destino(m).getFileName().toString()));
-            if (copiarASavegame(m, sg)) {
-                ok++;
-                if (ya) yaEstaban++;
-                try {   // primera de la lista del juego: fecha renovada siempre
-                    Files.setLastModifiedTime(sg.resolve(destino(m).getFileName().toString()),
-                            java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
-                } catch (Exception ignored) {}
-                m.enJuego = true;
-                setEstado(m, t("✓✓ en juego", "✓✓ in game"));
-            }
-        }
-        status.setText(ok + t(" recs enviadas al juego", " recs sent to the game") +
-                (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") +
-                (sinRec > 0 ? " · " + sinRec + t(" sin descargar aún", " not downloaded yet") : "") + ".");
-    }
 
-    String abrirSgTxt() { return t("Abrir carpeta savegame del juego", "Open game savegame folder"); }
 
-    void abrirSavegame() {
-        Path sg = obtenerSavegame(true);
-        if (sg == null) { status.setText(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        try { Desktop.getDesktop().open(sg.toFile()); }
-        catch (Exception ex) { status.setText(t("No se pudo abrir la carpeta: ", "Couldn't open the folder: ") + causa(ex)); }
-    }
 
     // ----- Revelar resultado (único punto que enseña spoilers, bajo demanda) --
-    void revelarResultado() {
-        List<Match> sel = selectedRows();
-        if (sel.size() != 1) { status.setText(t("Selecciona una sola partida para revelar.", "Select a single game to reveal.")); return; }
-        Match m = sel.get(0);
-        if (m.finished == null) {
-            status.setText(enCursoReal(m)
-                    ? t("Esa partida sigue EN DIRECTO: no hay resultado que revelar todavía.",
-                        "That game is still LIVE: no result to reveal yet.")
-                    : t("Esa partida quedó colgada en el servidor (crash): no tiene resultado.",
-                        "That game hung on the server (crash): it has no result."));
-            return;
-        }
-        int r = JOptionPane.showConfirmDialog(this,
-                t("Vas a ver el resultado de esta partida (ganador, ±ELO y duración).\n¿Seguro?",
-                  "You are about to see this game's result (winner, ±ELO and duration).\nSure?"),
-                t("Revelar resultado", "Reveal result"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (r != JOptionPane.YES_OPTION) return;
-        if (m.gte > 0) {   // en GTE el análisis externo chivaría más de la cuenta
-            JOptionPane.showMessageDialog(this, textoResultado(m), t("Resultado", "Result"), JOptionPane.PLAIN_MESSAGE);
-            return;
-        }
-        String verAn = t("Ver análisis en aoe2insights\u2026", "View analysis on aoe2insights\u2026");
-        String cerrar = t("Cerrar", "Close");
-        int ra = JOptionPane.showOptionDialog(this, textoResultado(m), t("Resultado", "Result"),
-                JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
-                new Object[]{ cerrar, verAn }, cerrar);
-        if (ra == 1) abrirUrl("https://www.aoe2insights.com/match/" + m.id + "/");
-    }
 
-    /** Tooltip del modo consulta: la duración (el ±ELO ya va inline). */
-    static String tipResultado(Match m) {
-        if (m.finished == null || m.started == null) return null;
-        return t("Duraci\u00f3n: ", "Duration: ")
-                + Duration.between(m.started, m.finished).toMinutes() + " min";
-    }
 
-    static String textoResultado(Match m) {
-        StringBuilder sb = new StringBuilder();
-        Map<Integer, List<MatchPlayer>> porEquipo = new TreeMap<>();
-        for (MatchPlayer p : m.players)
-            porEquipo.computeIfAbsent(p.team, k -> new ArrayList<>()).add(p);
-        boolean hayGanador = false;
-        for (var e : porEquipo.entrySet()) {
-            boolean gana = false;
-            for (MatchPlayer p : e.getValue()) if (Boolean.TRUE.equals(p.won)) gana = true;
-            if (gana) hayGanador = true;
-            sb.append("Equipo ").append(e.getKey()).append(gana ? "  —  GANA" : "").append('\n');
-            for (MatchPlayer p : e.getValue()) {
-                sb.append("    ").append(p.name);
-                if (p.civ != null && !p.civ.isBlank()) sb.append(" (").append(p.civ).append(')');
-                if (p.rating != null) sb.append("   ").append(p.rating);
-                if (p.ratingDiff != null)
-                    sb.append(" (").append(p.ratingDiff >= 0 ? "+" : "").append(p.ratingDiff).append(')');
-                sb.append('\n');
-            }
-        }
-        if (!hayGanador) sb.append(t("\nResultado no disponible en la API para esta partida.\n",
-                "\nResult not available in the API for this game.\n"));
-        if (m.started != null && m.finished != null) {
-            long min = Duration.between(m.started, m.finished).toMinutes();
-            sb.append(t("\nDuración: ", "\nDuration: "))
-              .append(min / 60 > 0 ? (min / 60) + " h " : "").append(min % 60).append(" min");
-        }
-        return sb.toString();
-    }
 
-    // ----- Partidas 1v1 al azar por rango de ELO (para castear) --------------
-    void buscarAleatorias() { buscarAleatorias(false); }
 
-    void buscarAleatorias(boolean continuar) {
-        if (!continuar) {
-        JSpinner minSp = new JSpinner(new SpinnerNumberModel(
-                Integer.parseInt(leerConfig("elo_min", "2100")), 0, 4000, 50));
-        JSpinner maxSp = new JSpinner(new SpinnerNumberModel(
-                Integer.parseInt(leerConfig("elo_max", "2300")), 0, 4000, 50));
-        JSpinner horasSp = new JSpinner(new SpinnerNumberModel(
-                Integer.parseInt(leerConfig("elo_horas", "48")), 1, 336, 6));
-        String cualquiera = t("(cualquiera)", "(any)");
-        JComboBox<String> mapaCb = new JComboBox<>();
-        mapaCb.addItem(cualquiera);
-        for (String m : MAPAS_CAT) mapaCb.addItem(m);
-        mapaCb.setSelectedIndex(0);
-        mapaCb.setSelectedItem(leerConfig("elo_mapa", cualquiera));
-        JComboBox<String> civCb = new JComboBox<>();
-        civCb.addItem(cualquiera);
-        for (String c : CIVS_CAT) civCb.addItem(c);
-        civCb.setSelectedIndex(0);
-        civCb.setSelectedItem(leerConfig("elo_civ", cualquiera));
-        JComboBox<String> intCb = new JComboBox<>(new String[]{
-                t("Rápida", "Quick"), t("Amplia", "Broad"), t("Exhaustiva", "Exhaustive") });
-        try { intCb.setSelectedIndex(Integer.parseInt(leerConfig("elo_intensidad", "0"))); } catch (Exception ignored) { }
-        JPanel form = new JPanel(new GridLayout(6, 2, 8, 4));
-        form.add(new JLabel(t("ELO mínimo:", "Min ELO:"))); form.add(minSp);
-        form.add(new JLabel(t("ELO máximo:", "Max ELO:"))); form.add(maxSp);
-        form.add(new JLabel(t("Últimas horas:", "Last hours:"))); form.add(horasSp);
-        form.add(new JLabel(t("Mapa:", "Map:"))); form.add(mapaCb);
-        form.add(new JLabel(t("Civilización (uno de los dos):", "Civilization (either player):"))); form.add(civCb);
-        form.add(new JLabel(t("Intensidad:", "Intensity:"))); form.add(intCb);
-        JLabel avisoCiv = new JLabel(t("Con civ o mapa, la primera tirada tarda ~1 min; repetirla continúa donde quedó y reutiliza lo ya leído.",
-                "With civ or map filters the first run takes ~1 min; running it again picks up where it left off."));
-        avisoCiv.setFont(avisoCiv.getFont().deriveFont(Font.PLAIN, 11f));
-        JPanel formWrap = new JPanel(new BorderLayout(0, 8));
-        formWrap.add(form, BorderLayout.CENTER);
-        formWrap.add(avisoCiv, BorderLayout.SOUTH);
-        if (JOptionPane.showConfirmDialog(this, formWrap, t("Partidas 1v1 al azar por ELO", "Random 1v1s by ELO"),
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE) != JOptionPane.OK_OPTION) return;
-        int a = (int) minSp.getValue(), b = (int) maxSp.getValue();
-        guardarConfig("elo_min", String.valueOf(Math.min(a, b)));
-        guardarConfig("elo_max", String.valueOf(Math.max(a, b)));
-        guardarConfig("elo_horas", String.valueOf((int) horasSp.getValue()));
-        guardarConfig("elo_mapa", String.valueOf(mapaCb.getSelectedItem()));
-        guardarConfig("elo_civ", String.valueOf(civCb.getSelectedItem()));
-        guardarConfig("elo_intensidad", String.valueOf(intCb.getSelectedIndex()));
-        }   // continuar: sin diálogo — mismos parámetros, el muestreo recuerda lo leído
-        final int lo = Integer.parseInt(leerConfig("elo_min", "2100"));
-        final int hi = Integer.parseInt(leerConfig("elo_max", "2300"));
-        String mSel = leerConfig("elo_mapa", "");
-        String cSel = leerConfig("elo_civ", "");
-        final String mapaSel = esCualquiera(mSel) ? null : mSel;   // «(cualquiera)» en cualquier idioma = sin filtro
-        final String civSel  = esCualquiera(cSel) ? null : cSel;
-        final int multAzar = switch (Integer.parseInt(leerConfig("elo_intensidad", "0"))) {
-            case 1 -> 3; case 2 -> 10; default -> 1; };
-
-        mostrarDirectos(false);
-        fetchBtn.setEnabled(false);
-        azarBtn.setEnabled(false);
-        gteBtn.setEnabled(false);
-        SUJETOS.clear();
-        refrescarSujetos(List.of(), false);   // la cabecera pertenece a la tabla que viene
-        taparResultados();
-        trabajando(true);
-        final long miSerial = opSerial;
-        final int hours = Integer.parseInt(leerConfig("elo_horas", "48"));
-        Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
-        status.setText(t("Buscando partidas al azar ", "Searching random games ") + lo + "–" + hi + "…");
-        log("azar #" + miSerial + ": inicio " + lo + "-" + hi + " h=" + hours + " mapa=" + mapaSel + " civ=" + civSel
-                + " x" + multAzar + " continuar=" + continuar + " stop=" + stopOperacion);
-        new SwingWorker<List<Match>, String>() {
-            @Override protected List<Match> doInBackground() throws Exception {
-                return azarService.buscarAleatorias(lo, hi, mapaSel, civSel, hours, multAzar, cutoff, miSerial, this::publish);
-            }
-            @Override protected void process(List<String> msgs) { status.setText(msgs.get(msgs.size() - 1)); }
-            @Override protected void done() {
-                if (miSerial != opSerial) {   // una operación posterior ya manda: no pisar su UI
-                    log("azar #" + miSerial + ": terminó superada por la op #" + opSerial + "; resultado ignorado");
-                    return;
-                }
-                fetchBtn.setEnabled(true);
-                azarBtn.setEnabled(true);
-                gteBtn.setEnabled(true);
-                trabajando(false);
-                if (continuarBtn != null) continuarBtn.setVisible(true);   // reanudar sin re-diálogo
-                try {
-                    List<Match> res = get();
-                    log("azar #" + miSerial + ": done, " + res.size() + " partidas, stop=" + stopOperacion);
-                    aprenderCatalogos(res);
-                    if (stopOperacion) {
-                        status.setText(t("Búsqueda detenida.", "Search stopped.")
-                                + (res.isEmpty() ? "" : "  " + res.size()
-                                   + t(" encontradas hasta el corte, aplicadas.", " found before the cut, applied.")));
-                        if (res.isEmpty()) return;
-                    } else if (res.isEmpty()) {
-                        status.setText(t("Nada en ", "Nothing in ") + lo + "–" + hi
-                                + t(" en las últimas ", " in the last ") + hours
-                                + t(" h. Detalle del muestreo en descargas.log.", " h. Sampling details in descargas.log."));
-                        return;
-                    }
-                    List<Player> refs = new ArrayList<>();
-                    Set<Long> refIds = new HashSet<>();
-                    for (Match m : res) {
-                        m.azar = true;
-                        ajustarRefAzar(m, civSel);   // el titular: quien jugó la civ filtrada
-                        if (refIds.add(m.refId)) {
-                            String nom = refNombre(m);
-                            refs.add(new Player(m.refId, nom, "", 0));
-                        }
-                    }
-                    SUJETOS.clear();
-                    SUJETOS.addAll(refIds);
-                    vistaDeSujetos = vistaActualId();
-                    refrescarSujetos(refs, false);   // la cabecera cuenta la verdad del azar (≤4 visibles)
-                    all.clear();
-                    all.addAll(res);
-                    playersList.clearSelection();
-                    refreshModeCombo();
-                    applyFilters();
-                    String extra = "";
-                    if (res.size() < 10 && azarService.tramoAgotado())
-                        extra = t(" No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
-                                  " Nothing else with those filters: whole bracket checked (widen hours or range).");
-                    else if (res.size() < 10)
-                        extra = t(" Repite la búsqueda: continúa donde lo dejó.",
-                                  " Run it again: it picks up where it left off.");
-                    status.setText(res.size() + t(" partidas 1v1 al azar, ELO ", " random 1v1s, ELO ") + lo + "–" + hi
-                            + t(", últimas ", ", last ") + hours + " h." + extra);
-                } catch (Exception ex) {
-                    status.setText(stopOperacion ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
-                    log("al azar por ELO: ERROR " + causa(ex));
-                }
-            }
-        }.execute();
-    }
-
-    // LbCtx/lbPagina/ultimaPaginaLadder: movidos a service.AzarServiceCompanion (detalle interno del muestreo,
-    // no se usaban fuera de buscarAleatorias/buscarGte).
-
-    /** «Guess the ELO!»: 5 partidas 1v1 recientes muestreadas por tramos de
-     *  todo el ladder, anónimas en la app. La ventana temporal es la misma
-     *  configurada para «Al azar por ELO…». */
-    void buscarGte() {
-        mostrarDirectos(false);
-        fetchBtn.setEnabled(false);
-        azarBtn.setEnabled(false);
-        gteBtn.setEnabled(false);
-        SUJETOS.clear();
-        refrescarSujetos(List.of(), false);   // en GTE, nada que revelar en la cabecera
-        taparResultados();                    // y sin modo consulta: sería hacer trampas
-        trabajando(true);
-        final long miSerial = opSerial;
-        int hours = Integer.parseInt(leerConfig("elo_horas", "48"));
-        Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
-        status.setText(t("Preparando Guess the ELO…", "Preparing Guess the ELO…"));
-        new SwingWorker<List<Match>, String>() {
-            @Override protected List<Match> doInBackground() throws Exception {
-                return azarService.buscarGte(cutoff, this::publish);
-            }
-            @Override protected void process(List<String> msgs) { status.setText(msgs.get(msgs.size() - 1)); }
-            @Override protected void done() {
-                if (miSerial != opSerial) { log("gte #" + miSerial + ": terminó superada por la op #" + opSerial); return; }
-                fetchBtn.setEnabled(true);
-                azarBtn.setEnabled(true);
-                gteBtn.setEnabled(true);
-                trabajando(false);
-                try {
-                    List<Match> res = get();
-                    aprenderCatalogos(res);
-                    if (res.isEmpty()) {
-                        status.setText(t("Sin partidas para Guess the ELO en las últimas ", "No games for Guess the ELO in the last ") + hours
-                                + t(" h. Detalle en descargas.log.", " h. Details in descargas.log."));
-                        return;
-                    }
-                    all.clear();
-                    all.addAll(res);
-                    playersList.clearSelection();
-                    refreshModeCombo();
-                    applyFilters();
-                    status.setText(res.size() + t(" partidas Guess the ELO (archivos: «Guess the ELO ", " Guess the ELO games (files: “Guess the ELO ")
-                            + res.get(0).gte + t("»–«", "”–“") + res.get(res.size() - 1).gte
-                            + t("»). Adivina y comprueba con «Revelar resultado…».", "”). Guess, then check with “Reveal result…”."));
-                } catch (Exception ex) {
-                    status.setText(stopOperacion ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
-                    log("Guess the ELO: ERROR " + causa(ex));
-                }
-            }
-        }.execute();
-    }
 
     String grupoActivo() {   // null = «Todos»
         Object sel = grupoCombo.getSelectedItem();
@@ -3913,20 +2818,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     /** Cierra la búsqueda actual: tabla vacía (vuelve la guía), cabecera fuera, sin spoilers pendientes. */
-    void cerrarBusqueda() {
-        if (fetchWorker != null) { stopOperacion = true; }
-        all.clear();
-        view.clear();
-        tableModel.fireTableDataChanged();
-        SUJETOS.clear();
-        filtroSujetos.clear();
-        invitado = null;
-        refrescarSujetos(List.of(), false);
-        taparResultados();
-        mostrarGuiaVacia(true);
-        actualizarTextoBuscar();
-        status.setText(t("Búsqueda cerrada.", "Search closed."));
-    }
 
     /** Ficha a uno desde un top y, como el buscador, ofrece sus cuentas vinculadas. */
     void ficharDesdeTop(Player p, String g) {
@@ -4155,10 +3046,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             invitado = null;   // fichado por cualquier vía: deja de flotar
         if (invitado != null && !vistaActualId().equals(vistaDelInvitado))
             invitado = null;   // cambiar de vista (grupo o país) despide al invitado
-        if (sujetosPanel != null && sujetosPanel.isVisible() && !vistaActualId().equals(vistaDeSujetos)) {
-            SUJETOS.clear();
-            refrescarSujetos(List.of(), false);   // la cabecera refleja la tabla; otra vista, otra historia
-            taparResultados();
+        if (sujetosPanel != null && sujetosPanel.isVisible() && !vistaActualId().equals(partidas.vistaDeSujetos)) {
+            dev.tirador.aoe2radar.ui.PartidasView.SUJETOS.clear();
+            partidas.refrescarSujetos(List.of(), false);   // la cabecera refleja la tabla; otra vista, otra historia
+            partidas.taparResultados();
             apagarForma();
         }
         if (invitado != null) {
@@ -4174,7 +3065,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (Player p : playersList.getSelectedValuesList()) selPrevia.add(p.id());
         playersModel.clear();
         for (Player p : vis) playersModel.addElement(p);
-        actualizarTextoBuscar();
+        partidas.actualizarTextoBuscar();
         if (!selPrevia.isEmpty()) {   // la selección sobrevive al reordenado (ELOs frescos, vivos…)
             List<Integer> idxs = new ArrayList<>();
             for (int i = 0; i < playersModel.size(); i++)
@@ -4331,14 +3222,14 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     }
                     boolean tablaTocada = false;
                     for (Match fresco : terminadasRio)
-                        for (Match m : all)
+                        for (Match m : partidas.all)
                             if (m.id == fresco.id && m.finished == null) {
                                 m.finished = fresco.finished;   // la EN DIRECTO de la tabla ya acabó
                                 m.players = fresco.players;
                                 tablaTocada = true;
                             }
-                    if (tablaTocada) applyFilters();
-                    else table.repaint();
+                    if (tablaTocada) partidas.applyFilters();
+                    else partidas.table.repaint();
                     actualizarIndicadoresVivos();
                 } catch (Exception ignored) { }
             }
@@ -4563,7 +3454,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** Tooltip de la columna Jugador: si la cuenta es hermana de una familia,
      *  dice de quién. Null si no aplica. */
     String tipCuentaVinculada(Match m) {
-        String ref = refNombre(m);
+        String ref = partidas.refNombre(m);
         for (Player x : todosJugadores)
             if (x.name().equals(ref) && x.vinculo() != 0) {
                 Player matriz = null;
@@ -4601,13 +3492,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (c instanceof JLabel l && l.getMouseListeners().length > 0) return false;   // etiquetas clicables (firma, sujetos…)
         if (cabLabel != null && SwingUtilities.isDescendingFrom(c, cabLabel)) return false;          // ordenar no suelta
         if (sujetosPanel != null && SwingUtilities.isDescendingFrom(c, sujetosPanel)) return false;  // «Partidas de:» es clicable
-        if (table != null && SwingUtilities.isDescendingFrom(c, table)) return false;
+        if (partidas.table != null && SwingUtilities.isDescendingFrom(c, partidas.table)) return false;
         if (directos != null && directos.tablaDirectos != null && SwingUtilities.isDescendingFrom(c, directos.tablaDirectos)) return false;
         if (ratings != null && SwingUtilities.isDescendingFrom(c, ratings.panel())) return false;   // mirar las campanas no suelta la selección (sus puntos desaparecerían)
         // los visores de las tablas (hueco bajo sus filas) tampoco: seleccionar partidas no debe cambiar el filtro de la lista
         for (Component p = c; p != null; p = p.getParent())
             if (p instanceof JScrollPane sp && sp.getViewport() != null
-                    && (sp.getViewport().getView() == table || (directos != null && sp.getViewport().getView() == directos.tablaDirectos))) return false;
+                    && (sp.getViewport().getView() == partidas.table || (directos != null && sp.getViewport().getView() == directos.tablaDirectos))) return false;
         return c instanceof JPanel || c instanceof JViewport || c instanceof JLabel || c instanceof JRootPane
                 || c instanceof JLayeredPane || c instanceof JFrame;
     }
@@ -4638,9 +3529,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (perfilBtn != null) perfilBtn.setSelected(false);
         if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (splitPrincipal != null && ttDivisorPrevio >= 0) { SwingUtilities.invokeLater(() -> { if (norteWatchRef != null) { norteWatchRef.revalidate(); norteWatchRef.repaint(); } }); splitPrincipal.setDividerLocation(ttDivisorPrevio); splitPrincipal.setOneTouchExpandable(false); ttDivisorPrevio = -1; }
-        if (mostrar) { taparResultados(); apagarForma(); }   // cambiar de pantalla apaga el modo consulta y la forma
+        if (mostrar) { partidas.taparResultados(); apagarForma(); }   // cambiar de pantalla apaga el modo consulta y la forma
         ((CardLayout) centroCards.getLayout()).show(centroCards, mostrar ? "directos" : "recs");
-        if (!mostrar && all.isEmpty() && fetchWorker == null) mostrarGuiaVacia(true);   // sin partidas: la guía con su botón, no una tabla vacía
+        if (!mostrar && !partidas.hayPartidas() && partidas.fetchWorker == null) partidas.mostrarGuiaVacia(true);   // sin partidas: la guía con su botón, no una tabla vacía
         registrarDestino(new Destino(mostrar ? "directos" : "recs", 0, null, null));
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
         if (mostrar) directos.alAbrir();
@@ -4946,15 +3837,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                         else { VIVO.marcarFuera(id); }
                     }
                     for (Match fresco : c.terminadas())
-                        for (Match m : all)
+                        for (Match m : partidas.all)
                             if (m.id == fresco.id && m.finished == null) {
                                 m.finished = fresco.finished;   // la EN DIRECTO de la tabla acabó:
                                 m.players = fresco.players;     // fecha real y resultado disponibles
                                 tablaTocada = true;
                             }
                 }
-                if (tablaTocada) applyFilters();
-                else table.repaint();   // p. ej. una viva que cruza el umbral de fantasma
+                if (tablaTocada) partidas.applyFilters();
+                else partidas.table.repaint();   // p. ej. una viva que cruza el umbral de fantasma
                 actualizarIndicadoresVivos();
             }
             @Override protected void done() { vigilando = false; }
@@ -5108,18 +3999,18 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // visible para ui.TemaApp (inversion de dependencias: TemaApp no conoce SpoilerFreeRecs)
     @Override public java.awt.Component raiz() { return this; }
     @Override public JPopupMenu configMenu() { return configMenu; }
-    @Override public JLabel nota() { return nota; }
+    @Override public JLabel nota() { return partidas == null ? null : partidas.nota; }
     @Override public JLabel firma() { return firma; }
     @Override public JLabel watchPista1() { return watchPista1; }
     @Override public JLabel watchPista2() { return watchPista2; }
     @Override public JLabel watchPista3() { return watchPista3; }
     @Override public TitledBorder tituloWatch() { return tituloWatch; }
-    @Override public JTable table() { return table; }
-    @Override public JButton azarBtn() { return azarBtn; }
-    @Override public JButton gteBtn() { return gteBtn; }
-    @Override public JToggleButton resultadosBtn() { return resultadosBtn; }
+    @Override public JTable table() { return partidas == null ? null : partidas.table; }
+    @Override public JButton azarBtn() { return partidas == null ? null : partidas.azarBtn; }
+    @Override public JButton gteBtn() { return partidas == null ? null : partidas.gteBtn; }
+    @Override public JToggleButton resultadosBtn() { return partidas == null ? null : partidas.resultadosBtn; }
     @Override public JButton cafeBtn() { return cafeBtn; }
-    @Override public boolean mostrarResultados() { return mostrarResultados; }
+    @Override public boolean mostrarResultados() { return partidas != null && partidas.mostrarResultados; }
 
     /** Restaura tamaño, posición y maximizado de la última sesión, con
      *  cordura: si la posición guardada cae fuera de la pantalla, se centra. */
@@ -5169,9 +4060,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         opEnCurso = on;
         if (on) opSerial++;
         if (!on) {   // cualquier fin de operación deja la UI usable, pase por donde pase
-            fetchBtn.setEnabled(true); azarBtn.setEnabled(true); gteBtn.setEnabled(true);
-            if (dlSel != null) dlSel.setEnabled(true);
-            if (dlAll != null) dlAll.setEnabled(true);
+            partidas.fetchBtn.setEnabled(true); partidas.azarBtn.setEnabled(true); partidas.gteBtn.setEnabled(true);
+            if (partidas.dlSel != null) partidas.dlSel.setEnabled(true);
+            if (partidas.dlAll != null) partidas.dlAll.setEnabled(true);
         }
         if (on) {
             if (continuarBtn != null) continuarBtn.setVisible(false);
@@ -5183,113 +4074,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // ----- Filtros -----------------------------------------------------------
-    void refreshModeCombo() {
-        actualizandoCombos = true;
-        Object sel = modeCombo.getSelectedItem();
-        TreeSet<String> modos = new TreeSet<>();
-        for (Match m : all) modos.add(m.mode);
-        modeCombo.removeAllItems();
-        modeCombo.addItem(todosModos());
-        for (String s : modos) modeCombo.addItem(s);
-        if (sel != null && modos.contains(String.valueOf(sel))) modeCombo.setSelectedItem(sel);
-        Object selMapa = mapaCombo.getSelectedItem();
-        TreeSet<String> mapas = new TreeSet<>();
-        for (Match m : all) if (m.map != null && !m.map.isBlank()) mapas.add(m.map);
-        mapaCombo.removeAllItems(); mapaCombo.addItem(t("Todos los mapas", "All maps"));
-        for (String s : mapas) mapaCombo.addItem(s);
-        if (selMapa != null && mapas.contains(String.valueOf(selMapa))) mapaCombo.setSelectedItem(selMapa);
-        actualizandoCombos = false;
-    }
 
     // ajustarRefAzar: movido a service.AzarService (método estático, lógica pura del azar).
 
     /** Fija el jugador seguido de referencia de la partida: primero uno de los
      *  seleccionados en la lista, si no cualquiera de los seguidos. */
-    void asignarRef(Match m) {
-        MatchPlayer suj = null;   // primero, los SUJETOS de la búsqueda (si varios, el de más ELO entre ellos)
-        for (MatchPlayer mp : m.players)
-            if (SUJETOS.contains(mp.id) && (suj == null || (mp.rating != null && (suj.rating == null || mp.rating > suj.rating)))) suj = mp;
-        if (suj != null) { m.refId = suj.id; return; }
-        for (Player p : playersList.getSelectedValuesList())
-            if (m.tieneJugador(p.id())) { m.refId = p.id(); return; }
-        for (int i = 0; i < playersModel.size(); i++) {
-            Player p = playersModel.get(i);
-            if (m.tieneJugador(p.id())) { m.refId = p.id(); return; }
-        }
-        if (!m.players.isEmpty()) {
-            MatchPlayer mejor = m.players.get(0);
-            for (MatchPlayer p : m.players)
-                if (p.rating != null && (mejor.rating == null || p.rating > mejor.rating)) mejor = p;
-            m.refId = mejor.id;
-        }
-    }
 
     /** Ancho óptimo de una columna: el mayor entre su cabecera y sus celdas visibles (con topes). */
-    void ajustarColumna(int c) {
-        javax.swing.table.TableColumn col = table.getColumnModel().getColumn(c);
-        int mc = table.convertColumnIndexToModel(c);
-        javax.swing.table.TableCellRenderer hr = col.getHeaderRenderer() != null ? col.getHeaderRenderer() : table.getTableHeader().getDefaultRenderer();
-        int w = hr.getTableCellRendererComponent(table, col.getHeaderValue(), false, false, -1, c).getPreferredSize().width + 16;
-        int filas = Math.min(table.getRowCount(), 300);
-        for (int r = 0; r < filas; r++) {
-            Component comp = table.prepareRenderer(table.getCellRenderer(r, c), r, c);
-            w = Math.max(w, comp.getPreferredSize().width + 14);
-        }
-        int max = mc == 1 || mc == 5 ? 420 : 260;
-        col.setPreferredWidth(Math.max(56, Math.min(max, w)));
-    }
 
     /** Todas las columnas al contenido (tras cada tabla nueva): Rival absorbe lo que sobre. */
-    void ajustarColumnas() {
-        if (table == null || table.getColumnCount() == 0) return;
-        for (int c = 0; c < table.getColumnCount(); c++) ajustarColumna(c);
-    }
 
-    void applyFilters() {
-        marcarFantasmas(all);
-        String modo = (String) modeCombo.getSelectedItem();
-        Set<Long> selIds = new HashSet<>();
-        List<Player> baseFiltro = new ArrayList<>();   // filtro rápido: los chips seleccionados en «Partidas de:»
-        for (Player s : ultimosSujetos) if (filtroSujetos.contains(s.id())) baseFiltro.add(s);
-        for (Player p : baseFiltro) {
-            selIds.add(p.id());
-            if (p.vinculo() != 0)   // seleccionar una cuenta = seleccionar su familia
-                for (Player x : todosJugadores)
-                    if (x.vinculo() == p.vinculo()) selIds.add(x.id());
-        }
-
-        String sgCfg = leerConfig("savegame", null);
-        Path sgConocida = (sgCfg != null && Files.isDirectory(Path.of(sgCfg))) ? Path.of(sgCfg) : null;
-
-        view.clear();
-        for (Match m : all) {
-            if (modo != null && !todosModos().equals(modo) && !modo.equals(m.mode)) continue;
-            if (mapaCombo.getSelectedIndex() > 0 && !String.valueOf(mapaCombo.getSelectedItem()).equals(m.map)) continue;
-            if (periodoCombo.getSelectedIndex() > 0) { int dias = new int[]{ 0, 7, 30, 90, 365 }[periodoCombo.getSelectedIndex()]; if (m.started == null || m.started.isBefore(Instant.now().minus(Duration.ofDays(dias)))) continue; }
-            if (!filtroRival.isEmpty()) { asignarRef(m); if (!rivalCoincide(m, filtroRival)) continue; }
-            if (!selIds.isEmpty()) {
-                boolean alguno = false;
-                for (long id : selIds) if (m.tieneJugador(id)) { alguno = true; break; }
-                if (!alguno) continue;
-            }
-            asignarRef(m);
-            if (m.finished == null) {
-                m.estado = enCursoReal(m) ? "\u25B6" : "\u2014";
-                m.enDisco = false;
-                m.enJuego = false;
-            } else {
-                m.enDisco = Files.exists(destino(m));
-                m.enJuego = sgConocida != null
-                        && Files.exists(sgConocida.resolve(destino(m).getFileName().toString()));
-            }
-            view.add(m);
-        }
-        tableModel.fireTableDataChanged();
-        mostrarGuiaVacia(all.isEmpty());
-        actualizarTextoBuscar();
-        if (!all.isEmpty())
-            status.setText(view.size() + t(" de ", " of ") + all.size() + t(" partidas (según filtros).", " games (per filters)."));
-    }
 
     // ----- Alta de jugadores (búsqueda por nick, sin visitar webs) -----------
     // ----- «Mi partida»: quién eres, aviso al encontrar partida (log del juego) y panel sobre el juego -----
@@ -5317,7 +4111,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         String verO = t("Ver sus partidas", "View their games"), perfO = t("Ver perfil", "View profile"), addO = t("Añadir al grupo\u2026", "Add to group\u2026"), canO = t("Cancelar", "Cancel");
         int r0 = JOptionPane.showOptionDialog(this, nombre + "  ·  " + pid, t("Resultados", "Results"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, new Object[]{ perfO, verO, addO, canO }, perfO);
         if (r0 == 0) abrirPerfil(pid, nombre);
-        else if (r0 == 1) { Player pl = new Player(pid, nombre, grupoDestino()); objetivoForzado = pl; invitado = pl; vistaDelInvitado = vistaActualId(); playersList.clearSelection(); aplicarFiltroGrupo(); mostrarDirectos(false); fetchMatches(fetchBtn); }
+        else if (r0 == 1) { Player pl = new Player(pid, nombre, grupoDestino()); objetivoForzado = pl; invitado = pl; vistaDelInvitado = vistaActualId(); playersList.clearSelection(); aplicarFiltroGrupo(); mostrarDirectos(false); partidas.fetchMatches(partidas.fetchBtn); }
         else if (r0 == 2) {
             Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.add(GRUPO_GENERAL); for (Player x : todosJugadores) gs.add(x.grupo()); gs.addAll(gruposConfig());
             Object g = JOptionPane.showInputDialog(this, t("Grupo:", "Group:"), t("Añadir a la watchlist", "Add to the watchlist"), JOptionPane.PLAIN_MESSAGE, null, gs.toArray(), grupoDestino());
@@ -5386,10 +4180,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                                 if (ei != null) SwingUtilities.invokeLater(() -> {
                                     eloWatch.put(p.id(), ei);
                                     playersList.repaint();
-                                    refrescarSujetos(ultimosSujetos, invitado != null);   // el ELO recién llegado, a la cabecera
+                                    partidas.refrescarSujetos(partidas.ultimosSujetos, invitado != null);   // el ELO recién llegado, a la cabecera
                                 });
                             }).start();
-                            fetchMatches(fetchBtn);
+                            partidas.fetchMatches(partidas.fetchBtn);
                             return;
                         }
                         String gElegido = elegirGrupoDialog(p.name());
@@ -5417,262 +4211,97 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // ----- Consulta de partidas ----------------------------------------------
-    void fetchMatches(JButton btn) {
-        if (fetchWorker != null) {          // segunda pulsación = Detener
-            fetchWorker.cancel(true);
-            return;
-        }
-        if (objetivoForzado == null && invitado == null && perfil.abierto() && perfil.pidAbierto() > 0 && playersList.getSelectedIndices().length == 0) {
-            objetivoForzado = new Player(perfil.pidAbierto(), perfil.nombreAbierto(), grupoDestino());   // con un perfil abierto, «Buscar partidas» busca a ese jugador
-            mostrarDirectos(false);
-        }
-        if (playersModel.isEmpty() && invitado == null && objetivoForzado == null) {
-            JOptionPane.showMessageDialog(this, t("Añade antes algún jugador a la lista.",
-                    "Add a player to the list first."));
-            return;
-        }
-        List<Player> sel = new ArrayList<>();
-        if (objetivoForzado != null) {
-            sel.add(objetivoForzado);   // «Ver sus partidas» de alguien concreto: manda él, esté o no en un grupo
-            objetivoForzado = null;
-        } else if (invitado != null) {
-            sel.add(invitado);   // persiste: sigue flotando tras la búsqueda
-        } else if (objetivoEtiqueta != null && playersList.getSelectedIndices().length == 0) {
-            sel.add(objetivoEtiqueta);   // lo que dice el botón es lo que se busca
-        } else if (modoTop()) {
-            List<Player> selTop = playersList.getSelectedValuesList();
-            if (selTop.size() > 15) {
-                selTop = selTop.subList(0, 15);
-                status.setText(t("En ★ el máximo son 15 perfiles por tanda: busco los 15 primeros seleccionados.",
-                        "In ★ the cap is 15 profiles per run: searching the first 15 selected."));
-            }
-            if (!selTop.isEmpty()) sel.addAll(selTop);
-            else if (soloVivosBtn != null && soloVivosBtn.isSelected())
-                for (int i = 0; i < playersModel.size(); i++) sel.add(playersModel.get(i));
-            else {
-                JOptionPane.showMessageDialog(this,
-                        t("En ★ (Top ladder o Top país), selecciona jugadores concretos (clic o Ctrl+clic en la lista)\no activa el chip «● Jugando» antes de buscar.",
-                          "In ★ (Top ladder or Country top), select specific players (click or Ctrl+click the list)\nor turn on the “● Live” checkbox before searching."),
-                        t("Buscar en el top", "Search the top"), JOptionPane.INFORMATION_MESSAGE);
-                return;
-            }
-        } else {
-            List<Player> selNorm = playersList.getSelectedValuesList();
-            if (!selNorm.isEmpty()) sel.addAll(selNorm);   // seleccionar = consultar SOLO eso (y su familia)
-            else for (int i = 0; i < playersModel.size(); i++) sel.add(playersModel.get(i));
-        }
-        final List<Player> tracked = (invitado == null && !modoTop()) ? conFamilias(sel) : sel;
-        SUJETOS.clear();
-        filtroSujetos.clear();
-        if (rivalField != null && !rivalField.getText().isEmpty()) rivalField.setText("");   // búsqueda nueva, filtro limpio
-        fallosFetch = 0;
-        mostrarGuiaVacia(false);   // llegan filas: la tabla, no la guía
-        taparResultados();         // tabla nueva = sin spoilers
-        for (Player px : tracked) SUJETOS.add(px.id());
-        vistaDeSujetos = vistaActualId();
-        refrescarSujetos(tracked, invitado != null);
-
-        mostrarDirectos(false);
-        guardarConfig("ventana_n", String.valueOf((int) hoursSpinner.getValue()));
-        guardarConfig("horas", String.valueOf(horasVentana()));   // compatibilidad con el resto (azar, GTE)
-        btn.setText(t("Detener", "Stop"));
-        btn.setToolTipText(t("Detiene la búsqueda en curso", "Stops the current search"));
-        azarBtn.setEnabled(false);
-        gteBtn.setEnabled(false);
-        trabajando(true);
-        final long miSerial = opSerial;
-        int hours = horasVentana();
-        Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
-        SwingWorker<List<Match>, String> fw = new SwingWorker<>() {
-            /** Seguidos sin NINGUNA página fallida en esta búsqueda (BarridoVivos.decidirVivos: solo a ellos se les
-             *  puede marcar «fuera» si no salen vivos; ver DEUDA del falso «fuera»). Campo DEL WORKER, no de la
-             *  ventana: get() en done() ya garantiza ver los cambios de doInBackground, y así una búsqueda vieja que
-             *  siga corriendo tras un Detener no pisa el conjunto de la siguiente búsqueda. */
-            final Set<Long> exitosos = new HashSet<>();
-            @Override protected List<Match> doInBackground() {
-                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
-                Map<Long, Match> unicos = new LinkedHashMap<>();
-                topeAlcanzado = false;
-                final int MAX_PAGINAS = 6, MAX_TOTAL = 600;   // tope de seguridad por búsqueda
-                for (Player pl : tracked) {
-                    if (isCancelled()) break;
-                    boolean fallo = false;
-                    // Páginas sucesivas hasta cubrir la ventana (para 24-48 h basta una)
-                    for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
-                        if (isCancelled()) break;
-                        publish(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
-                        boolean seguir = false;
-                        try {
-                            Iterable<Match> leidas = COMPANION.partidas(pl.id(), pagina, PER_PAGE);   // con reintento ante 429 (la segunda pulsación corta la espera)
-                            int n = 0; Instant masAntigua = null;
-                            for (Match m : leidas) {
-                                if (m == null) continue;
-                                n++;
-                                Instant ref = m.finished != null ? m.finished : m.started;
-                                if (ref != null && (masAntigua == null || ref.isBefore(masAntigua))) masAntigua = ref;
-                                if (m.finished == null && !enCursoReal(m)) continue;               // fantasma de crash: fuera
-                                if (m.finished != null && m.finished.isBefore(cutoff)) continue;   // fuera de ventana (las EN CURSO entran)
-                                unicos.putIfAbsent(m.id, m);
-                            }
-                            // hay más que pedir si la página vino llena y su partida más antigua sigue dentro de la ventana
-                            seguir = n >= PER_PAGE && masAntigua != null && masAntigua.isAfter(cutoff);
-                            if (seguir && pagina == MAX_PAGINAS) topeAlcanzado = true;
-                            if (unicos.size() >= MAX_TOTAL) { topeAlcanzado = true; seguir = false; }
-                            Thread.sleep(PAUSA_MS);
-                        } catch (Exception ex) {
-                            fallo = true;   // también con InterruptedException sin Detener real: esta página quedó sin terminar
-                            if (isCancelled() || ex instanceof InterruptedException) break;   // segunda pulsación: done() ya dijo «detenida»; no pisarlo ni contar un fallo en la búsqueda siguiente
-                            fallosFetch++;
-                            publish(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
-                        }
-                        if (!seguir) break;
-                    }
-                    if (!isCancelled() && !fallo) exitosos.add(pl.id());   // ninguna de sus páginas falló: se le puede marcar «fuera»
-                    if (unicos.size() >= MAX_TOTAL) break;   // los que quedan sin tocar no entran en exitosos: no se les toca el estado
-                }
-                List<Match> lista = new ArrayList<>(unicos.values());
-                lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
-                return lista;
-            }
-            @Override protected void process(List<String> msgs) { status.setText(msgs.get(msgs.size() - 1)); }
-            @Override protected void done() {
-                if (miSerial != opSerial) { log("buscar #" + miSerial + ": terminó superada por la op #" + opSerial); fetchWorker = null; return; }
-                fetchWorker = null;
-                actualizarTextoBuscar();
-                btn.setToolTipText(null);
-                btn.setEnabled(true);
-                azarBtn.setEnabled(true);
-                gteBtn.setEnabled(true);
-                trabajando(false);
-                if (isCancelled()) {
-                    status.setText(t("Búsqueda detenida.", "Search stopped."));
-                    return;
-                }
-                try {
-                    List<Match> res = get();
-                    aprenderCatalogos(res);
-                    List<Long> idsTracked = new ArrayList<>();
-                    for (Player pl : tracked) idsTracked.add(pl.id());
-                    BarridoVivos.DecisionBuscar dec = barridoVivos.decidirVivos(res, idsTracked, exitosos);
-                    for (Player pl : tracked) {
-                        Long v = dec.vivos().get(pl.id());
-                        if (v != null) { VIVO.marcarJugando(pl.id(), v, dec.infos().get(pl.id())); }
-                        else if (dec.fuera().contains(pl.id())) { VIVO.marcarFuera(pl.id()); }
-                    }
-                    actualizarIndicadoresVivos();
-                    all.clear();
-                    all.addAll(res);
-                    refreshModeCombo();
-                    applyFilters();
-                    status.setText(view.size() + t(" de ", " of ") + all.size() + t(" partidas en las últimas ", " games in the last ") + textoVentana(hours) + "."
-                            + (topeAlcanzado
-                                ? "  \u26A0 " + t("Tope de la búsqueda alcanzado: puede faltar historial antiguo — acorta la ventana o filtra por modo.",
-                                                  "Search cap reached: older history may be missing — shorten the window or filter by mode.")
-                                : "")
-                            + (fallosFetch > 0
-                                ? "  \u26A0 " + fallosFetch + t(" jugador(es) SIN RESPUESTA del servicio (¿429/caído?): sus partidas faltan — reintenta en un minuto.",
-                                                              " player(s) got NO RESPONSE from the service (429/down?): their games are missing — retry in a minute.")
-                                : ""));
-                } catch (Exception ex) {
-                    status.setText("Error: " + causa(ex));
-                }
-            }
-        };
-        fetchWorker = fw;
-        fw.execute();
-    }
 
     // ----- Descarga de recs --------------------------------------------------
-    List<Match> selectedRows() {
-        List<Match> out = new ArrayList<>();
-        for (int r : table.getSelectedRows()) out.add(view.get(table.convertRowIndexToModel(r)));
-        return out;
-    }
 
-    List<Match> allRows() { return new ArrayList<>(view); }
 
     /** RecService: descarga, disco y savegame para UNA partida (ver service.RecService). Campo de instancia (no
      *  static): se cablea junto al código que lo usa, sin tocar el bloque static de COMPANION/LIVE/SERVICIO_PERFIL. */
     final RecService recService = new DescargaRecs(Recs::descargarRec, RecsDisco::destino, Juego::copiarASavegame,
             SpoilerFreeRecs::dormir, PAUSA_MS);
 
-    void download(List<Match> objetivoIn) { download(objetivoIn, false); }
-
-    void download(List<Match> objetivoIn, boolean enviarSiempre) {
-        List<Match> objetivo = new ArrayList<>();
-        List<Match> vivas = new ArrayList<>();
-        for (Match m : objetivoIn) (m.finished == null ? vivas : objetivo).add(m);
-        if (!vivas.isEmpty() && objetivo.isEmpty()) {
-            if (vivas.size() == 1) espectarPartida(vivas.get(0).id);
-            else status.setText(t("Esas partidas están EN DIRECTO: doble clic en una para espectarla.",
-                    "Those games are LIVE: double-click one to spectate."));
-            return;
-        }
-        if (!vivas.isEmpty())
-            status.setText(t("Las partidas EN DIRECTO no se descargan; se saltan.",
-                    "LIVE games can't be downloaded; skipping them."));
-        if (objetivo.isEmpty()) { status.setText(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        if (!descargaSinCambiarVista) mostrarDirectos(false);
-        descargaSinCambiarVista = false;
-        dlSel.setEnabled(false); dlAll.setEnabled(false);
-        trabajando(true);
-        final long miSerial = opSerial;
-        Set<Long> trackedIds = new HashSet<>();
-        for (int i = 0; i < playersModel.size(); i++) trackedIds.add(playersModel.get(i).id());
-        final boolean autoCopiar = autoSgItem.isSelected();
-        final boolean autoCopiarFinal = autoCopiar || enviarSiempre;
-        final Path sgAuto = autoCopiarFinal ? obtenerSavegame(enviarSiempre) : null;
-        if (autoCopiarFinal && sgAuto == null)
-            log("copia automática a savegame activada pero sin carpeta resuelta: no se copiará");
-
-        new SwingWorker<Void, Void>() {
-            @Override protected Void doInBackground() {
-                hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
-                try { Files.createDirectories(RECS_DIR); } catch (IOException ignored) {}
-                int ok = 0, copiadas = 0;
-                for (Match m : objetivo) {
-                    if (stopOperacion) break;
-                    setEstado(m, "descargando…");
-                    RecService.Resultado r = recService.procesar(m, trackedIds, autoCopiarFinal, sgAuto, () -> stopOperacion);
-                    boolean hecho = r.estado() != RecService.Estado.FALLO;
-                    if (hecho) {
-                        m.enDisco = true;
-                        ok++;
-                        if (r.enJuego()) {
-                            copiadas++;
-                            m.enJuego = true;
-                        }
-                    }
-                    setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
-                    dormir(PAUSA_MS);
+    /** La pestaña «Partidas»: ver ui.PartidasView/ui.PartidasPresenter (fase 3, tanda 3, oleada B). Se construye
+     *  aquí (como field initializer: se ejecuta antes que configurarVentana/construirWatchlist/etc., igual que
+     *  dialogos/menus/azarService/recService/barridoVivos) para que sus botones existan cuando
+     *  construirBarraSuperior los necesite. Watchlist sigue en esta clase: se le pasa por EnlaceWatchlist con
+     *  lambdas a los métodos/campos de aquí; el resto de la ventana, por Anfitrion. */
+    final dev.tirador.aoe2radar.ui.PartidasView partidas = new dev.tirador.aoe2radar.ui.PartidasView(this, menus, dialogos, this,
+            azarService, recService, barridoVivos, PER_PAGE, PAUSA_MS,
+            new dev.tirador.aoe2radar.ui.PartidasView.EnlaceWatchlist() {
+                @Override public List<Player> seleccion() { return playersList.getSelectedValuesList(); }
+                @Override public int seleccionSize() { return playersList.getSelectedIndices().length; }
+                @Override public boolean soloVivosMarcado() { return soloVivosBtn != null && soloVivosBtn.isSelected(); }
+                @Override public boolean modoTop() { return SpoilerFreeRecs.this.modoTop(); }
+                @Override public String grupoDestino() { return SpoilerFreeRecs.this.grupoDestino(); }
+                @Override public List<Player> conFamilias(List<Player> base) { return SpoilerFreeRecs.this.conFamilias(base); }
+                @Override public void limpiarSeleccion() { playersList.clearSelection(); }
+                @Override public int totalJugadores() { return playersModel.size(); }
+                @Override public Player jugador(int indice) { return playersModel.get(indice); }
+                @Override public Integer eloDe(long pid) { return eloWatch.get(pid); }
+                @Override public String grupoDeJugador(long pid) { return SpoilerFreeRecs.this.grupoDeJugador(pid); }
+                @Override public List<Player> todosJugadores() { return todosJugadores; }
+                @Override public void actualizarIndicadoresVivos() { SpoilerFreeRecs.this.actualizarIndicadoresVivos(); }
+                @Override public void aplicarFiltroGrupo() { SpoilerFreeRecs.this.aplicarFiltroGrupo(); }
+                @Override public String tipCuentaVinculada(Match m) { return SpoilerFreeRecs.this.tipCuentaVinculada(m); }
+                @Override public Player objetivoForzado() { return objetivoForzado; }
+                @Override public void fijarObjetivoForzado(Player p) { objetivoForzado = p; }
+                @Override public void limpiarObjetivoForzado() { objetivoForzado = null; }
+                @Override public Player invitado() { return invitado; }
+                @Override public void limpiarInvitado() { invitado = null; }
+                @Override public String vistaActualId() { return SpoilerFreeRecs.this.vistaActualId(); }
+                @Override public int horasVentana() { return SpoilerFreeRecs.this.horasVentana(); }
+                @Override public void guardarVentanaHoras() {
+                    guardarConfig("ventana_n", String.valueOf((int) hoursSpinner.getValue()));
+                    guardarConfig("horas", String.valueOf(SpoilerFreeRecs.this.horasVentana()));
                 }
-                final int n = ok, tot = objetivo.size(), cop = copiadas;
-                final boolean parada = stopOperacion;
-                SwingUtilities.invokeLater(() ->
-                        status.setText((parada ? t("Detenido. ", "Stopped. ") : "")
-                                + n + "/" + tot + t(" recs guardadas en ./", " recs saved to ./") + RECS_DIR
-                                + (cop > 0 ? "  ·  " + cop + t(" al juego", " to the game") : "")
-                                + (n < tot ? t("  ·  detalle en descargas.log", "  ·  details in descargas.log") : "")));
-                return null;
-            }
-            @Override protected void done() {
-                if (miSerial != opSerial) { log("descargas #" + miSerial + ": terminó superada por la op #" + opSerial); return; }
-                dlSel.setEnabled(true);
-                dlAll.setEnabled(true);
-                trabajando(false);
-                if (alTerminarDescarga != null) { Runnable r = alTerminarDescarga; alTerminarDescarga = null; r.run(); }
-            }
-        }.execute();
-    }
-    boolean descargaSinCambiarVista; Runnable alTerminarDescarga;
+                @Override public void actualizarTextoForma() { SpoilerFreeRecs.this.actualizarTextoForma(); }
+                @Override public JPanel sujetosPanel() { return sujetosPanel; }
+            },
+            new dev.tirador.aoe2radar.ui.PartidasView.Anfitrion() {
+                @Override public void estado(String texto) { status.setText(texto); }
+                @Override public void mostrarDirectos(boolean mostrar) { SpoilerFreeRecs.this.mostrarDirectos(mostrar); }
+                @Override public void refrescarDirectos() {
+                    directos.refrescarForzado();
+                    if (directosBtn != null && directosBtn.isSelected()) status.setText(t("Refrescando directos…", "Refreshing streams…"));
+                }
+                @Override public void enfocarBuscador() { if (buscaNick != null) { buscaNick.requestFocusInWindow(); buscaNick.selectAll(); } }
+                @Override public boolean confirmarEspectar(String nombre) { return SpoilerFreeRecs.this.confirmarEspectar(nombre); }
+                @Override public void espectarVerificando(long profileId, long matchId) { SpoilerFreeRecs.this.espectarVerificando(profileId, matchId); }
+                @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
+                @Override public void lanzarCaptureAge(Path rec) { SpoilerFreeRecs.this.lanzarCaptureAge(rec); }
+                @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
+                @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
+                @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
+                @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
+                @Override public Path destino(Match m) { return RecsDisco.destino(m); }
+                @Override public Path recsDir() { return RECS_DIR; }
+                @Override public void trabajando(boolean on) { SpoilerFreeRecs.this.trabajando(on); }
+                @Override public long operacionActual() { return opSerial; }
+                @Override public boolean detenido() { return stopOperacion; }
+                @Override public void pararOperacion() { stopOperacion = true; }
+                @Override public void anotarHiloOperacion() { hiloOperacion = Thread.currentThread(); }
+                @Override public void aprenderCatalogos(List<Match> res) { SpoilerFreeRecs.aprenderCatalogos(res); }
+                @Override public List<String> mapasConocidos() { return new ArrayList<>(MAPAS_CAT); }
+                @Override public List<String> civsConocidas() { return new ArrayList<>(CIVS_CAT); }
+                @Override public void dormir(long ms) { SpoilerFreeRecs.dormir(ms); }
+                @Override public long perfilAbiertoPid() { return perfil.pidAbierto(); }
+                @Override public boolean perfilAbierto() { return perfil.abierto(); }
+                @Override public String perfilNombreAbierto() { return perfil.nombreAbierto(); }
+                @Override public void mostrarHistorialSiSigueAbierto(long pid, String nombre) {
+                    javax.swing.Timer tt = new javax.swing.Timer(900, ev -> { if (perfil.pidAbierto() == pid) perfil.mostrarHistorialPerfil(pid, nombre); });
+                    tt.setRepeats(false); tt.start();
+                }
+                @Override public Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+                    return COMPANION.partidas(pid, pagina, porPagina);
+                }
+                @Override public boolean autoCopiarAlDescargar() { return autoSgItem.isSelected(); }
+                @Override public void continuarDisponible(boolean visible) { if (continuarBtn != null) continuarBtn.setVisible(visible); }
+                @Override public void ajustarGrisesNota(boolean oscuro) { SpoilerFreeRecs.this.ajustarGrises(oscuro); }
+                @Override public void actualizarControlesTabla() { SpoilerFreeRecs.this.actualizarControlesTabla(); }
+            });
 
-    void setEstado(Match m, String txt) {
-        SwingUtilities.invokeLater(() -> {
-            m.estado = txt;
-            int idx = view.indexOf(m);
-            if (idx >= 0) tableModel.fireTableRowsUpdated(idx, idx);
-        });
-    }
+
+
 
     // ----- Persistencia ------------------------------------------------------
     // Delegado a service.ListaSeguidos (cargar/guardar players.txt); la ventana conserva el disparo de
@@ -5691,62 +4320,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (error != null) status.setText(error);
     }
 
-    // ----- Tabla -------------------------------------------------------------
-    /** Orden de columnas por defecto (índices del modelo): Fecha · Jugador · Civ · Rival · Civ rival · Mapa · Modo · Rec · Resultado. */
-    static final String ORDEN_COLUMNAS_DEFECTO = "0,1,2,5,6,4,3,7,8";
-
-    void aplicarOrdenColumnas(String orden) {
-        try {
-            String[] partes = orden.split(",");
-            if (partes.length != table.getColumnCount()) return;
-            for (int destino = 0; destino < partes.length; destino++) {
-                int modelo = Integer.parseInt(partes[destino].trim());
-                int actual = table.convertColumnIndexToView(modelo);
-                if (actual >= 0 && actual != destino) table.getColumnModel().moveColumn(actual, destino);
-            }
-        } catch (RuntimeException ex) { log("columnas: orden ilegible: " + orden); }
-    }
-
-    void guardarColumnas() {
-        StringBuilder orden = new StringBuilder();
-        for (int v = 0; v < table.getColumnCount(); v++) { if (v > 0) orden.append(','); orden.append(table.convertColumnIndexToModel(v)); }
-        StringBuilder anchos = new StringBuilder();
-        for (int m = 0; m < table.getModel().getColumnCount(); m++) { if (m > 0) anchos.append(','); anchos.append(table.getColumnModel().getColumn(table.convertColumnIndexToView(m)).getWidth()); }
-        guardarConfig("tabla_orden", orden.toString());
-        guardarConfig("tabla_anchos", anchos.toString());
-    }
-
-    final class MatchesTableModel extends AbstractTableModel {
-        final String[] cols = { t("Fecha", "Date"), t("Jugador", "Player"), "Civ", t("Modo", "Mode"), t("Mapa", "Map"),
-                t("Rival", "Opponent"), t("Civ rival", "Opp. civ"), "Rec", t("Resultado", "Result") };
-        @Override public int getRowCount() { return view.size(); }
-        @Override public int getColumnCount() { return cols.length; }
-        @Override public String getColumnName(int c) { return cols[c]; }
-        @Override public boolean isCellEditable(int r, int c) { return false; }
-        @Override public Class<?> getColumnClass(int c) {
-            return switch (c) { case 0 -> FechaCell.class; default -> String.class; };
-        }
-        @Override public Object getValueAt(int r, int c) {
-            Match m = view.get(r);
-            return switch (c) {
-                case 0 -> m.finished == null && !enCursoReal(m)
-                        ? new FechaCell(null, m.started)
-                        : new FechaCell(m.finished);
-                case 1 -> revelada(m) ? refConVeredicto(m) : refNombre(m);
-                case 2 -> m.civDe(m.refId);
-                case 3 -> m.mode;
-                case 4 -> m.map;
-                case 5 -> rivalTexto(m, revelada(m));
-                case 6 -> m.civRival();
-                case 8 -> m.finished == null ? "" : (revelada(m) ? "\u25C9" : "\u25CE");   // ojo abierto / cerrado (también en GTE)
-                case 7 -> !m.estado.isBlank() ? m.estado
-                          : m.enJuego ? t("✓✓ en juego", "✓✓ in game")
-                          : m.enDisco ? t("✓ en disco", "✓ on disk")
-                          : (m.povsConRec() > 0 ? m.povsConRec() + " POV" : "¿?");
-                default -> "";
-            };
-        }
-    }
+    // ----- Tabla: aplicarOrdenColumnas/guardarColumnas/MatchesTableModel movidos a ui.PartidasView -----
 
     // ----- HTTP --------------------------------------------------------------
     /** La pausa por 429 del companion, contada en la barra de estado (ApiClient avisa; la red ya no toca Swing). */
