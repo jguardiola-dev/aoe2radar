@@ -10,7 +10,6 @@ import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -130,7 +129,7 @@ public final class CompanionApi {
             for (Object p : arr(val(lb, "ratings"))) {
                 Map<String, Object> pt = obj(p);
                 puntos.add(new Perfil.Punto(
-                        fecha(val(pt, "date")),
+                        when(val(pt, "date")),
                         val(pt, "rating") instanceof Number n ? n.intValue() : null,
                         val(pt, "rating_diff", "ratingDiff") instanceof Number n ? n.intValue() : null));
             }
@@ -176,20 +175,12 @@ public final class CompanionApi {
                     val(pl, "rank") instanceof Number n ? n.intValue() : null,
                     str(val(pl, "country")),
                     str(val(pl, "social_twitch_channel", "socialTwitchChannel")),
-                    fecha(val(pl, "last_match_time", "lastMatchTime")),
+                    when(val(pl, "last_match_time", "lastMatchTime")),
                     val(pl, "streak") instanceof Number n ? n.intValue() : null,
                     val(pl, "games") instanceof Number n ? n.intValue() : null,
                     ganadas10, jugadas10));
         }
         return new Clasificacion(List.copyOf(filas), lng(val(root, "total")), lng(val(root, "per_page", "perPage")));
-    }
-
-    /**
-     * when() sin excepciones: una fecha absurda (p. ej. -1e30) queda null. El conversor lee la fecha de todas las filas,
-     * también en pantallas que antes no la miraban; así no les añade un fallo nuevo (ver DEUDA).
-     */
-    static Instant fecha(Object o) {
-        try { return when(o); } catch (RuntimeException e) { return null; }
     }
 
     /**

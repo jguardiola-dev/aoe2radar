@@ -206,6 +206,16 @@ class CompanionApiTest {
         assertEquals("https://data.aoe2companion.com/api/matches?page=1&per_page=50", ultima(), "las tres variantes del río, como la 1.1");
     }
 
+    @Test void unaPartidaConFechaAbsurdaEntraConLaFechaNull() throws Exception {
+        // Antes parseMatch lanzaba (when con -1e30) y la página entera del río de «Al azar» contaba como fallida.
+        red.cuerpo = "{\"matches\":[{\"match_id\":21,\"started\":-1e30,\"finished\":-1e17},{\"match_id\":22,\"started\":1700000000}]}";
+        PaginaPartidas p = companion.recientes(null, 1, 50);
+        assertEquals(List.of(21L, 22L), p.partidas().stream().map(m -> m.id).toList(), "la página se lee entera");
+        assertNull(p.partidas().get(0).started);
+        assertNull(p.partidas().get(0).finished);
+        assertEquals(Instant.ofEpochSecond(1700000000), p.partidas().get(1).started);
+    }
+
     @Test void partidasSinPartidasEsVacia() throws Exception {
         red.cuerpo = "{\"matches\":[]}";
         assertFalse(companion.partidas(1L, 1, 50).iterator().hasNext());
