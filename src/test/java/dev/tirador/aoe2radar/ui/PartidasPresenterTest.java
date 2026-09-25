@@ -1,0 +1,125 @@
+package dev.tirador.aoe2radar.ui;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * PartidasPresenter es puro (sin Swing, sin hilos): estas pruebas llaman a sus métodos estáticos directamente,
+ * sin Tareas.EN_LINEA ni dobles de servicio, porque no hay ninguna operación asíncrona que orquestar (fetchMatches/
+ * download/buscarAleatorias/buscarGte siguen siendo SwingWorker en PartidasView; el presentador solo decide qué
+ * significa su desenlace). Cubre las cuatro categorías que pedía el encargo: éxito/error/cancelación/caducada,
+ * download (reutiliza vigente()), filtros y revelar.
+ */
+class PartidasPresenterTest {
+
+    // ----- fetchMatches: éxito/error/cancelación/operación caducada por opSerial -----
+
+    @Test void fetchMatches_exito() {
+        assertEquals(PartidasPresenter.Resultado.EXITO, PartidasPresenter.decidir(5, 5, false, false));
+    }
+
+    @Test void fetchMatches_error() {
+        assertEquals(PartidasPresenter.Resultado.ERROR, PartidasPresenter.decidir(5, 5, false, true));
+    }
+
+    @Test void fetchMatches_cancelada() {
+        assertEquals(PartidasPresenter.Resultado.CANCELADA, PartidasPresenter.decidir(5, 5, true, false));
+    }
+
+    @Test void fetchMatches_operacionCaducada() {
+        // otra operación (serial 6) ya manda: la 5 se ignora, aunque no hubiera ni error ni cancelación
+        assertEquals(PartidasPresenter.Resultado.CADUCADA, PartidasPresenter.decidir(5, 6, false, false));
+    }
+
+    @Test void fetchMatches_caducadaGanaAErrorYCancelacion() {
+        // el orden de las comprobaciones importa: caducada se decide ANTES que error/cancelación (igual que el
+        // "if (miSerial != opSerial) return;" de la 1.1, que corta antes de mirar isCancelled()/la excepción)
+        assertEquals(PartidasPresenter.Resultado.CADUCADA, PartidasPresenter.decidir(5, 6, true, true));
+    }
+
+    // ----- download (vigente(): la misma comprobación de caducidad que usan fetchMatches/download/azar/GTE) -----
+
+    @Test void download_vigente() {
+        assertTrue(PartidasPresenter.vigente(3, 3));
+    }
+
+    @Test void download_caducada() {
+        assertFalse(PartidasPresenter.vigente(3, 4));
+    }
+
+    // ----- revelar -----
+
+    @Test void revelar_modoConsultaMuestraPartidaNormal() {
+        assertTrue(PartidasPresenter.revelada(true, 0, false));
+    }
+
+    @Test void revelar_modoConsultaNoDestapaGte() {
+        // el modo consulta global nunca revela Guess the ELO (haría trampa): gte > 0
+        assertFalse(PartidasPresenter.revelada(true, 3, false));
+    }
+
+    @Test void revelar_manualEnReveladasSinModoConsulta() {
+        assertTrue(PartidasPresenter.revelada(false, 0, true));
+    }
+
+    @Test void revelar_ninguna() {
+        assertFalse(PartidasPresenter.revelada(false, 0, false));
+    }
+
+    // ----- filtros: modo -----
+
+    @Test void filtroModo_todosPasaCualquierPartida() {
+        assertTrue(PartidasPresenter.pasaFiltroModo("Todos los modos", "Todos los modos", "RM 1v1"));
+    }
+
+    @Test void filtroModo_sinSeleccionPasaCualquierPartida() {
+        assertTrue(PartidasPresenter.pasaFiltroModo(null, "Todos los modos", "RM 1v1"));
+    }
+
+    @Test void filtroModo_coincideExacto() {
+        assertTrue(PartidasPresenter.pasaFiltroModo("RM 1v1", "Todos los modos", "RM 1v1"));
+    }
+
+    @Test void filtroModo_noCoincide() {
+        assertFalse(PartidasPresenter.pasaFiltroModo("RM Team", "Todos los modos", "RM 1v1"));
+    }
+
+    // ----- filtros: mapa -----
+
+    @Test void filtroMapa_indiceCeroPasaCualquiera() {
+        assertTrue(PartidasPresenter.pasaFiltroMapa(0, "Arabia", "Nómada"));
+    }
+
+    @Test void filtroMapa_coincide() {
+        assertTrue(PartidasPresenter.pasaFiltroMapa(2, "Arabia", "Arabia"));
+    }
+
+    @Test void filtroMapa_noCoincide() {
+        assertFalse(PartidasPresenter.pasaFiltroMapa(2, "Arabia", "Nómada"));
+    }
+
+    // ----- filtros: periodo -----
+
+    @Test void filtroPeriodo_indiceCeroPasaAunSinFecha() {
+        assertTrue(PartidasPresenter.pasaFiltroPeriodo(0, null, Instant.now()));
+    }
+
+    @Test void filtroPeriodo_dentroDeLaVentana() {
+        Instant ahora = Instant.parse("2024-06-01T00:00:00Z");
+        Instant inicio = ahora.minusSeconds(3600);   // hace 1 hora: dentro de "7 días" (índice 1)
+        assertTrue(PartidasPresenter.pasaFiltroPeriodo(1, inicio, ahora));
+    }
+
+    @Test void filtroPeriodo_fueraDeLaVentana() {
+        Instant ahora = Instant.parse("2024-06-01T00:00:00Z");
+        Instant inicio = ahora.minusSeconds(30L * 24 * 3600);   // hace 30 días: fuera de "7 días" (índice 1)
+        assertFalse(PartidasPresenter.pasaFiltroPeriodo(1, inicio, ahora));
+    }
+
+    @Test void filtroPeriodo_sinFechaDeInicioQuedaFuera() {
+        assertFalse(PartidasPresenter.pasaFiltroPeriodo(1, null, Instant.now()));
+    }
+}
