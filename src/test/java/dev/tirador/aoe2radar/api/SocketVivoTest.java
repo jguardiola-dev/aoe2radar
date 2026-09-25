@@ -193,13 +193,112 @@ class SocketVivoTest {
         assertEquals(List.of(false, true), oyente.conectados);
     }
 
-    @Test void caracterizacion_unErrorSinCerradoDePorMedioNoCuentaComoCaida() {
-        // huboCaida solo lo marca cerrado(); error() no lo toca. Es una asimetría real del código de hoy.
+    @Test void unErrorTambienCuentaComoCaida() {
+        // En la 1.1 solo cerrado() marcaba caída: tras un error, al reconectar no se reparaba el estado (DEUDA, paso C2).
         socket.sincronizar(Set.of(1L));
         conector.ultima().receptor().error(new RuntimeException("boom"));
         planificador.diferidas.get(0).ejecutar();
         completar(conector.ultima());
-        assertEquals(List.of(false), oyente.conectados, "un simple error(), sin cerrado(), no activa trasCaida");
+        assertEquals(List.of(true), oyente.conectados, "tras un error, al reconectar se avisa de la caída (barrido de reparación)");
+    }
+
+    // ===== intentos numerados: solo cuenta el más reciente (paso C2) =====
+
+    @Test void dosAbrirALaVez_ganaElUltimoYElViejoSeCierraSinMandarNada() {
+        Set<Long> ids = Set.of(1L);
+        socket.sincronizar(ids);
+        ConectorFalso.Llamada vieja = conector.ultima();
+        socket.abrir(ids);                                  // p. ej. la reconexión y la app a la vez
+        ConectorFalso.Llamada nueva = conector.ultima();
+        CanalFalso cNueva = completar(nueva);
+        CanalFalso cVieja = completar(vieja);               // la vieja conecta DESPUÉS
+        assertEquals(List.of("stale"), cVieja.cierres, "el intento viejo se cierra en cuanto conecta");
+        assertTrue(cNueva.cierres.isEmpty(), "el nuevo sigue");
+        vieja.receptor().texto("[{\"type\":\"matchRemoved\",\"data\":{\"match_id\":5}}]", true);
+        assertTrue(oyente.mensajes.isEmpty(), "sin eventos duplicados de la conexión vieja");
+        assertEquals(List.of(false), oyente.conectados, "solo el abierto del vigente cuenta");
+    }
+
+    @Test void unAbiertoTardioDeUnIntentoViejoNoMarcaConectadoYLaReconexionSigue() {
+        // protección secuencial: un abierto viejo que llega tarde no marca conectado ni frena la reconexión. (La carrera
+        // real que vio el revisor, un hilo colándose entre comprobar y escribir, la evita el candado; un test de un solo
+        // hilo no la reproduce.)
+        socket.sincronizar(Set.of(1L));
+        ConectorFalso.Llamada vieja = conector.ultima();
+        socket.sincronizar(Set.of(1L, 2L));
+        fallar(conector.ultima());                           // el vigente falla: reconexión pendiente
+        vieja.receptor().abierto(new CanalFalso());          // el viejo abre tarde
+        assertFalse(socket.conectado(), "un intento viejo no puede marcar conectado");
+        int antes = conector.llamadas.size();
+        planificador.diferidas.get(0).ejecutar();
+        assertEquals(antes + 1, conector.llamadas.size(), "la reconexión abre: el socket no se queda muerto");
+    }
+
+    @Test void unaReconexionPendienteSirveAlUltimoIntentoQueFallo() {
+        // lo vio el revisor en C2: la pendiente del intento 1 ocupaba el sitio y, al dispararse, no abría: socket muerto
+        socket.sincronizar(Set.of(1L));
+        fallar(conector.ultima());                           // reconexión pendiente (intento 1)
+        socket.sincronizar(Set.of(1L, 2L));
+        fallar(conector.ultima());                           // el nuevo también falla: la pendiente pasa a servirle a él
+        assertEquals(1, planificador.diferidas.size(), "sigue habiendo una sola pendiente");
+        int antes = conector.llamadas.size();
+        planificador.diferidas.get(0).ejecutar();
+        assertEquals(antes + 1, conector.llamadas.size(), "abre: el socket no se queda muerto");
+        assertTrue(conector.ultima().url().endsWith("profile_ids=1,2") || conector.ultima().url().endsWith("profile_ids=2,1"), "con los ids nuevos");
+    }
+
+    @Test void unTrozoDeLaConexionAnteriorNoSePegaAlPrimerMensaje() {
+        socket.sincronizar(Set.of(1L));
+        ConectorFalso.Llamada primera = conector.ultima();
+        completar(primera);
+        primera.receptor().texto("[{\"type\":\"matchRem", false);   // a medias...
+        primera.receptor().cerrado(null, 1006, "red");                  // ...y se cae
+        planificador.diferidas.get(0).ejecutar();
+        ConectorFalso.Llamada segunda = conector.ultima();
+        completar(segunda);
+        segunda.receptor().texto("[{\"type\":\"matchRemoved\",\"data\":{\"match_id\":7}}]", true);
+        assertEquals(1, oyente.mensajes.size());
+        assertEquals(List.of(new SocketVivo.Quitada(7)), oyente.mensajes.get(0).eventos(), "el mensaje nuevo, entero y limpio");
+    }
+
+    @Test void laReconexionNoReabreSiOtroIntentoEstaEnVuelo() {
+        socket.sincronizar(Set.of(1L));
+        fallar(conector.ultima());                           // reconexión pendiente por el intento 1
+        socket.sincronizar(Set.of(1L, 2L));                  // la app abre otro (aún sin conectar)
+        int antes = conector.llamadas.size();
+        planificador.diferidas.get(0).ejecutar();
+        assertEquals(antes, conector.llamadas.size(), "ya hay un intento más nuevo: la reconexión vieja no abre otro");
+    }
+
+    @Test void unCierrePedidoPorNosotrosNoEsCaidaNiReconecta() {
+        socket.sincronizar(Set.of(1L));
+        ConectorFalso.Llamada l = conector.ultima();
+        CanalFalso c = completar(l);
+        socket.sincronizar(Set.of());                       // se vacía la lista
+        assertEquals(List.of("bye"), c.cierres);
+        l.receptor().cerrado(c, 1000, "bye");               // el servidor confirma el cierre
+        assertTrue(planificador.diferidas.isEmpty(), "en la 1.1 esto reconectaba con los ids antiguos");
+        assertFalse(socket.conectado());
+    }
+
+    @Test void vaciarLaListaAnulaUnaReconexionPendiente() {
+        socket.sincronizar(Set.of(1L));
+        fallar(conector.ultima());                          // reconexión pendiente
+        int antes = conector.llamadas.size();
+        socket.sincronizar(Set.of());
+        planificador.diferidas.get(0).ejecutar();
+        assertEquals(antes, conector.llamadas.size(), "sin ids no se vuelve a abrir");
+    }
+
+    @Test void laReconexionNoAbreOtraSiYaHayConexion() {
+        socket.sincronizar(Set.of(1L));
+        fallar(conector.ultima());                          // reconexión pendiente
+        socket.sincronizar(Set.of(1L, 2L));                 // la app reconecta por su cuenta
+        completar(conector.ultima());
+        int antes = conector.llamadas.size();
+        planificador.diferidas.get(0).ejecutar();
+        assertEquals(antes, conector.llamadas.size(), "ya conectado: la tarea no abre una segunda conexión");
+        assertTrue(socket.conectado());
     }
 
     @Test void alAbrirseLosReintentosVuelvenACeroYLaSiguienteEsperaVuelveA5s() {
@@ -281,7 +380,7 @@ class SocketVivoTest {
         assertEquals(1, planificador.diferidas.size());
     }
 
-    @Test void cerradoAntesDeAdoptarElCanalTambienCuentaPorqueNoHayNingunoActual() {
+    @Test void cerradoAntesDeAdoptarElCanalCuentaPorqueEsDelIntentoVigente() {
         socket.sincronizar(Set.of(1L));
         ConectorFalso.Llamada l = conector.ultima();
         CanalFalso c = new CanalFalso();

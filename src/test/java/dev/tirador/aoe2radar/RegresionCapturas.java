@@ -385,6 +385,11 @@ class RegresionCapturas {
         Thread.sleep(800);
         foto("shot_lista250.png");
         cerrarDialogos();
+        // Fin de Live now: la partida inventada 555 deja de estar en curso. Antes lo hacía, por casualidad, un barrido de
+        // reparación contra la red real que disparaba un fallo del socket (el cierre pedido por la app contaba como caída y
+        // reconectaba; arreglado en LiveService C2). Sin él, la 555 seguía «en partida» con un cronómetro en marcha. El
+        // harness deja él mismo el estado que fotografía: sin depender de la red ni de aquel fallo.
+        SwingUtilities.invokeAndWait(() -> { synchronized (app.ahoraEnCurso) { app.ahoraEnCurso.clear(); } app.ahoraPintar(); });
         // menú contextual de la watchlist sobre un jugador en partida
         SpoilerFreeRecs.VIVO.marcarJugando(1L, 555L);
         SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new Player(1L, "12Tirador", "General")); app.todosJugadores.add(new Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });

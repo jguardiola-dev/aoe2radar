@@ -97,14 +97,20 @@ public final class SocketVivo {
     private final Reloj reloj;
     private final Planificador planificador;
 
+    // Estado de la conexión. Las decisiones («¿este intento es el vigente?» y lo que se escribe según la respuesta) van
+    // juntas bajo `candado`, para que ningún hilo se cuele entre comprobar y actuar. Bajo el candado NUNCA se llama al
+    // Oyente, a la red ni a programarReconexion (que usa el monitor de this): así no hay interbloqueos.
+    private final Object candado = new Object();
+    private long intento;                    // número del intento vigente; cerrar o abrir otro deja viejos a los anteriores
     private volatile Canal canal;
     private volatile Set<Long> ids = Set.of();
-    private volatile boolean huboCaida;
+    private boolean huboCaida;
     private volatile long ultimoMsgMs;       // último mensaje recibido (salud)
     private volatile boolean conectado;
     private volatile int reintentos;
     private final StringBuilder buffer = new StringBuilder();   // los mensajes pueden llegar troceados
     private Planificador.Tarea reconexion;   // bajo el monitor de this
+    private long aReconectar;                // bajo el monitor de this: el último intento que falló (al que sirve la reconexión)
 
     public SocketVivo(Conector conector, Oyente oyente, Reloj reloj, Planificador planificador) {
         this.conector = conector; this.oyente = oyente; this.reloj = reloj; this.planificador = planificador;
@@ -123,71 +129,129 @@ public final class SocketVivo {
         });
     }
 
-    /** Conecta (o reconecta) con estos ids; vacío: cierra; si no cambian y está conectado, no hace nada. */
+    /** Conecta (o reconecta) con estos ids; vacío: cierra (y ninguna reconexión vuelve a abrir); si no cambian y está conectado, no hace nada. */
     public void sincronizar(Set<Long> nuevos) {
-        if (nuevos.isEmpty()) { cerrar(); return; }
-        if (nuevos.equals(ids) && conectado) return;
-        ids = nuevos;
+        synchronized (candado) {
+            if (!nuevos.isEmpty() && nuevos.equals(ids) && conectado) return;
+            ids = nuevos.isEmpty() ? Set.of() : nuevos;
+        }
         cerrar();
-        abrir(nuevos);
+        if (!nuevos.isEmpty()) abrir(nuevos);
     }
 
+    /** Cierra a propósito: el intento vigente pasa a viejo, así que su cierre no cuenta como caída ni reconecta. */
     public void cerrar() {
-        Canal c = canal;
-        canal = null;
-        conectado = false;
+        Canal c;
+        synchronized (candado) {
+            intento++;
+            c = canal;
+            canal = null;
+            conectado = false;
+        }
         if (c != null) { try { c.cerrar("bye"); } catch (Exception ignored) { } }
     }
 
-    void abrir(Set<Long> idsEsta) {
+    /** Abre ya con estos ids (el intento nuevo pasa a ser el vigente). */
+    void abrir(Set<Long> idsEsta) { abrir(idsEsta, -1); }
+
+    /**
+     * Abre un intento nuevo. idsEsta null: los ids actuales. soloSiIntento >= 0: solo si el vigente sigue siendo ese (la
+     * reconexión: si entretanto alguien abrió o cerró, ya no le toca). La reserva del número y la lectura de los ids
+     * van juntas bajo el candado.
+     */
+    private void abrir(Set<Long> idsEsta, long soloSiIntento) {
+        long mio;
+        Set<Long> idsAbrir;
+        synchronized (candado) {
+            if (soloSiIntento >= 0 && intento != soloSiIntento) return;
+            idsAbrir = idsEsta != null ? idsEsta : ids;
+            if (idsAbrir.isEmpty()) return;
+            mio = ++intento;
+        }
         StringBuilder csv = new StringBuilder();
-        for (long id : idsEsta) { if (csv.length() > 0) csv.append(','); csv.append(id); }
+        for (long id : idsAbrir) { if (csv.length() > 0) csv.append(','); csv.append(id); }
         String url = URL + "&language=" + ("es".equals(IDIOMA) ? "es" : "en") + "&profile_ids=" + csv;
         conector.conectar(url, new Receptor() {
             @Override public void abierto(Canal c) {
-                conectado = true;
-                oyente.conectado(huboCaida);   // tras una caída, la app hace un barrido para reparar el estado
-                huboCaida = false;
-                reintentos = 0;
-                ultimoMsgMs = reloj.ahoraMs();
-                log("socket: conectado, vigilando " + idsEsta.size() + " jugadores en tiempo real");
+                boolean trasCaida;
+                synchronized (candado) {
+                    if (mio != intento) return;   // intento viejo: su whenComplete lo cierra
+                    conectado = true;
+                    trasCaida = huboCaida;
+                    huboCaida = false;
+                    reintentos = 0;
+                    ultimoMsgMs = reloj.ahoraMs();
+                }
+                synchronized (buffer) { buffer.setLength(0); }   // un trozo de la conexión anterior no se pega al primer mensaje de esta
+                oyente.conectado(trasCaida);   // tras una caída, la app hace un barrido para reparar el estado
+                log("socket: conectado, vigilando " + idsAbrir.size() + " jugadores en tiempo real");
             }
             @Override public void texto(CharSequence trozo, boolean ultimo) {
                 synchronized (buffer) {
+                    // sin trozos de una conexión que ya no cuenta: la comprobación va DENTRO del buffer (orden buffer →
+                    // candado, el mismo que cuando el Oyente llama a sincronizar), así ningún trozo viejo se añade
+                    // después del vaciado que hace el abierto de la conexión nueva
+                    synchronized (candado) { if (mio != intento) return; }
                     buffer.append(trozo);
                     if (ultimo) {
                         String msg = buffer.toString();
                         buffer.setLength(0);
                         ultimoMsgMs = reloj.ahoraMs();
-                        try { oyente.eventos(leer(msg), idsEsta); }
+                        try { oyente.eventos(leer(msg), idsAbrir); }
                         catch (Exception ex) { log("socket: mensaje no entendido: " + causa(ex)); }
                     }
                 }
             }
             @Override public void cerrado(Canal c, int codigo, String motivo) {
-                if (canal == c || canal == null) { conectado = false; huboCaida = true; log("socket: cerrado (" + codigo + " " + motivo + ")"); programarReconexion(); }
+                if (!caida()) return;   // un cierre viejo o pedido por nosotros (cerrar) no es una caída
+                log("socket: cerrado (" + codigo + " " + motivo + ")");
+                programarReconexion(mio);
             }
             @Override public void error(Throwable error) {
-                conectado = false;
+                if (!caida()) return;   // un error también es caída (en la 1.1, solo el cierre): al reconectar, la app repara
                 log("socket: error: " + causa(error instanceof Exception ex ? ex : new RuntimeException(error)));
-                programarReconexion();
+                programarReconexion(mio);
+            }
+            /** Si este es el intento vigente, lo apunta como caído y devuelve true. */
+            private boolean caida() {
+                synchronized (candado) {
+                    if (mio != intento) return false;
+                    conectado = false;
+                    huboCaida = true;
+                    return true;
+                }
             }
         }).whenComplete((c, err) -> {
-            if (err != null) { conectado = false; log("socket: no se pudo conectar: " + causa(new RuntimeException(err))); programarReconexion(); }
-            else if (ids.equals(idsEsta)) canal = c;
-            else { try { c.cerrar("stale"); } catch (Exception ignored) { } }
+            boolean reprogramar = false;
+            Canal fuera = null;
+            synchronized (candado) {
+                boolean vigente = mio == intento;
+                if (err != null) { if (vigente) { conectado = false; reprogramar = true; } }
+                else if (vigente) canal = c;
+                else fuera = c;   // otro intento más nuevo manda
+            }
+            if (err != null) log("socket: no se pudo conectar: " + causa(new RuntimeException(err)));
+            if (reprogramar) programarReconexion(mio);
+            if (fuera != null) { try { fuera.cerrar("stale"); } catch (Exception ignored) { } }
         });
     }
 
-    /** Una sola reconexión pendiente a la vez; la espera se dobla con cada intento: 5, 10, 20, 40, 80 y 120 s. */
-    private synchronized void programarReconexion() {
+    /**
+     * Una sola reconexión pendiente a la vez; la espera se dobla con cada intento: 5, 10, 20, 40, 80 y 120 s. Sirve
+     * siempre al intento fallido MÁS NUEVO (si ya hay una pendiente, se le cambia el intento; si no, una tarea vieja
+     * ocuparía el sitio y al dispararse no haría nada: socket muerto). Al dispararse, solo abre si el vigente sigue
+     * siendo ese: si entretanto alguien reconectó, abrió otro o cerró a propósito, no hace nada.
+     */
+    private synchronized void programarReconexion(long intentoFallido) {
+        aReconectar = Math.max(aReconectar, intentoFallido);   // el número solo crece: un fallo viejo que llega tarde no pisa al nuevo
         if (reconexion != null && reconexion.pendiente()) return;
         int seg = Math.min(120, 5 * (1 << Math.min(reintentos++, 5)));
         reconexion = planificador.despues(seg * 1000L, () -> {
             // al empezar deja de estar pendiente (como el javax.swing.Timer de la 1.1, que al disparar ya no «corría»): si
             // abrir falla en este mismo hilo, su whenComplete puede programar la siguiente; si no, el socket moriría aquí
-            synchronized (this) { reconexion = null; }
-            try { conectado = false; Set<Long> i = ids; if (!i.isEmpty()) abrir(i); }
+            long n;
+            synchronized (this) { reconexion = null; n = aReconectar; }
+            try { abrir(null, n); }
             catch (RuntimeException ex) { log("socket: no se pudo reconectar: " + causa(ex)); }
         });
     }
