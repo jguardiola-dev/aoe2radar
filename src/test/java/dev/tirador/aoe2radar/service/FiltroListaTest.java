@@ -6,9 +6,7 @@ import dev.tirador.aoe2radar.util.RelojFalso;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,13 +51,27 @@ class FiltroListaTest {
         assertEquals(List.of(1L, 2L), ids(res.filas()));
     }
 
-    @Test void modoTopUsaElTopLadderIgnorandoElGrupo() {
+    // ----- modo top -----
+
+    @Test void modoTopTambienOrdenaPorNombreIgnorandoElGrupo() {
         FiltroLista fl = new FiltroLista(vivo());
-        List<Player> todos = List.of(new Player(1, "Ana", "A"));
-        List<Player> top = List.of(new Player(9, "Top1", "TOP_LADDER"), new Player(8, "Top2", "TOP_LADDER"));
+        List<Player> todos = List.of(new Player(1, "Ana", "A"));   // grupo A: no interviene, es modoTop
+        // llegan en orden no alfabético (Zeta antes que Ana): si no se ordenara, saldrían así
+        List<Player> top = List.of(new Player(9, "Zeta", "TOP_LADDER"), new Player(8, "Ana", "TOP_LADDER"));
         FiltroLista.Resultado res = fl.filtrar(todos, top, true, "A", false,
                 false, false, false, Map.of(), Map.of(), Set.of());
-        assertEquals(List.of(9L, 8L), ids(res.filas()));   // orden de llegada: sin orden aplicado (nombre, sin empates raros)
+        assertEquals(List.of(8L, 9L), ids(res.filas()));   // en top también se ordena (aquí por nombre): Ana antes que Zeta
+    }
+
+    @Test void modoTopNoAgrupaPorVinculo() {
+        FiltroLista fl = new FiltroLista(vivo());
+        // mismo vinculo (777) en dos filas del top: en modoTop no hay familias, salen las dos sueltas y sin marcas
+        List<Player> top = List.of(new Player(9, "Beto", "TOP_LADDER", 777), new Player(8, "Ana", "TOP_LADDER", 777));
+        FiltroLista.Resultado res = fl.filtrar(List.of(), top, true, null, false,
+                false, false, false, Map.of(), Map.of(), Set.of());
+        assertEquals(List.of(8L, 9L), ids(res.filas()));
+        assertTrue(res.marcaFila().isEmpty());
+        assertTrue(res.vivoFamilia().isEmpty());
     }
 
     // ----- solo vivos -----
@@ -80,6 +92,30 @@ class FiltroListaTest {
         // la primera por nombre al empatar sin ELO): Dara queda oculta aunque sea ella quien juega.
         assertEquals(List.of(1L, 3L), ids(res.filas()));
         assertEquals(Boolean.TRUE, res.vivoFamilia().get(3L));
+    }
+
+    @Test void soloVivosFamiliarVivoEnOtroGrupoNoCuenta() {
+        EstadoVivo v = vivo();
+        marcarJugando(v, 2);   // Rival juega, pero está en otro grupo
+        FiltroLista fl = new FiltroLista(v);
+        List<Player> todos = List.of(
+                new Player(1, "Ana", "G", 100),      // grupo activo, no juega
+                new Player(2, "Rival", "OTRO", 100)); // mismo vinculo, juega, pero de otro grupo
+        FiltroLista.Resultado res = fl.filtrar(todos, List.of(), false, "G", true,
+                false, false, false, Map.of(), Map.of(), Set.of());
+        // el ámbito de «solo vivos» es la lista YA filtrada por grupo: Rival ni siquiera entra en juego,
+        // así que Ana no encuentra a nadie de su familia jugando y cae también.
+        assertTrue(res.filas().isEmpty());
+    }
+
+    @Test void soloVivosFamiliaSinNadieJugandoCaeEntera() {
+        FiltroLista fl = new FiltroLista(vivo());   // nadie marcado como jugando
+        List<Player> todos = List.of(
+                new Player(1, "Ana", "G", 100),
+                new Player(2, "Beto", "G", 100));
+        FiltroLista.Resultado res = fl.filtrar(todos, List.of(), false, "G", true,
+                false, false, false, Map.of(), Map.of(), Set.of());
+        assertTrue(res.filas().isEmpty());
     }
 
     // ----- orden -----
@@ -140,36 +176,64 @@ class FiltroListaTest {
         assertEquals(List.of(1L, 2L), ids(res.filas()));   // asc: el que más baja, arriba
     }
 
+    @Test void formaSinPartidasCuentaComoNullAunqueElDiffNoSeaCero() {
+        FiltroLista fl = new FiltroLista(vivo());
+        List<Player> todos = List.of(
+                new Player(1, "Ana", "G"),    // forma válida
+                new Player(2, "Beto", "G"));  // partidas() == 0: cuenta como null aunque diff sea enorme
+        Map<Long, Forma> forma = new HashMap<>();
+        forma.put(1L, new Forma(-30, 1, 2, 1, false, 3));
+        forma.put(2L, new Forma(999, 0, 0, 0, false, 0));   // diff != 0 pero sin partidas
+        FiltroLista.Resultado res = fl.filtrar(todos, List.of(), false, "G", false,
+                true, false, false, forma, Map.of(), Set.of());
+        assertEquals(List.of(1L, 2L), ids(res.filas()));   // Beto (sin partidas) al final, pese a su diff
+    }
+
     // ----- familias -----
 
     @Test void familiaSinExpandirSoloMuestraLaCabezaMarcadaP() {
         FiltroLista fl = new FiltroLista(vivo());
+        // la hija (Aaa) es alfabéticamente ANTERIOR a la cabeza (Zeta): si el orden fuera por nombre,
+        // Aaa saldría primero. Gana el ELO. Hay además un empate de ELO dentro de la familia (12 y 13,
+        // desempatado por nombre) y un miembro sin ELO (14, va al final).
         Map<Long, Integer> elo = new HashMap<>();
-        elo.put(10L, 1200);
-        elo.put(11L, 1800);   // 11 tiene más elo: es la cabeza
+        elo.put(11L, 1800);   // Zeta: más ELO, cabeza
+        elo.put(12L, 1200);   // Beto: empatado con 13
+        elo.put(13L, 1200);   // Aaa: empatado con 12, gana el desempate por nombre
+        // 14 (Nada) sin entrada en elo
         List<Player> todos = List.of(
-                new Player(10, "Hija", "G", 500),
-                new Player(11, "Cabeza", "G", 500));
+                new Player(11, "Zeta", "G", 500),
+                new Player(12, "Beto", "G", 500),
+                new Player(13, "Aaa", "G", 500),
+                new Player(14, "Nada", "G", 500));
         FiltroLista.Resultado res = fl.filtrar(todos, List.of(), false, "G", false,
                 false, false, false, Map.of(), elo, Set.of());
-        assertEquals(List.of(11L), ids(res.filas()));   // la hija no se ve: familia colapsada
+        assertEquals(List.of(11L), ids(res.filas()));   // familia colapsada: solo se ve la cabeza
         assertEquals(Character.valueOf('P'), res.marcaFila().get(11L));
-        assertNull(res.marcaFila().get(10L));
+        assertNull(res.marcaFila().get(12L));
+        assertNull(res.marcaFila().get(13L));
+        assertNull(res.marcaFila().get(14L));
     }
 
-    @Test void familiaExpandidaMuestraCabezaYHijaMarcadasEYH() {
+    @Test void familiaExpandidaMuestraCabezaYHijasEnOrdenDeEloConEmpateYSinEloAlFinal() {
         FiltroLista fl = new FiltroLista(vivo());
         Map<Long, Integer> elo = new HashMap<>();
-        elo.put(10L, 1200);
         elo.put(11L, 1800);
+        elo.put(12L, 1200);
+        elo.put(13L, 1200);
         List<Player> todos = List.of(
-                new Player(10, "Hija", "G", 500),
-                new Player(11, "Cabeza", "G", 500));
+                new Player(11, "Zeta", "G", 500),
+                new Player(12, "Beto", "G", 500),
+                new Player(13, "Aaa", "G", 500),
+                new Player(14, "Nada", "G", 500));
         FiltroLista.Resultado res = fl.filtrar(todos, List.of(), false, "G", false,
                 false, false, false, Map.of(), elo, Set.of(500L));
-        assertEquals(List.of(11L, 10L), ids(res.filas()));   // cabeza y, justo detrás, la hija
+        // cabeza por ELO (Zeta), luego el empate (Aaa antes que Beto, por nombre) y el sin ELO al final
+        assertEquals(List.of(11L, 13L, 12L, 14L), ids(res.filas()));
         assertEquals(Character.valueOf('E'), res.marcaFila().get(11L));
-        assertEquals(Character.valueOf('H'), res.marcaFila().get(10L));
+        assertEquals(Character.valueOf('H'), res.marcaFila().get(13L));
+        assertEquals(Character.valueOf('H'), res.marcaFila().get(12L));
+        assertEquals(Character.valueOf('H'), res.marcaFila().get(14L));
     }
 
     @Test void familiaConUnMiembroVivoQuedaMarcadaComoViva() {
@@ -185,6 +249,18 @@ class FiltroListaTest {
         FiltroLista.Resultado res = fl.filtrar(todos, List.of(), false, "G", false,
                 false, false, false, Map.of(), elo, Set.of());
         assertEquals(Boolean.TRUE, res.vivoFamilia().get(11L));   // la cabeza hereda «familia viva»
+    }
+
+    @Test void familiaConUnSoloMiembroVisibleNoTieneMarcaNiEntradaEnVivoFamilia() {
+        FiltroLista fl = new FiltroLista(vivo());
+        List<Player> todos = List.of(
+                new Player(1, "Ana", "G", 100),        // el único de su familia en el grupo activo
+                new Player(2, "Compa", "OTRO", 100));  // mismo vinculo, pero de otro grupo: no entra
+        FiltroLista.Resultado res = fl.filtrar(todos, List.of(), false, "G", false,
+                false, false, false, Map.of(), Map.of(), Set.of());
+        assertEquals(List.of(1L), ids(res.filas()));
+        assertNull(res.marcaFila().get(1L));
+        assertFalse(res.vivoFamilia().containsKey(1L));
     }
 
     // ----- vacío -----
