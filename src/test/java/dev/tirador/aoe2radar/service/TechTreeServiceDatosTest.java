@@ -65,6 +65,13 @@ class TechTreeServiceDatosTest {
         assertFalse(tt.arbolEnCache("britons"));
     }
 
+    @Test void arbolYaEnCacheNoVaARedYDevuelveElMismoObjeto() throws Exception {
+        TechTreeDatos.ttTrees.clear();
+        Map<String, Object> arbol = obj("id", "aztecs");
+        TechTreeDatos.ttTrees.put("aztecs", arbol);
+        assertSame(arbol, tt.arbol("aztecs"), "ya está en caché: no hace falta ir a la red a descargarlo");
+    }
+
     @Test void dirDevuelveLaMismaCarpetaQueTtDir() {
         assertEquals(TechTreeDatos.TT_DIR, tt.dir());
     }

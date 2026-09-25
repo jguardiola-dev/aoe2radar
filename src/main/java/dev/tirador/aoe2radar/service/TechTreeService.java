@@ -14,13 +14,19 @@ import java.util.Map;
  */
 public interface TechTreeService {
 
-    /** El catálogo completo (data.json) ya cargado, o null si aún no se llamó a asegurarDatos(). Sin red. */
+    /**
+     * El catálogo completo (data.json) ya cargado, o null si aún no se cargó, si la carga falló o si
+     * comprobarActualizacion() acaba de renovar los datos. Sin red.
+     */
     Map<String, Object> datos();
 
     /** ¿El árbol de civ ya está en caché de memoria (ttTrees)? Sin red: no lo descarga si falta. */
     boolean arbolEnCache(String civ);
 
-    /** El árbol de civ tal como está en caché de memoria ahora mismo, o null si aún no se pidió. Sin red. */
+    /**
+     * El árbol de civ tal como está en caché de memoria ahora mismo, o null si aún no se pidió o si
+     * comprobarActualizacion() vació la caché. Sin red.
+     */
     Map<String, Object> arbolCacheado(String civ);
 
     /** La carpeta base de los datos de techtree (para construir rutas de iconos que no encajan en rutaIcono). */
@@ -44,12 +50,15 @@ public interface TechTreeService {
     /** Descarga un archivo relativo (bajo TT_RAW) a la carpeta de techtree. Va a la red. */
     void descargar(String rel) throws Exception;
 
-    /** Cadena de un id de LanguageHelpId/LanguageNameId, limpia de saltos de línea, o "?" si no hay. Sin red. */
+    /**
+     * Cadena de un id de LanguageHelpId/LanguageNameId, del idioma con que se cargaron las strings: cambia
+     * "&lt;br&gt;" y saltos de línea por un espacio y junta los espacios repetidos, o "?" si no hay. Sin red.
+     */
     String nombre(Object id);
 
     /** Nombre de la civ en el idioma de la app (name_string_id), o la clave si no hay traducción. Sin red. */
     String nombreCiv(String civ);
 
-    /** Cadena cruda de un id de las strings del idioma actual, o null si no hay. Sin red. */
+    /** Cadena cruda de un id de las strings del idioma con que se cargaron, o null si no hay. Sin red. */
     String str(Object id);
 }
