@@ -7,9 +7,9 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 /**
- * La rec de una partida: descargarla (si hace falta), guardarla en disco y, si toca, copiarla al savegame del
- * juego. El SwingWorker de la app hace el bucle sobre las partidas, pinta el progreso y decide los textos; este
- * servicio solo dice qué pasó con UNA.
+ * La rec de una partida: descargarla, guardarla en disco y, si toca, copiarla al savegame del juego. El
+ * SwingWorker de la app hace el bucle sobre las partidas, pinta el progreso y decide los textos; este servicio
+ * solo dice qué pasó con UNA.
  * <p>Hilos: descargar y escribir en disco van a la red y a la E/S, nunca en el EDT (ver util.Hilos.avisarSiUi).
  */
 public interface RecService {

@@ -45,6 +45,10 @@ class RecServiceTest {
         return m;
     }
 
+    static MatchPlayer jugador(long id, Boolean replay) {
+        MatchPlayer p = new MatchPlayer(); p.id = id; p.replay = replay; return p;
+    }
+
     @TempDir Path tempDir;
 
     DescargaFalsa descarga = new DescargaFalsa();
@@ -63,7 +67,7 @@ class RecServiceTest {
         Path archivo = tempDir.resolve("rec-1.aoe2record");
         assertTrue(Files.exists(archivo));
         assertArrayEquals(descarga.datos, Files.readAllBytes(archivo));
-        assertEquals(1, descarga.pids.size(), "un solo candidato (el de referencia) basta si acierta a la primera");
+        assertEquals(List.of(100L), descarga.pids, "un solo candidato, el de referencia: acierta a la primera");
     }
 
     /** Test de caracterización: así es la 1.1 (download(), ~12036), no un contrato deseado. Si su rec ya está en
@@ -87,7 +91,8 @@ class RecServiceTest {
         assertNotNull(r.causa());
         assertFalse(r.enJuego());
         assertFalse(Files.exists(tempDir.resolve("rec-3.aoe2record")), "sin escritura parcial");
-        assertFalse(pausas.isEmpty(), "cortesía entre candidato y candidato");
+        assertEquals(List.of(100L, 101L), descarga.pids, "los dos candidatos de la partida, en orden");
+        assertEquals(List.of(5L, 5L), pausas, "una pausa (el valor inyectado) por cada candidato fallido");
     }
 
     @Test void enviarAlJuegoConEnviarSiempre() {
@@ -120,11 +125,59 @@ class RecServiceTest {
         assertTrue(descarga.pids.isEmpty());
     }
 
+    @Test void canceladaAMitadNoIntentaElSegundoCandidato() {
+        descarga.datos = null;   // el primer candidato falla
+        int[] llamadas = {0};
+        BooleanSupplier cancelaTrasElPrimero = () -> llamadas[0]++ > 0;   // false la 1ª vez (antes del candidato 100), true la 2ª (antes del 101)
+        Match m = partida(9, 100);   // candidatos: 100 (ref), 101 (rival)
+        RecService.Resultado r = service.procesar(m, Set.of(), false, null, cancelaTrasElPrimero);
+        assertEquals(RecService.Estado.FALLO, r.estado());
+        assertEquals(List.of(100L), descarga.pids, "el segundo candidato (101) no se intenta: se canceló antes");
+    }
+
     @Test void siFallaCopiarAlJuegoNoEsFallo() {
         juego.copia = false;
         Match m = partida(8, 100);
         RecService.Resultado r = service.procesar(m, Set.of(), true, tempDir.resolve("savegame"), sinCancelar);
         assertEquals(RecService.Estado.DESCARGADA, r.estado(), "la rec quedó en disco: no es un fallo");
         assertFalse(r.enJuego());
+    }
+
+    // ----- DescargaRecs.candidatos: el orden de los POV a probar --------------------------------------------
+
+    /** 10 jugadores (TG de 8 con dos suplentes), con replay TRUE, FALSE y null, y seguidos variados: fija el
+     *  orden exacto (referencia, seguidos con rec, con rec, seguidos, resto) y el límite de 8. */
+    @Test void candidatosSigueElOrdenReferenciaSeguidosConRecConRecSeguidosResto() {
+        Match m = new Match();
+        m.refId = 1;
+        m.players.add(jugador(1, Boolean.TRUE));    // referencia, con rec: grupo 1
+        m.players.add(jugador(2, Boolean.TRUE));    // seguido con rec: grupo 2
+        m.players.add(jugador(3, Boolean.TRUE));    // con rec, no seguido: grupo 3
+        m.players.add(jugador(4, Boolean.FALSE));   // seguido, sin rec: grupo 4
+        m.players.add(jugador(5, null));            // seguido, rec desconocida: grupo 4
+        m.players.add(jugador(6, Boolean.TRUE));    // con rec, no seguido: grupo 3
+        m.players.add(jugador(7, Boolean.FALSE));   // resto: grupo 5
+        m.players.add(jugador(8, null));            // resto: grupo 5
+        m.players.add(jugador(9, Boolean.TRUE));    // con rec, no seguido: grupo 3
+        m.players.add(jugador(10, null));           // resto: grupo 5 (queda fuera del límite de 8)
+        Set<Long> seguidos = Set.of(2L, 4L, 5L);
+
+        List<Long> c = DescargaRecs.candidatos(m, seguidos);
+
+        assertEquals(List.of(1L, 2L, 3L, 6L, 9L, 4L, 5L, 7L), c,
+                "referencia; seguidos con rec; con rec; seguidos; resto — hasta 8, en el orden de la lista de jugadores");
+        assertEquals(8, c.size(), "límite de 8 (TGs): el jugador 10 (resto) se queda fuera");
+    }
+
+    /** Sin referencia con rec ni seguidos ni nadie con rec confirmada: candidatos() cae en el «resto», en el
+     *  mismo orden que la lista de jugadores, y sigue recortando a 8. */
+    @Test void sinGruposPreferentesElOrdenEsElDeLaListaYSigueElLimiteDe8() {
+        Match m = new Match();
+        m.refId = 0;   // no coincide con ningún jugador
+        for (long id = 1; id <= 10; id++) m.players.add(jugador(id, null));
+
+        List<Long> c = DescargaRecs.candidatos(m, Set.of());
+
+        assertEquals(List.of(1L, 2L, 3L, 4L, 5L, 6L, 7L, 8L), c);
     }
 }
