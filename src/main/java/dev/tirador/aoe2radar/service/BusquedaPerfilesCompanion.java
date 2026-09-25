@@ -33,8 +33,8 @@ public final class BusquedaPerfilesCompanion implements BusquedaPerfiles {
         this.api = api; this.nombresAyer = nombresAyer; this.eloAyer = eloAyer; this.aprenderPais = aprenderPais;
     }
 
-    /** Sugerencias locales del índice nocturno de nombres (top 40.000): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero. */
-    private List<String[]> buscarLocal(String q) {
+    /** Búsqueda solo en el índice local (top 40.000 del volcado nocturno): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero. */
+    @Override public List<String[]> local(String q) {
         List<String[]> out = new ArrayList<>();
         if (q == null || q.length() < 2 || nombresAyer.isEmpty()) return out;
         String ql = q.toLowerCase(Locale.ROOT);
@@ -47,13 +47,13 @@ public final class BusquedaPerfilesCompanion implements BusquedaPerfiles {
 
     /** Sugerencias al teclear: el índice local si tiene algo (sin llamada); si no, la API. */
     @Override public List<String[]> sugerir(String q) {
-        List<String[]> local = buscarLocal(q);
+        List<String[]> local = local(q);
         return local.isEmpty() ? buscar(q) : local;
     }
 
     /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. Así un nick cambiado hace poco (que el volcado aún no conoce) también aparece. */
     @Override public List<String[]> buscar(String q) {
-        List<String[]> local = buscarLocal(q), out = new ArrayList<>(local);
+        List<String[]> local = local(q), out = new ArrayList<>(local);
         Set<String> vistos = new HashSet<>(); for (String[] r : local) vistos.add(r[0]);
         for (String[] r : buscarPerfilesApi(q)) if (vistos.add(r[0])) out.add(r);
         return out;

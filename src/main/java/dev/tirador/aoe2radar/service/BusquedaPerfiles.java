@@ -13,4 +13,8 @@ public interface BusquedaPerfiles {
 
     /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. */
     List<String[]> buscar(String q);
+
+    /** Búsqueda solo en el índice local, sin red. La usan sugerir/buscar y, hoy, también addPlayerDialog (que
+     *  combina API + local con su propio orden, fuera de sugerir/buscar). */
+    List<String[]> local(String q);
 }

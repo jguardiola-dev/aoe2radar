@@ -11844,24 +11844,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     /** Búsqueda de jugadores por nombre en el companion: {id, nombre, etiqueta legible}. Delegados de service.BusquedaPerfiles
-     *  (BUSQUEDA): la lógica vive allí, aquí solo queda la fachada para no tocar los cinco buscadores de la interfaz ahora. */
+     *  (BUSQUEDA): la lógica vive allí, aquí solo queda la fachada para no tocar los cinco buscadores de la interfaz
+     *  (ni addPlayerDialog, que usa buscarLocal con su propio orden) ahora. */
     /** Sugerencias al teclear: el índice local si tiene algo (sin llamada); si no, la API. */
     static List<String[]> sugerirPerfiles(String q) { return BUSQUEDA.sugerir(q); }
     /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. Así un nick cambiado hace poco (que el volcado aún no conoce) también aparece. */
     static List<String[]> buscarPerfiles(String q) { return BUSQUEDA.buscar(q); }
-    /** Sugerencias locales del índice nocturno de nombres (top 40.000): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero.
-     *  NO delegado (deuda anotada en el informe): lo usa también addPlayerDialog fuera del trío sugerir/buscar/buscarApi,
-     *  con un orden distinto (API primero); moverlo habría exigido inventar un tercer método en la interfaz, fuera del
-     *  diseño pedido. Se queda aquí tal cual; service.BusquedaPerfilesCompanion trae su propia copia privada, sobre los
-     *  mismos mapas (NOMBRES_AYER/ELO_AYER), para no depender de este método estático. */
-    static List<String[]> buscarLocal(String q) {
-        List<String[]> out = new ArrayList<>();
-        if (q == null || q.length() < 2 || NOMBRES_AYER.isEmpty()) return out;
-        String ql = q.toLowerCase(Locale.ROOT);
-        List<Map.Entry<Long, String[]>> l = new ArrayList<>();
-        for (Map.Entry<Long, String[]> en : NOMBRES_AYER.entrySet()) if (en.getValue()[0].toLowerCase(Locale.ROOT).contains(ql)) l.add(en);
-        l.sort((a, b) -> { int[] ea = ELO_AYER.get(a.getKey()), eb = ELO_AYER.get(b.getKey()); return Integer.compare(eb == null ? 0 : eb[0], ea == null ? 0 : ea[0]); });
-        for (Map.Entry<Long, String[]> en : l) { int[] e = ELO_AYER.get(en.getKey()); out.add(new String[]{ String.valueOf(en.getKey()), en.getValue()[0], en.getValue()[0] + (en.getValue()[1].isBlank() ? "" : " · " + en.getValue()[1].toUpperCase(Locale.ROOT)) + (e != null && e[0] > 0 ? " · " + e[0] : "") }); if (out.size() >= 8) break; }
-        return out;
-    }
+    /** Sugerencias locales del índice nocturno de nombres (top 40.000): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero. */
+    static List<String[]> buscarLocal(String q) { return BUSQUEDA.local(q); }
 }

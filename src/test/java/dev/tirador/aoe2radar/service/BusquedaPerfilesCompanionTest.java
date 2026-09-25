@@ -44,6 +44,25 @@ class BusquedaPerfilesCompanionTest {
     final BusquedaPerfilesCompanion servicio = new BusquedaPerfilesCompanion(api, nombresAyer, eloAyer,
             (pid, pais) -> paisAprendido.put(pid, pais));
 
+    // ----- local(): solo el índice local, sin red -----
+
+    @Test void localConCoincidenciaDevuelveLaFila() {
+        nombresAyer.put(1L, new String[]{ "Hera", "es" });
+        eloAyer.put(1L, new int[]{ 2000 });
+        List<String[]> res = servicio.local("her");
+        assertEquals(1, res.size());
+        assertEquals("1", res.get(0)[0]);
+        assertEquals("Hera", res.get(0)[1]);
+        assertTrue(red.pedidas.isEmpty(), "local() nunca llama a la API");
+    }
+
+    @Test void localSinCoincidenciaDevuelveVacio() {
+        nombresAyer.put(1L, new String[]{ "Hera", "es" });
+        List<String[]> res = servicio.local("noexiste");
+        assertTrue(res.isEmpty());
+        assertTrue(red.pedidas.isEmpty());
+    }
+
     // ----- sugerir(): local si tiene algo, si no la API -----
 
     @Test void sugerirConLocalNoLlamaALaApi() {
