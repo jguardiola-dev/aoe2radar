@@ -125,7 +125,7 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
     }
 
     /** Cruza el listado global de Twitch con la watchlist visible (botón «Refrescar», F5, el río del top…). */
-    public void vigilarTwitch() { presenter.vigilarTwitch(anfitrion.visibles()); }
+    public void vigilarTwitch() { presenter.vigilarTwitch(anfitrion::visibles); }
 
     /** El conjunto de jugadores vigilado cambió (nuevo top/país/clan): su barrido de Twitch se hace en el acto. */
     public void reiniciarThrottle() { presenter.reiniciarThrottle(); }
@@ -182,7 +182,7 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         JPanel cont = new JPanel(new BorderLayout(0, 8));
         cont.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
         JPanel arriba = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-        directosContador = new JLabel(t("Buscando canales…", "Finding channels…"));
+        directosContador = new JLabel(t("Buscando canales\u2026", "Finding channels\u2026"));
         directosContador.setFont(directosContador.getFont().deriveFont(Font.BOLD));
         arriba.add(directosContador);
         directosHora = new JLabel();
@@ -291,7 +291,7 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         String grisTit = temaOscuroActivo ? "#9a9a9a" : "#666666";
         for (String[] d : filas) {
             if (!idiomaSel.isBlank() && !d[3].equalsIgnoreCase(idiomaSel)) continue;
-            String titulo = d[2].length() > 90 ? d[2].substring(0, 89) + "…" : d[2];
+            String titulo = d[2].length() > 90 ? d[2].substring(0, 89) + "\u2026" : d[2];
             String celda = "<html><b style='font-size:13px'>" + escapeHtml(d[1]) + "</b><br>"
                     + "<span style='color:" + grisTit + "'>" + escapeHtml(titulo) + "</span></html>";
             modeloDirectos.addRow(new Object[]{ celda, nombreIdioma(d[3]), Integer.parseInt(d[4]) });
@@ -302,7 +302,7 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         for (int i = 0; i < modeloDirectos.getRowCount(); i++)
             audiencia += ((Integer) modeloDirectos.getValueAt(i, 2));
         directosContador.setText(t("Top ", "Top ") + modeloDirectos.getRowCount() + t(" canales", " channels")
-                + " · " + String.format(t("es", "en").equals("es") ? Locale.of("es") : Locale.US, "%,d", audiencia)
+                + " \u00B7 " + String.format(t("es", "en").equals("es") ? Locale.of("es") : Locale.US, "%,d", audiencia)
                 + " " + t("espectadores", "viewers"));
         directosHora.setText(t("Actualizado: ", "Updated: ")
                 + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")));

@@ -5,6 +5,7 @@ import dev.tirador.aoe2radar.service.TwitchService;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Supplier;
 
 import static dev.tirador.aoe2radar.util.I18n.t;
 
@@ -14,9 +15,9 @@ import static dev.tirador.aoe2radar.util.I18n.t;
  * cache.Canales ahora vive en {@link TwitchService} (obligado por las capas: este presentador no puede importar
  * cache ni java.net) y que ya no toca los campos de Swing directamente: se los pide a {@link Pantalla}, que
  * implementa ui.DirectosView.
- * <p>Hilos: el barrido de la 1.1 era un SwingWorker anónimo (sin nombre de hilo propio); aquí se relanza con
- * {@code tareas.enFondo("twitch-vigilar", …)} para que también salga en los volcados de hilos. Las miniaturas
- * conservan su nombre de hilo de siempre, "miniaturas-twitch". La vuelta a Swing, siempre con
+ * <p>Hilos: el barrido de Twitch de la 1.1 era un {@code SwingWorker} (hilo del pool, demonio): se relanza con
+ * {@code tareas.enFondoDemonio("twitch-vigilar", …)}. Las miniaturas eran un {@code new Thread(...).start()}
+ * explícito (no demonio): siguen con {@code tareas.enFondo("miniaturas-twitch", …)}. La vuelta a Swing, siempre con
  * {@code tareas.enUi(…)}, en el mismo orden que la 1.1 (primero el estado, luego el repintado de la lista, luego
  * poblarDirectos()).
  */
@@ -61,16 +62,19 @@ public final class DirectosPresenter {
 
     /**
      * Cruza el listado global de Twitch con los jugadores visibles, con el mismo throttle y anti-solape que la 1.1
-     * (170 s × el «mando a distancia», y no relanzar si ya hay un barrido en curso).
+     * (170 s × el «mando a distancia», y no relanzar si ya hay un barrido en curso). {@code visibles} se evalúa
+     * DESPUÉS de pasar las dos guardas, como hacía la 1.1 (leía playersModel ya dentro de vigilarTwitch, tras los
+     * "return" de anti-solape y throttle): así una llamada que se descarta no paga ni el coste de mirar la lista.
      */
-    public void vigilarTwitch(List<Player> visibles) {
+    public void vigilarTwitch(Supplier<List<Player>> visibles) {
         if (vigilandoTwitch) return;
         if (System.currentTimeMillis() - ultimoTwitchMs < (long) (170_000 * twitchService.multiplicador())) return;
         ultimoTwitchMs = System.currentTimeMillis();
         vigilandoTwitch = true;
-        tareas.enFondo("twitch-vigilar", () -> {
+        List<Player> lista = visibles.get();
+        tareas.enFondoDemonio("twitch-vigilar", () -> {
             TwitchService.Resultado[] resultado = new TwitchService.Resultado[1];
-            try { resultado[0] = twitchService.barrer(visibles); } catch (Exception ignored) { }
+            try { resultado[0] = twitchService.barrer(lista); } catch (Exception ignored) { }
             tareas.enUi(() -> {
                 vigilandoTwitch = false;
                 TwitchService.Resultado r = resultado[0];
