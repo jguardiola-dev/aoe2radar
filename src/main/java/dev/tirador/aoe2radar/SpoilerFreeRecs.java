@@ -92,6 +92,7 @@ import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.FiltroStats;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
+import dev.tirador.aoe2radar.ui.SelectorRangoElo;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Json;
@@ -1657,73 +1658,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
         return tr.endsWith("+") ? tr : tr.replace("-", "\u2013");
     }
-    /** Selector de ELO: presets (Todos, <800, 800–1000, …, 2000+) y «Personalizado…», que pregunta el rango «de … a …» en un diálogo y lo deja como opción activa. El valor es «*», un tramo o «desde|hasta». */
-    class SelectorRangoElo extends JPanel {
-        final JComboBox<String> preset = new JComboBox<>();
-        List<String> tramos = List.of(); String personalizado;   // rango «desde|hasta» activo, si lo hay
-        boolean rellenando; java.util.function.Consumer<String> alCambiar;
-        SelectorRangoElo() {
-            super(new FlowLayout(FlowLayout.LEFT, 3, 0)); setOpaque(false);
-            add(preset);
-            preset.setToolTipText(t("Tramo de ELO (media de ELO de la partida). «Personalizado…» pide un rango de tramo a tramo, con «sin límite» en cualquier extremo", "ELO bracket (match ELO average). \u201CCustom…\u201D asks for a range from bracket to bracket, with \u201Cno limit\u201D at either end"));
-            preset.addActionListener(e -> {
-                if (rellenando) return;
-                int i = preset.getSelectedIndex();
-                if (i == preset.getItemCount() - 1) {   // «Personalizado…»: preguntar
-                    String r = pedirRango();
-                    if (r == null) { rango(personalizado != null ? personalizado : "*"); return; }
-                    personalizado = r; rellenar(); rango(r);
-                }
-                if (alCambiar != null) alCambiar.accept(rango());
-            });
-        }
-        void tramos(List<String> t, String rangoActual) {
-            tramos = new ArrayList<>(t);
-            if (rangoActual != null && rangoActual.contains("|") && !"*|*".equals(rangoActual)) personalizado = rangoActual;
-            rellenar();
-            rango(rangoActual);
-        }
-        void rellenar() {
-            boolean antes = rellenando; rellenando = true;
-            try {
-                preset.removeAllItems();
-                preset.addItem(t("Todos los ELO", "All ELO"));
-                for (String tr : tramos) preset.addItem(tramoNombre(tr));
-                if (personalizado != null) preset.addItem(tramoNombre(personalizado) + t(" (personalizado)", " (custom)"));
-                preset.addItem(t("Personalizado…", "Custom…"));
-            } finally { rellenando = antes; }
-        }
-        String pedirRango() {
-            JComboBox<String> desde = new JComboBox<>(), hasta = new JComboBox<>();
-            desde.addItem(t("sin límite", "no limit")); hasta.addItem(t("sin límite", "no limit"));
-            for (String tr : tramos) { String lo = tr.contains("-") ? tr.substring(0, tr.indexOf('-')) : tr.replace("+", ""), hi = tr.endsWith("+") ? tr : tr.contains("-") ? tr.substring(tr.indexOf('-') + 1) : tr; desde.addItem(lo.equals("0") ? "<" + hi : lo); hasta.addItem(hi); }
-            if (personalizado != null) { String[] p = personalizado.split("\\|", -1); desde.setSelectedIndex("*".equals(p[0]) ? 0 : tramos.indexOf(p[0]) + 1); hasta.setSelectedIndex("*".equals(p[1]) ? 0 : tramos.indexOf(p[1]) + 1); }
-            JPanel pnl = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 4));
-            pnl.add(new JLabel(t("ELO de", "ELO from"))); pnl.add(desde); pnl.add(new JLabel(t("a", "to"))); pnl.add(hasta);
-            int r = JOptionPane.showConfirmDialog(SpoilerFreeRecs.this, pnl, t("Rango de ELO personalizado", "Custom ELO range"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-            if (r != JOptionPane.OK_OPTION) return null;
-            int a = desde.getSelectedIndex() - 1, b = hasta.getSelectedIndex() - 1;
-            if (a >= 0 && b >= 0 && a > b) { int x = a; a = b; b = x; }
-            String lo = a < 0 ? "*" : tramos.get(a), hi = b < 0 ? "*" : tramos.get(b);
-            return "*".equals(lo) && "*".equals(hi) ? "*" : lo.equals(hi) ? lo : lo + "|" + hi;
-        }
-        String rango() {
-            int i = preset.getSelectedIndex(), n = preset.getItemCount();
-            if (i <= 0) return "*";
-            if (i <= tramos.size()) return tramos.get(i - 1);
-            if (personalizado != null && i == n - 2) return personalizado;
-            return personalizado != null ? personalizado : "*";
-        }
-        void rango(String r) {
-            boolean antes = rellenando; rellenando = true;
-            try {
-                if (r == null || "*".equals(r) || "*|*".equals(r)) { preset.setSelectedIndex(0); return; }
-                if (!r.contains("|")) { int i = tramos.indexOf(r); preset.setSelectedIndex(i >= 0 ? i + 1 : 0); return; }
-                if (!r.equals(personalizado)) { personalizado = r; rellenar(); }
-                preset.setSelectedIndex(preset.getItemCount() - 2);
-            } finally { rellenando = antes; }
-        }
-    }
 
     /** Nombre de civ a partir de la clave del companion («burmese»): el del tech tree si está cargado, si no capitalizado. */
     static String nombreCivStats(String clave) {
@@ -1775,7 +1709,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         stMapaCombo.setPrototypeDisplayValue("African Clearing (99.999)   ");
         stMapaCombo.addActionListener(e -> { if (stRellenandoMapas) return; Object id = stMapaCombo.getClientProperty("claves"); if (id instanceof List<?> l && stMapaCombo.getSelectedIndex() >= 0 && stMapaCombo.getSelectedIndex() < l.size()) { filtroStats.mapa(String.valueOf(l.get(stMapaCombo.getSelectedIndex()))); guardarConfig("stats_mapa", filtroStats.mapa()); statsFiltrosCambiados(true); } });
         norte.add(stMapaCombo);
-        stRango = new SelectorRangoElo();
+        stRango = new SelectorRangoElo(this, SpoilerFreeRecs::tramoNombre);
         stRango.alCambiar = r -> { if (stRellenandoMapas) return; filtroStats.tramo(r); guardarConfig("stats_tramo", filtroStats.tramo()); statsFiltrosCambiados(true); };
         norte.add(stRango);
         stEstado = new JLabel();
@@ -1903,7 +1837,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         stTendMapa.setToolTipText(t("Mapa de la tendencia: los 12 más jugados de cada modo (el resto no tiene serie por mapa)", "Map for the trend: the 12 most played of each mode (others have no per-map series)"));
         stTendMapa.addActionListener(e -> { if (stRellenandoTend) return; Object cl = stTendMapa.getClientProperty("claves"); if (cl instanceof List<?> l && stTendMapa.getSelectedIndex() >= 0 && stTendMapa.getSelectedIndex() < l.size()) { tendMapa = String.valueOf(l.get(stTendMapa.getSelectedIndex())); stTendencias.repaint(); } });
         tendBarra.add(new JLabel(t("Mapa:", "Map:"))); tendBarra.add(stTendMapa);
-        tendRango = new SelectorRangoElo();
+        tendRango = new SelectorRangoElo(this, SpoilerFreeRecs::tramoNombre);
         tendRango.alCambiar = r -> { if (stRellenandoTend) return; tendTramo = r; totalesTendencia.clear(); stTendencias.repaint(); };
         tendBarra.add(tendRango);
         stTendWr = new JToggleButton(t("Winrate", "Win rate"), true);
@@ -2696,7 +2630,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         ttMapaCombo = new JComboBox<>();
         ttMapaCombo.setPrototypeDisplayValue("African Clearing (99.999)   ");
         ttMapaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; Object cl = ttMapaCombo.getClientProperty("claves"); if (cl instanceof List<?> l && ttMapaCombo.getSelectedIndex() >= 0 && ttMapaCombo.getSelectedIndex() < l.size()) { filtroStats.mapa(String.valueOf(l.get(ttMapaCombo.getSelectedIndex()))); guardarConfig("stats_mapa", filtroStats.mapa()); statsFiltrosCambiados(true); } });
-        ttRango = new SelectorRangoElo();
+        ttRango = new SelectorRangoElo(this, SpoilerFreeRecs::tramoNombre);
         ttRango.alCambiar = r -> { if (ttRellenandoFiltros) return; filtroStats.tramo(r); guardarConfig("stats_tramo", filtroStats.tramo()); statsFiltrosCambiados(true); };
         ttVentanaCombo = new JComboBox<>();
         for (String vv : VENTANAS_STATS_KEYS) ttVentanaCombo.addItem(ventanaNombre(vv));
