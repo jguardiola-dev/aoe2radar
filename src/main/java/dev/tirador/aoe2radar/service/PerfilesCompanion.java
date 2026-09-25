@@ -116,10 +116,12 @@ public final class PerfilesCompanion implements ProfileService {
                 if (id > 0 && !"null".equals(name)) out.add(new Perfil.Vinculada(id, name, pais, games));
             }
             if (!out.isEmpty()) {   // la familia consultada alimenta la señal ↥ de la sesión
-                Map<Long, String> deEste = familias.computeIfAbsent(profileId, k -> new HashMap<>());
+                // Los mapas por id son ConcurrentHashMap, no HashMap: familia(pid) los entrega tal cual (sin copia)
+                // y un hilo puede leerlos (mejorAlt) mientras otro los escribe aquí (ver DEUDA fila 79).
+                Map<Long, String> deEste = familias.computeIfAbsent(profileId, k -> new ConcurrentHashMap<>());
                 for (Perfil.Vinculada v : out) {
                     deEste.put(v.pid(), v.nombre());
-                    familias.computeIfAbsent(v.pid(), k -> new HashMap<>()).put(profileId, "—");
+                    familias.computeIfAbsent(v.pid(), k -> new ConcurrentHashMap<>()).put(profileId, "—");
                 }
             }
         } catch (Exception ex) {

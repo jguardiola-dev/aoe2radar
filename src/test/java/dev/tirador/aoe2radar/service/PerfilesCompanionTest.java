@@ -310,6 +310,20 @@ class PerfilesCompanionTest {
         assertNull(servicio.familia(999L));
     }
 
+    /**
+     * DEUDA fila 79: familia() entrega el mapa interno de la familia (sin copia) y mejorAlt lo puede leer en el
+     * EDT mientras vinculadas() lo escribe desde un hilo de fondo. Arreglo: el mapa interno es un
+     * ConcurrentHashMap, no un HashMap, para que esa lectura/escritura concurrente sea segura. Antes del arreglo
+     * era un HashMap corriente y este assertInstanceOf fallaba.
+     */
+    @Test void familiaDevuelveUnMapaSeguroParaLeerloDesdeOtroHilo() {
+        red.cuerpo = "{\"linked_profiles\":[{\"profile_id\":7,\"name\":\"Ana\",\"country\":\"es\",\"games\":10}]}";
+        servicio.vinculadas(1L);
+        assertInstanceOf(Map.class, servicio.familia(1L));
+        assertInstanceOf(java.util.concurrent.ConcurrentMap.class, servicio.familia(1L),
+                "el mapa por id debe ser concurrente: vinculadas() lo escribe desde un worker mientras mejorAlt lo lee en el EDT");
+    }
+
     // ----- 10. vinculadasConElo / vinculadasConocidas / eloVinculada: se recuerdan en la sesión
 
     @Test void vinculadasConEloRecuerdaLasVinculadasYElEloDeCadaUna() {
