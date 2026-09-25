@@ -68,6 +68,9 @@ import dev.tirador.aoe2radar.service.LiveService;
 import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
 import dev.tirador.aoe2radar.service.ProfileService;
+import dev.tirador.aoe2radar.service.StatsService;
+import dev.tirador.aoe2radar.service.StatsServiceSfr;
+import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
@@ -171,8 +174,6 @@ import static dev.tirador.aoe2radar.service.ReglasPartida.tramoDuracion;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.MODOS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS_KEYS;
-import static dev.tirador.aoe2radar.sfrdata.CivStats.statsAsegurar;
-import static dev.tirador.aoe2radar.sfrdata.CivStats.tendenciasStats;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.activosDias;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.activosMinPartidas;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.clanes;
@@ -1632,8 +1633,10 @@ public class SpoilerFreeRecs extends JFrame {
     // =====================================================================================
     // CIV STATS — resúmenes de sfr-data (civstats/ventanas/vN.json.gz y tendencias.json.gz):
     // winrate y pick rate por civ, modo, mapa y tramo de ELO; matchups 1v1; tendencias por mes
-    // datos y cálculos: sfrdata.CivStats y service.CalculoStats
+    // datos y cálculos: sfrdata.CivStats y service.CalculoStats, tras el contrato de service.StatsService
     // =====================================================================================
+    /** Asegura las ventanas de Civ Stats y hace sus cálculos (ver service.StatsService). */
+    final StatsService stats = new StatsServiceSfr(SfrDataClient.SISTEMA);
     String statsModo = leerConfig("stats_modo", "rm_1v1"), statsVentana = leerConfig("stats_ventana", "30"), statsMapa = leerConfig("stats_mapa", "*"), statsTramo = leerConfig("stats_tramo", "*");
     JToggleButton civStatsBtn;
     JPanel civStatsPanel; JComboBox<String> stModoCombo, stVentanaCombo, stMapaCombo, stTramoCombo; JLabel stEstado;
@@ -1945,7 +1948,7 @@ public class SpoilerFreeRecs extends JFrame {
         tendBarra.add(conmut);
         stTendVentana = new JComboBox<>(new String[]{ t("3 meses", "3 months"), t("6 meses", "6 months"), t("12 meses", "12 months"), t("Parche actual", "Current patch") });
         stTendVentana.setSelectedIndex(Math.max(0, Math.min(3, Integer.parseInt(leerConfig("stats_tend_ventana", "2")))));
-        stTendVentana.addActionListener(e -> { guardarConfig("stats_tend_ventana", String.valueOf(stTendVentana.getSelectedIndex())); if (stTendVentana.getSelectedIndex() == 3 && !VENTANAS_STATS.containsKey("parche")) new Thread(() -> { statsAsegurar("parche", false); SwingUtilities.invokeLater(stTendencias::repaint); }, "civstats-parche").start(); else stTendencias.repaint(); });
+        stTendVentana.addActionListener(e -> { guardarConfig("stats_tend_ventana", String.valueOf(stTendVentana.getSelectedIndex())); if (stTendVentana.getSelectedIndex() == 3 && !VENTANAS_STATS.containsKey("parche")) new Thread(() -> { stats.asegurar("parche", false); SwingUtilities.invokeLater(stTendencias::repaint); }, "civstats-parche").start(); else stTendencias.repaint(); });
         tendBarra.add(stTendVentana);
         tendCaja.add(tendBarra, BorderLayout.NORTH);
         tendCaja.add(stTendencias, BorderLayout.CENTER);
@@ -2095,7 +2098,7 @@ public class SpoilerFreeRecs extends JFrame {
             int h = getHeight(), wd = getWidth(), tx = 52, x0 = tx + 4, x1 = wd - 6;
             double lo = 42, hi = 58;
             java.util.function.DoubleUnaryOperator px = v -> x0 + (x1 - x0) * (Math.max(lo, Math.min(hi, v)) - lo) / (hi - lo);
-            double[] iv = wilson(w, n);
+            double[] iv = stats.wilson(w, n);
             g2.setColor(new Color(128, 128, 128, 45));
             g2.fillRoundRect((int) px.applyAsDouble(iv[0]), h / 2 - 5, Math.max(2, (int) (px.applyAsDouble(iv[1]) - px.applyAsDouble(iv[0]))), 10, 4, 4);
             Color c = colorWr(w, n);
@@ -2134,7 +2137,7 @@ public class SpoilerFreeRecs extends JFrame {
         String ventana = statsVentana;
         stEstado.setText(t("Descargando el resumen de ", "Downloading the summary for ") + ventanaNombre(ventana).toLowerCase(Locale.ROOT) + "…");
         new Thread(() -> {
-            String err = statsAsegurar(ventana, true);
+            String err = stats.asegurar(ventana, true);
             SwingUtilities.invokeLater(() -> {
                 stCargando = false;
                 if (err != null) { stEstado.setText(t("No se pudieron cargar las estadísticas: ", "Couldn't load the statistics: ") + err); return; }
@@ -2149,7 +2152,7 @@ public class SpoilerFreeRecs extends JFrame {
         if (v == null || civStatsPanel == null) return;
         stRellenandoMapas = true;
         try {
-            Map<String, Integer> mapas = partidasPorMapa(v, statsModo, statsTramo);   // el contador es el del tramo elegido
+            Map<String, Integer> mapas = stats.partidasPorMapa(v, statsModo, statsTramo);   // el contador es el del tramo elegido
             List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
             lm.sort((a, b) -> b.getValue() - a.getValue());
             List<String> claves = new ArrayList<>(); claves.add("*");
@@ -2183,7 +2186,7 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void statsPintar(VentanaStats v) {
-        Map<String, CivAgg> agg = agregarCivs(v, statsModo, statsMapa, statsTramo);
+        Map<String, CivAgg> agg = stats.agregarCivs(v, statsModo, statsMapa, statsTramo);
         long totalN = 0, totalD = 0; int totalW = 0;
         for (CivAgg a : agg.values()) { totalN += a.n(); totalD += a.d(); totalW += a.w(); }
         Map<String, Integer> modo = v.modos().getOrDefault(statsModo, Map.of());
@@ -2194,7 +2197,7 @@ public class SpoilerFreeRecs extends JFrame {
         String ambito = ventanaNombre(statsVentana) + " · " + v.desde() + " → " + v.hasta() + (v.parche().isEmpty() ? "" : " · " + t("parche ", "patch ") + v.parche());
         stTarjetas.removeAll();
         stTarjetas.add(tarjeta(t("Partidas", "Games"), miles(partidas), ambito));
-        stTarjetas.add(tarjeta(t("Duración media", "Avg. length"), duracionMedia(totalD, (int) Math.min(Integer.MAX_VALUE, totalN)), t("tiempo de juego, sin abandonos", "in-game time, dodges excluded")));
+        stTarjetas.add(tarjeta(t("Duración media", "Avg. length"), stats.duracionMedia(totalD, (int) Math.min(Integer.MAX_VALUE, totalN)), t("tiempo de juego, sin abandonos", "in-game time, dodges excluded")));
         stTarjetas.add(tarjeta(t("Civs con datos", "Civs with data"), String.valueOf(agg.values().stream().filter(a -> a.n() >= MIN_PARTIDAS_CIV).count()), t("con ", "with ") + MIN_PARTIDAS_CIV + t("+ partidas (gris: menos de 100)", "+ games (grey: under 100)")));
         stTarjetas.add(tarjeta(t("Espejos", "Mirrors"), brutas == 0 ? "-" : pct1(100.0 * espejos / brutas), t("misma civ en ambos lados (fuera)", "same civ on both sides (excluded)")));
         stTarjetas.add(tarjeta(t("Abandonos", "Dodges"), brutas == 0 ? "-" : pct1(100.0 * abandonos / brutas), t("menos de 2 minutos (fuera)", "under 2 minutes (excluded)")));
@@ -2205,7 +2208,7 @@ public class SpoilerFreeRecs extends JFrame {
         stModelo.setRowCount(0);
         int i = 0;
         for (CivAgg a : lista) {
-            stModelo.addRow(new Object[]{ nombreCivStats(a.civ()), a.wr(), totalN == 0 ? 0.0 : 100.0 * a.n() / totalN, a.n(), duracionMedia(a.d(), a.n()) });
+            stModelo.addRow(new Object[]{ nombreCivStats(a.civ()), a.wr(), totalN == 0 ? 0.0 : 100.0 * a.n() / totalN, a.n(), stats.duracionMedia(a.d(), a.n()) });
             stTabla.putClientProperty("civ" + i, a.civ());
             i++;
         }
@@ -2227,7 +2230,7 @@ public class SpoilerFreeRecs extends JFrame {
         })); }
         stMejorPorMapa.removeAll();
         stMejorPorMapa.add(tituloSeccion(t("Mejor civ por mapa", "Best civ per map"), t("En cada mapa del pool, la civ con mejor winrate con el modo y el tramo elegidos: mínimo 20 partidas de esa civ en ese mapa, y gana la que tiene mejor límite inferior del intervalo de confianza (no la muestra pequeña con suerte). El número gris son sus partidas: por debajo de 100, orientativo. Responde a «qué me cojo en este mapa».", "For each map in the pool, the civ with the best win rate with the chosen mode and bracket: at least 20 games of that civ on that map, and the winner is the best lower bound of the confidence interval (not a lucky small sample). The grey number is its games: under 100, indicative only. Answers \u201Cwhat should I pick on this map\u201D.")));
-        Map<String, Integer> mapas = partidasPorMapa(v, statsModo, statsTramo);   // con tramo elegido, solo las partidas de ese tramo
+        Map<String, Integer> mapas = stats.partidasPorMapa(v, statsModo, statsTramo);   // con tramo elegido, solo las partidas de ese tramo
         List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
         lm.sort((a, b) -> b.getValue() - a.getValue());
         int filasMejor = 0;
@@ -2235,9 +2238,9 @@ public class SpoilerFreeRecs extends JFrame {
         for (Map.Entry<String, Integer> en : lm) {
             if (en.getValue() < MIN_PARTIDAS_CIV) break;
             CivAgg mejor = null; double mejorLb = -1;
-            for (CivAgg a : agregarCivs(v, statsModo, en.getKey(), statsTramo).values()) {   // 20+ partidas; gana el límite inferior de Wilson (no la muestra pequeña con suerte)
+            for (CivAgg a : stats.agregarCivs(v, statsModo, en.getKey(), statsTramo).values()) {   // 20+ partidas; gana el límite inferior de Wilson (no la muestra pequeña con suerte)
                 if (a.n() < MIN_PARTIDAS_CIV) continue;
-                double lb = wilson(a.w(), a.n())[0];
+                double lb = stats.wilson(a.w(), a.n())[0];
                 if (lb > mejorLb) { mejorLb = lb; mejor = a; }
             }
             if (mejor == null) continue;
@@ -2328,7 +2331,7 @@ public class SpoilerFreeRecs extends JFrame {
         if (c != null) return c;
         VentanaStats vTr = VENTANAS_STATS.get(statsVentana);
         List<String> tramosRango = new ArrayList<>();
-        if (vTr != null) for (String tr : vTr.tramos()) if (tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
+        if (vTr != null) for (String tr : vTr.tramos()) if (stats.tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
         Map<String, Map<String, int[]>> tabla = switch (fuente) { case "mt" -> tn.filasMT(); case "mapa" -> tn.filasMapa(); case "tramo" -> tn.filasTramo(); default -> tn.filas(); };
         long total = 0;
         for (String prefijo : prefijosTendencia(fuente, tramosRango)) if (tabla != null) for (Map.Entry<String, Map<String, int[]>> en : tabla.entrySet()) {
@@ -2353,14 +2356,14 @@ public class SpoilerFreeRecs extends JFrame {
             Color gris = new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 90 : 170);
             Font base = g2.getFont();
             g2.setFont(base.deriveFont(Font.BOLD, 13f)); g2.setColor(fg);
-            Tendencias tn = tendenciasStats;
+            Tendencias tn = stats.tendencias();
             int ventSel = stTendVentana == null ? 2 : stTendVentana.getSelectedIndex();
             boolean pick = stTendPick != null && stTendPick.isSelected();
             boolean conMapa = !"*".equals(tendMapa), conTramo = !"*".equals(tendTramo);
             String fuente = conMapa && conTramo ? "mt" : conMapa ? "mapa" : conTramo ? "tramo" : "todo";
             VentanaStats vTr = VENTANAS_STATS.get(statsVentana);
             List<String> tramosRango = new ArrayList<>();
-            if (vTr != null) for (String tr : vTr.tramos()) if (tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
+            if (vTr != null) for (String tr : vTr.tramos()) if (stats.tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
             boolean hayFuente = tn != null && switch (fuente) {
                 case "mt" -> tn.filasMT() != null && tramosRango.stream().anyMatch(tr -> tn.filasMT().keySet().stream().anyMatch(k -> k.startsWith(statsModo + "|" + tendMapa + "|" + tr + "|")));
                 case "mapa" -> tn.filasMapa() != null && tn.filasMapa().keySet().stream().anyMatch(k -> k.startsWith(statsModo + "|" + tendMapa + "|"));
@@ -2492,7 +2495,7 @@ public class SpoilerFreeRecs extends JFrame {
             Map<String, int[]> m = new HashMap<>();
             for (Matchup mu : v.matchups()) {
                 if (!mu.modo().equals(statsModo)) continue;
-                if (!tramoEnRango(mu.tramo(), v.tramos(), statsTramo)) continue;
+                if (!stats.tramoEnRango(mu.tramo(), v.tramos(), statsTramo)) continue;
                 int[] ab = m.computeIfAbsent(mu.ca() + "|" + mu.cb(), k -> new int[2]); ab[0] += mu.n(); ab[1] += mu.wa();
                 int[] ba = m.computeIfAbsent(mu.cb() + "|" + mu.ca(), k -> new int[2]); ba[0] += mu.n(); ba[1] += mu.n() - mu.wa();
             }
@@ -2512,7 +2515,7 @@ public class SpoilerFreeRecs extends JFrame {
             if (a.equals(b)) return nombreCivStats(a) + t(" (espejo: fuera)", " (mirror: excluded)");
             int[] nw = celdas.get(a + "|" + b);
             if (nw == null || nw[0] == 0) return nombreCivStats(a) + " vs " + nombreCivStats(b) + t(": sin partidas", ": no games");
-            double[] iv = wilson(nw[1], nw[0]);
+            double[] iv = stats.wilson(nw[1], nw[0]);
             return nombreCivStats(a) + " vs " + nombreCivStats(b) + ": " + pct1(100.0 * nw[1] / nw[0]) + " (" + miles(nw[0]) + t(" partidas, ", " games, ") + pct1(iv[0]) + "–" + pct1(iv[1]) + ")";
         }
         @Override protected void paintComponent(Graphics g) {
@@ -2591,7 +2594,7 @@ public class SpoilerFreeRecs extends JFrame {
             int i = barraEn(e.getPoint());
             if (i < 0) return null;
             if (n[i] < MIN_PARTIDAS_CIV) return etiquetas[i] + ": " + n[i] + t(" partidas (pocas)", " games (few)");
-            double[] iv = wilson(w[i], n[i]);
+            double[] iv = stats.wilson(w[i], n[i]);
             return etiquetas[i] + ": " + pct1(100.0 * w[i] / n[i]) + " (" + pct1(iv[0]) + "–" + pct1(iv[1]) + ") · " + miles(n[i]) + t(" partidas · pick ", " games · pick ") + pct1(pick[i]);
         }
         @Override protected void paintComponent(Graphics g) {
@@ -2772,7 +2775,7 @@ public class SpoilerFreeRecs extends JFrame {
         ttWrEstado.setText(t("cargando…", "loading…"));
         String ventana = statsVentana;
         new Thread(() -> {
-            String err = statsAsegurar(ventana, false);
+            String err = stats.asegurar(ventana, false);
             SwingUtilities.invokeLater(() -> {
                 if (err != null) { ttWrEstado.setText(t("sin datos (", "no data (") + err + ")"); return; }
                 ttWrEstado.setText("");
@@ -2789,7 +2792,7 @@ public class SpoilerFreeRecs extends JFrame {
         try {
             ttModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(MODOS_STATS).indexOf(statsModo)));
             ttVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(statsVentana)));
-            Map<String, Integer> mapas = partidasPorMapa(v, statsModo, statsTramo);
+            Map<String, Integer> mapas = stats.partidasPorMapa(v, statsModo, statsTramo);
             List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
             lm.sort((a, b) -> b.getValue() - a.getValue());
             List<String> claves = new ArrayList<>(); claves.add("*");
@@ -2801,7 +2804,7 @@ public class SpoilerFreeRecs extends JFrame {
             ttRango.tramos(v.tramos(), statsTramo);
         } finally { ttRellenandoFiltros = false; }
         ttWrPorCiv.clear();
-        for (CivAgg a : agregarCivs(v, statsModo, statsMapa, statsTramo).values()) {
+        for (CivAgg a : stats.agregarCivs(v, statsModo, statsMapa, statsTramo).values()) {
             String k = claveTechTree(a.civ());
             if (k != null) ttWrPorCiv.put(k, a);
         }
@@ -2836,14 +2839,14 @@ public class SpoilerFreeRecs extends JFrame {
             ttMapasPanel.revalidate(); ttMapasPanel.repaint(); return;
         }
         Color c = colorWr(a.w(), a.n());
-        double[] iv = wilson(a.w(), a.n());
+        double[] iv = stats.wilson(a.w(), a.n());
         List<String> ranking = ttRankingCivs();
         int puesto = ranking.indexOf(civ) + 1;
         long partidasFiltro = totalN / (statsModo.endsWith("_1v1") ? 2 : statsModo.endsWith("_2v2") ? 4 : statsModo.endsWith("_3v3") ? 6 : statsModo.endsWith("_4v4") ? 8 : 6);
         ttWrEstado.setText(t("datos hasta el ", "data up to ") + v.hasta() + (partidasFiltro < POCAS_PARTIDAS ? "  ·  " + t("pocas partidas con estos filtros: prueba 90 o 365 días", "few games with these filters: try 90 or 365 days") : ""));
         ttWrLabel.setText("<html><div style='font-size:13px'><b style='font-size:17px'>" + escapeHtml(ttNombreCiv(civ)) + "</b><br><span style='color:gray;font-size:12px'>" + escapeHtml(modoNombre(statsModo)) + " · " + escapeHtml(nombreMapaStats(v, statsMapa)) + " · " + escapeHtml(tramoNombre(statsTramo)) + " · " + escapeHtml(ventanaNombre(statsVentana)) + "</span><br>"
                 + "<span style='font-size:26px;color:" + colorHex(c) + "'><b>" + escapeHtml(pct1(a.wr())) + "</b></span> &nbsp;" + t("de victorias", "win rate") + " (" + escapeHtml(pct1(iv[0])) + " – " + escapeHtml(pct1(iv[1])) + ")<br>"
-                + t("Pick rate ", "Pick rate ") + "<b>" + escapeHtml(pct1(totalN == 0 ? 0 : 100.0 * a.n() / totalN)) + "</b> &nbsp;·&nbsp; <b>" + miles(a.n()) + "</b> " + t("partidas", "games") + " &nbsp;·&nbsp; " + t("duración media ", "average length ") + "<b>" + duracionMedia(a.d(), a.n()) + "</b></div></html>");
+                + t("Pick rate ", "Pick rate ") + "<b>" + escapeHtml(pct1(totalN == 0 ? 0 : 100.0 * a.n() / totalN)) + "</b> &nbsp;·&nbsp; <b>" + miles(a.n()) + "</b> " + t("partidas", "games") + " &nbsp;·&nbsp; " + t("duración media ", "average length ") + "<b>" + stats.duracionMedia(a.d(), a.n()) + "</b></div></html>");
         ttPuestoBtn.setText(puesto > 0 ? t("puesto ", "rank ") + puesto + t(" de ", " of ") + ranking.size() + " \u25BE" : t("ranking \u25BE", "ranking \u25BE"));
         ttPuestoBtn.setVisible(true);
         // por tramo de ELO (con el filtro de mapa)
@@ -2867,7 +2870,7 @@ public class SpoilerFreeRecs extends JFrame {
         // mejores y peores mapas (solo con «todos los mapas»)
         ttMapasPanel.add(tituloSeccion(t("Mejores y peores mapas", "Best and worst maps"), t("Winrate de la civ en cada mapa del pool con el modo y el tramo elegidos (sea cual sea el mapa del filtro); mínimo 20 partidas por mapa (menos de 100: orientativo). El mapa elegido va en negrita.", "The civ's win rate on each pool map with the chosen mode and bracket (whatever the filter map); at least 20 games per map (under 100: indicative only). The chosen map is in bold.")));
         {
-            List<CivAgg> pm = new ArrayList<>(civPorMapa(v, statsModo, statsTramo, a.civ()).values());
+            List<CivAgg> pm = new ArrayList<>(stats.civPorMapa(v, statsModo, statsTramo, a.civ()).values());
             pm.removeIf(x -> x.n() < MIN_PARTIDAS_CIV);
             pm.sort((x, y) -> Double.compare(y.wr(), x.wr()));
             double maxN = 1; for (CivAgg x : pm) maxN = Math.max(maxN, x.n());

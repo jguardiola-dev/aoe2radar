@@ -13,7 +13,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-import static dev.tirador.aoe2radar.sfrdata.Ladder.sfrDataArchivo;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.firstNonNull;
 import static dev.tirador.aoe2radar.util.Json.lng;
@@ -63,13 +62,18 @@ public final class CivStats {
                 parche == null ? "" : String.valueOf(parche instanceof Number n ? (Object) n.longValue() : parche), tramos, modos, nombres, mapas, civs, mu);
     }
 
-    /** Carga (con caché) la ventana pedida. null si va bien; si no, el motivo. */
-    public static String statsAsegurar(String ventana, boolean conTendencias) {
+    /**
+     * Carga (con caché en memoria, para toda la sesión) la ventana pedida. null si va bien; si no, el motivo.
+     * sfr: el cliente de sfr-data, inyectado (service.StatsService es quien decide cuándo llamar a esto; ver esa
+     * clase para el contrato de hilos). Antes tomaba el archivo del Ladder.sfrDataArchivo estático: mismo dato,
+     * ahora con el cliente que quien llama decide (para poder probarlo sin red).
+     */
+    public static String statsAsegurar(SfrDataClient sfr, String ventana, boolean conTendencias) {
         try {
             if (!VENTANAS_STATS.containsKey(ventana))
-                VENTANAS_STATS.put(ventana, parsearVentana(obj(Json.parse(new String(sfrDataArchivo("civstats/ventanas/v" + ventana + ".json.gz"), StandardCharsets.UTF_8)))));
+                VENTANAS_STATS.put(ventana, parsearVentana(obj(Json.parse(new String(sfr.datos("civstats/ventanas/v" + ventana + ".json.gz"), StandardCharsets.UTF_8)))));
             if (conTendencias && tendenciasStats == null) {
-                Map<String, Object> j = obj(Json.parse(new String(sfrDataArchivo("civstats/tendencias.json.gz"), StandardCharsets.UTF_8)));
+                Map<String, Object> j = obj(Json.parse(new String(sfr.datos("civstats/tendencias.json.gz"), StandardCharsets.UTF_8)));
                 List<String> meses = new ArrayList<>();
                 for (Object o : arr(j.get("meses"))) meses.add(String.valueOf(o));
                 Map<String, Map<String, Integer>> partidas = new HashMap<>();
