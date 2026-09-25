@@ -16,6 +16,7 @@ import dev.tirador.aoe2radar.techtree.TechTreeDatos;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
 
 import javax.swing.*;
 import java.awt.*;
@@ -49,6 +50,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * - No toques ratón ni teclado mientras corre (~1,5 min): Robot fotografía la pantalla, no la ventana.
  *   Las referencias dependen de la resolución, el escalado de Windows y las fuentes de esta máquina.
  */
+// Solo corre si se pide (-Dharness=si, lo pone verificar.ps1 completo): un `mvn test` a secas, lanzado por un
+// subagente o a mano, no puede quitarle la pantalla a Jorge por sorpresa.
+@EnabledIfSystemProperty(named = "harness", matches = "si")
 class RegresionCapturas {
     static final Path BASE = Path.of(System.getProperty("basedir", "."));
     static final Path HARNESS = Path.of(System.getProperty("user.dir"));

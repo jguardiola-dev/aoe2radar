@@ -24,7 +24,7 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
 
 # lista explícita: un «if» que devuelve un array de un elemento lo convierte en String, y @String pasaría sus letras sueltas
 $argumentos = @('test')
-if ($Rapido) { $argumentos += '-Dtest=!RegresionCapturas' }
+if ($Rapido) { $argumentos += '-Dtest=!RegresionCapturas' } else { $argumentos += '-Dharness=si' }   # sin -Dharness=si el harness no corre (RegresionCapturas)
 
 # Con el harness: el propio RegresionCapturas avisa (AvisoHarness: pitido grave y ventanita roja al empezar; dos
 # pitidos y ventanita verde al acabar), así avisa también si se lanza con mvn a mano o desde un subagente. Se puede
