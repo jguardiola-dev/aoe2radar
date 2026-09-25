@@ -101,7 +101,7 @@ import static dev.tirador.aoe2radar.util.I18n.t;
  */
 public final class CivStatsView {
 
-    /** Lo que Civ Stats necesita del tech tree, que en esta rama sigue en la ventana. */
+    /** Lo que Civ Stats necesita del tech tree (ui.TechTreeView; la ventana lo cablea). */
     public interface EnlaceTechTree {
         /** Repinta la banda de winrate del tech tree con los filtros compartidos, si esa vista está abierta. */
         void repintarBandaTechTree();

@@ -90,12 +90,12 @@ import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
  * Lo que sí se aisló en {@link PartidasPresenter}, sin Swing, es {@code vigente()} (la comprobación de caducidad
  * por opSerial que cada uno hace al terminar, antes de decidir qué pintar) y los tres filtros de la tabla.
  * <p>
- * Watchlist sigue en la ventana en esta rama: se pide por {@link EnlaceWatchlist}. El resto de la ventana
+ * La Watchlist (ui.WatchlistView) se pide por {@link EnlaceWatchlist}, que cablea la ventana. El resto de la ventana
  * (navegación, semáforo de operación en curso, perfil abierto, red) llega por {@link Anfitrion}.
  */
 public final class PartidasView {
 
-    /** Lo que Partidas necesita de la Watchlist, que en esta rama sigue en la ventana. Nombres de negocio: la
+    /** Lo que Partidas necesita de la Watchlist (ui.WatchlistView; la ventana lo cablea). Nombres de negocio: la
      *  vista no conoce playersList/playersModel/eloWatch, solo lo que puede hacer con ellos. */
     public interface EnlaceWatchlist {
         List<Player> seleccion();
@@ -223,7 +223,7 @@ public final class PartidasView {
     public JButton todasPerfilBtn;
     public List<Player> ultimosSujetos = List.of();
     public final Set<Long> filtroSujetos = new HashSet<>();
-    public String vistaDeSujetos = "";   // visible para SpoilerFreeRecs.aplicarFiltroGrupo (frontera con Watchlist)
+    public String vistaDeSujetos = "";   // visible para WatchlistView.aplicarFiltroGrupo, vía su EnlacePartidas
     public Player objetivoEtiqueta;   // el jugador que nombra el botón «Buscar partidas (X)»
 
     volatile boolean topeAlcanzado;

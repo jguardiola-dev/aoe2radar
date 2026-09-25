@@ -277,7 +277,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // ----- Configuración -----------------------------------------------------
     static final Path   PLAYERS_FILE = Path.of("players.txt");
-    static final String FLATLAF_JAR  = "flatlaf-3.7.2.jar";
     static final String DONAR_URL    = "https://paypal.me/12Tirador/5EUR";
     static final int    PER_PAGE     = 50;   // partidas consultadas por jugador
     static final long   PAUSA_MS     = 300;  // cortesía entre llamadas
@@ -401,7 +400,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         int u = unidadCombo.getSelectedIndex();
         return Math.min(24 * 7, n * (u == 1 ? 24 : u == 2 ? 24 * 7 : 1));   // techo: una semana; el histórico completo vive en el perfil («Todas las partidas del perfil»)
     }
-    boolean actualizandoMapas;
     final JLabel status = new JLabel(t("Listo.", "Ready.")) {
         @Override public void setText(String texto) {   // si no cabe, el tooltip lo enseña entero
             super.setText(texto);
@@ -610,11 +608,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         liveNow.alAbrirDespues();
     }
 
-    // Los seis métodos de MenusJugador (contextual, en partida, ítem de partida, ELO 1v1 conocido, submenú de
-    // jugador, perfil en el navegador) se movieron a ui.MenusJugadorSwing en la tanda 3 (oleada A2, T3-A2): estos
-    // son delegados de una línea con el mismo nombre para quien los llamaba (constructor, watchlist, tabla, Perfil).
-    void menuContextualJugador(long pid, String nombre, MouseEvent e) { menus.menuContextual(pid, nombre, e); }
-    JMenu menuEnPartida(long pid) { return menus.enPartida(pid); }
     /** ÚNICA instancia del ELO 1v1 de sesión: la usan MenusJugadorSwing (inyectada) y submenuJugadorPartida (watchlist), aquí. */
     static final EloSesion ELO_1V1 = new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA);   // pid → ELO 1v1 RM (sesión; caduca al terminar una partida)
     Integer elo1v1Conocido(long pid) { return menus.elo1v1Conocido(pid); }
@@ -1699,10 +1692,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
      *  entonces la clase entera (con sus static) ya está inicializada. */
     final SteamApi steam = new SteamApi(API_CLIENTE);
 
-    /** Submenú de acciones sobre un jugador concreto (contextual de la tabla). */
-    JMenu menuDeJugador(long pid, String nombre) { return menus.deJugador(pid, nombre); }
-    JMenu menuPerfilNavegador(long id) { return menus.perfilNavegador(id); }
-
     void abrirUrl(String url) {
         try { Desktop.getDesktop().browse(URI.create(url)); }
         catch (Exception ex) { status.setText(t("No se pudo abrir el navegador: ", "Couldn't open the browser: ") + causa(ex)); }
@@ -1959,7 +1948,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** BarridoVivos: la red y la decisión de vigilarVivos/refrescarWatchlist/«Buscar partidas» (ver
      *  service.BarridoVivos). Campo de instancia, junto al código que lo usa (como recService). Lo usan
-     *  fetchMatches (aquí) y ui.WatchlistView (inyectado por constructor). */
+     *  ui.PartidasView (fetchMatches) y ui.WatchlistView (los dos, inyectado por constructor). */
     final BarridoVivos barridoVivos = new BarridoVivos(COMPANION, Reloj.SISTEMA, SpoilerFreeRecs::resumenVivo,
             Snapshots.ELO_AYER, SpoilerFreeRecs::dormir, PAUSA_MS, PER_PAGE);
 
@@ -1969,7 +1958,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             SpoilerFreeRecs::dormir, PAUSA_MS);
 
     /** La pestaña «Partidas»: ver ui.PartidasView/ui.PartidasPresenter (fase 3, tanda 3, oleada B). Se construye
-     *  aquí (como field initializer: se ejecuta antes que configurarVentana/construirWatchlist/etc., igual que
+     *  aquí (como field initializer: se ejecuta antes que configurarVentana y que crear la Watchlist, igual que
      *  dialogos/menus/azarService/recService/barridoVivos) para que sus botones existan cuando
      *  construirBarraSuperior los necesite. La Watchlist (ui.WatchlistView, campo {@code watchlist}) llega por
      *  EnlaceWatchlist: sus lambdas solo se evalúan después del constructor, cuando {@code watchlist} ya existe;
@@ -2114,10 +2103,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     /** Búsqueda de jugadores por nombre en el companion: {id, nombre, etiqueta legible}. Delegados de service.BusquedaPerfiles
-     *  (BUSQUEDA): la lógica vive allí, aquí solo queda la fachada para no tocar los cinco buscadores de la interfaz
-     *  que quedan en esta clase (addPlayerDialog se movió a ui.WatchlistView y usa BusquedaPerfiles directamente). */
-    /** Sugerencias al teclear: el índice local si tiene algo (sin llamada); si no, la API. */
-    static List<String[]> sugerirPerfiles(String q) { return BUSQUEDA.sugerir(q); }
+     *  (BUSQUEDA): la lógica vive allí; aquí solo queda la fachada que usa el Anfitrion de Mi partida. */
     /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. Así un nick cambiado hace poco (que el volcado aún no conoce) también aparece. */
     static List<String[]> buscarPerfiles(String q) { return BUSQUEDA.buscar(q); }
 }

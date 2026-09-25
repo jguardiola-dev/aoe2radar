@@ -117,7 +117,7 @@ public final class WatchlistView {
     /** Un grupo especial vale para el resto de la app; General es de service.ListaSeguidos. */
     public static final String GRUPO_GENERAL = "General";
 
-    /** Lo que la Watchlist pide a Partidas (todavía dentro de SpoilerFreeRecs en esta rama). */
+    /** Lo que la Watchlist pide a Partidas (ui.PartidasView; la ventana lo cablea). */
     public interface EnlacePartidas {
         void fetchMatches();
         void mostrarDirectos(boolean mostrar);
@@ -223,7 +223,7 @@ public final class WatchlistView {
     private final JProgressBar progreso;
     private final List<Match> all;
     public JToggleButton soloVivosBtn;   // visible: fetchMatches (Partidas) lo consulta; se crea en construirPanel(), como la 1.1
-    private final JPanel sujetosPanel;   // de Partidas (refrescarSujetos vive en la ventana); solo lo insertamos en el layout
+    private final JPanel sujetosPanel;   // de Partidas (lo rellena PartidasView.refrescarSujetos); solo lo insertamos en el layout
 
     private static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
 
