@@ -81,6 +81,7 @@ import dev.tirador.aoe2radar.service.HistorialPerfil;
 import dev.tirador.aoe2radar.service.Juego;
 import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.LiveService;
+import dev.tirador.aoe2radar.service.MiPartidaServiceJuego;
 import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.NombresStats;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
@@ -101,6 +102,7 @@ import dev.tirador.aoe2radar.ui.DirectosView;
 import dev.tirador.aoe2radar.ui.FiltroStats;
 import dev.tirador.aoe2radar.ui.Listas;
 import dev.tirador.aoe2radar.ui.LiveNowView;
+import dev.tirador.aoe2radar.ui.MiPartidaPanel;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PerfilView;
 import dev.tirador.aoe2radar.ui.RatingsView;
@@ -110,7 +112,6 @@ import dev.tirador.aoe2radar.ui.TechTreeView;
 import dev.tirador.aoe2radar.ui.TemaApp;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 import dev.tirador.aoe2radar.util.Config;
-import dev.tirador.aoe2radar.util.Json;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
@@ -124,7 +125,6 @@ import static dev.tirador.aoe2radar.api.Http.API;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.TRANSPORTE;
 import static dev.tirador.aoe2radar.api.Http.UA;
-import static dev.tirador.aoe2radar.api.Http.descargarBytes;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
 import static dev.tirador.aoe2radar.api.Http.req;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
@@ -174,9 +174,6 @@ import static dev.tirador.aoe2radar.service.ConsultasLadder.miembrosClan;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRango;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRating;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.sugerirClanes;
-import static dev.tirador.aoe2radar.service.Juego.OFICIAL_LOBBIES;
-import static dev.tirador.aoe2radar.service.Juego.buscarLobbyConPid;
-import static dev.tirador.aoe2radar.service.Juego.carpetaLogsJuego;
 import static dev.tirador.aoe2radar.service.Juego.copiarASavegame;
 import static dev.tirador.aoe2radar.service.Juego.detectarSavegames;
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
@@ -5916,114 +5913,25 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // ----- Alta de jugadores (búsqueda por nick, sin visitar webs) -----------
-    // ----- «Mi partida»: quién eres (registro de Windows), aviso al encontrar partida (log del juego) y panel sobre el juego -----
-    javax.swing.Timer logJuegoTimer; Path logJuegoActual; long logJuegoPos; String logJuegoUltimaFase; long logJuegoUltimoAvisoMs;
-    JWindow superposicion; javax.swing.Timer superposicionTimer;
-
-    /** Vigila el MainLog.txt de la sesión más reciente del juego: al ver la fase de preparación (MS_Setup), aviso temprano y sondeo del lobby. Solo si hay «mi perfil». */
-    void iniciarVigilanciaLogJuego() {
-        if (logJuegoTimer != null) return;
-        log("mi partida: vigilancia del log del juego activa (carpeta " + carpetaLogsJuego() + ", existe=" + Files.isDirectory(carpetaLogsJuego()) + "); socket con mi id " + leerConfig("mi_pid", ""));
-        logJuegoTimer = new javax.swing.Timer(2000, e -> new Thread(this::leerLogJuego, "log-juego").start());
-        logJuegoTimer.start();
-    }
-    long logJuegoUltimoDiagMs;
-    void leerLogJuego() {
-        try {
-            if (leerConfig("mi_pid", "").isBlank()) return;
-            Path carpeta = carpetaLogsJuego();
-            if (!Files.isDirectory(carpeta)) return;
-            Path sesion = null;
-            try (var st = Files.list(carpeta)) { sesion = st.filter(Files::isDirectory).max(Comparator.comparing(p2 -> { try { return Files.getLastModifiedTime(p2).toMillis(); } catch (IOException ex) { return 0L; } })).orElse(null); }
-            if (sesion == null) return;
-            Path log = sesion.resolve("MainLog.txt");
-            if (!Files.exists(log)) { if (System.currentTimeMillis() - logJuegoUltimoDiagMs > 600_000) { logJuegoUltimoDiagMs = System.currentTimeMillis(); log("mi partida: la sesión más reciente (" + sesion.getFileName() + ") no tiene MainLog.txt"); } return; }
-            if (!log.equals(logJuegoActual)) { logJuegoActual = log; logJuegoPos = Math.max(0, Files.size(log) - 4000); logJuegoUltimaFase = null; log("mi partida: vigilando " + log + " (" + Files.size(log) + " bytes)"); }   // sesión nueva: empezar por el final
-            long tam = Files.size(log);
-            if (tam < logJuegoPos) logJuegoPos = 0;
-            if (tam == logJuegoPos) return;
-            String trozo;
-            try (var ch = java.nio.channels.FileChannel.open(log, java.nio.file.StandardOpenOption.READ)) {
-                java.nio.ByteBuffer buf = java.nio.ByteBuffer.allocate((int) Math.min(tam - logJuegoPos, 512_000));
-                ch.position(logJuegoPos); ch.read(buf); buf.flip();
-                trozo = StandardCharsets.UTF_8.decode(buf).toString();
-                logJuegoPos = tam;
-            }
-            if (System.currentTimeMillis() - logJuegoUltimoDiagMs > 600_000) { logJuegoUltimoDiagMs = System.currentTimeMillis(); log("mi partida: el log del juego crece (" + tam + " bytes); último trozo " + trozo.length() + " caracteres"); }
-            if (trozo.contains("PlayerReadyRequest") || trozo.contains("MS_Setup")) {
-                if (System.currentTimeMillis() - logJuegoUltimoAvisoMs > 120_000) {   // una vez por partida
-                    logJuegoUltimoAvisoMs = System.currentTimeMillis();
-                    log("mi partida: fase de preparación detectada en el log del juego");
-                    SwingUtilities.invokeLater(() -> mostrarSuperposicion("\u25CF " + t("Partida encontrada · preparando…", "Match found · getting ready…"), null, 25_000));
-                    new Thread(this::sondearLobbyOficial, "lobby-oficial").start();
-                }
-            }
-        } catch (Exception ex) { log("log del juego: " + causa(ex)); }
-    }
-    /** EXPERIMENTO: lista pública de lobbies del servidor oficial; si el mío aparece con sus jugadores, aviso con los rivales antes de que empiece. Se anota en el log lo que se encuentre. */
-    void sondearLobbyOficial() {
-        try {
-            long mi = Long.parseLong(leerConfig("mi_pid", ""));
-            String texto = new String(descargarBytes(OFICIAL_LOBBIES, 20), StandardCharsets.UTF_8);
-            Object root = Json.parse(texto);
-            List<Long> compañeros = new ArrayList<>();
-            boolean encontrado = buscarLobbyConPid(root, mi, compañeros);
-            log("lobby oficial: " + (encontrado ? "mi lobby encontrado con " + compañeros.size() + " jugadores más" : "mi lobby no aparece") + " (respuesta de " + texto.length() + " caracteres)");
-            if (!encontrado || compañeros.isEmpty()) return;
-            cargarEloAyer();
-            StringBuilder sb = new StringBuilder("\u25CF " + t("Partida encontrada · con ", "Match found · with "));
-            List<Object[]> fichas = new ArrayList<>();
-            for (long pid : compañeros) { String[] nn = NOMBRES_AYER.get(pid); String nombre = nn != null ? nn[0] : "#" + pid; Integer e1 = elo1v1Conocido(pid); fichas.add(new Object[]{ pid, nombre, e1 }); if (sb.length() > 30) sb.append(", "); sb.append(nombre).append(e1 != null ? " (" + e1 + ")" : ""); }
-            SwingUtilities.invokeLater(() -> mostrarSuperposicion(sb.toString(), fichas, 60_000));
-        } catch (Exception ex) { log("lobby oficial: " + causa(ex)); }
-    }
-    /** Panel sobre el juego (siempre visible, sin bordes, arriba en el centro): el aviso y, si hay, las fichas de los rivales. Se cierra solo. */
-    void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) {
-        if (superposicion != null) { superposicion.dispose(); superposicion = null; }
-        if (superposicionTimer != null) superposicionTimer.stop();
-        JWindow w = new JWindow();
-        w.setAlwaysOnTop(true);
-        JPanel p = new JPanel(); p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
-        p.setBackground(new Color(0x1e, 0x1e, 0x1e, 235)); p.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(0xff, 0xd5, 0x6a), 1), BorderFactory.createEmptyBorder(8, 14, 8, 14)));
-        JLabel l = new JLabel(texto); l.setForeground(Color.WHITE); l.setFont(l.getFont().deriveFont(Font.BOLD, 14f)); l.setAlignmentX(0f); p.add(l);
-        if (fichas != null) for (Object[] f : fichas) {
-            long pid = (Long) f[0]; String nombre = (String) f[1]; Integer e1 = (Integer) f[2];
-            StringBuilder d = new StringBuilder(nombre + (e1 != null ? "  ·  ELO " + e1 : ""));
-            Actividad a = ACTIVIDAD_CACHE.get(pid);
-            if (a != null) {   // lo que ya sabemos del rival: sus civs de los últimos 30 días
-                Map<String, Integer> civs = new HashMap<>(); Instant hace30 = Instant.now().minus(Duration.ofDays(30));
-                for (Match m : a.partidas()) if (m.started != null && m.started.isAfter(hace30)) for (MatchPlayer mp : m.players) if (mp.id == pid && mp.civ != null) civs.merge(mp.civ, 1, Integer::sum);
-                List<Map.Entry<String, Integer>> top = new ArrayList<>(civs.entrySet()); top.sort((x, y) -> y.getValue() - x.getValue());
-                if (!top.isEmpty()) { d.append("  ·  "); for (int i = 0; i < Math.min(3, top.size()); i++) d.append(i > 0 ? ", " : "").append(top.get(i).getKey()); }
-            }
-            JLabel lf = new JLabel(d.toString(), iconoBandera(paisDe(pid)), SwingConstants.LEFT); lf.setForeground(new Color(0xdd, 0xdd, 0xdd)); lf.setIconTextGap(6); lf.setAlignmentX(0f); lf.setBorder(BorderFactory.createEmptyBorder(4, 0, 0, 0)); p.add(lf);
-        }
-        w.setContentPane(p); w.pack();
-        Rectangle pantalla = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-        w.setLocation(pantalla.x + (pantalla.width - w.getWidth()) / 2, pantalla.y + 24);
-        w.setVisible(true);
-        superposicion = w;
-        superposicionTimer = new javax.swing.Timer(ms, e -> { if (superposicion == w) { w.dispose(); superposicion = null; } }); superposicionTimer.setRepeats(false); superposicionTimer.start();
-    }
-    /** «Mi perfil»: el pid guardado en config (mi_pid/mi_nombre); si no, primero el SteamID del registro (sin preguntar) y, si no hay Steam, un buscador. */
-    void abrirMiPerfil() {
-        String pid = leerConfig("mi_pid", ""), nombre = leerConfig("mi_nombre", "");
-        if (!pid.isBlank()) { abrirPerfil(Long.parseLong(pid), nombre); return; }
-        preguntarMiNick();
-    }
-    void preguntarMiNick() {
-        String q = JOptionPane.showInputDialog(this, t("Tu nick en el juego:", "Your in-game nick:"), t("Mi perfil", "My profile"), JOptionPane.PLAIN_MESSAGE);
-        if (q == null || q.trim().isEmpty()) return;
-        new Thread(() -> {
-            List<String[]> res = buscarPerfiles(q.trim());
-            SwingUtilities.invokeLater(() -> {
-                if (res.isEmpty()) { status.setText(t("No encontré ese nick.", "Couldn't find that nick.")); return; }
-                Object el = res.size() == 1 ? res.get(0)[2] : JOptionPane.showInputDialog(this, t("¿Cuál eres tú?", "Which one is you?"), t("Mi perfil", "My profile"), JOptionPane.PLAIN_MESSAGE, null, res.stream().map(r -> r[2]).toArray(), res.get(0)[2]);
-                if (el == null) return;
-                for (String[] r : res) if (r[2].equals(el)) { guardarConfig("mi_pid", r[0]); guardarConfig("mi_nombre", r[1]); abrirPerfil(Long.parseLong(r[0]), r[1]); iniciarVigilanciaLogJuego(); sincronizarSocket(); return; }
+    // ----- «Mi partida»: quién eres, aviso al encontrar partida (log del juego) y panel sobre el juego -----
+    // Sale a ui.MiPartidaPanel + ui.MiPartidaPresenter + service.MiPartidaServiceJuego (fase 3, tanda 3): mismos
+    // textos, mismo Timer de 2s, mismos nombres de hilo ("log-juego", "lobby-oficial", "mi-perfil").
+    final MiPartidaPanel miPartida = new MiPartidaPanel(
+            new MiPartidaServiceJuego(this::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
+            Tareas.SWING, this, this, new MiPartidaPanel.Anfitrion() {
+                @Override public List<String[]> buscarPerfiles(String nick) { return SpoilerFreeRecs.buscarPerfiles(nick); }
+                @Override public void mostrarEstado(String texto) { status.setText(texto); }
+                @Override public void sincronizarSocket() { SpoilerFreeRecs.this.sincronizarSocket(); }
             });
-        }, "mi-perfil").start();
-    }
+
+    /** Delegado: ver ui.MiPartidaPanel.iniciarVigilancia. Nombre conservado para quien lo llama (constructor). */
+    void iniciarVigilanciaLogJuego() { miPartida.iniciarVigilancia(); }
+    /** Delegado: ver ui.MiPartidaPanel.mostrarSuperposicion. Nombre conservado para avisarMiPartida. */
+    void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { miPartida.mostrarSuperposicion(texto, fichas, ms); }
+    /** Delegado: ver ui.MiPartidaPanel.abrirMiPerfil. Nombre conservado para el botón "Mi perfil". */
+    void abrirMiPerfil() { miPartida.abrirMiPerfil(); }
+    /** Delegado: ver ui.MiPartidaPanel.preguntarMiNick. Nombre conservado para "Cambiar de cuenta". */
+    void preguntarMiNick() { miPartida.preguntarMiNick(); }
     /** Un jugador concreto elegido de una sugerencia: en Perfil se abre directamente; en el resto, las mismas tres opciones del buscador, sin repetir la búsqueda. */
     void jugadorElegido(long pid, String nombre) {
         if (perfil.abierto()) { abrirPerfil(pid, nombre); return; }
