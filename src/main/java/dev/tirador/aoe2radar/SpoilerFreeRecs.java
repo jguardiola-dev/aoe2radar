@@ -130,7 +130,6 @@ import static dev.tirador.aoe2radar.cache.Anotaciones.NOTAS;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarAliases;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarNotas;
 import static dev.tirador.aoe2radar.cache.Anotaciones.nombreVisible;
-import static dev.tirador.aoe2radar.cache.Anotaciones.notaDe;
 import static dev.tirador.aoe2radar.cache.CachePerfiles.PERFIL_CACHE;
 import static dev.tirador.aoe2radar.cache.Canales.CANAL_DE;
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
@@ -358,7 +357,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     rebuildGrupos();
                     aplicarFiltroGrupo();
                     refrescarWatchlist();
-                    status.setText(nombre + t(" añadido a «", " added to “") + grupo + "».");
+                    status.setText(nombre + t(" añadido a «", " added to \u201C") + grupo + "\u00bb.");
                     ofrecerVinculadasTrasAlta(pid, nombre, grupo);   // siempre que alguien entra en un grupo, se revisan sus cuentas vinculadas
                 }
                 @Override public String elegirGrupoDialog(String nombreSugerido) { return SpoilerFreeRecs.this.elegirGrupoDialog(nombreSugerido); }
@@ -1751,7 +1750,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     static final AnotacionesService ANOTACIONES = new AnotacionesService(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
 
     // notaDe, pedirAlias, pedirNota, borrarNota, mostrarVinculadas y nicksAnteriores se movieron a
-    // ui.DialogosJugador en la tanda 3 (oleada A2, T3-A2): delegados de una linea con el mismo nombre.
+    // ui.DialogosJugador en la tanda 3 (oleada A2, T3-A2): delegados de una línea con el mismo nombre.
     String notaDe(long pid) { return dialogos.notaDe(pid); }
     void borrarNota(long pid, String nombre) { dialogos.borrarNota(pid, nombre); }
 

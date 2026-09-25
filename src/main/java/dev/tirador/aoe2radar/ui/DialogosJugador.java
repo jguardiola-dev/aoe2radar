@@ -123,7 +123,7 @@ public final class DialogosJugador {
         String nuevo = (String) JOptionPane.showInputDialog(padre,
                 t("Nombre con el que quieres ver a ", "Name you want to see for ") + original
                         + t(" en toda la app (vacío = quitar el alias):", " across the app (empty = remove alias):"),
-                t("Mostrar como…", "Show as…"), JOptionPane.PLAIN_MESSAGE, null, null, actual != null ? actual : "");
+                t("Mostrar como\u2026", "Show as\u2026"), JOptionPane.PLAIN_MESSAGE, null, null, actual != null ? actual : "");
         if (nuevo == null) return;
         nuevo = nuevo.trim();
         anotaciones.ponerAlias(pid, original, nuevo);
@@ -131,13 +131,13 @@ public final class DialogosJugador {
         anfitrion.refrescarTabla();
         anfitrion.refrescarSujetos();
         anfitrion.mostrarEstado(nuevo.isEmpty() ? t("Alias quitado.", "Alias removed.")
-                : original + " → " + nuevo);
+                : original + " \u2192 " + nuevo);
     }
 
     /** Historial de alias que guarda Steam para la cuenta (endpoint público
      *  de la comunidad, vía el steamId del companion). Solo bajo demanda. */
     public void nicksAnteriores(long pid, String nombre) {
-        anfitrion.mostrarEstado(t("Consultando nicks anteriores de ", "Looking up previous names of ") + nombre + "…");
+        anfitrion.mostrarEstado(t("Consultando nicks anteriores de ", "Looking up previous names of ") + nombre + "\u2026");
         new SwingWorker<List<String[]>, Void>() {
             String motivo;
             @Override protected List<String[]> doInBackground() {
@@ -226,10 +226,10 @@ public final class DialogosJugador {
                 for (Perfil.Vinculada v : vinc) {
                     boolean ya = anfitrion.enWatchlist(v.pid());
                     Integer eloV = elosV.get(v.pid());
-                    String fila = v.pais().isBlank() ? String.valueOf(v.nombre()) : v.nombre() + " · " + v.pais();
-                    fila = fila + (eloV != null ? " · " + eloV + " ELO" : t(" · sin ELO", " · no ELO"));
+                    String fila = v.pais().isBlank() ? String.valueOf(v.nombre()) : v.nombre() + " \u00B7 " + v.pais();
+                    fila = fila + (eloV != null ? " \u00B7 " + eloV + " ELO" : t(" \u00B7 sin ELO", " \u00B7 no ELO"));
                     if (v.partidas() >= 0)
-                        fila = fila + " · " + v.partidas() + t(" partidas", " games");
+                        fila = fila + " \u00B7 " + v.partidas() + t(" partidas", " games");
                     fila = fila + (ya ? t("  (ya en tu watchlist)", "  (already in your watchlist)") : "");
                     modelo.addElement(fila);
                     if (!ya) anadibles.add(v);
@@ -290,7 +290,7 @@ public final class DialogosJugador {
                 anfitrion.aplicarFiltro();
                 anfitrion.refrescarWatchlist();
                 anfitrion.mostrarEstado(t("Familia de ", "Family of ") + nombre
-                        + t(" guardada en «", " saved to “") + g + "» ("
+                        + t(" guardada en «", " saved to “") + g + "\u00bb ("
                         + nuevos + t(" nuevas).", " new)."));
             }
         }.execute();

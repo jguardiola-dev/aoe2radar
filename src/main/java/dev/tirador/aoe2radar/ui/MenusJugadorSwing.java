@@ -149,17 +149,17 @@ public final class MenusJugadorSwing implements MenusJugador {
 
     /** Submenú de acciones sobre un jugador concreto (contextual de la tabla). */
     private JMenu menuDeJugador(long pid, String nombre) {
-        String vis = nombre.length() > 28 ? nombre.substring(0, 27) + "…" : nombre;
+        String vis = nombre.length() > 28 ? nombre.substring(0, 27) + "\u2026" : nombre;
         JMenu mj = new JMenu(vis);
         JMenuItem perfNueva = new JMenuItem(t("Abrir perfil en pestaña nueva", "Open profile in a new tab"));
         perfNueva.addActionListener(a -> navegacion.abrirPerfilEnPestana(pid, nombre));
         mj.add(perfNueva);
         JMenu enPartida = menuEnPartida(pid);
         if (enPartida != null) mj.add(enPartida);
-        JMenuItem alias = new JMenuItem(t("Mostrar como…", "Show as…"));
+        JMenuItem alias = new JMenuItem(t("Mostrar como\u2026", "Show as\u2026"));
         alias.addActionListener(a -> acciones.pedirAlias(pid, nombre));
         mj.add(alias);
-        JMenuItem nota = new JMenuItem(t("Nota…", "Note…"));
+        JMenuItem nota = new JMenuItem(t("Nota\u2026", "Note\u2026"));
         nota.addActionListener(a -> acciones.pedirNota(pid, nombre));
         mj.add(nota);
         if (acciones.notaDe(pid) != null) {
@@ -167,7 +167,7 @@ public final class MenusJugadorSwing implements MenusJugador {
             bn.addActionListener(a -> acciones.borrarNota(pid, nombre));
             mj.add(bn);
         }
-        JMenuItem perf = new JMenuItem(t("Perfil completo…", "Full profile…"));
+        JMenuItem perf = new JMenuItem(t("Perfil completo\u2026", "Full profile\u2026"));
         perf.addActionListener(a -> navegacion.abrirPerfil(pid, nombre));
         mj.add(perf);
         boolean ya = acciones.enWatchlist(pid);
@@ -183,7 +183,7 @@ public final class MenusJugadorSwing implements MenusJugador {
                 anadir.add(it);
             }
             anadir.addSeparator();
-            JMenuItem nuevoG = new JMenuItem(t("+ Nuevo grupo…", "+ New group…"));
+            JMenuItem nuevoG = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
             nuevoG.addActionListener(a -> {
                 String g = acciones.elegirGrupoDialog(nombre);
                 if (g == null) return;
@@ -192,10 +192,10 @@ public final class MenusJugadorSwing implements MenusJugador {
             anadir.add(nuevoG);
         }
         mj.add(anadir);
-        JMenuItem vinc = new JMenuItem(t("Cuentas vinculadas…", "Linked accounts…"));
+        JMenuItem vinc = new JMenuItem(t("Cuentas vinculadas\u2026", "Linked accounts\u2026"));
         vinc.addActionListener(a -> acciones.mostrarVinculadas(pid, nombre));
         mj.add(vinc);
-        JMenuItem nicks = new JMenuItem(t("Nicks anteriores…", "Previous names…"));
+        JMenuItem nicks = new JMenuItem(t("Nicks anteriores\u2026", "Previous names\u2026"));
         nicks.addActionListener(a -> acciones.nicksAnteriores(pid, nombre));
         mj.add(nicks);
         JMenu nav = new JMenu(t("Ver perfil en el navegador", "View profile in browser"));
