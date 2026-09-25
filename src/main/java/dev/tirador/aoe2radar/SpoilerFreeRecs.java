@@ -56,6 +56,7 @@ import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Matchup;
 import dev.tirador.aoe2radar.model.PaginaLb;
 import dev.tirador.aoe2radar.model.PaginaPartidas;
+import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Player;
@@ -538,9 +539,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final CacheMemoria<Long, Object[]> perfilCardCache = CacheService.SISTEMA.memoria(Caducidad.TARJETA);   // pid -> { htmlDatos, int[] spark }
     static final String TOP_LADDER = "\u2605 Top ladder";
     static final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
-    record PaisItem(String nombre, String code) {
-        @Override public String toString() { return nombre; }
-    }
     /** TODOS los países ISO con su nombre en el idioma de la app — Bulgaria
      *  incluida y sin listas que mantener a mano. */
     static PaisItem[] catalogoPaises() {
