@@ -1948,589 +1948,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         super(NOMBRE + " " + VERSION + t(" — tu radar del AoE2 competitivo, sin spoilers · por ", " — your competitive AoE2 radar, spoiler-free · by ") + AUTOR);
         configurarVentana();
 
-        // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
-        playersList.setVisibleRowCount(12);
-        playersList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) { applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); if (perfil != null) perfil.sincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
-        });
-        delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
-
-        playersList.addMouseListener(new MouseAdapter() {   // botón central sobre un jugador: su perfil en pestaña nueva
-            @Override public void mousePressed(MouseEvent e) {
-                if (!SwingUtilities.isMiddleMouseButton(e)) return;
-                int idx = playersList.locationToIndex(e.getPoint());
-                if (idx < 0 || !playersList.getCellBounds(idx, idx).contains(e.getPoint())) return;
-                Player p = playersModel.get(idx);
-                abrirPerfilEnPestana(p.id(), nombreVisible(p.id(), p.name()));
-                e.consume();
-            }
-        });
-        playersList.setCellRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                                    boolean isSelected, boolean cellHasFocus) {
-                JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof Player p) {
-                    char marca = marcaFila.getOrDefault(p.id(), ' ');
-                    boolean vivo = VIVO.jugando(p.id())
-                            || (marca != 'H' && vivoFamilia.getOrDefault(p.id(), false));
-                    Integer elo = eloWatch.get(p.id());
-                    Integer rank = modoTop() ? rankTop.get(p.id()) : null;
-                    String punto = vivo ? "<font color='#" + colorVivoHex() + "'>\u25CF</font>" : "";
-                    String col1 = rank != null ? "<font color='gray'>" + rank + ".</font>"
-                            : marca == 'P' ? "\u25B8" : marca == 'E' ? "\u25BE" : "";
-                    String eloTxt = (elo != null && mostrarEloWatch) ? String.valueOf(elo) : "";
-                    int w0 = Math.max(150, list.getWidth() - 22);
-                    FontMetrics fmSub = l.getFontMetrics(l.getFont());   // para truncar sublíneas en píxeles reales
-                    int maxChars = Math.max(10, (w0 - 76 - anchoCeldaElo(w0) - (formaVisible ? 72 : 0)) / 7);
-                    String nombreVis = nombreVisible(p.id(), p.name());
-                    String tip = ALIASES.containsKey(p.id())
-                            ? t("Nick real: ", "Real nick: ") + p.name() : null;
-                    String notaP = notaDe(p.id());
-                    if (notaP != null) tip = (tip == null ? "" : tip + " \u2014 ") + t("Nota: ", "Note: ") + notaP + t(" (clic en \u270E para editar)", " (click \u270E to edit)");
-
-
-                    if (nombreVis.length() > maxChars) {
-                        nombreVis = nombreVis.substring(0, maxChars - 1) + "\u2026";
-                        tip = p.name();
-                    }
-                    String[] st = twitchLive.get(p.id());   // solo para pintar el badge: sin tooltip del título (tapaba la tarjeta)
-                    l.setToolTipText(tip);   // ni «jugando ahora» ni el título del stream: el punto, la sublínea y Directos ya lo cuentan
-                    Match enCurso = vivo ? VIVO.partida(p.id()) : null;   // una sola lectura: el socket puede soltarla entre dos
-                    String mapaVivo = enCurso != null && enCurso.map != null ? enCurso.map : null;
-                    if (mapaVivo != null) {   // el mapa cabe en lo que sobra tras el nick; si no cabe, se recorta con «…» y, si ni siquiera hay sitio, no se pinta (el ELO nunca se tapa)
-                        int sitio = maxChars - nombreVis.length() - 3;
-                        if (sitio < 6) mapaVivo = null;
-                        else if (mapaVivo.length() > sitio) mapaVivo = mapaVivo.substring(0, sitio - 1) + "\u2026";
-                    }
-                    String nick = (vivo ? "<font color='" + (temaOscuroActivo ? "#ffd56a" : "#b06a00") + "'>" + escapeHtml(nombreVis) + "</font>" + (mapaVivo != null ? " <font color='#8a8a8a'>\u00B7</font> <font color='" + (temaOscuroActivo ? "#ffd56a" : "#b06a00") + "'>" + escapeHtml(mapaVivo) + "</font>" : "") : escapeHtml(nombreVis))   // en partida: nick en ámbar y el mapa al lado
-                            + (notaDe(p.id()) != null ? " <font color='#8a8a8a'>\u270E</font>" : "")
-                            + (modoTop() && containsPlayerId(p.id()) ? " <font color='#8a8a8a'>\u2605</font>" : "");   // ya fichado
-                    if (marca == 'H')   // hija: sangría fija y un punto menos, legible
-                        nick = "&nbsp;&nbsp;&nbsp;<span style='font-size:0.92em'>" + nick + "</span>";
-                    l.setBorder(null);   // renderer compartido: se fija SIEMPRE
-                    String[] alt = marca == 'H' ? null : mejorAlt(p.id());
-                    if (alt != null) {
-                        eloTxt = eloTxt + " <font color='#8a8a8a'>\u21A5" + alt[1] + "</font>";
-                        tip = (tip == null ? "" : tip + " \u2014 ")
-                                + t("Su cuenta ", "Their account ") + alt[0]
-                                + t(" está a ", " sits at ") + alt[1]
-                                + t(" (clic para ver su perfil)", " (click to view their profile)");
-                    }
-                    int w = Math.max(150, list.getWidth() - 22);   // el HTML no refluye: ancho explícito
-                    l.setText("<html><table width='" + w + "' cellpadding='0' cellspacing='0'><tr>"
-                            + "<td width='24' align='right'>" + col1 + "</td>"
-                            + "<td width='14' align='center'>" + punto + "</td>"
-                            + "<td width='20' align='center'>" + (modoPais() ? "" : banderaHtml(paisDe(p.id()))) + "</td>"   // en «Top país» todas serían la misma: solo en el selector
-                            + "<td nowrap align='left'>" + nick + "</td>"
-                            + "<td width='26' align='center'>" + (st != null
-                                    ? "<font color='#9146FF'><b>TW</b></font>" : "") + "</td>"
-                            + (formaVisible ? "<td width='72' align='center'>" + celdaForma(p.id()) + "</td>" : "")
-                            + "<td width='" + anchoCeldaElo(w0) + "' align='right'>" + eloTxt + "</td></tr>"
-                            + "</table>"
-                            // Las sublíneas van FUERA de la tabla, como bloques propios: un colspan dentro
-                            // cambia el reparto de anchos de las columnas y descoloca puesto/punto/nick
-                            + (vivo
-                                ? "<div style='margin-left:38px'>" + subtextoVivo(p.id(), fmSub, w0 - 44) + "</div>"
-                                : "")
-                            + (notaDe(p.id()) != null
-                                ? "<div style='margin-left:38px'><font color='#b08d57'>\u270E "
-                                  + escapeHtml(truncarPx(notaDe(p.id()), fmSub, w0 - 60)) + "</font></div>"
-                                : "")
-                            + "</html>");
-                }
-                return l;
-            }
-        });
-        playersList.addMouseListener(new MouseAdapter() {
-            @Override public void mousePressed(MouseEvent e)  {
-                ocultarHoverCard(true);
-                if (!e.isPopupTrigger() && e.getButton() == MouseEvent.BUTTON1) {
-                    int idxH = playersList.locationToIndex(e.getPoint());
-                    if (idxH >= 0 && playersList.getCellBounds(idxH, idxH).contains(e.getPoint())) {
-                        String bajo = textoBajo(idxH, e.getPoint());   // lo que hay pintado bajo el ratón, de verdad
-                        Player ph = playersModel.get(idxH);
-                        if (invitado != null) {   // tocar una fila = el sujeto es ahora este; el invitado se despide
-                            invitado = null;
-                            SUJETOS.clear();
-                            refrescarSujetos(List.of(), false);
-                            actualizarTextoBuscar();
-                        }
-                        if (bajo.contains("\u270E") || sobreNota(idxH, e.getPoint())) { pedirNota(ph.id(), ph.name()); return; }
-                        int wL = playersList.getWidth() - 22, eloW = anchoCeldaElo(wL);
-                        int formaW = formaVisible ? 72 : 0;
-                        boolean zonaTwFormula = e.getX() >= wL - eloW - formaW - 40 && e.getX() <= wL - eloW - formaW + 8;   // respaldo (la columna de forma desplaza el badge)
-                        if (bajo.contains("TW") || (bajo.isEmpty() && zonaTwFormula)) {
-                            String[] stT = twitchLive.get(ph.id());
-                            if (stT != null) { abrirUrl("https://twitch.tv/" + stT[0]); return; }
-                        }
-                        if (bajo.contains("\u21A5") && marcaFila.getOrDefault(ph.id(), ' ') != 'H') {
-                            String[] altA = mejorAlt(ph.id());
-                            if (altA != null && altA.length > 2) {
-                                try { abrirPerfil(Long.parseLong(altA[2]), altA[0]); return; }
-                                catch (NumberFormatException ignored) { }
-                            }
-                        }
-                        if (twitchLive.containsKey(ph.id()) && e.getX() > wL / 2)   // rastro: si un TW no reacciona, el log dice qué vio
-                            log("clic sin acción en zona derecha (x=" + e.getX() + " de " + wL + ", bajo='" + bajo.trim() + "')");
-                    }
-                }
-                if (!e.isPopupTrigger() && e.getButton() == MouseEvent.BUTTON1 && e.getX() < 26) {
-                    int idx = playersList.locationToIndex(e.getPoint());
-                    if (idx >= 0 && playersList.getCellBounds(idx, idx).contains(e.getPoint())) {
-                        Player p = playersModel.get(idx);
-                        char m = marcaFila.getOrDefault(p.id(), ' ');
-                        if (m == 'P' || m == 'E') {
-                            if (!vinculosExpandidos.remove(p.vinculo())) vinculosExpandidos.add(p.vinculo());
-                            aplicarFiltroGrupo();
-                            return;
-                        }
-                    }
-                }
-                maybePopup(e);
-            }
-            @Override public void mouseReleased(MouseEvent e) { maybePopup(e); }
-            void maybePopup(MouseEvent e) {
-                if (!e.isPopupTrigger()) return;
-                int idx = playersList.locationToIndex(e.getPoint());
-                if (idx < 0) return;
-                Rectangle celda = playersList.getCellBounds(idx, idx);
-                if (celda == null || !celda.contains(e.getPoint())) return;   // clic fuera de los nicks
-                if (!playersList.isSelectedIndex(idx)) playersList.setSelectedIndex(idx);   // si ya está en la selección, se conserva la múltiple
-                Player p = playersModel.get(idx);
-                menuContextualWatchlist(p, e);
-            }
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 1 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
-                    int idx1 = playersList.locationToIndex(e.getPoint());
-                    boolean sobreFila = idx1 >= 0 && playersList.getCellBounds(idx1, idx1).contains(e.getPoint());
-                    if (!sobreFila) { playersList.clearSelection(); actualizarTextoBuscar(); }   // como el Explorador: clic en el vacío = sin selección
-                    return;
-                }
-                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
-                    int idx = playersList.locationToIndex(e.getPoint());
-                    if (idx >= 0) {
-                        Player p = playersModel.get(idx);
-                        String bajo = textoBajo(idx, e.getPoint());
-                        if (bajo.contains("TW") || bajo.contains("\u21A5") || bajo.contains("\u270E") || sobreNota(idx, e.getPoint())) return;   // el clic simple ya actuó
-                        playersList.setSelectedIndex(idx);   // doble clic = sus partidas, SIEMPRE (espectar vive en el clic derecho)
-                        fetchMatches(fetchBtn);
-                    }
-                }
-            }
-        });
-        delBtn.addActionListener(e -> {
-            List<Player> sel = playersList.getSelectedValuesList();
-            if (sel.isEmpty()) return;
-            StringBuilder nombres = new StringBuilder();
-            for (Player p : sel) nombres.append(nombres.isEmpty() ? "" : ", ").append(p.name());
-            int r = JOptionPane.showConfirmDialog(this,
-                    t("Se quitará de la Watchlist a: ", "This will remove from the Watchlist: ") + nombres
-                            + t(". ¿Continuar?", ". Continue?"),
-                    t("Quitar jugador", "Remove player"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (r != JOptionPane.YES_OPTION) return;
-            for (Player p : sel) {
-                playersModel.removeElement(p);
-                todosJugadores.removeIf(x -> x.id() == p.id());
-            }
-            savePlayers();
-            rebuildGrupos();
-            applyFilters();
-        });
-        JPanel row2 = new JPanel(new GridLayout(1, 1, 4, 0));
-        row2.add(delBtn);   // «Quitar filtro» sobra: la selección se suelta clicando en el fondo
-        JPanel leftButtons = new JPanel(new GridLayout(1, 1, 0, 4));
-        leftButtons.add(row2);   // «Buscar/Añadir jugador…» viven ahora en el buscador de arriba
-        watchPanel = new JPanel(new BorderLayout(0, 6));
-        JPanel left = watchPanel;
-        tituloWatch = BorderFactory.createTitledBorder("Watchlist");
-        tituloWatch.setTitleFont(tituloWatch.getTitleFont().deriveFont(Font.BOLD, 13f));
-        left.setBorder(tituloWatch);
-        watchPista1 = new JLabel(t("Amigos, pros o gente del clan.", "Friends, pros or clan mates."));
-        watchPista2 = new JLabel(t("Selecciona para filtrar; sin selección, todos.", "Select to filter; none selected = everyone."));
-        watchPista3 = new JLabel("\u21A5 " + t("= cuenta vinculada con más ELO", "= linked account with higher ELO"));
-        watchPista1.setFont(watchPista1.getFont().deriveFont(Font.PLAIN, 11f));
-        watchPista2.setFont(watchPista2.getFont().deriveFont(Font.PLAIN, 11f));
-        watchPista3.setFont(watchPista3.getFont().deriveFont(Font.PLAIN, 11f));
-        JPanel watchPistas = new JPanel();
-        watchPistas.setLayout(new BoxLayout(watchPistas, BoxLayout.Y_AXIS));
-        watchPistas.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
-        watchPista1.setVisible(false);   // la explicación larga vive en el «?»
-        watchPista3.setVisible(false);
-        watchPista2.setText(t("Selecciona para filtrar \u00B7 \u21A5 = cuenta más fuerte", "Select to filter \u00B7 \u21A5 = stronger account"));
-        JButton ayudaBtn = new JButton("?");
-        ayudaBtn.setFocusable(false);
-        ayudaBtn.setMargin(new Insets(0, 5, 0, 5));
-        ayudaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        ayudaBtn.setToolTipText("<html>" + t("<b>Tu watchlist</b>: amigos, pros o gente del clan.<br>Selecciona jugadores para buscar solo sus partidas; sin selección, todo el grupo.<br>\u25CF rojo = jugando ahora (clic derecho \u2192 Espectar) \u00B7 TW = en Twitch (clic = su canal)<br>\u21A5 = cuenta vinculada con más ELO (clic = su perfil) \u00B7 \u270E = tiene nota (clic = editar)<br>Escribe un nick arriba y pulsa Enter para ver las partidas de cualquiera.<br>Clic en un jugador = seleccionarlo; clic en el hueco de la lista = quitar la selección; Ctrl+clic = varios.",
-                "<b>Your watchlist</b>: friends, pros or clan mates.<br>Select players to search only their games; with none selected, the whole group.<br>Red \u25CF = playing now (right-click \u2192 Spectate) \u00B7 TW = on Twitch (click = channel)<br>\u21A5 = linked account with higher ELO (click = profile) \u00B7 \u270E = has a note (click = edit)<br>Type a nick above and press Enter to see anyone's games.<br>Click a player to select; click the empty space to deselect; Ctrl+click for several.") + "</html>");
-        ayudaBtn.addActionListener(e -> {
-            JToolTip tt = ayudaBtn.createToolTip();
-            tt.setTipText(ayudaBtn.getToolTipText());
-            JPopupMenu pm = new JPopupMenu();
-            pm.add(tt);
-            pm.show(ayudaBtn, 0, ayudaBtn.getHeight());
-        });
-        resumenWatch = new JLabel();   // se crea aquí: la línea del «?» lo necesita ya
-        resumenWatch.setFont(resumenWatch.getFont().deriveFont(Font.PLAIN, 11f));
-        JPanel pistaFila = new JPanel(new BorderLayout(6, 0));
-        pistaFila.setOpaque(false);
-        watchPista2.setVisible(false);   // su texto vive en el tooltip del «?»
-        pistaFila.add(resumenWatch, BorderLayout.CENTER);   // «50 jugadores · 4 en directo»
-        pistaFila.add(ayudaBtn, BorderLayout.EAST);
-        pistaFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        watchPistas.add(pistaFila);
-        JPanel grupoFila = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
-        grupoFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        grupoCombo.setToolTipText(t("Agrupa tu Watchlist (Amigos, Pros, Clan…). Se busca y se muestra el grupo activo.",
-                "Group your Watchlist (Friends, Pros, Clan…). The active group is what gets searched and shown."));
-        grupoCombo.setRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                                    boolean isSelected, boolean cellHasFocus) {
-                JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                String s = String.valueOf(value);
-                boolean esNuevo = s.equals(t("+ Nuevo grupo…", "+ New group…"));
-                boolean esTodos = s.equals(t("Todos", "All"));
-                boolean esGestion = s.equals(t("Gestionar grupos…", "Manage groups…"));
-                if (!esNuevo && !esGestion && grupoTieneVivo(esTodos ? null : s)) {
-                    l.setText("<html><font color='#" + colorVivoHex() + "'>\u25CF</font> "
-                            + escapeHtml(s) + "</html>");
-                }
-                return l;
-            }
-        });
-        grupoCombo.addActionListener(e -> onGrupoElegido());
-        grupoCombo.setFont(grupoCombo.getFont().deriveFont(Font.BOLD));
-        grupoFila.add(grupoCombo);
-        soloVivosBtn = new JToggleButton("\u25CF " + t("Jugando", "Playing"));
-        soloVivosBtn.setToolTipText(t(
-                "Detecta partidas EN CURSO de cualquier modo (1v1, TG, lo que sea). Límites: partidas de más de 3 h se consideran colgadas, y las salas personalizadas a veces no aparecen hasta terminar.",
-                "Detects games IN PROGRESS of any mode (1v1, TG, anything). Limits: games over 3 h are treated as hung, and custom lobbies sometimes only show up once finished."));
-        soloVivosBtn.setToolTipText(t("Muestra solo a los que están jugando ahora, dentro del grupo elegido (con «Todos», de toda la lista)",
-                "Show only who is playing right now, within the selected group (with “All”, across your whole list)"));
-        soloVivosBtn.setFocusable(false);
-        soloVivosBtn.addActionListener(e -> {
-            playersList.setFixedCellHeight(0);
-            playersList.setFixedCellHeight(-1);   // invalida el caché de ALTURAS (las sublíneas de vivos)
-            aplicarFiltroGrupo();
-        });
-        String paisGuardado = leerConfig("top_pais", "es");
-        List<PaisItem> ordenPais = new ArrayList<>();
-        for (PaisItem pi : PAISES) if (pi.code().equals(paisGuardado)) ordenPais.add(pi);
-        List<PaisItem> resto = new ArrayList<>();
-        for (PaisItem pi : PAISES) if (!pi.code().equals(paisGuardado)) resto.add(pi);
-        resto.sort(Comparator.comparing(PaisItem::nombre, String.CASE_INSENSITIVE_ORDER));
-        ordenPais.addAll(resto);
-        catalogoOrdenado = ordenPais;
-        paisActual = ordenPais.get(0);   // el favorito guardado
-        buscaPais = new javax.swing.JTextField(6);
-        buscaPais.putClientProperty("JTextField.placeholderText", t("Buscar\u2026", "Search\u2026"));
-        buscaPais.setToolTipText(t("Filtra países al teclear: «bul» → Bulgaria; Enter elige el primero",
-                "Filters countries as you type: \u201Cbul\u201D \u2192 Bulgaria; Enter picks the first"));
-        paisCombo = new JComboBox<>(ordenPais.toArray(PaisItem[]::new));
-        paisCombo.setRenderer(new DefaultListCellRenderer() {   // con su bandera
-            @Override public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean sel, boolean foc) {
-                JLabel lab = (JLabel) super.getListCellRendererComponent(l, value, index, sel, foc);
-                if (value instanceof PaisItem pi) { lab.setIcon(iconoBandera(pi.code())); lab.setIconTextGap(6); }
-                return lab;
-            }
-        });
-        paisCombo.setSelectedIndex(0);
-        paisCombo.setMaximumRowCount(14);
-        paisCombo.setToolTipText(t("País del top a mostrar (se recuerda como predeterminado)",
-                "Country whose top to show (remembered as default)"));
-        paisCombo.addActionListener(e -> {
-            if (!rearmandoPais && paisCombo.getSelectedItem() instanceof PaisItem p) fijarPais(p);
-        });
-        instalarFiltroPais();
-        paisCombo.setPrototypeDisplayValue(null);
-        paisCombo.setPreferredSize(new Dimension(150, paisCombo.getPreferredSize().height));   // más compacto: el nombre se ve, no manda
-        buscaPais.setColumns(8);
-        parPais = new JPanel(new BorderLayout(6, 0));
-        parPais.setOpaque(false);
-        parPais.add(new JLabel(t("País:", "Country:")), BorderLayout.WEST);
-        parPais.add(buscaPais, BorderLayout.CENTER);
-        parPais.add(paisCombo, BorderLayout.EAST);
-        parPais.setAlignmentX(Component.LEFT_ALIGNMENT);
-        parPais.setVisible(false);
-        JButton nuevoGrupoBtn = new JButton(t("Crear Grupo", "Create Group"));
-        nuevoGrupoBtn.setToolTipText(t("Crear un grupo nuevo", "Create a new group"));
-        nuevoGrupoBtn.addActionListener(e -> crearGrupoDialog());
-        JButton gestGruposBtn = new JButton(t("Gestionar…", "Manage…"));
-        gestGruposBtn.setToolTipText(t("Renombrar o borrar grupos", "Rename or delete groups"));
-        gestGruposBtn.addActionListener(e -> gestionarGrupos());
-        JButton gruposBtn = new JButton("\u2699");
-        gruposBtn.setFocusable(false);
-        gruposBtn.setMargin(new Insets(1, 7, 1, 7));
-        gruposBtn.putClientProperty("JButton.buttonType", "roundRect");
-        gruposBtn.setToolTipText(t("Grupos: crear, renombrar o borrar", "Groups: create, rename or delete"));
-        gruposBtn.addActionListener(e -> {
-            JPopupMenu pm = new JPopupMenu();
-            JMenuItem crear = new JMenuItem(t("Crear grupo\u2026", "Create group\u2026"));
-            crear.addActionListener(a -> crearGrupoDialog());
-            JMenuItem gest = new JMenuItem(t("Gestionar grupos\u2026", "Manage groups\u2026"));
-            gest.addActionListener(a -> gestionarGrupos());
-            pm.add(crear); pm.add(gest);
-            pm.show(gruposBtn, 0, gruposBtn.getHeight());
-        });
-        grupoFila.add(gruposBtn);
-        campanaBtn = new JToggleButton(iconoVista("campana"));
-        campanaBtn.setFocusable(false); campanaBtn.setMargin(new Insets(2, 5, 2, 5)); campanaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        campanaBtn.addActionListener(e -> alternarCampana());
-        grupoFila.add(campanaBtn);
-        topNCombo = new JComboBox<>(new String[]{ "Top 25", "Top 50", "Top 100" });
-        topNCombo.setToolTipText(t("Cuántos jugadores enseñan Top ladder y Top país", "How many players Top ladder and Top country show"));
-        topNCombo.setSelectedIndex(Math.max(0, Arrays.asList("25", "50", "100").indexOf(leerConfig("top_n", "50"))));
-        topNCombo.addActionListener(e -> { if (rellenandoTopN) return; String n = new String[]{ "25", "50", "100" }[Math.max(0, topNCombo.getSelectedIndex())]; if (n.equals(leerConfig("top_n", "50"))) return; guardarConfig("top_n", n); if (modoTop() && !modoClan()) { topCargado = 0; cargarTopLadder(true); } });
-        topNCombo.setVisible(false);
-        grupoFila.add(topNCombo);
-        addJugBtn = new JButton(t("+ Añadir jugador", "+ Add player"));
-        addJugBtn.setFocusable(false);
-        addJugBtn.setMargin(new Insets(1, 7, 1, 7));
-        addJugBtn.putClientProperty("JButton.buttonType", "roundRect");
-        addJugBtn.setToolTipText(t("Busca un jugador por nick y añádelo a este grupo", "Find a player by nick and add them to this group"));
-        addJugBtn.addActionListener(e -> addPlayerDialog(false, buscaNick != null ? buscaNick.getText().trim() : null));
-        grupoFila.add(addJugBtn);
-        // Fila 3: el chip «● En directo» y el resumen en gris
-        soloVivosBtn.putClientProperty("JButton.buttonType", "roundRect");
-        soloVivosBtn.setFocusable(false);
-        JPanel filtroFila = new JPanel(new BorderLayout(8, 0));
-        filtroFila.setOpaque(false);
-        filtroFila.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
-        formaBtn = new JButton(t("Ver forma", "Recent form"));
-        formaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        formaBtn.setFocusable(false);
-        formaBtn.setToolTipText(tipVerForma());
-        formaBtn.addActionListener(e -> cargarForma(objetivoForma(), ventanaForma, () -> {   // siempre consulta (y suma a lo ya consultado)
-            formaVisible = true; actualizarTextoForma();
-            if (ocultarFormaBtn != null) ocultarFormaBtn.setVisible(true);
-            refrescarCabeceraOrden(); aplicarFiltroGrupo(); playersList.repaint();
-        }));
-        ocultarFormaBtn = new JButton(t("Ocultar forma", "Hide recent form"));
-        ocultarFormaBtn.setFocusable(false);
-        ocultarFormaBtn.setMargin(new Insets(1, 6, 1, 6));
-        ocultarFormaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        ocultarFormaBtn.setToolTipText(tipOcultarForma());
-        ocultarFormaBtn.setVisible(false);
-        ocultarFormaBtn.addActionListener(e -> apagarForma());
-        JComboBox<String> ventanaCb = new JComboBox<>(new String[]{ t("últimas 24 h", "last 24 h"), t("últimos 7 días", "last 7 days") });
-        ventanaCb.setFocusable(false);
-        ventanaCb.setToolTipText(t("Ventana de la forma que consulta «Ver forma»", "Window used by \u201CRecent form\u201D"));
-        ventanaCb.addActionListener(e -> {
-            ventanaForma = ventanaCb.getSelectedIndex() == 1 ? 24 * 7 : 24;
-            if (formaVisible) { refrescarCabeceraOrden(); aplicarFiltroGrupo(); playersList.repaint(); }   // la columna cambia de ventana al instante
-        });
-        JPanel chips = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));   // envuelve a otra línea, nunca se trunca
-        chips.setOpaque(false);
-        chips.add(soloVivosBtn); chips.add(formaBtn); chips.add(ventanaCb); chips.add(ocultarFormaBtn);
-        filtroFila.add(chips, BorderLayout.CENTER);
-        filtroFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        buscaNick = new javax.swing.JTextField();
-        buscaNick.putClientProperty("JTextField.placeholderText",
-                t("\uD83D\uDD0D Buscar jugador por nick  (Enter = ver sus partidas)", "\uD83D\uDD0D Find a player by nick  (Enter = see their games)"));
-        buscaNick.setToolTipText(t("Escribe un nick y pulsa Enter: verás sus partidas sin añadirlo; desde su nombre podrás ficharlo a un grupo.",
-                "Type a nick and press Enter: you'll see their games without adding them; from their name you can add them to a group."));
-        JPopupMenu nickPopup = new JPopupMenu(); nickPopup.setFocusable(false);
-        javax.swing.Timer nickDebounce = new javax.swing.Timer(450, ev -> {
-            String q = buscaNick.getText().trim();
-            nickPopup.setVisible(false); nickPopup.removeAll();
-            if (q.length() < 2) return;
-            new Thread(() -> {
-                List<String[]> res = sugerirPerfiles(q);
-                SwingUtilities.invokeLater(() -> {
-                    if (!q.equals(buscaNick.getText().trim())) return;
-                    nickPopup.removeAll();
-                    int n = 0;
-                    for (String[] r : res) {
-                        JMenuItem it = new JMenuItem(r[2]);
-                        String nombre = r[1];
-                        long pidSug = Long.parseLong(r[0]);
-                        it.addActionListener(a -> { nickPopup.setVisible(false); buscaNick.setText(nombre); jugadorElegido(pidSug, nombre); });   // el elegido es ESTE jugador (por id): nada de volver a buscar por nombre
-                        nickPopup.add(it);
-                        if (++n >= 8) break;
-                    }
-                    if (n > 0 && buscaNick.isShowing() && buscaNick.hasFocus()) nickPopup.show(buscaNick, 0, buscaNick.getHeight());
-                });
-            }, "nick-sugerir").start();
-        });
-        nickDebounce.setRepeats(false);
-        buscaNick.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
-        });
-        buscaNick.addKeyListener(new KeyAdapter() { @Override public void keyPressed(KeyEvent e) { if (e.getKeyCode() == KeyEvent.VK_ESCAPE) nickPopup.setVisible(false); } });
-        buscaNick.addActionListener(e -> {
-            nickPopup.setVisible(false);
-            String q = buscaNick.getText().trim();
-            if (!q.isEmpty()) { addPlayerDialog(true, q); buscaNick.setText(""); }
-        });
-        JPanel buscaFila = new JPanel(new BorderLayout());
-        buscaFila.setBorder(BorderFactory.createEmptyBorder(2, 0, 4, 0));
-        buscaFila.add(buscaNick, BorderLayout.CENTER);
-        JPanel norteWatch = new JPanel();
-        norteWatchRef = norteWatch;
-        norteWatch.setLayout(new BoxLayout(norteWatch, BoxLayout.Y_AXIS));
-        norteWatch.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
-        buscaFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        norteWatch.add(buscaFila);      // 1. el buscador
-        norteWatch.add(grupoFila);      // 2. la vista (grupo · ⚙ · + Añadir jugador)
-        norteWatch.add(parPais);        //    el país, en su propia línea, solo en Top país
-        clanField = new JTextField(10);
-        clanField.putClientProperty("JTextField.placeholderText", t("Tag del clan (R1, DK, TdB…)", "Clan tag (R1, DK, TdB…)"));
-        clanField.setText(leerConfig("clan_tag", ""));
-        clanPopup = new JPopupMenu(); clanPopup.setFocusable(false);
-        clanField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() {
-                clanPopup.setVisible(false); clanPopup.removeAll();
-                if (clanField.getText().trim().length() < 1) return;
-                if (clanes.isEmpty()) { Thread th = new Thread(() -> ladderAsegurar(false), "clanes"); th.setDaemon(true); th.start(); return; }
-                for (Map.Entry<String, Integer> en : sugerirClanes(clanField.getText())) {
-                    JMenuItem it = new JMenuItem(en.getKey() + "  (" + en.getValue() + ")");
-                    it.addActionListener(a -> { clanField.setText(en.getKey()); clanPopup.setVisible(false); cargarTopClan(); });
-                    clanPopup.add(it);
-                }
-                if (clanPopup.getComponentCount() > 0) clanPopup.show(clanField, 0, clanField.getHeight());
-            }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        clanField.addActionListener(e -> { clanPopup.setVisible(false); cargarTopClan(); });
-        parClan = new JPanel(new BorderLayout(6, 0));
-        parClan.setOpaque(false);
-        parClan.add(new JLabel(t("Clan:", "Clan:")), BorderLayout.WEST);
-        parClan.add(clanField, BorderLayout.CENTER);
-        clanesGuardadosCombo = new JComboBox<>();
-        clanesGuardadosCombo.setToolTipText(t("Tus clanes guardados: elige uno para cargar su top", "Your saved clans: pick one to load its top"));
-        clanesGuardadosCombo.addActionListener(e -> { if (rellenandoClanes) return; Object v = clanesGuardadosCombo.getSelectedItem(); if (v instanceof String tag && !tag.isBlank() && !tag.startsWith("(")) { clanField.setText(tag); clanPopup.setVisible(false); cargarTopClan(); } });
-        clanEstrella = new JButton(t("Guardar clan", "Save clan"));
-        clanEstrella.setFocusable(false); clanEstrella.setMargin(new Insets(1, 8, 1, 8));
-        clanEstrella.addActionListener(e -> {
-            String tag = clanField.getText().trim();
-            if (tag.isEmpty()) return;
-            List<String> l = clanesGuardados();
-            if (l.removeIf(x -> x.equalsIgnoreCase(tag))) status.setText(t("Clan quitado de guardados: ", "Clan removed from saved: ") + tag); else { l.add(tag); status.setText(t("Clan guardado: ", "Clan saved: ") + tag); }
-            guardarConfig("clanes_guardados", String.join(",", l));
-            refrescarClanesGuardados();
-        });
-        parClan.add(clanEstrella, BorderLayout.EAST);
-        parClanGuardados = new JPanel(new BorderLayout(6, 0));
-        parClanGuardados.setOpaque(false);
-        parClanGuardados.add(new JLabel(t("Clanes guardados:", "Saved clans:")), BorderLayout.WEST);
-        parClanGuardados.add(clanesGuardadosCombo, BorderLayout.CENTER);
-        parClanGuardados.setAlignmentX(Component.LEFT_ALIGNMENT);
-        parClanGuardados.setVisible(false);
-        clanField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { refrescarClanesGuardados(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        refrescarClanesGuardados();
-        parClan.setAlignmentX(Component.LEFT_ALIGNMENT);
-        parClan.setVisible(false);
-        norteWatch.add(parClan);        //    el clan, en su propia línea, solo en Top clan
-        norteWatch.add(parClanGuardados);   //    y debajo, los guardados
-        norteWatch.add(filtroFila);     // 3. chip En directo + resumen
-        norteWatch.add(watchPistas);    //    una línea de pista + «?»
-        left.add(norteWatch, BorderLayout.NORTH);
-        JLabel cabLabel = new JLabel();
-        cabLabel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0,
-                UIManager.getColor("Component.borderColor") != null
-                        ? UIManager.getColor("Component.borderColor") : Color.GRAY));
-        cabLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        cabLabel.setToolTipText(t("Clic en Nick o en ELO para ordenar por esa columna",
-                "Click Nick or ELO to sort by that column"));
-        this.cabLabel = cabLabel;
-        cabLabel.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                int wC = cabLabel.getWidth();
-                String actual = leerConfig("orden_watch", "elo");
-                String nuevo = e.getX() >= wC - 60 ? "elo"
-                        : (formaVisible && e.getX() >= wC - 60 - 72 - 30) ? ("forma".equals(actual) ? "forma_asc" : "forma")   // 2.º clic: invierte
-                        : "alfa";
-                guardarConfig("orden_watch", nuevo);
-                aplicarFiltroGrupo();
-                refrescarCabeceraOrden();
-            }
-        });
-        JPanel cabecera = new JPanel(new BorderLayout());
-        cabecera.add(cabLabel, BorderLayout.CENTER);
-        hoverTimer = new javax.swing.Timer(600, ev -> {
-            if (hoverPid != 0 && hoverPantalla != null && hoverProcede()) {
-                int idx = playersList.locationToIndex(
-                        new Point(playersList.getLocationOnScreen().x + 5,
-                                  hoverPantalla.y - playersList.getLocationOnScreen().y >= 0
-                                          ? hoverPantalla.y - playersList.getLocationOnScreen().y : 0));
-                // el pid ya quedó fijado al mover: mostramos directamente
-                for (int i = 0; i < playersModel.size(); i++)
-                    if (playersModel.get(i).id() == hoverPid) {
-                        mostrarPerfilCard(hoverPid, playersModel.get(i).name(), hoverPantalla);
-                        return;
-                    }
-            }
-        });
-        hoverTimer.setRepeats(false);
-        playersList.addMouseMotionListener(new MouseAdapter() {
-            @Override public void mouseMoved(MouseEvent e) {
-                int idx = playersList.locationToIndex(e.getPoint());
-                long pid = 0;
-                if (idx >= 0 && playersList.getCellBounds(idx, idx).contains(e.getPoint()))
-                    pid = playersModel.get(idx).id();
-                if (pid != 0 && enZonaForma(e.getPoint())) pid = 0;   // sobre la celda Forma no sale la tarjeta: sale su tooltip
-                String bajoM = pid != 0 ? textoBajo(idx, e.getPoint()) : "";   // mano sobre TW, \u21A5 y \u270E
-                boolean clicable = bajoM.contains("TW") || bajoM.contains("\u21A5") || bajoM.contains("\u270E")
-                        || (pid != 0 && sobreNota(idx, e.getPoint()));
-                playersList.setCursor(Cursor.getPredefinedCursor(clicable ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
-                if (pid != hoverPid) {
-                    if (hoverCard != null) ocultarHoverCard();
-                    hoverTimer.stop();
-                    hoverPid = pid;
-                    if (false && pid != 0) {   // tarjeta flotante desactivada: el ELO ya está en la lista y el perfil a un doble clic (y cada tarjeta era una llamada a la API)
-                        hoverPantalla = e.getLocationOnScreen();
-                        hoverTimer.restart();
-                    }
-                }
-            }
-        });
-        playersList.addMouseListener(new MouseAdapter() {
-            @Override public void mouseExited(MouseEvent e) { ocultarHoverCard(); }
-        });
-        ToolTipManager.sharedInstance().registerComponent(playersList);
-        playersList.addComponentListener(new java.awt.event.ComponentAdapter() {
-            @Override public void componentResized(java.awt.event.ComponentEvent e) { refrescarCabeceraOrden(); }
-        });
-        JPanel listWrap = new JPanel(new BorderLayout());
-
-        JScrollPane listScroll = new JScrollPane(playersList);
-        listScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        listScroll.getViewport().addMouseListener(new MouseAdapter() {   // el hueco bajo la última fila es del visor
-            @Override public void mousePressed(MouseEvent e) {
-                if (SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
-                    playersList.clearSelection();
-                    actualizarTextoBuscar();
-                }
-            }
-        });
-        listScroll.getViewport().addChangeListener(e -> {
-            ocultarHoverCard();
-            int vw = listScroll.getViewport().getWidth();
-            if (vw > 0 && playersList.getFixedCellWidth() != vw)
-                playersList.setFixedCellWidth(vw);   // orden, no sugerencia: invalida el caché de medidas
-            refrescarCabeceraOrden();
-        });
-        sujetosPanel = new JPanel();
-        sujetosPanel.setLayout(new BoxLayout(sujetosPanel, BoxLayout.Y_AXIS));
-        sujetosPanel.setVisible(false);
-        JPanel norteLista = new JPanel(new BorderLayout());
-        norteLista.add(sujetosPanel, BorderLayout.NORTH);
-        norteLista.add(cabecera, BorderLayout.SOUTH);   // la cabecera, pegada a su lista
-        listWrap.add(norteLista, BorderLayout.NORTH);
-        listWrap.add(listScroll, BorderLayout.CENTER);
-        left.add(listWrap, BorderLayout.CENTER);
-        refrescarCabeceraOrden();
-        left.add(leftButtons, BorderLayout.SOUTH);
-        left.setPreferredSize(new Dimension(280, 0));
+        JPanel left = construirWatchlist();
 
         // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
         fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
@@ -3448,6 +2866,596 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 iconos.add(iconoCuadrado(logo, s));
             setIconImages(iconos);
         }
+    }
+
+    // El panel izquierdo: la Watchlist (buscador, grupos, pais/clan, la lista de
+    // jugadores seguidos con su ELO y su ~en vivo~, y los botones para quitarlos).
+    // Devuelve el panel para que el constructor lo pase al split principal.
+    private JPanel construirWatchlist() {
+        // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
+        playersList.setVisibleRowCount(12);
+        playersList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) { applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); if (perfil != null) perfil.sincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
+        });
+        delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
+
+        playersList.addMouseListener(new MouseAdapter() {   // botón central sobre un jugador: su perfil en pestaña nueva
+            @Override public void mousePressed(MouseEvent e) {
+                if (!SwingUtilities.isMiddleMouseButton(e)) return;
+                int idx = playersList.locationToIndex(e.getPoint());
+                if (idx < 0 || !playersList.getCellBounds(idx, idx).contains(e.getPoint())) return;
+                Player p = playersModel.get(idx);
+                abrirPerfilEnPestana(p.id(), nombreVisible(p.id(), p.name()));
+                e.consume();
+            }
+        });
+        playersList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                                    boolean isSelected, boolean cellHasFocus) {
+                JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Player p) {
+                    char marca = marcaFila.getOrDefault(p.id(), ' ');
+                    boolean vivo = VIVO.jugando(p.id())
+                            || (marca != 'H' && vivoFamilia.getOrDefault(p.id(), false));
+                    Integer elo = eloWatch.get(p.id());
+                    Integer rank = modoTop() ? rankTop.get(p.id()) : null;
+                    String punto = vivo ? "<font color='#" + colorVivoHex() + "'>\u25CF</font>" : "";
+                    String col1 = rank != null ? "<font color='gray'>" + rank + ".</font>"
+                            : marca == 'P' ? "\u25B8" : marca == 'E' ? "\u25BE" : "";
+                    String eloTxt = (elo != null && mostrarEloWatch) ? String.valueOf(elo) : "";
+                    int w0 = Math.max(150, list.getWidth() - 22);
+                    FontMetrics fmSub = l.getFontMetrics(l.getFont());   // para truncar sublíneas en píxeles reales
+                    int maxChars = Math.max(10, (w0 - 76 - anchoCeldaElo(w0) - (formaVisible ? 72 : 0)) / 7);
+                    String nombreVis = nombreVisible(p.id(), p.name());
+                    String tip = ALIASES.containsKey(p.id())
+                            ? t("Nick real: ", "Real nick: ") + p.name() : null;
+                    String notaP = notaDe(p.id());
+                    if (notaP != null) tip = (tip == null ? "" : tip + " \u2014 ") + t("Nota: ", "Note: ") + notaP + t(" (clic en \u270E para editar)", " (click \u270E to edit)");
+
+
+                    if (nombreVis.length() > maxChars) {
+                        nombreVis = nombreVis.substring(0, maxChars - 1) + "\u2026";
+                        tip = p.name();
+                    }
+                    String[] st = twitchLive.get(p.id());   // solo para pintar el badge: sin tooltip del título (tapaba la tarjeta)
+                    l.setToolTipText(tip);   // ni «jugando ahora» ni el título del stream: el punto, la sublínea y Directos ya lo cuentan
+                    Match enCurso = vivo ? VIVO.partida(p.id()) : null;   // una sola lectura: el socket puede soltarla entre dos
+                    String mapaVivo = enCurso != null && enCurso.map != null ? enCurso.map : null;
+                    if (mapaVivo != null) {   // el mapa cabe en lo que sobra tras el nick; si no cabe, se recorta con «…» y, si ni siquiera hay sitio, no se pinta (el ELO nunca se tapa)
+                        int sitio = maxChars - nombreVis.length() - 3;
+                        if (sitio < 6) mapaVivo = null;
+                        else if (mapaVivo.length() > sitio) mapaVivo = mapaVivo.substring(0, sitio - 1) + "\u2026";
+                    }
+                    String nick = (vivo ? "<font color='" + (temaOscuroActivo ? "#ffd56a" : "#b06a00") + "'>" + escapeHtml(nombreVis) + "</font>" + (mapaVivo != null ? " <font color='#8a8a8a'>\u00B7</font> <font color='" + (temaOscuroActivo ? "#ffd56a" : "#b06a00") + "'>" + escapeHtml(mapaVivo) + "</font>" : "") : escapeHtml(nombreVis))   // en partida: nick en ámbar y el mapa al lado
+                            + (notaDe(p.id()) != null ? " <font color='#8a8a8a'>\u270E</font>" : "")
+                            + (modoTop() && containsPlayerId(p.id()) ? " <font color='#8a8a8a'>\u2605</font>" : "");   // ya fichado
+                    if (marca == 'H')   // hija: sangría fija y un punto menos, legible
+                        nick = "&nbsp;&nbsp;&nbsp;<span style='font-size:0.92em'>" + nick + "</span>";
+                    l.setBorder(null);   // renderer compartido: se fija SIEMPRE
+                    String[] alt = marca == 'H' ? null : mejorAlt(p.id());
+                    if (alt != null) {
+                        eloTxt = eloTxt + " <font color='#8a8a8a'>\u21A5" + alt[1] + "</font>";
+                        tip = (tip == null ? "" : tip + " \u2014 ")
+                                + t("Su cuenta ", "Their account ") + alt[0]
+                                + t(" está a ", " sits at ") + alt[1]
+                                + t(" (clic para ver su perfil)", " (click to view their profile)");
+                    }
+                    int w = Math.max(150, list.getWidth() - 22);   // el HTML no refluye: ancho explícito
+                    l.setText("<html><table width='" + w + "' cellpadding='0' cellspacing='0'><tr>"
+                            + "<td width='24' align='right'>" + col1 + "</td>"
+                            + "<td width='14' align='center'>" + punto + "</td>"
+                            + "<td width='20' align='center'>" + (modoPais() ? "" : banderaHtml(paisDe(p.id()))) + "</td>"   // en «Top país» todas serían la misma: solo en el selector
+                            + "<td nowrap align='left'>" + nick + "</td>"
+                            + "<td width='26' align='center'>" + (st != null
+                                    ? "<font color='#9146FF'><b>TW</b></font>" : "") + "</td>"
+                            + (formaVisible ? "<td width='72' align='center'>" + celdaForma(p.id()) + "</td>" : "")
+                            + "<td width='" + anchoCeldaElo(w0) + "' align='right'>" + eloTxt + "</td></tr>"
+                            + "</table>"
+                            // Las sublíneas van FUERA de la tabla, como bloques propios: un colspan dentro
+                            // cambia el reparto de anchos de las columnas y descoloca puesto/punto/nick
+                            + (vivo
+                                ? "<div style='margin-left:38px'>" + subtextoVivo(p.id(), fmSub, w0 - 44) + "</div>"
+                                : "")
+                            + (notaDe(p.id()) != null
+                                ? "<div style='margin-left:38px'><font color='#b08d57'>\u270E "
+                                  + escapeHtml(truncarPx(notaDe(p.id()), fmSub, w0 - 60)) + "</font></div>"
+                                : "")
+                            + "</html>");
+                }
+                return l;
+            }
+        });
+        playersList.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e)  {
+                ocultarHoverCard(true);
+                if (!e.isPopupTrigger() && e.getButton() == MouseEvent.BUTTON1) {
+                    int idxH = playersList.locationToIndex(e.getPoint());
+                    if (idxH >= 0 && playersList.getCellBounds(idxH, idxH).contains(e.getPoint())) {
+                        String bajo = textoBajo(idxH, e.getPoint());   // lo que hay pintado bajo el ratón, de verdad
+                        Player ph = playersModel.get(idxH);
+                        if (invitado != null) {   // tocar una fila = el sujeto es ahora este; el invitado se despide
+                            invitado = null;
+                            SUJETOS.clear();
+                            refrescarSujetos(List.of(), false);
+                            actualizarTextoBuscar();
+                        }
+                        if (bajo.contains("\u270E") || sobreNota(idxH, e.getPoint())) { pedirNota(ph.id(), ph.name()); return; }
+                        int wL = playersList.getWidth() - 22, eloW = anchoCeldaElo(wL);
+                        int formaW = formaVisible ? 72 : 0;
+                        boolean zonaTwFormula = e.getX() >= wL - eloW - formaW - 40 && e.getX() <= wL - eloW - formaW + 8;   // respaldo (la columna de forma desplaza el badge)
+                        if (bajo.contains("TW") || (bajo.isEmpty() && zonaTwFormula)) {
+                            String[] stT = twitchLive.get(ph.id());
+                            if (stT != null) { abrirUrl("https://twitch.tv/" + stT[0]); return; }
+                        }
+                        if (bajo.contains("\u21A5") && marcaFila.getOrDefault(ph.id(), ' ') != 'H') {
+                            String[] altA = mejorAlt(ph.id());
+                            if (altA != null && altA.length > 2) {
+                                try { abrirPerfil(Long.parseLong(altA[2]), altA[0]); return; }
+                                catch (NumberFormatException ignored) { }
+                            }
+                        }
+                        if (twitchLive.containsKey(ph.id()) && e.getX() > wL / 2)   // rastro: si un TW no reacciona, el log dice qué vio
+                            log("clic sin acción en zona derecha (x=" + e.getX() + " de " + wL + ", bajo='" + bajo.trim() + "')");
+                    }
+                }
+                if (!e.isPopupTrigger() && e.getButton() == MouseEvent.BUTTON1 && e.getX() < 26) {
+                    int idx = playersList.locationToIndex(e.getPoint());
+                    if (idx >= 0 && playersList.getCellBounds(idx, idx).contains(e.getPoint())) {
+                        Player p = playersModel.get(idx);
+                        char m = marcaFila.getOrDefault(p.id(), ' ');
+                        if (m == 'P' || m == 'E') {
+                            if (!vinculosExpandidos.remove(p.vinculo())) vinculosExpandidos.add(p.vinculo());
+                            aplicarFiltroGrupo();
+                            return;
+                        }
+                    }
+                }
+                maybePopup(e);
+            }
+            @Override public void mouseReleased(MouseEvent e) { maybePopup(e); }
+            void maybePopup(MouseEvent e) {
+                if (!e.isPopupTrigger()) return;
+                int idx = playersList.locationToIndex(e.getPoint());
+                if (idx < 0) return;
+                Rectangle celda = playersList.getCellBounds(idx, idx);
+                if (celda == null || !celda.contains(e.getPoint())) return;   // clic fuera de los nicks
+                if (!playersList.isSelectedIndex(idx)) playersList.setSelectedIndex(idx);   // si ya está en la selección, se conserva la múltiple
+                Player p = playersModel.get(idx);
+                menuContextualWatchlist(p, e);
+            }
+            @Override public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() == 1 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
+                    int idx1 = playersList.locationToIndex(e.getPoint());
+                    boolean sobreFila = idx1 >= 0 && playersList.getCellBounds(idx1, idx1).contains(e.getPoint());
+                    if (!sobreFila) { playersList.clearSelection(); actualizarTextoBuscar(); }   // como el Explorador: clic en el vacío = sin selección
+                    return;
+                }
+                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
+                    int idx = playersList.locationToIndex(e.getPoint());
+                    if (idx >= 0) {
+                        Player p = playersModel.get(idx);
+                        String bajo = textoBajo(idx, e.getPoint());
+                        if (bajo.contains("TW") || bajo.contains("\u21A5") || bajo.contains("\u270E") || sobreNota(idx, e.getPoint())) return;   // el clic simple ya actuó
+                        playersList.setSelectedIndex(idx);   // doble clic = sus partidas, SIEMPRE (espectar vive en el clic derecho)
+                        fetchMatches(fetchBtn);
+                    }
+                }
+            }
+        });
+        delBtn.addActionListener(e -> {
+            List<Player> sel = playersList.getSelectedValuesList();
+            if (sel.isEmpty()) return;
+            StringBuilder nombres = new StringBuilder();
+            for (Player p : sel) nombres.append(nombres.isEmpty() ? "" : ", ").append(p.name());
+            int r = JOptionPane.showConfirmDialog(this,
+                    t("Se quitará de la Watchlist a: ", "This will remove from the Watchlist: ") + nombres
+                            + t(". ¿Continuar?", ". Continue?"),
+                    t("Quitar jugador", "Remove player"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (r != JOptionPane.YES_OPTION) return;
+            for (Player p : sel) {
+                playersModel.removeElement(p);
+                todosJugadores.removeIf(x -> x.id() == p.id());
+            }
+            savePlayers();
+            rebuildGrupos();
+            applyFilters();
+        });
+        JPanel row2 = new JPanel(new GridLayout(1, 1, 4, 0));
+        row2.add(delBtn);   // «Quitar filtro» sobra: la selección se suelta clicando en el fondo
+        JPanel leftButtons = new JPanel(new GridLayout(1, 1, 0, 4));
+        leftButtons.add(row2);   // «Buscar/Añadir jugador…» viven ahora en el buscador de arriba
+        watchPanel = new JPanel(new BorderLayout(0, 6));
+        JPanel left = watchPanel;
+        tituloWatch = BorderFactory.createTitledBorder("Watchlist");
+        tituloWatch.setTitleFont(tituloWatch.getTitleFont().deriveFont(Font.BOLD, 13f));
+        left.setBorder(tituloWatch);
+        watchPista1 = new JLabel(t("Amigos, pros o gente del clan.", "Friends, pros or clan mates."));
+        watchPista2 = new JLabel(t("Selecciona para filtrar; sin selección, todos.", "Select to filter; none selected = everyone."));
+        watchPista3 = new JLabel("\u21A5 " + t("= cuenta vinculada con más ELO", "= linked account with higher ELO"));
+        watchPista1.setFont(watchPista1.getFont().deriveFont(Font.PLAIN, 11f));
+        watchPista2.setFont(watchPista2.getFont().deriveFont(Font.PLAIN, 11f));
+        watchPista3.setFont(watchPista3.getFont().deriveFont(Font.PLAIN, 11f));
+        JPanel watchPistas = new JPanel();
+        watchPistas.setLayout(new BoxLayout(watchPistas, BoxLayout.Y_AXIS));
+        watchPistas.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
+        watchPista1.setVisible(false);   // la explicación larga vive en el «?»
+        watchPista3.setVisible(false);
+        watchPista2.setText(t("Selecciona para filtrar \u00B7 \u21A5 = cuenta más fuerte", "Select to filter \u00B7 \u21A5 = stronger account"));
+        JButton ayudaBtn = new JButton("?");
+        ayudaBtn.setFocusable(false);
+        ayudaBtn.setMargin(new Insets(0, 5, 0, 5));
+        ayudaBtn.putClientProperty("JButton.buttonType", "roundRect");
+        ayudaBtn.setToolTipText("<html>" + t("<b>Tu watchlist</b>: amigos, pros o gente del clan.<br>Selecciona jugadores para buscar solo sus partidas; sin selección, todo el grupo.<br>\u25CF rojo = jugando ahora (clic derecho \u2192 Espectar) \u00B7 TW = en Twitch (clic = su canal)<br>\u21A5 = cuenta vinculada con más ELO (clic = su perfil) \u00B7 \u270E = tiene nota (clic = editar)<br>Escribe un nick arriba y pulsa Enter para ver las partidas de cualquiera.<br>Clic en un jugador = seleccionarlo; clic en el hueco de la lista = quitar la selección; Ctrl+clic = varios.",
+                "<b>Your watchlist</b>: friends, pros or clan mates.<br>Select players to search only their games; with none selected, the whole group.<br>Red \u25CF = playing now (right-click \u2192 Spectate) \u00B7 TW = on Twitch (click = channel)<br>\u21A5 = linked account with higher ELO (click = profile) \u00B7 \u270E = has a note (click = edit)<br>Type a nick above and press Enter to see anyone's games.<br>Click a player to select; click the empty space to deselect; Ctrl+click for several.") + "</html>");
+        ayudaBtn.addActionListener(e -> {
+            JToolTip tt = ayudaBtn.createToolTip();
+            tt.setTipText(ayudaBtn.getToolTipText());
+            JPopupMenu pm = new JPopupMenu();
+            pm.add(tt);
+            pm.show(ayudaBtn, 0, ayudaBtn.getHeight());
+        });
+        resumenWatch = new JLabel();   // se crea aquí: la línea del «?» lo necesita ya
+        resumenWatch.setFont(resumenWatch.getFont().deriveFont(Font.PLAIN, 11f));
+        JPanel pistaFila = new JPanel(new BorderLayout(6, 0));
+        pistaFila.setOpaque(false);
+        watchPista2.setVisible(false);   // su texto vive en el tooltip del «?»
+        pistaFila.add(resumenWatch, BorderLayout.CENTER);   // «50 jugadores · 4 en directo»
+        pistaFila.add(ayudaBtn, BorderLayout.EAST);
+        pistaFila.setAlignmentX(Component.LEFT_ALIGNMENT);
+        watchPistas.add(pistaFila);
+        JPanel grupoFila = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
+        grupoFila.setAlignmentX(Component.LEFT_ALIGNMENT);
+        grupoCombo.setToolTipText(t("Agrupa tu Watchlist (Amigos, Pros, Clan…). Se busca y se muestra el grupo activo.",
+                "Group your Watchlist (Friends, Pros, Clan…). The active group is what gets searched and shown."));
+        grupoCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                                    boolean isSelected, boolean cellHasFocus) {
+                JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                String s = String.valueOf(value);
+                boolean esNuevo = s.equals(t("+ Nuevo grupo…", "+ New group…"));
+                boolean esTodos = s.equals(t("Todos", "All"));
+                boolean esGestion = s.equals(t("Gestionar grupos…", "Manage groups…"));
+                if (!esNuevo && !esGestion && grupoTieneVivo(esTodos ? null : s)) {
+                    l.setText("<html><font color='#" + colorVivoHex() + "'>\u25CF</font> "
+                            + escapeHtml(s) + "</html>");
+                }
+                return l;
+            }
+        });
+        grupoCombo.addActionListener(e -> onGrupoElegido());
+        grupoCombo.setFont(grupoCombo.getFont().deriveFont(Font.BOLD));
+        grupoFila.add(grupoCombo);
+        soloVivosBtn = new JToggleButton("\u25CF " + t("Jugando", "Playing"));
+        soloVivosBtn.setToolTipText(t(
+                "Detecta partidas EN CURSO de cualquier modo (1v1, TG, lo que sea). Límites: partidas de más de 3 h se consideran colgadas, y las salas personalizadas a veces no aparecen hasta terminar.",
+                "Detects games IN PROGRESS of any mode (1v1, TG, anything). Limits: games over 3 h are treated as hung, and custom lobbies sometimes only show up once finished."));
+        soloVivosBtn.setToolTipText(t("Muestra solo a los que están jugando ahora, dentro del grupo elegido (con «Todos», de toda la lista)",
+                "Show only who is playing right now, within the selected group (with “All”, across your whole list)"));
+        soloVivosBtn.setFocusable(false);
+        soloVivosBtn.addActionListener(e -> {
+            playersList.setFixedCellHeight(0);
+            playersList.setFixedCellHeight(-1);   // invalida el caché de ALTURAS (las sublíneas de vivos)
+            aplicarFiltroGrupo();
+        });
+        String paisGuardado = leerConfig("top_pais", "es");
+        List<PaisItem> ordenPais = new ArrayList<>();
+        for (PaisItem pi : PAISES) if (pi.code().equals(paisGuardado)) ordenPais.add(pi);
+        List<PaisItem> resto = new ArrayList<>();
+        for (PaisItem pi : PAISES) if (!pi.code().equals(paisGuardado)) resto.add(pi);
+        resto.sort(Comparator.comparing(PaisItem::nombre, String.CASE_INSENSITIVE_ORDER));
+        ordenPais.addAll(resto);
+        catalogoOrdenado = ordenPais;
+        paisActual = ordenPais.get(0);   // el favorito guardado
+        buscaPais = new javax.swing.JTextField(6);
+        buscaPais.putClientProperty("JTextField.placeholderText", t("Buscar\u2026", "Search\u2026"));
+        buscaPais.setToolTipText(t("Filtra países al teclear: «bul» → Bulgaria; Enter elige el primero",
+                "Filters countries as you type: \u201Cbul\u201D \u2192 Bulgaria; Enter picks the first"));
+        paisCombo = new JComboBox<>(ordenPais.toArray(PaisItem[]::new));
+        paisCombo.setRenderer(new DefaultListCellRenderer() {   // con su bandera
+            @Override public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean sel, boolean foc) {
+                JLabel lab = (JLabel) super.getListCellRendererComponent(l, value, index, sel, foc);
+                if (value instanceof PaisItem pi) { lab.setIcon(iconoBandera(pi.code())); lab.setIconTextGap(6); }
+                return lab;
+            }
+        });
+        paisCombo.setSelectedIndex(0);
+        paisCombo.setMaximumRowCount(14);
+        paisCombo.setToolTipText(t("País del top a mostrar (se recuerda como predeterminado)",
+                "Country whose top to show (remembered as default)"));
+        paisCombo.addActionListener(e -> {
+            if (!rearmandoPais && paisCombo.getSelectedItem() instanceof PaisItem p) fijarPais(p);
+        });
+        instalarFiltroPais();
+        paisCombo.setPrototypeDisplayValue(null);
+        paisCombo.setPreferredSize(new Dimension(150, paisCombo.getPreferredSize().height));   // más compacto: el nombre se ve, no manda
+        buscaPais.setColumns(8);
+        parPais = new JPanel(new BorderLayout(6, 0));
+        parPais.setOpaque(false);
+        parPais.add(new JLabel(t("País:", "Country:")), BorderLayout.WEST);
+        parPais.add(buscaPais, BorderLayout.CENTER);
+        parPais.add(paisCombo, BorderLayout.EAST);
+        parPais.setAlignmentX(Component.LEFT_ALIGNMENT);
+        parPais.setVisible(false);
+        JButton nuevoGrupoBtn = new JButton(t("Crear Grupo", "Create Group"));
+        nuevoGrupoBtn.setToolTipText(t("Crear un grupo nuevo", "Create a new group"));
+        nuevoGrupoBtn.addActionListener(e -> crearGrupoDialog());
+        JButton gestGruposBtn = new JButton(t("Gestionar…", "Manage…"));
+        gestGruposBtn.setToolTipText(t("Renombrar o borrar grupos", "Rename or delete groups"));
+        gestGruposBtn.addActionListener(e -> gestionarGrupos());
+        JButton gruposBtn = new JButton("\u2699");
+        gruposBtn.setFocusable(false);
+        gruposBtn.setMargin(new Insets(1, 7, 1, 7));
+        gruposBtn.putClientProperty("JButton.buttonType", "roundRect");
+        gruposBtn.setToolTipText(t("Grupos: crear, renombrar o borrar", "Groups: create, rename or delete"));
+        gruposBtn.addActionListener(e -> {
+            JPopupMenu pm = new JPopupMenu();
+            JMenuItem crear = new JMenuItem(t("Crear grupo\u2026", "Create group\u2026"));
+            crear.addActionListener(a -> crearGrupoDialog());
+            JMenuItem gest = new JMenuItem(t("Gestionar grupos\u2026", "Manage groups\u2026"));
+            gest.addActionListener(a -> gestionarGrupos());
+            pm.add(crear); pm.add(gest);
+            pm.show(gruposBtn, 0, gruposBtn.getHeight());
+        });
+        grupoFila.add(gruposBtn);
+        campanaBtn = new JToggleButton(iconoVista("campana"));
+        campanaBtn.setFocusable(false); campanaBtn.setMargin(new Insets(2, 5, 2, 5)); campanaBtn.putClientProperty("JButton.buttonType", "roundRect");
+        campanaBtn.addActionListener(e -> alternarCampana());
+        grupoFila.add(campanaBtn);
+        topNCombo = new JComboBox<>(new String[]{ "Top 25", "Top 50", "Top 100" });
+        topNCombo.setToolTipText(t("Cuántos jugadores enseñan Top ladder y Top país", "How many players Top ladder and Top country show"));
+        topNCombo.setSelectedIndex(Math.max(0, Arrays.asList("25", "50", "100").indexOf(leerConfig("top_n", "50"))));
+        topNCombo.addActionListener(e -> { if (rellenandoTopN) return; String n = new String[]{ "25", "50", "100" }[Math.max(0, topNCombo.getSelectedIndex())]; if (n.equals(leerConfig("top_n", "50"))) return; guardarConfig("top_n", n); if (modoTop() && !modoClan()) { topCargado = 0; cargarTopLadder(true); } });
+        topNCombo.setVisible(false);
+        grupoFila.add(topNCombo);
+        addJugBtn = new JButton(t("+ Añadir jugador", "+ Add player"));
+        addJugBtn.setFocusable(false);
+        addJugBtn.setMargin(new Insets(1, 7, 1, 7));
+        addJugBtn.putClientProperty("JButton.buttonType", "roundRect");
+        addJugBtn.setToolTipText(t("Busca un jugador por nick y añádelo a este grupo", "Find a player by nick and add them to this group"));
+        addJugBtn.addActionListener(e -> addPlayerDialog(false, buscaNick != null ? buscaNick.getText().trim() : null));
+        grupoFila.add(addJugBtn);
+        // Fila 3: el chip «● En directo» y el resumen en gris
+        soloVivosBtn.putClientProperty("JButton.buttonType", "roundRect");
+        soloVivosBtn.setFocusable(false);
+        JPanel filtroFila = new JPanel(new BorderLayout(8, 0));
+        filtroFila.setOpaque(false);
+        filtroFila.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
+        formaBtn = new JButton(t("Ver forma", "Recent form"));
+        formaBtn.putClientProperty("JButton.buttonType", "roundRect");
+        formaBtn.setFocusable(false);
+        formaBtn.setToolTipText(tipVerForma());
+        formaBtn.addActionListener(e -> cargarForma(objetivoForma(), ventanaForma, () -> {   // siempre consulta (y suma a lo ya consultado)
+            formaVisible = true; actualizarTextoForma();
+            if (ocultarFormaBtn != null) ocultarFormaBtn.setVisible(true);
+            refrescarCabeceraOrden(); aplicarFiltroGrupo(); playersList.repaint();
+        }));
+        ocultarFormaBtn = new JButton(t("Ocultar forma", "Hide recent form"));
+        ocultarFormaBtn.setFocusable(false);
+        ocultarFormaBtn.setMargin(new Insets(1, 6, 1, 6));
+        ocultarFormaBtn.putClientProperty("JButton.buttonType", "roundRect");
+        ocultarFormaBtn.setToolTipText(tipOcultarForma());
+        ocultarFormaBtn.setVisible(false);
+        ocultarFormaBtn.addActionListener(e -> apagarForma());
+        JComboBox<String> ventanaCb = new JComboBox<>(new String[]{ t("últimas 24 h", "last 24 h"), t("últimos 7 días", "last 7 days") });
+        ventanaCb.setFocusable(false);
+        ventanaCb.setToolTipText(t("Ventana de la forma que consulta «Ver forma»", "Window used by \u201CRecent form\u201D"));
+        ventanaCb.addActionListener(e -> {
+            ventanaForma = ventanaCb.getSelectedIndex() == 1 ? 24 * 7 : 24;
+            if (formaVisible) { refrescarCabeceraOrden(); aplicarFiltroGrupo(); playersList.repaint(); }   // la columna cambia de ventana al instante
+        });
+        JPanel chips = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));   // envuelve a otra línea, nunca se trunca
+        chips.setOpaque(false);
+        chips.add(soloVivosBtn); chips.add(formaBtn); chips.add(ventanaCb); chips.add(ocultarFormaBtn);
+        filtroFila.add(chips, BorderLayout.CENTER);
+        filtroFila.setAlignmentX(Component.LEFT_ALIGNMENT);
+        buscaNick = new javax.swing.JTextField();
+        buscaNick.putClientProperty("JTextField.placeholderText",
+                t("\uD83D\uDD0D Buscar jugador por nick  (Enter = ver sus partidas)", "\uD83D\uDD0D Find a player by nick  (Enter = see their games)"));
+        buscaNick.setToolTipText(t("Escribe un nick y pulsa Enter: verás sus partidas sin añadirlo; desde su nombre podrás ficharlo a un grupo.",
+                "Type a nick and press Enter: you'll see their games without adding them; from their name you can add them to a group."));
+        JPopupMenu nickPopup = new JPopupMenu(); nickPopup.setFocusable(false);
+        javax.swing.Timer nickDebounce = new javax.swing.Timer(450, ev -> {
+            String q = buscaNick.getText().trim();
+            nickPopup.setVisible(false); nickPopup.removeAll();
+            if (q.length() < 2) return;
+            new Thread(() -> {
+                List<String[]> res = sugerirPerfiles(q);
+                SwingUtilities.invokeLater(() -> {
+                    if (!q.equals(buscaNick.getText().trim())) return;
+                    nickPopup.removeAll();
+                    int n = 0;
+                    for (String[] r : res) {
+                        JMenuItem it = new JMenuItem(r[2]);
+                        String nombre = r[1];
+                        long pidSug = Long.parseLong(r[0]);
+                        it.addActionListener(a -> { nickPopup.setVisible(false); buscaNick.setText(nombre); jugadorElegido(pidSug, nombre); });   // el elegido es ESTE jugador (por id): nada de volver a buscar por nombre
+                        nickPopup.add(it);
+                        if (++n >= 8) break;
+                    }
+                    if (n > 0 && buscaNick.isShowing() && buscaNick.hasFocus()) nickPopup.show(buscaNick, 0, buscaNick.getHeight());
+                });
+            }, "nick-sugerir").start();
+        });
+        nickDebounce.setRepeats(false);
+        buscaNick.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
+        });
+        buscaNick.addKeyListener(new KeyAdapter() { @Override public void keyPressed(KeyEvent e) { if (e.getKeyCode() == KeyEvent.VK_ESCAPE) nickPopup.setVisible(false); } });
+        buscaNick.addActionListener(e -> {
+            nickPopup.setVisible(false);
+            String q = buscaNick.getText().trim();
+            if (!q.isEmpty()) { addPlayerDialog(true, q); buscaNick.setText(""); }
+        });
+        JPanel buscaFila = new JPanel(new BorderLayout());
+        buscaFila.setBorder(BorderFactory.createEmptyBorder(2, 0, 4, 0));
+        buscaFila.add(buscaNick, BorderLayout.CENTER);
+        JPanel norteWatch = new JPanel();
+        norteWatchRef = norteWatch;
+        norteWatch.setLayout(new BoxLayout(norteWatch, BoxLayout.Y_AXIS));
+        norteWatch.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
+        buscaFila.setAlignmentX(Component.LEFT_ALIGNMENT);
+        norteWatch.add(buscaFila);      // 1. el buscador
+        norteWatch.add(grupoFila);      // 2. la vista (grupo · ⚙ · + Añadir jugador)
+        norteWatch.add(parPais);        //    el país, en su propia línea, solo en Top país
+        clanField = new JTextField(10);
+        clanField.putClientProperty("JTextField.placeholderText", t("Tag del clan (R1, DK, TdB…)", "Clan tag (R1, DK, TdB…)"));
+        clanField.setText(leerConfig("clan_tag", ""));
+        clanPopup = new JPopupMenu(); clanPopup.setFocusable(false);
+        clanField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            void cambio() {
+                clanPopup.setVisible(false); clanPopup.removeAll();
+                if (clanField.getText().trim().length() < 1) return;
+                if (clanes.isEmpty()) { Thread th = new Thread(() -> ladderAsegurar(false), "clanes"); th.setDaemon(true); th.start(); return; }
+                for (Map.Entry<String, Integer> en : sugerirClanes(clanField.getText())) {
+                    JMenuItem it = new JMenuItem(en.getKey() + "  (" + en.getValue() + ")");
+                    it.addActionListener(a -> { clanField.setText(en.getKey()); clanPopup.setVisible(false); cargarTopClan(); });
+                    clanPopup.add(it);
+                }
+                if (clanPopup.getComponentCount() > 0) clanPopup.show(clanField, 0, clanField.getHeight());
+            }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+        });
+        clanField.addActionListener(e -> { clanPopup.setVisible(false); cargarTopClan(); });
+        parClan = new JPanel(new BorderLayout(6, 0));
+        parClan.setOpaque(false);
+        parClan.add(new JLabel(t("Clan:", "Clan:")), BorderLayout.WEST);
+        parClan.add(clanField, BorderLayout.CENTER);
+        clanesGuardadosCombo = new JComboBox<>();
+        clanesGuardadosCombo.setToolTipText(t("Tus clanes guardados: elige uno para cargar su top", "Your saved clans: pick one to load its top"));
+        clanesGuardadosCombo.addActionListener(e -> { if (rellenandoClanes) return; Object v = clanesGuardadosCombo.getSelectedItem(); if (v instanceof String tag && !tag.isBlank() && !tag.startsWith("(")) { clanField.setText(tag); clanPopup.setVisible(false); cargarTopClan(); } });
+        clanEstrella = new JButton(t("Guardar clan", "Save clan"));
+        clanEstrella.setFocusable(false); clanEstrella.setMargin(new Insets(1, 8, 1, 8));
+        clanEstrella.addActionListener(e -> {
+            String tag = clanField.getText().trim();
+            if (tag.isEmpty()) return;
+            List<String> l = clanesGuardados();
+            if (l.removeIf(x -> x.equalsIgnoreCase(tag))) status.setText(t("Clan quitado de guardados: ", "Clan removed from saved: ") + tag); else { l.add(tag); status.setText(t("Clan guardado: ", "Clan saved: ") + tag); }
+            guardarConfig("clanes_guardados", String.join(",", l));
+            refrescarClanesGuardados();
+        });
+        parClan.add(clanEstrella, BorderLayout.EAST);
+        parClanGuardados = new JPanel(new BorderLayout(6, 0));
+        parClanGuardados.setOpaque(false);
+        parClanGuardados.add(new JLabel(t("Clanes guardados:", "Saved clans:")), BorderLayout.WEST);
+        parClanGuardados.add(clanesGuardadosCombo, BorderLayout.CENTER);
+        parClanGuardados.setAlignmentX(Component.LEFT_ALIGNMENT);
+        parClanGuardados.setVisible(false);
+        clanField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            void cambio() { refrescarClanesGuardados(); }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
+        });
+        refrescarClanesGuardados();
+        parClan.setAlignmentX(Component.LEFT_ALIGNMENT);
+        parClan.setVisible(false);
+        norteWatch.add(parClan);        //    el clan, en su propia línea, solo en Top clan
+        norteWatch.add(parClanGuardados);   //    y debajo, los guardados
+        norteWatch.add(filtroFila);     // 3. chip En directo + resumen
+        norteWatch.add(watchPistas);    //    una línea de pista + «?»
+        left.add(norteWatch, BorderLayout.NORTH);
+        JLabel cabLabel = new JLabel();
+        cabLabel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0,
+                UIManager.getColor("Component.borderColor") != null
+                        ? UIManager.getColor("Component.borderColor") : Color.GRAY));
+        cabLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        cabLabel.setToolTipText(t("Clic en Nick o en ELO para ordenar por esa columna",
+                "Click Nick or ELO to sort by that column"));
+        this.cabLabel = cabLabel;
+        cabLabel.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                int wC = cabLabel.getWidth();
+                String actual = leerConfig("orden_watch", "elo");
+                String nuevo = e.getX() >= wC - 60 ? "elo"
+                        : (formaVisible && e.getX() >= wC - 60 - 72 - 30) ? ("forma".equals(actual) ? "forma_asc" : "forma")   // 2.º clic: invierte
+                        : "alfa";
+                guardarConfig("orden_watch", nuevo);
+                aplicarFiltroGrupo();
+                refrescarCabeceraOrden();
+            }
+        });
+        JPanel cabecera = new JPanel(new BorderLayout());
+        cabecera.add(cabLabel, BorderLayout.CENTER);
+        hoverTimer = new javax.swing.Timer(600, ev -> {
+            if (hoverPid != 0 && hoverPantalla != null && hoverProcede()) {
+                int idx = playersList.locationToIndex(
+                        new Point(playersList.getLocationOnScreen().x + 5,
+                                  hoverPantalla.y - playersList.getLocationOnScreen().y >= 0
+                                          ? hoverPantalla.y - playersList.getLocationOnScreen().y : 0));
+                // el pid ya quedó fijado al mover: mostramos directamente
+                for (int i = 0; i < playersModel.size(); i++)
+                    if (playersModel.get(i).id() == hoverPid) {
+                        mostrarPerfilCard(hoverPid, playersModel.get(i).name(), hoverPantalla);
+                        return;
+                    }
+            }
+        });
+        hoverTimer.setRepeats(false);
+        playersList.addMouseMotionListener(new MouseAdapter() {
+            @Override public void mouseMoved(MouseEvent e) {
+                int idx = playersList.locationToIndex(e.getPoint());
+                long pid = 0;
+                if (idx >= 0 && playersList.getCellBounds(idx, idx).contains(e.getPoint()))
+                    pid = playersModel.get(idx).id();
+                if (pid != 0 && enZonaForma(e.getPoint())) pid = 0;   // sobre la celda Forma no sale la tarjeta: sale su tooltip
+                String bajoM = pid != 0 ? textoBajo(idx, e.getPoint()) : "";   // mano sobre TW, \u21A5 y \u270E
+                boolean clicable = bajoM.contains("TW") || bajoM.contains("\u21A5") || bajoM.contains("\u270E")
+                        || (pid != 0 && sobreNota(idx, e.getPoint()));
+                playersList.setCursor(Cursor.getPredefinedCursor(clicable ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
+                if (pid != hoverPid) {
+                    if (hoverCard != null) ocultarHoverCard();
+                    hoverTimer.stop();
+                    hoverPid = pid;
+                    if (false && pid != 0) {   // tarjeta flotante desactivada: el ELO ya está en la lista y el perfil a un doble clic (y cada tarjeta era una llamada a la API)
+                        hoverPantalla = e.getLocationOnScreen();
+                        hoverTimer.restart();
+                    }
+                }
+            }
+        });
+        playersList.addMouseListener(new MouseAdapter() {
+            @Override public void mouseExited(MouseEvent e) { ocultarHoverCard(); }
+        });
+        ToolTipManager.sharedInstance().registerComponent(playersList);
+        playersList.addComponentListener(new java.awt.event.ComponentAdapter() {
+            @Override public void componentResized(java.awt.event.ComponentEvent e) { refrescarCabeceraOrden(); }
+        });
+        JPanel listWrap = new JPanel(new BorderLayout());
+
+        JScrollPane listScroll = new JScrollPane(playersList);
+        listScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        listScroll.getViewport().addMouseListener(new MouseAdapter() {   // el hueco bajo la última fila es del visor
+            @Override public void mousePressed(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
+                    playersList.clearSelection();
+                    actualizarTextoBuscar();
+                }
+            }
+        });
+        listScroll.getViewport().addChangeListener(e -> {
+            ocultarHoverCard();
+            int vw = listScroll.getViewport().getWidth();
+            if (vw > 0 && playersList.getFixedCellWidth() != vw)
+                playersList.setFixedCellWidth(vw);   // orden, no sugerencia: invalida el caché de medidas
+            refrescarCabeceraOrden();
+        });
+        sujetosPanel = new JPanel();
+        sujetosPanel.setLayout(new BoxLayout(sujetosPanel, BoxLayout.Y_AXIS));
+        sujetosPanel.setVisible(false);
+        JPanel norteLista = new JPanel(new BorderLayout());
+        norteLista.add(sujetosPanel, BorderLayout.NORTH);
+        norteLista.add(cabecera, BorderLayout.SOUTH);   // la cabecera, pegada a su lista
+        listWrap.add(norteLista, BorderLayout.NORTH);
+        listWrap.add(listScroll, BorderLayout.CENTER);
+        left.add(listWrap, BorderLayout.CENTER);
+        refrescarCabeceraOrden();
+        left.add(leftButtons, BorderLayout.SOUTH);
+        left.setPreferredSize(new Dimension(280, 0));
+        return left;
     }
 
     // ----- Carpeta de recs ---------------------------------------------------
