@@ -64,6 +64,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.BarridoVivos;
 import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.DescargaRecs;
 import dev.tirador.aoe2radar.service.EloSesion;
@@ -1008,6 +1009,9 @@ public class SpoilerFreeRecs extends JFrame {
     }
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
     volatile int fallosFetch;   // jugadores sin respuesta en la última búsqueda
+    /** Seguidos cuya página 1 se pudo consultar sin excepción en la última búsqueda (BarridoVivos.decidirVivos: solo
+     *  a ellos se les puede marcar «fuera» si no salen vivos; ver DEUDA del falso «fuera»). */
+    volatile Set<Long> vivosConsultados = Set.of();
 
     // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
     static final int MAX_COMPARADOS = 10;
@@ -10821,6 +10825,11 @@ public class SpoilerFreeRecs extends JFrame {
 
 
 
+    /** BarridoVivos: la red y la decisión de vigilarVivos/refrescarWatchlist/«Buscar partidas» (ver
+     *  service.BarridoVivos). Campo de instancia, junto al código que lo usa (como recService). */
+    final BarridoVivos barridoVivos = new BarridoVivos(COMPANION, Reloj.SISTEMA, SpoilerFreeRecs::resumenVivo,
+            Snapshots.ELO_AYER, SpoilerFreeRecs::dormir, PAUSA_MS, PER_PAGE);
+
     void refrescarWatchlist() {
         if (modoTop()) return;   // el top se alimenta del leaderboard y del río
         List<Player> objetivo = new ArrayList<>();
@@ -10829,38 +10838,14 @@ public class SpoilerFreeRecs extends JFrame {
             if (watchBarridos.add(p.id())) objetivo.add(p);
         }
         if (objetivo.isEmpty()) return;
-        new SwingWorker<Void, Object[]>() {
+        new SwingWorker<Void, BarridoVivos.Refresco>() {
             @Override protected Void doInBackground() {
                 cargarEloAyer();
                 for (Player p : objetivo) {
-                    int[] snap = ELO_AYER.get(p.id());
-                    if (snap != null && snap[0] > 0) { gamesWatch.put(p.id(), snap[1]); publish(new Object[]{ p.id(), null, snap[0], null }); continue; }   // del snapshot nocturno: sin llamada (el socket dirá si está en partida)
                     try {
-                        Iterable<Match> leidas = COMPANION.partidas(p.id(), 1, 10);
-                        Long vivo = null;
-                        String resV = null;
-                        Integer elo = null;
-                        for (Match m : leidas) {
-                            if (m == null) continue;
-                            if (enCursoReal(m) && vivo == null) { vivo = m.id; resV = resumenVivo(m, p.id()); }
-                            if (elo == null && m.finished != null && m.players.size() == 2
-                                    && m.mode != null && m.mode.startsWith("1v1 Random"))
-                                for (MatchPlayer mp : m.players)
-                                    if (mp.id == p.id() && mp.rating != null) { elo = mp.rating; break; }
-                            if (vivo != null && elo != null) break;
-                        }
-                        if (elo == null) {   // sin 1v1 ranked entre sus últimas 10: mirar más atrás
-                            dormir(PAUSA_MS);
-                            Iterable<Match> leidasApi = COMPANION.partidas(p.id(), 1, PER_PAGE);
-                            for (Match m : leidasApi) {
-                                if (m == null || m.finished == null || m.players.size() != 2
-                                        || m.mode == null || !m.mode.startsWith("1v1 Random")) continue;
-                                for (MatchPlayer mp : m.players)
-                                    if (mp.id == p.id() && mp.rating != null) { elo = mp.rating; break; }
-                                if (elo != null) break;
-                            }
-                        }
-                        publish(new Object[]{ p.id(), vivo, elo, resV });
+                        BarridoVivos.Refresco r = barridoVivos.refrescar(p.id());
+                        if (r.juegosNocturno() != null) gamesWatch.put(p.id(), r.juegosNocturno());   // del snapshot nocturno: sin llamada (el socket dirá si está en partida)
+                        publish(r);
                     } catch (Exception ex) {
                         log("watchlist: fallo con " + p.name() + ": " + causa(ex));
                     }
@@ -10868,13 +10853,12 @@ public class SpoilerFreeRecs extends JFrame {
                 }
                 return null;
             }
-            @Override protected void process(List<Object[]> chunks) {
-                for (Object[] c : chunks) {
-                    long id = (Long) c[0];
-                    if (c[1] != null) {
-                        if (VIVO.marcarJugando(id, (Long) c[1]) && c.length > 3 && c[3] != null) VIVO.ponerInfo(id, (String) c[3]);
-                    } else { VIVO.marcarFuera(id); }
-                    if (c[2] != null) eloWatch.put(id, (Integer) c[2]);
+            @Override protected void process(List<BarridoVivos.Refresco> chunks) {
+                for (BarridoVivos.Refresco r : chunks) {
+                    if (r.vivo() != null) {
+                        if (VIVO.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) VIVO.ponerInfo(r.pid(), r.resumen());
+                    } else { VIVO.marcarFuera(r.pid()); }
+                    if (r.elo() != null) eloWatch.put(r.pid(), r.elo());
                 }
                 actualizarIndicadoresVivos();
             }
@@ -10888,34 +10872,15 @@ public class SpoilerFreeRecs extends JFrame {
         if (vigilando || progreso.isVisible() || todosJugadores.isEmpty()) return;
         vigilando = true;
         List<Player> objetivo = new ArrayList<>(todosJugadores);
-        new SwingWorker<Void, Object[]>() {
+        new SwingWorker<Void, BarridoVivos.Lote>() {
             @Override protected Void doInBackground() {
                 final int LOTE = 25;   // 2 llamadas para un top 50, 4 para el top 100
                 for (int d = 0; d < objetivo.size(); d += LOTE) {
                     List<Player> lote = objetivo.subList(d, Math.min(d + LOTE, objetivo.size()));
-                    Set<Long> idsLote = new HashSet<>();
-                    StringBuilder csv = new StringBuilder();
-                    for (Player p : lote) {
-                        idsLote.add(p.id());
-                        if (csv.length() > 0) csv.append(',');
-                        csv.append(p.id());
-                    }
+                    List<Long> idsLote = new ArrayList<>();
+                    for (Player p : lote) idsLote.add(p.id());
                     try {
-                        Iterable<Match> leidas = COMPANION.partidas(csv.toString(), 1, 50);
-                        Map<Long, Long> vivos = new HashMap<>();
-                        Map<Long, String> infos = new HashMap<>();
-                        List<Match> terminadas = new ArrayList<>();
-                        for (Match m : leidas) {
-                            if (m == null) continue;
-                            if (enCursoReal(m)) {
-                                for (MatchPlayer mp : m.players)
-                                    if (idsLote.contains(mp.id) && !vivos.containsKey(mp.id)) {
-                                        vivos.put(mp.id, m.id);
-                                        infos.put(mp.id, resumenVivo(m, mp.id));
-                                    }
-                            } else if (m.finished != null) terminadas.add(m);
-                        }
-                        publish(new Object[]{ idsLote, vivos, infos, terminadas });
+                        publish(barridoVivos.lote(idsLote));
                     } catch (Exception ex) {
                         log("vigilante: fallo con el lote " + (d / LOTE + 1) + ": " + causa(ex));
                     }
@@ -10923,20 +10888,15 @@ public class SpoilerFreeRecs extends JFrame {
                 }
                 return null;
             }
-            @Override protected void process(List<Object[]> chunks) {
+            @Override protected void process(List<BarridoVivos.Lote> chunks) {
                 boolean tablaTocada = false;
-                for (Object[] c : chunks) {
-                    @SuppressWarnings("unchecked") Set<Long> idsLote = (Set<Long>) c[0];
-                    @SuppressWarnings("unchecked") Map<Long, Long> vivos = (Map<Long, Long>) c[1];
-                    @SuppressWarnings("unchecked") Map<Long, String> infos = (Map<Long, String>) c[2];
-                    for (Long id : idsLote) {
-                        Long vm = vivos.get(id);
-                        if (vm != null) { VIVO.marcarJugando(id, vm, infos.get(id)); }
+                for (BarridoVivos.Lote c : chunks) {
+                    for (Long id : c.idsLote()) {
+                        Long vm = c.vivos().get(id);
+                        if (vm != null) { VIVO.marcarJugando(id, vm, c.infos().get(id)); }
                         else { VIVO.marcarFuera(id); }
                     }
-                    @SuppressWarnings("unchecked")
-                    List<Match> terminadas = (List<Match>) c[3];
-                    for (Match fresco : terminadas)
+                    for (Match fresco : c.terminadas())
                         for (Match m : all)
                             if (m.id == fresco.id && m.finished == null) {
                                 m.finished = fresco.finished;   // la EN DIRECTO de la tabla acabó:
@@ -11809,9 +11769,11 @@ public class SpoilerFreeRecs extends JFrame {
                 hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 Map<Long, Match> unicos = new LinkedHashMap<>();
                 topeAlcanzado = false;
+                Set<Long> exitosos = new HashSet<>();   // BarridoVivos.decidirVivos: solo a estos se les marca «fuera» si no salen vivos
                 final int MAX_PAGINAS = 6, MAX_TOTAL = 600;   // tope de seguridad por búsqueda
                 for (Player pl : tracked) {
                     if (isCancelled()) break;
+                    boolean fallo = false;
                     // Páginas sucesivas hasta cubrir la ventana (para 24-48 h basta una)
                     for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
                         if (isCancelled()) break;
@@ -11837,12 +11799,15 @@ public class SpoilerFreeRecs extends JFrame {
                         } catch (Exception ex) {
                             if (isCancelled() || ex instanceof InterruptedException) break;   // segunda pulsación: done() ya dijo «detenida»; no pisarlo ni contar un fallo en la búsqueda siguiente
                             fallosFetch++;
+                            fallo = true;
                             publish(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
                         }
                         if (!seguir) break;
                     }
-                    if (unicos.size() >= MAX_TOTAL) break;
+                    if (!isCancelled() && !fallo) exitosos.add(pl.id());   // ni una excepción con este seguido: se le puede marcar «fuera»
+                    if (unicos.size() >= MAX_TOTAL) break;   // los que quedan sin tocar no entran en exitosos: no se les toca el estado
                 }
+                vivosConsultados = exitosos;
                 List<Match> lista = new ArrayList<>(unicos.values());
                 lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
                 return lista;
@@ -11864,18 +11829,13 @@ public class SpoilerFreeRecs extends JFrame {
                 try {
                     List<Match> res = get();
                     aprenderCatalogos(res);
-                    Map<Long, Long> vivosVistos = new HashMap<>();
-                    Map<Long, String> infosVistos = new HashMap<>();
-                    for (Match m : res)
-                        if (enCursoReal(m))
-                            for (MatchPlayer p : m.players) {
-                                vivosVistos.put(p.id, m.id);
-                                infosVistos.put(p.id, resumenVivo(m, p.id));
-                            }
+                    List<Long> idsTracked = new ArrayList<>();
+                    for (Player pl : tracked) idsTracked.add(pl.id());
+                    BarridoVivos.DecisionBuscar dec = barridoVivos.decidirVivos(res, idsTracked, vivosConsultados);
                     for (Player pl : tracked) {
-                        Long v = vivosVistos.get(pl.id());
-                        if (v != null) { VIVO.marcarJugando(pl.id(), v, infosVistos.get(pl.id())); }
-                        else { VIVO.marcarFuera(pl.id()); }
+                        Long v = dec.vivos().get(pl.id());
+                        if (v != null) { VIVO.marcarJugando(pl.id(), v, dec.infos().get(pl.id())); }
+                        else if (dec.fuera().contains(pl.id())) { VIVO.marcarFuera(pl.id()); }
                     }
                     actualizarIndicadoresVivos();
                     all.clear();
