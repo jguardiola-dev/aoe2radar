@@ -63,6 +63,7 @@ import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
+import dev.tirador.aoe2radar.service.LiveService;
 import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
 import dev.tirador.aoe2radar.service.ProfileService;
@@ -6586,13 +6587,9 @@ public class SpoilerFreeRecs extends JFrame {
      *  partida no esté ya terminada (el companion a veces anuncia partidas viejas como vivas). */
     void confirmarEventoSocket(Match m, List<Long> pids) {
         new Thread(() -> {
-            boolean viva = true;
-            try {
-                Iterable<Match> leidas = COMPANION.partidas(pids.get(0), 1, 5);
-                for (Match r : leidas) {
-                    if (r != null && r.id == m.id) { viva = enCursoReal(r); break; }
-                }
-            } catch (Exception ex) { log("socket: no se pudo confirmar la partida " + m.id + ": " + causa(ex)); }
+            LiveService.Comprobacion c = LIVE.comprobar(pids.get(0), m.id, 5);
+            if (c.error() != null) log("socket: no se pudo confirmar la partida " + m.id + ": " + causa(c.error()));
+            boolean viva = c.veredicto() != LiveService.Veredicto.TERMINADA;   // sin datos: el beneficio de la duda
             if (!viva) { log("socket: partida " + m.id + " ya terminada según la API: fantasma ignorado"); return; }
             for (long pid : pids) { String resumen = resumenVivo(m, pid); VIVO.marcarJugando(pid, m.id, resumen); VIVO.guardarPartida(pid, m); liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
             SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); table.repaint(); });
@@ -11116,15 +11113,10 @@ public class SpoilerFreeRecs extends JFrame {
         status.setText(t("Comprobando que la partida sigue en curso…", "Checking the game is still live…"));
         new SwingWorker<Boolean, Void>() {
             @Override protected Boolean doInBackground() {
-                try {
-                    Iterable<Match> leidas = COMPANION.partidas(profileId, 1, PER_PAGE);
-                    for (Match m : leidas) {
-                        if (m != null && m.id == matchId) { log("espectar: verificación de " + matchId + " → started=" + m.started + " finished=" + m.finished); return enCursoReal(m); }
-                    }
-                    log("espectar: la partida " + matchId + " no aparece en las últimas del perfil " + profileId + "; se lanza igualmente");
-                } catch (Exception ex) {
-                    log("espectar: verificación no concluyente: " + causa(ex));
-                }
+                LiveService.Comprobacion c = LIVE.comprobar(profileId, matchId, PER_PAGE);
+                if (c.partida() != null) { Match m = c.partida(); log("espectar: verificación de " + matchId + " → started=" + m.started + " finished=" + m.finished); return c.veredicto() == LiveService.Veredicto.VIVA; }
+                if (c.error() != null) log("espectar: verificación no concluyente: " + causa(c.error()));
+                else log("espectar: la partida " + matchId + " no aparece en las últimas del perfil " + profileId + "; se lanza igualmente");
                 return null;   // sin datos claros: lanzar igualmente
             }
             @Override protected void done() {
@@ -12234,6 +12226,8 @@ public class SpoilerFreeRecs extends JFrame {
     static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
     static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
+    /** Las reglas del directo que necesitan la API (ver service.LiveService). */
+    static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
     static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
             new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
