@@ -1954,104 +1954,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         construirTablaPartidas();
 
-        // Botones inferiores + savegame + firma + donación
-        JButton abrir  = new JButton(t("Abrir carpeta recs descargadas", "Open downloaded recs folder"));
-        JButton vaciar = new JButton(t("Vaciar recs", "Empty recs folder"));
-        dlSel.addActionListener(e -> download(selectedRows()));
-        dlAll.addActionListener(e -> download(allRows()));
-        abrir.addActionListener(e -> abrirCarpeta());
-        vaciar.addActionListener(e -> vaciarRecs());
-        JPanel btns1 = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-        JButton carpetasBtn = new JButton(t("Carpetas \u25BE", "Folders \u25BE"));
-        carpetasBtn.setFocusable(false);
-        carpetasBtn.addActionListener(e -> {
-            JPopupMenu pm = new JPopupMenu();
-            JMenuItem i1 = new JMenuItem(abrir.getText());  i1.addActionListener(a -> abrir.doClick());
-            JMenuItem i2 = new JMenuItem(abrirSgTxt());     i2.addActionListener(a -> abrirSavegame());
-            JMenuItem i3 = new JMenuItem(vaciar.getText()); i3.addActionListener(a -> vaciar.doClick());
-            pm.add(i1); pm.add(i2); pm.addSeparator(); pm.add(i3);
-            pm.show(carpetasBtn, 0, carpetasBtn.getHeight());
-        });
-        btns1.add(dlSel); btns1.add(dlAll);
-
-        JButton enviarSg = new JButton(t("Enviar al juego", "Send to game"));
-        enviarSg.setToolTipText(t("Envía las recs seleccionadas al juego: las ya descargadas se copian; las que falten se descargan y se envían en la misma acción", "Sends the selected recs to the game: downloaded ones are copied; missing ones are downloaded and sent in one go"));
-        enviarSg.addActionListener(e -> enviarInteligente(selectedRows()));
-        JPanel btns2 = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-        btns1.add(enviarSg);       // acciones sobre partidas, en la primera fila
-        todasPerfilBtn = new JButton(t("Todas las partidas del perfil", "All games of the profile"));
-        todasPerfilBtn.setFocusable(false); todasPerfilBtn.putClientProperty("JButton.buttonType", "roundRect");
-        todasPerfilBtn.setToolTipText(t("Abre el perfil del jugador buscado con su histórico completo en páginas (del último año, sin llamadas si está en sfr-data)", "Opens the searched player's profile with their full history in pages (last year, no requests when in sfr-data)"));
-        todasPerfilBtn.addActionListener(e -> { if (ultimosSujetos.size() == 1) { Player p = ultimosSujetos.get(0); abrirPerfil(p.id(), nombreVisible(p.id(), p.name())); javax.swing.Timer tt = new javax.swing.Timer(900, ev -> { if (perfil.pidAbierto() == p.id()) perfil.mostrarHistorialPerfil(p.id(), nombreVisible(p.id(), p.name())); }); tt.setRepeats(false); tt.start(); } });
-        todasPerfilBtn.setVisible(false);
-        btns1.add(todasPerfilBtn);
-        btns2.add(carpetasBtn);    // carpetas, en la segunda, bajo un solo botón
-
-        JPanel filasBtns = new JPanel();
-        filasBtns.setLayout(new BoxLayout(filasBtns, BoxLayout.Y_AXIS));
-        filasBtns.add(btns1);
-        filasBtns.add(btns2);
-        filaBotonesInferiores = filasBtns;
-
-        firma = new JLabel("<html>" + AUTOR + " · <u>" + TWITCH + "</u></html>");
-        firma.setFont(firma.getFont().deriveFont(Font.PLAIN, 11f));
-        firma.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
-        firma.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        firma.setToolTipText("Abrir https://" + TWITCH);
-        firma.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) { abrirTwitch(); }
-        });
-        cafeBtn.setToolTipText(DONAR_URL);
-        cafeBtn.addActionListener(e -> abrirDonacion());
-        JPanel este = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        actualizarBtn = new JButton();
-        actualizarBtn.setVisible(false);
-        actualizarBtn.setFocusable(false);
-        actualizarBtn.setToolTipText(t("Abre la página de descarga de la versión nueva", "Opens the new version's download page"));
-        actualizarBtn.addActionListener(e -> abrirUrl(RELEASES_URL));
-        este.add(actualizarBtn); este.add(cafeBtn); este.add(firma);
-
-        progreso.setIndeterminate(true);
-        progreso.setVisible(false);
-        progreso.setPreferredSize(new Dimension(120, 14));
-        JPanel oeste = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
-        oeste.add(progreso);
-        detenerDescBtn = new JButton(t("Detener", "Stop"));
-        detenerDescBtn.setVisible(false);
-        detenerDescBtn.setToolTipText(t("Detiene la operación en curso: descargas, azar o Guess the ELO (cada petición muere sola a los 25 s).",
-                "Stops the running operation: downloads, random or Guess the ELO (each request self-terminates at 25 s)."));
-        detenerDescBtn.addActionListener(e -> {
-            log("detener pulsado (op #" + opSerial + ")");
-            stopOperacion = true;
-            detenerDescBtn.setEnabled(false);
-            status.setText(t("Deteniendo… (como mucho 15 s si había una petición en vuelo)",
-                    "Stopping… (at most 15 s if a request was in flight)"));
-            HTTP = nuevoHttp();   // las peticiones en vuelo caducan solas (≤15 s); las siguientes salen limpias
-            final long serialDetenido = opSerial;
-            javax.swing.Timer vig = new javax.swing.Timer(5000, ev -> {
-                if (progreso.isVisible() && opSerial == serialDetenido) {   // solo si es LA MISMA operación
-                    trabajando(false);
-                    status.setText(t("Detenido.", "Stopped."));
-                }
-            });
-            vig.setRepeats(false);
-            vig.start();
-        });
-        oeste.add(detenerDescBtn);
-        continuarBtn = new JButton(t("Continuar buscando", "Keep searching"));
-        continuarBtn.setVisible(false);
-        continuarBtn.setToolTipText(t("Reanuda el azar con los mismos filtros, sin re-diálogo: el muestreo recuerda lo ya leído.",
-                "Resumes the random search with the same filters, no dialog: sampling remembers what it already read."));
-        continuarBtn.addActionListener(e -> buscarAleatorias(true));
-        oeste.add(continuarBtn);
-        JPanel filaEstado = new JPanel(new BorderLayout());
-        filaEstado.add(oeste, BorderLayout.WEST);
-        filaEstado.add(status, BorderLayout.CENTER);
-        filaEstado.add(este, BorderLayout.EAST);
-
-        JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(filasBtns, BorderLayout.NORTH);
-        bottom.add(filaEstado, BorderLayout.SOUTH);
+        JPanel bottom = construirBarraInferior();
 
         JPanel center = new JPanel(new BorderLayout());
         center.add(top, BorderLayout.NORTH);
@@ -3471,6 +3374,111 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 else download(List.of(m));
             }
         });
+    }
+
+    // La franja inferior: los botones de descargar/enviar al juego, el menu de
+    // carpetas, la firma y donacion, y la barra de estado (progreso, detener,
+    // continuar buscando). Devuelve el panel para el centro de la ventana.
+    private JPanel construirBarraInferior() {
+        // Botones inferiores + savegame + firma + donación
+        JButton abrir  = new JButton(t("Abrir carpeta recs descargadas", "Open downloaded recs folder"));
+        JButton vaciar = new JButton(t("Vaciar recs", "Empty recs folder"));
+        dlSel.addActionListener(e -> download(selectedRows()));
+        dlAll.addActionListener(e -> download(allRows()));
+        abrir.addActionListener(e -> abrirCarpeta());
+        vaciar.addActionListener(e -> vaciarRecs());
+        JPanel btns1 = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
+        JButton carpetasBtn = new JButton(t("Carpetas \u25BE", "Folders \u25BE"));
+        carpetasBtn.setFocusable(false);
+        carpetasBtn.addActionListener(e -> {
+            JPopupMenu pm = new JPopupMenu();
+            JMenuItem i1 = new JMenuItem(abrir.getText());  i1.addActionListener(a -> abrir.doClick());
+            JMenuItem i2 = new JMenuItem(abrirSgTxt());     i2.addActionListener(a -> abrirSavegame());
+            JMenuItem i3 = new JMenuItem(vaciar.getText()); i3.addActionListener(a -> vaciar.doClick());
+            pm.add(i1); pm.add(i2); pm.addSeparator(); pm.add(i3);
+            pm.show(carpetasBtn, 0, carpetasBtn.getHeight());
+        });
+        btns1.add(dlSel); btns1.add(dlAll);
+
+        JButton enviarSg = new JButton(t("Enviar al juego", "Send to game"));
+        enviarSg.setToolTipText(t("Envía las recs seleccionadas al juego: las ya descargadas se copian; las que falten se descargan y se envían en la misma acción", "Sends the selected recs to the game: downloaded ones are copied; missing ones are downloaded and sent in one go"));
+        enviarSg.addActionListener(e -> enviarInteligente(selectedRows()));
+        JPanel btns2 = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
+        btns1.add(enviarSg);       // acciones sobre partidas, en la primera fila
+        todasPerfilBtn = new JButton(t("Todas las partidas del perfil", "All games of the profile"));
+        todasPerfilBtn.setFocusable(false); todasPerfilBtn.putClientProperty("JButton.buttonType", "roundRect");
+        todasPerfilBtn.setToolTipText(t("Abre el perfil del jugador buscado con su histórico completo en páginas (del último año, sin llamadas si está en sfr-data)", "Opens the searched player's profile with their full history in pages (last year, no requests when in sfr-data)"));
+        todasPerfilBtn.addActionListener(e -> { if (ultimosSujetos.size() == 1) { Player p = ultimosSujetos.get(0); abrirPerfil(p.id(), nombreVisible(p.id(), p.name())); javax.swing.Timer tt = new javax.swing.Timer(900, ev -> { if (perfil.pidAbierto() == p.id()) perfil.mostrarHistorialPerfil(p.id(), nombreVisible(p.id(), p.name())); }); tt.setRepeats(false); tt.start(); } });
+        todasPerfilBtn.setVisible(false);
+        btns1.add(todasPerfilBtn);
+        btns2.add(carpetasBtn);    // carpetas, en la segunda, bajo un solo botón
+
+        JPanel filasBtns = new JPanel();
+        filasBtns.setLayout(new BoxLayout(filasBtns, BoxLayout.Y_AXIS));
+        filasBtns.add(btns1);
+        filasBtns.add(btns2);
+        filaBotonesInferiores = filasBtns;
+
+        firma = new JLabel("<html>" + AUTOR + " · <u>" + TWITCH + "</u></html>");
+        firma.setFont(firma.getFont().deriveFont(Font.PLAIN, 11f));
+        firma.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
+        firma.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        firma.setToolTipText("Abrir https://" + TWITCH);
+        firma.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) { abrirTwitch(); }
+        });
+        cafeBtn.setToolTipText(DONAR_URL);
+        cafeBtn.addActionListener(e -> abrirDonacion());
+        JPanel este = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        actualizarBtn = new JButton();
+        actualizarBtn.setVisible(false);
+        actualizarBtn.setFocusable(false);
+        actualizarBtn.setToolTipText(t("Abre la página de descarga de la versión nueva", "Opens the new version's download page"));
+        actualizarBtn.addActionListener(e -> abrirUrl(RELEASES_URL));
+        este.add(actualizarBtn); este.add(cafeBtn); este.add(firma);
+
+        progreso.setIndeterminate(true);
+        progreso.setVisible(false);
+        progreso.setPreferredSize(new Dimension(120, 14));
+        JPanel oeste = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+        oeste.add(progreso);
+        detenerDescBtn = new JButton(t("Detener", "Stop"));
+        detenerDescBtn.setVisible(false);
+        detenerDescBtn.setToolTipText(t("Detiene la operación en curso: descargas, azar o Guess the ELO (cada petición muere sola a los 25 s).",
+                "Stops the running operation: downloads, random or Guess the ELO (each request self-terminates at 25 s)."));
+        detenerDescBtn.addActionListener(e -> {
+            log("detener pulsado (op #" + opSerial + ")");
+            stopOperacion = true;
+            detenerDescBtn.setEnabled(false);
+            status.setText(t("Deteniendo… (como mucho 15 s si había una petición en vuelo)",
+                    "Stopping… (at most 15 s if a request was in flight)"));
+            HTTP = nuevoHttp();   // las peticiones en vuelo caducan solas (≤15 s); las siguientes salen limpias
+            final long serialDetenido = opSerial;
+            javax.swing.Timer vig = new javax.swing.Timer(5000, ev -> {
+                if (progreso.isVisible() && opSerial == serialDetenido) {   // solo si es LA MISMA operación
+                    trabajando(false);
+                    status.setText(t("Detenido.", "Stopped."));
+                }
+            });
+            vig.setRepeats(false);
+            vig.start();
+        });
+        oeste.add(detenerDescBtn);
+        continuarBtn = new JButton(t("Continuar buscando", "Keep searching"));
+        continuarBtn.setVisible(false);
+        continuarBtn.setToolTipText(t("Reanuda el azar con los mismos filtros, sin re-diálogo: el muestreo recuerda lo ya leído.",
+                "Resumes the random search with the same filters, no dialog: sampling remembers what it already read."));
+        continuarBtn.addActionListener(e -> buscarAleatorias(true));
+        oeste.add(continuarBtn);
+        JPanel filaEstado = new JPanel(new BorderLayout());
+        filaEstado.add(oeste, BorderLayout.WEST);
+        filaEstado.add(status, BorderLayout.CENTER);
+        filaEstado.add(este, BorderLayout.EAST);
+
+        JPanel bottom = new JPanel(new BorderLayout());
+        bottom.add(filasBtns, BorderLayout.NORTH);
+        bottom.add(filaEstado, BorderLayout.SOUTH);
+        return bottom;
     }
 
     // ----- Carpeta de recs ---------------------------------------------------
