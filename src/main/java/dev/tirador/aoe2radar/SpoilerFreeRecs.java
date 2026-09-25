@@ -63,6 +63,8 @@ import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
 import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.service.FormaCompanion;
+import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
 import dev.tirador.aoe2radar.service.LiveService;
 import dev.tirador.aoe2radar.service.NombresJuego;
@@ -842,6 +844,8 @@ public class SpoilerFreeRecs extends JFrame {
     final Map<Long, Forma> forma7d = new java.util.concurrent.ConcurrentHashMap<>();
     final Map<Long, Long> formaTs24 = new java.util.concurrent.ConcurrentHashMap<>();
     final Map<Long, Long> formaTs7d = new java.util.concurrent.ConcurrentHashMap<>();
+    /** Campo de instancia (no static): se inicializa después de COMPANION, que es static (SpoilerFreeRecs paso FormService). */
+    final FormService FORMA_SERVICE = new FormaCompanion(COMPANION, Snapshots.ELO, Reloj.SISTEMA);
     volatile boolean formaVisible;   // el chip: nace apagado, no se recuerda
     static String tipVerForma() { return t("Consulta el ±ELO reciente (según el selector) y lo muestra como columna ordenable junto al ELO. Con jugadores seleccionados consulta solo esos; sin selección, todos. No se recuerda entre sesiones.",
             "Fetches the recent ±ELO (per the selector) and shows it as a sortable column next to the ELO. With players selected it checks only those; with none, everyone. Not remembered between sessions."); }
@@ -884,52 +888,6 @@ public class SpoilerFreeRecs extends JFrame {
         return new Forma(diff, w, l, racha, Boolean.TRUE.equals(rachaGana), partidas);
     }
 
-    /** Una llamada a /profiles: la serie de rating 1v1 con fechas → 24 h y 7 d a la vez.
-     *  Devuelve {forma24, forma7d}; null si el perfil no trae serie (entonces se usa calcForma). */
-    Forma[] calcFormaSerie(long pid) throws Exception {
-        Perfil pf = COMPANION.perfil(pid);
-        List<Object[]> serie = new ArrayList<>();   // {epochMs, rating, ratingDiff|null}
-        for (Perfil.Serie lb : pf.series()) {
-            String lbId = String.valueOf(firstNonNull(lb.id(), ""));
-            if (!lbId.equals("rm_1v1") && !lbId.equals("3")) continue;
-            for (Perfil.Punto pt : lb.puntos()) {
-                Instant d = pt.fecha();
-                if (d == null || pt.rating() == null) continue;
-                serie.add(new Object[]{ d.toEpochMilli(), pt.rating(), pt.diff() });
-            }
-        }
-        if (serie.isEmpty()) return null;
-        serie.sort((a, b) -> Long.compare((Long) b[0], (Long) a[0]));   // de la más reciente a la más antigua
-        Forma[] out = new Forma[2];
-        int[] horasV = { 24, 24 * 7 };
-        for (int k = 0; k < 2; k++) {
-            long desde = System.currentTimeMillis() - horasV[k] * 3_600_000L;
-            int w = 0, l = 0, partidas = 0, racha = 0; Boolean rachaGana = null; boolean rachaViva = true;
-            Integer ratingAhora = (Integer) serie.get(0)[1], ratingAntes = null;
-            for (Object[] pt : serie) {
-                if ((Long) pt[0] < desde) { ratingAntes = (Integer) pt[1]; break; }
-                partidas++;
-                Integer df = (Integer) pt[2];
-                if (df != null) {
-                    boolean gano = df > 0;
-                    if (gano) w++; else l++;
-                    if (rachaViva) {
-                        if (rachaGana == null) { rachaGana = gano; racha = 1; }
-                        else if (rachaGana == gano) racha++;
-                        else rachaViva = false;
-                    }
-                }
-            }
-            int diff = partidas == 0 ? 0 : ratingAhora - (ratingAntes != null ? ratingAntes : (Integer) serie.get(serie.size() - 1)[1]);
-            if (partidas == serie.size() && ratingAntes == null) {   // toda la serie cae en la ventana: suma de diffs
-                int s = 0; for (Object[] pt : serie) if (pt[2] != null) s += (Integer) pt[2];
-                diff = s;
-            }
-            out[k] = new Forma(diff, w, l, racha, Boolean.TRUE.equals(rachaGana), partidas);
-        }
-        return out;
-    }
-
     /** Forma de hasta cinco jugadores con UNA llamada (/matches?profile_ids=…): partidas 1v1 RM con resultado y ±ELO; 24 h y 7 días. */
     Map<Long, Forma[]> calcFormaLote(List<Player> lote) throws Exception {
         StringBuilder csv = new StringBuilder(); for (Player p : lote) { if (csv.length() > 0) csv.append(','); csv.append(p.id()); }
@@ -968,8 +926,7 @@ public class SpoilerFreeRecs extends JFrame {
         Map<Long, Forma> cache = horas <= 24 ? forma24 : forma7d;
         Map<Long, Long> ts = horas <= 24 ? formaTs24 : formaTs7d;
         List<Player> pendientes = new ArrayList<>();
-        long ahora = System.currentTimeMillis();
-        for (Player p : objetivo) if (ahora - ts.getOrDefault(p.id(), 0L) > 600_000) pendientes.add(p);
+        for (Player p : objetivo) if (FORMA_SERVICE.pendiente(ts.getOrDefault(p.id(), 0L))) pendientes.add(p);
         if (pendientes.isEmpty()) { if (alTerminar != null) alTerminar.run(); return; }
         if (modoTop() && pendientes.size() > 20) {
             int seg = (int) Math.ceil(pendientes.size() * 0.6);
@@ -991,7 +948,7 @@ public class SpoilerFreeRecs extends JFrame {
                 List<Player> porApi = new ArrayList<>();
                 long ahoraTs = System.currentTimeMillis();
                 for (Player p : pendientes) {   // 1) resta con el snapshot nocturno: sin llamadas
-                    Forma[] f = formaPorResta(p.id());
+                    Forma[] f = FORMA_SERVICE.porResta(p.id(), eloWatch.get(p.id()), gamesWatch.get(p.id()));
                     if (f == null) { porApi.add(p); continue; }
                     forma24.put(p.id(), f[0]); formaTs24.put(p.id(), ahoraTs);
                     if (f[1] != null) { forma7d.put(p.id(), f[1]); formaTs7d.put(p.id(), ahoraTs); } else if (horas > 24) porApi.add(p);
@@ -1000,7 +957,7 @@ public class SpoilerFreeRecs extends JFrame {
                 for (Player p : porApi) {   // 2) quien no está en el snapshot: su serie de rating, exacta (una llamada por jugador)
                     if (stopOperacion) break;
                     try {
-                        Forma[] ambas = calcFormaSerie(p.id());
+                        Forma[] ambas = FORMA_SERVICE.porSerie(p.id());
                         if (ambas != null) { forma24.put(p.id(), ambas[0]); formaTs24.put(p.id(), ahoraTs); forma7d.put(p.id(), ambas[1]); formaTs7d.put(p.id(), ahoraTs); }
                     } catch (Exception ex) { log("forma " + p.name() + ": " + causa(ex)); }
                 }
@@ -3494,18 +3451,6 @@ public class SpoilerFreeRecs extends JFrame {
         return out;
     }
     final Set<Long> azarEnsenadas = new HashSet<>();
-    /** Forma por resta con los snapshots: ELO de ahora menos el de anoche (24 h) y menos el de hace 7 días; partidas = diferencia de partidas jugadas. null si no hay snapshot o no sabemos el ELO actual. */
-    Forma[] formaPorResta(long pid) {
-        int[] ayer = ELO_AYER.get(pid);
-        if (ayer == null) return null;
-        Integer ahora = null; Integer partidasAhora = null;
-        Integer e = eloWatch.get(pid); if (e != null && e > 0) { ahora = e; partidasAhora = gamesWatch.get(pid); }   // el ELO de la lista (top: del leaderboard, fresco; grupos: del vigilante)
-        if (ahora == null) return null;
-        Forma f24 = new Forma(ahora - ayer[0], 0, 0, 0, false, partidasAhora == null || ayer[1] <= 0 ? (ahora != ayer[0] ? 1 : 0) : Math.max(0, partidasAhora - ayer[1]));
-        int[] h7 = ELO_HACE7.get(pid);
-        Forma f7 = h7 == null ? null : new Forma(ahora - h7[0], 0, 0, 0, false, partidasAhora == null || h7[1] <= 0 ? (ahora != h7[0] ? 1 : 0) : Math.max(0, partidasAhora - h7[1]));
-        return new Forma[]{ f24, f7 };
-    }
     final Map<Long, Integer> gamesWatch = new java.util.concurrent.ConcurrentHashMap<>();
     boolean actOrigenSfr; String actHastaSfr; JButton actHoyBtn; JLabel actHastaLabel;
 
