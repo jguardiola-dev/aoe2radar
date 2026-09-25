@@ -208,6 +208,7 @@ import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
 import static dev.tirador.aoe2radar.util.Formato.fmtTop;
 import static dev.tirador.aoe2radar.util.Formato.miles;
 import static dev.tirador.aoe2radar.util.Formato.pct1;
+import static dev.tirador.aoe2radar.util.Formato.truncarPx;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Identidad.AUTOR;
@@ -3990,18 +3991,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return h.toString();
     }
 
-    /** Recorta s hasta que quepa en px píxeles con la fuente dada (con «…»). */
-    static String truncarPx(String s, FontMetrics fm, int px) {
-        if (s == null) return "";
-        if (fm == null || fm.stringWidth(s) <= px) return s;
-        String puntos = "\u2026";
-        int lo = 0, hi = s.length();
-        while (lo < hi) {   // bisección sobre la longitud
-            int mid = (lo + hi + 1) / 2;
-            if (fm.stringWidth(s.substring(0, mid) + puntos) <= px) lo = mid; else hi = mid - 1;
-        }
-        return lo <= 0 ? puntos : s.substring(0, lo) + puntos;
-    }
+    // truncarPx: ver util.Formato (recorte con puntos suspensivos, compartido por Live now y la watchlist).
 
     /** Consulta GitHub Releases (una llamada, sin claves) y enseña el botón si hay versión nueva. La red y la lectura
      *  del JSON viven en service.ControlService#ultimaVersion; aquí solo quedan la UI y los diálogos. */
