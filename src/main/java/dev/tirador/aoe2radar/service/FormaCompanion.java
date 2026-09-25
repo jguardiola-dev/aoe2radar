@@ -9,6 +9,7 @@ import dev.tirador.aoe2radar.util.Reloj;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.LongFunction;
 
 import static dev.tirador.aoe2radar.util.Hilos.avisarSiUi;
 import static dev.tirador.aoe2radar.util.Json.firstNonNull;
@@ -25,16 +26,17 @@ public final class FormaCompanion implements FormService {
     }
 
     @Override
-    public Forma[] porResta(long pid, Integer eloActual, Integer partidasActual) {
+    public Forma[] porResta(long pid, LongFunction<Integer> eloActual, LongFunction<Integer> partidasActual) {
         int[] ayer = eloNocturno.ayer.get(pid);
-        if (ayer == null) return null;
-        if (eloActual == null || eloActual <= 0) return null;
-        int ahora = eloActual;
+        if (ayer == null) return null;   // sin snapshot de ayer no hace falta leer eloActual (perezoso, como la 1.1)
+        Integer ahora = null, partidasAhora = null;
+        Integer e = eloActual.apply(pid); if (e != null && e > 0) { ahora = e; partidasAhora = partidasActual.apply(pid); }
+        if (ahora == null) return null;
         Forma f24 = new Forma(ahora - ayer[0], 0, 0, 0, false,
-                partidasActual == null || ayer[1] <= 0 ? (ahora != ayer[0] ? 1 : 0) : Math.max(0, partidasActual - ayer[1]));
+                partidasAhora == null || ayer[1] <= 0 ? (ahora != ayer[0] ? 1 : 0) : Math.max(0, partidasAhora - ayer[1]));
         int[] h7 = eloNocturno.hace7.get(pid);
         Forma f7 = h7 == null ? null : new Forma(ahora - h7[0], 0, 0, 0, false,
-                partidasActual == null || h7[1] <= 0 ? (ahora != h7[0] ? 1 : 0) : Math.max(0, partidasActual - h7[1]));
+                partidasAhora == null || h7[1] <= 0 ? (ahora != h7[0] ? 1 : 0) : Math.max(0, partidasAhora - h7[1]));
         return new Forma[]{ f24, f7 };
     }
 
@@ -85,7 +87,7 @@ public final class FormaCompanion implements FormService {
     }
 
     @Override
-    public boolean pendiente(long ultimaConsultaTs) {
-        return reloj.ahoraMs() - ultimaConsultaTs > CADUCIDAD.toMillis();
+    public boolean pendiente(long ultimaConsultaTs, long ahoraMs) {
+        return ahoraMs - ultimaConsultaTs > CADUCIDAD.toMillis();
     }
 }

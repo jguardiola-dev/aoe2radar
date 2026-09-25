@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.service;
 import dev.tirador.aoe2radar.model.Forma;
 
 import java.time.Duration;
+import java.util.function.LongFunction;
 
 /**
  * La forma reciente de un jugador (±ELO 1v1 ranked en una ventana de 24 h o 7 días). «Nocturno primero»: porResta no
@@ -18,11 +19,13 @@ public interface FormService {
 
     /**
      * Forma por resta con el ELO nocturno (EloNocturno.ayer / .hace7): ELO actual menos el de anoche (24 h) y menos el
-     * de hace 7 días; partidas = diferencia de partidas jugadas. eloActual/partidasActual es lo que la app ya sabe del
-     * jugador (su ELO vigilado); ninguno de los dos sale de aquí. Devuelve {forma24, forma7d} (forma7d null si falta
-     * el snapshot de hace 7 días); null entero si falta el snapshot de ayer o el ELO actual. Sin red.
+     * de hace 7 días; partidas = diferencia de partidas jugadas. eloActual/partidasActual son lecturas PEREZOSAS de lo
+     * que la app ya sabe del jugador (eloWatch/gamesWatch, escritos en el EDT): solo se invocan si hace falta, en los
+     * mismos puntos que la 1.1 (eloActual, solo si hay snapshot de ayer; partidasActual, solo si eloActual > 0), para
+     * no leer ese estado compartido más veces de las necesarias. Devuelve {forma24, forma7d} (forma7d null si falta el
+     * snapshot de hace 7 días); null entero si falta el snapshot de ayer o el ELO actual. Sin red.
      */
-    Forma[] porResta(long pid, Integer eloActual, Integer partidasActual);
+    Forma[] porResta(long pid, LongFunction<Integer> eloActual, LongFunction<Integer> partidasActual);
 
     /**
      * Una llamada a /profiles: la serie de rating 1v1 con fechas → 24 h y 7 d a la vez. Devuelve {forma24, forma7d};
@@ -30,6 +33,9 @@ public interface FormService {
      */
     Forma[] porSerie(long pid) throws Exception;
 
-    /** ¿Ya pasaron los 10 min (CADUCIDAD) desde ultimaConsultaTs (0 si nunca se consultó)? Con el reloj inyectado. */
-    boolean pendiente(long ultimaConsultaTs);
+    /**
+     * ¿Ya pasaron los 10 min (CADUCIDAD) desde ultimaConsultaTs (0 si nunca se consultó)? ahoraMs: la hora de una sola
+     * lectura del reloj para todo el lote (como cargarForma en la 1.1: una hora para toda la lista, no una por jugador).
+     */
+    boolean pendiente(long ultimaConsultaTs, long ahoraMs);
 }

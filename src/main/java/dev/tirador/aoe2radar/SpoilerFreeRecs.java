@@ -845,7 +845,7 @@ public class SpoilerFreeRecs extends JFrame {
     final Map<Long, Long> formaTs24 = new java.util.concurrent.ConcurrentHashMap<>();
     final Map<Long, Long> formaTs7d = new java.util.concurrent.ConcurrentHashMap<>();
     /** Campo de instancia (no static): se inicializa después de COMPANION, que es static (SpoilerFreeRecs paso FormService). */
-    final FormService FORMA_SERVICE = new FormaCompanion(COMPANION, Snapshots.ELO, Reloj.SISTEMA);
+    final FormService formaService = new FormaCompanion(COMPANION, Snapshots.ELO, Reloj.SISTEMA);
     volatile boolean formaVisible;   // el chip: nace apagado, no se recuerda
     static String tipVerForma() { return t("Consulta el ±ELO reciente (según el selector) y lo muestra como columna ordenable junto al ELO. Con jugadores seleccionados consulta solo esos; sin selección, todos. No se recuerda entre sesiones.",
             "Fetches the recent ±ELO (per the selector) and shows it as a sortable column next to the ELO. With players selected it checks only those; with none, everyone. Not remembered between sessions."); }
@@ -926,7 +926,8 @@ public class SpoilerFreeRecs extends JFrame {
         Map<Long, Forma> cache = horas <= 24 ? forma24 : forma7d;
         Map<Long, Long> ts = horas <= 24 ? formaTs24 : formaTs7d;
         List<Player> pendientes = new ArrayList<>();
-        for (Player p : objetivo) if (FORMA_SERVICE.pendiente(ts.getOrDefault(p.id(), 0L))) pendientes.add(p);
+        long ahora = Reloj.SISTEMA.ahoraMs();   // una sola lectura del reloj para todo el lote, como la 1.1
+        for (Player p : objetivo) if (formaService.pendiente(ts.getOrDefault(p.id(), 0L), ahora)) pendientes.add(p);
         if (pendientes.isEmpty()) { if (alTerminar != null) alTerminar.run(); return; }
         if (modoTop() && pendientes.size() > 20) {
             int seg = (int) Math.ceil(pendientes.size() * 0.6);
@@ -948,7 +949,7 @@ public class SpoilerFreeRecs extends JFrame {
                 List<Player> porApi = new ArrayList<>();
                 long ahoraTs = System.currentTimeMillis();
                 for (Player p : pendientes) {   // 1) resta con el snapshot nocturno: sin llamadas
-                    Forma[] f = FORMA_SERVICE.porResta(p.id(), eloWatch.get(p.id()), gamesWatch.get(p.id()));
+                    Forma[] f = formaService.porResta(p.id(), eloWatch::get, gamesWatch::get);
                     if (f == null) { porApi.add(p); continue; }
                     forma24.put(p.id(), f[0]); formaTs24.put(p.id(), ahoraTs);
                     if (f[1] != null) { forma7d.put(p.id(), f[1]); formaTs7d.put(p.id(), ahoraTs); } else if (horas > 24) porApi.add(p);
@@ -957,7 +958,7 @@ public class SpoilerFreeRecs extends JFrame {
                 for (Player p : porApi) {   // 2) quien no está en el snapshot: su serie de rating, exacta (una llamada por jugador)
                     if (stopOperacion) break;
                     try {
-                        Forma[] ambas = FORMA_SERVICE.porSerie(p.id());
+                        Forma[] ambas = formaService.porSerie(p.id());
                         if (ambas != null) { forma24.put(p.id(), ambas[0]); formaTs24.put(p.id(), ahoraTs); forma7d.put(p.id(), ambas[1]); formaTs7d.put(p.id(), ahoraTs); }
                     } catch (Exception ex) { log("forma " + p.name() + ": " + causa(ex)); }
                 }
