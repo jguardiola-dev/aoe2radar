@@ -13,3 +13,5 @@ app/
 *.class
 .idea/
 .vscode/
+# copias de trabajo de los subagentes (git worktree)
+/.claude/worktrees/
