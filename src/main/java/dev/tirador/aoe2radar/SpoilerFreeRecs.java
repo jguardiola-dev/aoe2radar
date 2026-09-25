@@ -36,6 +36,7 @@ import dev.tirador.aoe2radar.api.Recs;
 import dev.tirador.aoe2radar.api.SocketVivo;
 import dev.tirador.aoe2radar.api.SteamApi;
 import dev.tirador.aoe2radar.api.Transporte;
+import dev.tirador.aoe2radar.cache.Anotaciones;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
@@ -45,12 +46,10 @@ import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
 import dev.tirador.aoe2radar.model.Clasificacion;
-import dev.tirador.aoe2radar.model.Comparado;
 import dev.tirador.aoe2radar.model.Directo;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Forma;
-import dev.tirador.aoe2radar.model.LadderHist;
 import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
@@ -60,7 +59,6 @@ import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Player;
-import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
@@ -86,6 +84,7 @@ import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.NombresStats;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
 import dev.tirador.aoe2radar.service.ProfileService;
+import dev.tirador.aoe2radar.service.RatingsServiceSfr;
 import dev.tirador.aoe2radar.service.RecService;
 import dev.tirador.aoe2radar.service.StatsService;
 import dev.tirador.aoe2radar.service.StatsServiceSfr;
@@ -96,6 +95,7 @@ import dev.tirador.aoe2radar.ui.CivStatsView;
 import dev.tirador.aoe2radar.ui.FiltroStats;
 import dev.tirador.aoe2radar.ui.Listas;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
+import dev.tirador.aoe2radar.ui.RatingsView;
 import dev.tirador.aoe2radar.ui.SelectorRangoElo;
 import dev.tirador.aoe2radar.ui.Tareas;
 import dev.tirador.aoe2radar.ui.WrapLayout;
@@ -159,7 +159,7 @@ import static dev.tirador.aoe2radar.service.Aleatorio.ultimaPaginaRango;
 import static dev.tirador.aoe2radar.service.CalculoStats.MIN_PARTIDAS_CIV;
 import static dev.tirador.aoe2radar.service.CalculoStats.POCAS_PARTIDAS;
 import static dev.tirador.aoe2radar.service.CalculoStats.duracionMedia;
-import static dev.tirador.aoe2radar.service.ConsultasLadder.BIN_LADDER;
+import static dev.tirador.aoe2radar.service.ConsultasLadder.ladderNombre;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.miembrosClan;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRango;
 import static dev.tirador.aoe2radar.service.ConsultasLadder.percentilRating;
@@ -191,17 +191,8 @@ import static dev.tirador.aoe2radar.service.ReglasPartida.posicionEnEquipo;
 import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
 import static dev.tirador.aoe2radar.service.ReglasPartida.tramoDuracion;
 import static dev.tirador.aoe2radar.sfrdata.CivStats.VENTANAS_STATS;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.activosDias;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.activosMinPartidas;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.clanes;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.dispersionActivos;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.dispersionTodos;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.hist;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderCargando;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderGenerado;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderHistsActivos;
-import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderProgreso;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.ELO_AYER;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.ELO_HACE7;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.NOMBRES_AYER;
@@ -1048,17 +1039,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
     volatile int fallosFetch;   // jugadores sin respuesta en la última búsqueda
 
-    // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
-    static final int MAX_COMPARADOS = 10;
-    static final String[] FAMILIAS = { "rm", "ew" };
-    static String ladderNombre(String id) {
-        return switch (id) {
-            case "rm_1v1" -> "1v1 Random Map"; case "rm_team" -> t("Equipos Random Map", "Team Random Map");
-            case "ew_1v1" -> "1v1 Empire Wars"; case "ew_team" -> t("Equipos Empire Wars", "Team Empire Wars");
-            default -> id;
-        };
-    }
-    static String familiaNombre(String f) { return "ew".equals(f) ? "Empire Wars" : "Random Map"; }
     static final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
     JComboBox<String> topNCombo; boolean rellenandoTopN; JPanel norteWatchRef; JButton todasPerfilBtn;
     JPanel parClan, parClanGuardados; JTextField clanField; JPopupMenu clanPopup; JComboBox<String> clanesGuardadosCombo; JButton clanEstrella; boolean rellenandoClanes;
@@ -1079,19 +1059,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         } finally { rellenandoClanes = false; }
     }
     JToggleButton ladderBtn;
-    JPanel ladderPanel; JComboBox<String> familiaCombo; JCheckBox activosCheck, dispersionCheck; JSplitPane ladderDivisor;
-    JTextField ladderBusca; JPopupMenu ladderPopup; JLabel ladderEstado, ladderPista;
-    final List<Comparado> ladderComparados = new ArrayList<>();
-    HistogramaPanel histograma1, histograma2; DispersionPanel dispersion; JPanel ladderChips, ladderGraficos; JButton ladderQuitarTodos; JTable ladderTabla; DefaultTableModel ladderModelo;
-    javax.swing.Timer ladderDebounce;
-    String familia = "ew".equals(leerConfig("ladder_familia", "rm")) ? "ew" : "rm";
-    boolean soloActivos = Boolean.parseBoolean(leerConfig("ladder_activos", "true"));
-
-    /** El «Top %» que se muestra: con todos y rango conocido, el exacto por rango; si no, por rating sobre la campana elegida. */
-    String topDe(Comparado c, String lb) {
-        String p = !soloActivos && c.rank(lb) > 0 ? percentilRango(lb, c.rank(lb)) : null;
-        return p != null ? p : percentilRating(lb, soloActivos, c.rating(lb));
-    }
+    /** La vista Ratings (card "ladder"): ver ui.RatingsView. */
+    RatingsView ratings;
 
     // ----- «★ Top clan»: una vista más de la watchlist -----
     void cargarTopClan() {
@@ -1119,466 +1088,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }, "top-clan").start();
     }
 
-    // ----- Panel «Ladder»: dos campanas (1v1 arriba, equipos debajo), dispersión, percentiles y comparador -----
-    double ratingsEscala = Math.max(0.6, Math.min(1.6, Double.parseDouble(leerConfig("ratings_escala", "1"))));   // tamaño de los tres gráficos (zoom de conjunto)
-
-    class HistogramaPanel extends JPanel {
-        String lb;
-        int ml = 58, mb = 30, mt = 30, mr = 18;
-        HistogramaPanel(String lb) {
-            this.lb = lb; setOpaque(false);
-            ToolTipManager.sharedInstance().registerComponent(this);
-            addMouseWheelListener(e -> {
-                if (e.isControlDown()) { escalarRatings(e.getPreciseWheelRotation() < 0 ? 1.15 : 1 / 1.15); e.consume(); }
-                else { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, this); if (sc != null) sc.dispatchEvent(SwingUtilities.convertMouseEvent(this, e, sc)); }
-            });
-            addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e)) escalarRatingsReset(); } });
-        }
-        LadderHist datos() { return hist(lb, soloActivos); }
-        /** Rango de ELO de esta campana. */
-        double[] rango() {
-            LadderHist h = datos();
-            if (h == null) return new double[]{ 0, 3000 };
-            return new double[]{ h.min(), h.min() + h.bins().length * (double) BIN_LADDER };
-        }
-        double sx() { double[] r = rango(); return (getWidth() - ml - mr) / Math.max(1, r[1] - r[0]); }
-        double eloEn(int x) { return rango()[0] + (x - ml) / sx(); }
-        int xDe(double elo) { return ml + (int) Math.round((elo - rango()[0]) * sx()); }
-        @Override public String getToolTipText(MouseEvent e) {
-            LadderHist h = datos();
-            if (h == null || e.getX() < ml || e.getX() > getWidth() - mr) return null;
-            int idx = Math.floorDiv((int) Math.floor(eloEn(e.getX())) - h.min(), BIN_LADDER);
-            if (idx < 0 || idx >= h.bins().length) return null;
-            long encima = 0; for (int i = idx + 1; i < h.bins().length; i++) encima += h.bins()[i];
-            int lo = h.min() + idx * BIN_LADDER;
-            return "<html><b>" + lo + "–" + (lo + BIN_LADDER - 1) + "</b>: " + miles(h.bins()[idx]) + t(" jugadores", " players") + "<br>"
-                    + miles(encima) + t(" por encima", " above") + " (" + escapeHtml(fmtTop(100.0 * encima / h.total())) + ")</html>";
-        }
-        @Override protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int w = getWidth(), ht = getHeight();
-            Color fg = UIManager.getColor("Label.foreground"); if (fg == null) fg = Color.GRAY;
-            Color gris = new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 90 : 170), tenue = new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), 35);
-            LadderHist h = datos();
-            Font base = g2.getFont();
-            g2.setFont(base.deriveFont(Font.BOLD, 12f));
-            g2.setColor(fg);
-            String titulo = ladderNombre(lb) + (h == null ? "" : "  ·  " + miles(h.total()) + (soloActivos && ladderHistsActivos.containsKey(lb) ? t(" activos", " active") : t(" jugadores", " players"))
-                    + "  ·  " + t("mediana ", "median ") + h.mediana());
-            g2.drawString(titulo, ml, 16);
-            g2.setFont(base);
-            if (h == null || h.bins().length == 0 || h.total() == 0) { g2.setColor(gris); g2.drawString(t("Sin datos", "No data"), ml, ht / 2); g2.dispose(); return; }
-            int[] bins = h.bins(); int minR = h.min();
-            double[] r = rango(); double sx = sx();
-            int i0 = Math.max(0, (int) Math.floor((r[0] - minR) / BIN_LADDER)), i1 = Math.min(bins.length - 1, (int) Math.ceil((r[1] - minR) / BIN_LADDER));
-            int max = 1; for (int i = i0; i <= i1; i++) max = Math.max(max, bins[i]);
-            // eje Y: jugadores por tramo de 25, con marcas «redondas»
-            double pasoY = pasoBonito(max / 4.0);
-            g2.setFont(base.deriveFont(10f));
-            for (double v = pasoY; v <= max; v += pasoY) {
-                int y = ht - mb - (int) ((ht - mb - mt) * v / max);
-                g2.setColor(tenue); g2.drawLine(ml, y, w - mr, y);
-                g2.setColor(gris); String s = etiquetaK(v); g2.drawString(s, ml - 6 - g2.getFontMetrics().stringWidth(s), y + 4);
-            }
-            g2.setColor(gris);
-            g2.drawLine(ml, ht - mb, w - mr, ht - mb);
-            g2.drawLine(ml, mt, ml, ht - mb);
-            // eje X: ELO, marcas según el zoom
-            int pasoX = (int) pasoBonito((r[1] - r[0]) / 8.0);
-            for (int v = (int) (Math.ceil(r[0] / pasoX) * pasoX); v <= r[1]; v += pasoX) {
-                int x = xDe(v);
-                g2.drawLine(x, ht - mb, x, ht - mb + 4);
-                String s = String.valueOf(v);
-                g2.drawString(s, x - g2.getFontMetrics().stringWidth(s) / 2, ht - mb + 16);
-            }
-            g2.drawString("ELO", w - mr - g2.getFontMetrics().stringWidth("ELO"), ht - mb + 27);
-            g2.drawString(t("jugadores", "players"), 4, mt - 6);
-            Color barra = temaOscuroActivo ? new Color(0x5a, 0x8f, 0xc7) : new Color(0x3b, 0x6e, 0xa8);
-            int anchoBarra = Math.max(1, (int) Math.ceil(BIN_LADDER * sx) - 1);
-            for (int i = i0; i <= i1; i++) {
-                int bh = (int) ((ht - mb - mt) * bins[i] / (double) max);
-                int x = xDe(minR + i * BIN_LADDER);
-                if (x + anchoBarra < ml || x > w - mr) continue;
-                g2.setColor(barra);
-                g2.fillRect(Math.max(ml, x), ht - mb - bh, Math.min(anchoBarra, w - mr - Math.max(ml, x)), bh);
-            }
-            // mediana: línea gruesa y etiqueta con fondo
-            if (h.mediana() >= r[0] && h.mediana() <= r[1]) {
-                int xm = xDe(h.mediana());
-                g2.setColor(temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00));
-                g2.setStroke(new BasicStroke(2.2f));
-                g2.drawLine(xm, mt, xm, ht - mb);
-                String s = t("mediana ", "median ") + h.mediana();
-                g2.setFont(base.deriveFont(Font.BOLD, 11f));
-                int sw = g2.getFontMetrics().stringWidth(s);
-                int lx = xm + 6 + sw > w - mr ? xm - 6 - sw : xm + 6;
-                g2.setColor(temaOscuroActivo ? new Color(0, 0, 0, 150) : new Color(255, 255, 255, 190));
-                g2.fillRoundRect(lx - 4, mt + 2, sw + 8, 16, 6, 6);
-                g2.setColor(temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00));
-                g2.drawString(s, lx, mt + 14);
-            }
-            g2.setFont(base);
-            int k = 0;
-            for (Comparado c : ladderComparados) {
-                int rating = c.rating(lb);
-                Color col = PALETA_LADDER[k % PALETA_LADDER.length];
-                k++;
-                if (rating <= 0 || rating < r[0] || rating > r[1]) continue;
-                int x = xDe(rating);
-                g2.setColor(col);
-                g2.setStroke(new BasicStroke(2f));
-                int fila = (k - 1) % 5;
-                g2.drawLine(x, mt + 22 + fila * 13, x, ht - mb);
-                String p = topDe(c, lb);
-                String etiqueta = c.name() + " · " + rating + (p != null ? " · " + p : "");
-                int ancho = g2.getFontMetrics().stringWidth(etiqueta);
-                g2.drawString(etiqueta, x + 4 + ancho > w - mr ? x - 4 - ancho : x + 4, mt + 32 + fila * 13);   // junto al borde derecho, a la izquierda de la línea
-            }
-            g2.dispose();
-        }
-    }
-
-
-    /** Zoom de conjunto: los tres gráficos crecen o encogen a la vez (entre la mitad y el doble); se recuerda. */
-    void escalarRatings(double factor) {
-        ratingsEscala = Math.max(0.6, Math.min(1.6, ratingsEscala * factor));
-        guardarConfig("ratings_escala", String.format(Locale.ROOT, "%.3f", ratingsEscala));
-        aplicarEscalaRatings();
-    }
-    void escalarRatingsReset() { ratingsEscala = 1; guardarConfig("ratings_escala", "1"); aplicarEscalaRatings(); }
-    /** Tamaño y disposición de los gráficos según la escala: apilados a tamaño normal; al alejar, las campanas lado a lado y la dispersión a media anchura, cada uno con su proporción. */
-    void aplicarEscalaRatings() {
-        if (histograma1 == null || ladderGraficos == null) return;
-        for (JComponent c : new JComponent[]{ histograma1, histograma2, dispersion }) {
-            int alto = (int) Math.round((c == dispersion ? 420 : 300) * ratingsEscala);
-            c.setPreferredSize(new Dimension(10, alto)); c.setMinimumSize(new Dimension(10, alto)); c.setMaximumSize(new Dimension(Integer.MAX_VALUE, alto));
-            c.setAlignmentX(0f);
-        }
-        ladderGraficos.removeAll();
-        if (ratingsEscala >= 0.75) {
-            ladderGraficos.add(histograma1); ladderGraficos.add(Box.createRigidArea(new Dimension(0, 16)));
-            ladderGraficos.add(histograma2); ladderGraficos.add(Box.createRigidArea(new Dimension(0, 16)));
-            ladderGraficos.add(dispersion);
-        } else {
-            JPanel fila1 = new JPanel(new GridLayout(1, 2, 16, 0)); fila1.setOpaque(false); fila1.setAlignmentX(0f);
-            fila1.add(histograma1); fila1.add(histograma2);
-            fila1.setMaximumSize(new Dimension(Integer.MAX_VALUE, histograma1.getPreferredSize().height));
-            JPanel fila2 = new JPanel(new GridLayout(1, 2, 16, 0)); fila2.setOpaque(false); fila2.setAlignmentX(0f);
-            JPanel hueco = new JPanel(); hueco.setOpaque(false);
-            fila2.add(dispersion); fila2.add(hueco);
-            fila2.setMaximumSize(new Dimension(Integer.MAX_VALUE, dispersion.getPreferredSize().height));
-            ladderGraficos.add(fila1); ladderGraficos.add(Box.createRigidArea(new Dimension(0, 12))); ladderGraficos.add(fila2);
-        }
-        ladderGraficos.revalidate(); ladderGraficos.repaint();
-    }
-
-    /** Dispersión rating 1v1 (x) × rating equipos (y): densidad por celdas de 25×25, recta de regresión y los comparados como puntos. */
-    class DispersionPanel extends JPanel {
-        DispersionPanel() { setOpaque(false); }
-        Rejilla datos() {
-            Rejilla r = soloActivos ? dispersionActivos.get(familia) : null;
-            return r != null ? r : dispersionTodos.get(familia);
-        }
-        @Override protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int w = getWidth(), ht = getHeight(), ml = 52, mb = 30, mt = 30, mr = 16;
-            Color fg = UIManager.getColor("Label.foreground"); if (fg == null) fg = Color.GRAY;
-            Color gris = new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 90 : 170);
-            Font base = g2.getFont();
-            Rejilla r = datos();
-            String lbx = familia + "_1v1", lby = familia + "_team";
-            g2.setFont(base.deriveFont(Font.BOLD, 12f));
-            g2.setColor(fg);
-            g2.drawString(t("Dispersión ", "Scatter ") + ladderNombre(lbx) + " × " + ladderNombre(lby)
-                    + (r == null ? "" : "  ·  " + miles(r.n()) + (soloActivos && dispersionActivos.containsKey(familia) ? t(" activos", " active") : t(" jugadores", " players")) + t(" en ambos ladders", " on both ladders")
-                    + "  ·  r = " + String.format(Locale.ROOT, "%.2f", r.r())), ml, 16);
-            g2.setFont(base);
-            if (r == null) { g2.setColor(gris); g2.drawString(t("Sin datos de dispersión (aún no publicados o menos de 100 jugadores).", "No scatter data (not published yet or fewer than 100 players)."), ml, ht / 2); g2.dispose(); return; }
-            int maxIx = 0, maxIy = 0, maxN = 1;
-            for (int[] c : r.celdas()) { maxIx = Math.max(maxIx, c[0]); maxIy = Math.max(maxIy, c[1]); maxN = Math.max(maxN, c[2]); }
-            int x0 = r.minX(), x1 = r.minX() + (maxIx + 1) * BIN_LADDER, y0 = r.minY(), y1 = r.minY() + (maxIy + 1) * BIN_LADDER;
-            double sx = (w - ml - mr) / (double) (x1 - x0), sy = (ht - mb - mt) / (double) (y1 - y0);
-            Color base2 = temaOscuroActivo ? new Color(0x5a, 0x8f, 0xc7) : new Color(0x3b, 0x6e, 0xa8);
-            int cw = Math.max(1, (int) Math.ceil(BIN_LADDER * sx)), ch = Math.max(1, (int) Math.ceil(BIN_LADDER * sy));
-            for (int[] c : r.celdas()) {
-                int alfa = 25 + (int) (225 * Math.sqrt(c[2] / (double) maxN));
-                g2.setColor(new Color(base2.getRed(), base2.getGreen(), base2.getBlue(), Math.min(255, alfa)));
-                int px = ml + (int) ((c[0] * BIN_LADDER) * sx);
-                int py = ht - mb - (int) (((c[1] + 1) * BIN_LADDER) * sy);
-                g2.fillRect(px, py, cw, ch);
-            }
-            g2.setColor(gris);
-            g2.drawLine(ml, ht - mb, w - mr, ht - mb);
-            g2.drawLine(ml, mt, ml, ht - mb);
-            g2.setFont(base.deriveFont(10f));
-            for (int v = (Math.floorDiv(x0, 500) + 1) * 500; v < x1; v += 500) { int x = ml + (int) ((v - x0) * sx); g2.drawLine(x, ht - mb, x, ht - mb + 4); g2.drawString(String.valueOf(v), x - 12, ht - mb + 16); }
-            for (int v = (Math.floorDiv(y0, 500) + 1) * 500; v < y1; v += 500) { int y = ht - mb - (int) ((v - y0) * sy); g2.drawLine(ml - 4, y, ml, y); g2.drawString(String.valueOf(v), 6, y + 4); }
-            g2.drawString(t("ELO 1v1 →", "1v1 ELO →"), w - mr - 60, ht - 4);
-            g2.drawString(t("↑ ELO equipos", "↑ Team ELO"), ml + 4, mt + 12);
-            // recta y = a·x + b, recortada al rango vertical visible
-            g2.setColor(new Color(0xe0, 0x60, 0x40));
-            g2.setStroke(new BasicStroke(1.6f));
-            double ya = r.a() * x0 + r.b(), yb = r.a() * x1 + r.b();
-            int px1 = ml, px2 = w - mr;
-            int py1 = ht - mb - (int) ((ya - y0) * sy), py2 = ht - mb - (int) ((yb - y0) * sy);
-            Shape clipPrevio = g2.getClip();   // nunca setClip(null): quitaría el recorte del visor y pintaría sobre la tabla
-            g2.clipRect(ml, mt, w - ml - mr, ht - mb - mt);
-            g2.drawLine(px1, py1, px2, py2);
-            g2.setClip(clipPrevio);
-            g2.drawString(String.format(Locale.ROOT, "y = %.2f·x + %.0f", r.a(), r.b()), w - mr - 120, mt + 12);
-            int k = 0;
-            for (Comparado c : ladderComparados) {
-                Color col = PALETA_LADDER[k % PALETA_LADDER.length];
-                k++;
-                int rx = c.rating(lbx), ry = c.rating(lby);
-                if (rx <= 0 || ry <= 0) continue;
-                int px = ml + (int) ((rx - x0) * sx), py = ht - mb - (int) ((ry - y0) * sy);
-                g2.setColor(col);
-                g2.fillOval(px - 5, py - 5, 10, 10);
-                g2.setColor(fg);
-                g2.drawOval(px - 5, py - 5, 10, 10);
-                g2.setColor(col);
-                int ancho = g2.getFontMetrics().stringWidth(c.name());
-                g2.drawString(c.name(), px + 8 + ancho > w - mr ? px - 8 - ancho : px + 8, py - 4);
-            }
-            g2.dispose();
-        }
-    }
-
-    JPanel construirPanelLadder() {
-        ladderPanel = new JPanel(new BorderLayout(8, 6));
-        ladderPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-        JPanel norte = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-        familiaCombo = new JComboBox<>(new String[]{ familiaNombre("rm"), familiaNombre("ew") });
-        familiaCombo.setSelectedIndex("ew".equals(familia) ? 1 : 0);
-        familiaCombo.setToolTipText(t("Random Map: campanas 1v1 y equipos RM. Empire Wars: las de EW.", "Random Map: 1v1 and team RM curves. Empire Wars: the EW ones."));
-        familiaCombo.addActionListener(e -> { familia = FAMILIAS[Math.max(0, familiaCombo.getSelectedIndex())]; guardarConfig("ladder_familia", familia); ladderRefrescar(); });
-        norte.add(familiaCombo);
-        activosCheck = new JCheckBox(t("Solo activos", "Active only"), soloActivos);
-        activosCheck.setFocusable(false);
-        activosCheck.addActionListener(e -> { soloActivos = activosCheck.isSelected(); guardarConfig("ladder_activos", String.valueOf(soloActivos)); ladderRefrescar(); });
-        norte.add(activosCheck);
-        JPanel zoom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
-        JLabel zl = new JLabel(t("Zoom:", "Zoom:")); zl.setFont(zl.getFont().deriveFont(11f)); zoom.add(zl);
-        for (String[] z : new String[][]{ { "\u2212", "out" }, { "+", "in" }, { "\u27F2", "reset" } }) {
-            JButton zb = new JButton(z[0]);
-            zb.setFocusable(false); zb.setMargin(new Insets(0, 6, 0, 6)); zb.putClientProperty("JButton.buttonType", "roundRect");
-            zb.setToolTipText(t("Tamaño de los tres gráficos a la vez: aleja para verlos todos con la tabla, acerca para leer detalle. También Ctrl + rueda sobre un gráfico; doble clic para volver.", "Size of the three charts at once: zoom out to see them all with the table, zoom in for detail. Also Ctrl + wheel over a chart; double-click to reset."));
-            zb.addActionListener(e -> { switch (z[1]) { case "in" -> escalarRatings(1.25); case "out" -> escalarRatings(1 / 1.25); default -> escalarRatingsReset(); } });
-            zoom.add(zb);
-        }
-        ladderBusca = new JTextField(18);
-        ladderBusca.putClientProperty("JTextField.placeholderText", t("Buscar jugador… o selecciona en la watchlist", "Search a player… or select in the watchlist"));
-        ladderBusca.putClientProperty("JTextField.showClearButton", true);
-        ladderPopup = new JPopupMenu(); ladderPopup.setFocusable(false);
-        ladderDebounce = new javax.swing.Timer(450, e -> ladderSugerir());
-        ladderDebounce.setRepeats(false);
-        ladderBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { ladderDebounce.restart(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        ladderBusca.addActionListener(e -> {   // Enter: la primera sugerencia (y así el Enter no llega al botón de buscar partidas)
-            if (ladderPopup.isVisible() && ladderPopup.getComponentCount() > 0) ((JMenuItem) ladderPopup.getComponent(0)).doClick();
-            else ladderSugerir();
-        });
-        ladderBusca.addKeyListener(new KeyAdapter() {
-            @Override public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_DOWN && ladderPopup.isVisible() && ladderPopup.getComponentCount() > 0) { ((JMenuItem) ladderPopup.getComponent(0)).doClick(); e.consume(); }
-                else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) ladderPopup.setVisible(false);
-            }
-        });
-        norte.add(ladderBusca, 0);   // el buscador, siempre lo primero de la barra (igual en Perfil)
-        ladderEstado = new JLabel();
-        ladderEstado.setFont(ladderEstado.getFont().deriveFont(Font.PLAIN, 11f));
-        norte.add(ladderEstado);
-        ladderPanel.add(norte, BorderLayout.NORTH);
-
-        JPanel centro = new JPanel(new BorderLayout(0, 4));
-        JPanel arriba = new JPanel(new BorderLayout(0, 2));
-        ladderPista = new JLabel(t("Busca un jugador arriba o selecciónalo en la watchlist (Ctrl para varios): aparecerá en las campanas.",
-                "Search a player above or select one in the watchlist (Ctrl for several): they'll show up on the curves."));
-        ladderPista.setFont(ladderPista.getFont().deriveFont(Font.ITALIC, 11f));
-        ladderPista.setForeground(Color.GRAY);
-        arriba.add(ladderPista, BorderLayout.NORTH);
-        ladderChips = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 2));
-        arriba.add(ladderChips, BorderLayout.CENTER);
-        ladderQuitarTodos = new JButton(t("\u00D7 Quitar todos", "\u00D7 Remove all"));
-        ladderQuitarTodos.setFocusable(false); ladderQuitarTodos.setMargin(new Insets(1, 6, 1, 6)); ladderQuitarTodos.putClientProperty("JButton.buttonType", "roundRect");
-        ladderQuitarTodos.setVisible(false);
-        ladderQuitarTodos.addActionListener(e -> { playersList.clearSelection(); ladderComparados.clear(); ladderRefrescarComparados(); });
-        arriba.add(ladderQuitarTodos, BorderLayout.EAST);
-        centro.add(arriba, BorderLayout.NORTH);
-        histograma1 = new HistogramaPanel(familia + "_1v1");
-        histograma2 = new HistogramaPanel(familia + "_team");
-        dispersion = new DispersionPanel();
-        PanelScrollable graficos = new PanelScrollable();
-        ladderGraficos = graficos;
-        aplicarEscalaRatings();
-        dispersion.addMouseWheelListener(e -> {   // el zoom de conjunto también desde la dispersión
-            if (e.isControlDown()) { escalarRatings(e.getPreciseWheelRotation() < 0 ? 1.15 : 1 / 1.15); e.consume(); }
-            else { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, dispersion); if (sc != null) sc.dispatchEvent(SwingUtilities.convertMouseEvent(dispersion, e, sc)); }
-        });
-        JScrollPane scroll = new JScrollPane(graficos, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.setBorder(null);
-        ladderModelo = new DefaultTableModel(new Object[]{ t("Jugador", "Player"), "ELO 1v1", t("Rango 1v1", "1v1 rank"), t("Top % 1v1", "1v1 top %"),
-                t("ELO equipos", "Team ELO"), t("Rango eq.", "Team rank"), t("Top % eq.", "Team top %"), t("Clan", "Clan"), t("País", "Country") }, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return false; }
-        };
-        ladderTabla = new JTable(ladderModelo);
-        ladderTabla.setRowHeight(ladderTabla.getRowHeight() + 4);
-        ladderTabla.getColumnModel().getColumn(8).setCellRenderer(new DefaultTableCellRenderer() {
-            @Override public Component getTableCellRendererComponent(JTable tb, Object value, boolean sel, boolean foc, int row, int col) {
-                JLabel lab = (JLabel) super.getTableCellRendererComponent(tb, value, sel, foc, row, col);
-                lab.setIcon(value == null ? null : iconoBandera(String.valueOf(value))); lab.setIconTextGap(5);
-                return lab;
-            }
-        });
-        JScrollPane sp = new JScrollPane(ladderTabla);
-        sp.setPreferredSize(new Dimension(10, 150));
-        JPanel abajo = new JPanel(new BorderLayout(0, 2));
-        abajo.add(zoom, BorderLayout.NORTH);   // el zoom, abajo a la derecha, bajo las gráficas
-        abajo.add(sp, BorderLayout.CENTER);
-        abajo.setMinimumSize(new Dimension(10, 60));
-        ladderDivisor = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, abajo);   // arrastra el borde: la tabla de comparados crece
-        ladderDivisor.setResizeWeight(1.0); ladderDivisor.setContinuousLayout(true); ladderDivisor.setBorder(null); ladderDivisor.setDividerSize(7);
-        ladderDivisor.setOneTouchExpandable(true);
-        ladderDivisor.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, ev -> {
-            if (ladderDivisor.isShowing() && ladderDivisor.getHeight() > 0) guardarConfig("ratings_tabla_alto", String.valueOf(Math.max(60, ladderDivisor.getHeight() - ladderDivisor.getDividerLocation() - ladderDivisor.getDividerSize())));
-        });
-        centro.add(ladderDivisor, BorderLayout.CENTER);
-        ladderPanel.add(centro, BorderLayout.CENTER);
-        JLabel pie = new JLabel(t("Distribución de ELO por ladder (resumen diario de sfr-data sobre los volcados de aoe2companion). «Solo activos»: jugadores con partidas recientes; el Top % se calcula sobre la campana elegida. Pasa el ratón por una barra para ver cuántos jugadores hay en ese tramo. Los seleccionados en la watchlist se dibujan mientras Ratings esté abierto.",
-                "ELO distribution per ladder (sfr-data daily summary of the aoe2companion dumps). \u201CActive only\u201D: players with recent games; the top % is computed on the chosen curve. Hover a bar to see how many players sit in that bracket. Watchlist selections are drawn while Ratings is open."));
-        pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
-        ladderPanel.add(pie, BorderLayout.SOUTH);
-        return ladderPanel;
-    }
-    /** Sugerencias de jugadores por nombre (búsqueda del companion, con retardo para no disparar por cada tecla). */
-    void ladderSugerir() {
-        String q = ladderBusca.getText().trim();
-        ladderPopup.setVisible(false); ladderPopup.removeAll();
-        if (q.length() < 2) return;
-        new Thread(() -> {
-            List<String[]> res = sugerirPerfiles(q);
-            SwingUtilities.invokeLater(() -> {
-                if (!q.equals(ladderBusca.getText().trim())) return;
-                ladderPopup.removeAll();
-                int n = 0;
-                for (String[] r : res) {
-                    JMenuItem it = new JMenuItem(r[2]);
-                    long pid = Long.parseLong(r[0]); String nombre = r[1];
-                    it.addActionListener(a -> { ladderAnadirPorId(pid, nombre); ladderBusca.setText(""); ladderPopup.setVisible(false); });
-                    ladderPopup.add(it);
-                    if (++n >= 8) break;
-                }
-                if (n > 0 && ladderBusca.isShowing()) ladderPopup.show(ladderBusca, 0, ladderBusca.getHeight());
-            });
-        }, "ladder-sugerir").start();
-    }
-
-    /** Añade un jugador a la comparación (buscado a mano o seleccionado en la watchlist). */
-    void ladderAnadir(long pid, String nombre, boolean deSeleccion) {
-        for (Comparado x : ladderComparados) if (x.pid() == pid) return;
-        ladderEstado.setText(t("Consultando a ", "Looking up ") + nombre + "…");
-        new Thread(() -> {
-            FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
-            SwingUtilities.invokeLater(() -> {
-                ladderEstado.setText("");
-                if (perfil == null) { ladderEstado.setText(t("No se pudo consultar a ", "Couldn't look up ") + nombre + "."); return; }
-                for (Comparado x : ladderComparados) if (x.pid() == pid) return;
-                if (deSeleccion && !estaSeleccionado(pid)) return;   // se deseleccionó mientras se consultaba
-                Map<String, int[]> m = perfil.ladders();
-                if (m.isEmpty()) { ladderEstado.setText(nombre + t(" no tiene rating en ningún ladder.", " has no rating on any ladder.")); return; }
-                if (ladderComparados.size() >= MAX_COMPARADOS) {
-                    int i = -1;
-                    for (int j = 0; j < ladderComparados.size(); j++) if (!ladderComparados.get(j).deSeleccion()) { i = j; break; }
-                    if (deSeleccion || i < 0) { ladderEstado.setText(t("Máximo ", "Max ") + MAX_COMPARADOS + t(" jugadores en la comparación: quita alguno (×).", " players compared: remove one (×).")); return; }
-                    ladderComparados.remove(i);   // cae el buscado a mano más antiguo
-                }
-                ladderComparados.add(new Comparado(pid, nombre, m, String.valueOf(perfil.pais()), deSeleccion));
-                ladderRefrescarComparados();
-            });
-        }, "ladder-perfil").start();
-    }
-
-    void ladderAnadirPorId(long pid, String nombre) { ladderAnadir(pid, nombre, false); }
-
-    boolean estaSeleccionado(long pid) {
-        for (Player p : playersList.getSelectedValuesList()) if (p.id() == pid) return true;
-        return false;
-    }
-
-    /** Con el Ladder abierto, la selección de la watchlist se refleja en las campanas: entra lo seleccionado, sale lo deseleccionado. */
-    void ladderSincronizarSeleccion() {
-        if (ladderPanel == null || !ladderPanel.isShowing()) return;
-        List<Player> sel = playersList.getSelectedValuesList();
-        Set<Long> ids = new HashSet<>();
-        for (Player p : sel) ids.add(p.id());
-        boolean cambio = ladderComparados.removeIf(c -> c.deSeleccion() && !ids.contains(c.pid()));
-        if (cambio) ladderRefrescarComparados();
-        List<Player> nuevos = new ArrayList<>();
-        int hueco = MAX_COMPARADOS - ladderComparados.size(), omitidos = 0;
-        for (Player p : sel) {
-            boolean ya = false;
-            for (Comparado c : ladderComparados) if (c.pid() == p.id()) { ya = true; break; }
-            if (ya) continue;
-            if (nuevos.size() >= hueco) { omitidos++; continue; }
-            nuevos.add(p);
-        }
-        if (omitidos > 0) ladderEstado.setText(t("Máximo ", "Max ") + MAX_COMPARADOS + t(" jugadores en la comparación: quedan fuera ", " players compared; left out: ") + omitidos + ".");
-        for (Player p : nuevos) ladderAnadir(p.id(), nombreVisible(p.id(), p.name()), true);
-    }
-
-    void ladderRefrescarComparados() {
-        ladderChips.removeAll();
-        ladderModelo.setRowCount(0);
-        String lb1 = familia + "_1v1", lb2 = familia + "_team";
-        int k = 0;
-        for (Comparado c : ladderComparados) {
-            Color col = PALETA_LADDER[k % PALETA_LADDER.length];
-            k++;
-            JButton chip = new JButton("<html><font color='" + colorHex(col) + "'>\u25A0</font> " + escapeHtml(c.name()) + "  \u00D7</html>");
-            chip.setFocusable(false); chip.setMargin(new Insets(1, 6, 1, 6)); chip.putClientProperty("JButton.buttonType", "roundRect");
-            chip.setToolTipText(c.deSeleccion() ? t("Seleccionado en la watchlist: deselecciónalo (o pulsa ×) para quitarlo", "Selected in the watchlist: deselect it (or press ×) to remove it")
-                    : t("Buscado a mano: × para quitarlo", "Searched by hand: × to remove it"));
-            chip.addActionListener(e -> {
-                if (c.deSeleccion()) {   // quitar = deseleccionar en la lista; la sincronización lo saca
-                    for (int i = 0; i < playersModel.getSize(); i++) if (playersModel.getElementAt(i).id() == c.pid()) playersList.removeSelectionInterval(i, i);
-                }
-                ladderComparados.remove(c);
-                ladderRefrescarComparados();
-            });
-            ladderChips.add(chip);
-            String clanDe = "";
-            for (Map.Entry<String, List<LadderRow>> en : clanes.entrySet()) { for (LadderRow m : en.getValue()) if (m.pid() == c.pid()) { clanDe = en.getKey(); break; } if (!clanDe.isEmpty()) break; }
-            int r1 = c.rating(lb1), r2 = c.rating(lb2), k1 = c.rank(lb1), k2 = c.rank(lb2);
-            String p1 = r1 > 0 ? topDe(c, lb1) : null, p2 = r2 > 0 ? topDe(c, lb2) : null;
-            ladderModelo.addRow(new Object[]{ c.name(), r1 > 0 ? r1 : "-", k1 > 0 ? "#" + miles(k1) : "-", p1 != null ? p1 : "-",
-                    r2 > 0 ? r2 : "-", k2 > 0 ? "#" + miles(k2) : "-", p2 != null ? p2 : "-", clanDe, c.country() });
-        }
-        ladderPista.setVisible(ladderComparados.isEmpty());
-        if (ladderQuitarTodos != null) ladderQuitarTodos.setVisible(ladderComparados.size() > 1);
-        ladderChips.revalidate(); ladderChips.repaint();
-        histograma1.repaint(); histograma2.repaint(); dispersion.repaint();
-    }
-
-    void ladderRefrescar() {
-        histograma1.lb = familia + "_1v1";
-        histograma2.lb = familia + "_team";
-        activosCheck.setToolTipText(t("Solo jugadores con ", "Only players with ") + activosMinPartidas + t(" o más partidas en ese ladder y una en los últimos ", " games or more on that ladder and one in the last ")
-                + activosDias + t(" días. Sin marcar: todos los que tienen rating.", " days. Unticked: everyone with a rating."));
-        ladderRefrescarComparados();
-        LadderHist h = hist(histograma1.lb, soloActivos);
-        ladderEstado.setText(h == null ? t("Sin datos de ese ladder.", "No data for that ladder.")
-                : t("Resumen del ", "Summary of ") + ladderGenerado.replace("T", " ").substring(0, Math.min(16, ladderGenerado.length())) + " UTC");
-    }
-
+    /** Ratings (card "ladder"): la vista y el presentador viven en ui.RatingsView/ui.RatingsPresenter;
+     *  aqui solo queda el cromo (botones, historial, CardLayout), igual que el resto de vistas de la fase 3. */
     @Override public void abrirLadder() {
         registrarDestino(new Destino("ladder", 0, null, null));
         if (ladderBtn != null && !ladderBtn.isSelected()) ladderBtn.setSelected(true);
@@ -1589,28 +1100,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ladder");
-        subirArriba(ladderPanel);
-        SwingUtilities.invokeLater(() -> {   // la tabla de comparados, con el alto que dejaste (230 px la primera vez)
-            int alto = Math.max(60, Integer.parseInt(leerConfig("ratings_tabla_alto", "230")));
-            if (ladderDivisor.getHeight() > alto + 100) ladderDivisor.setDividerLocation(ladderDivisor.getHeight() - alto - ladderDivisor.getDividerSize());
-        });
+        ratings.alAbrirAntes();
         taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        if (ladderCargando) return;
-        ladderCargando = true;
-        ladderEstado.setText(t("Cargando los resúmenes de ratings…", "Loading the ratings summaries…"));
-        javax.swing.Timer tick = new javax.swing.Timer(500, e -> { if (ladderCargando) ladderEstado.setText(ladderProgreso); });
-        tick.start();
-        new Thread(() -> {
-            String err = ladderAsegurar(false);
-            SwingUtilities.invokeLater(() -> {
-                tick.stop();
-                ladderCargando = false;
-                if (err != null) { ladderEstado.setText(t("No se pudieron cargar los ratings: ", "Couldn't load the ratings: ") + err); return; }
-                ladderRefrescar();
-                ladderSincronizarSeleccion();
-            });
-        }, "ladder-datos").start();
+        ratings.alAbrirDespues();
     }
 
     // =====================================================================================
@@ -5888,7 +5381,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
         playersList.setVisibleRowCount(12);
         playersList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) { applyFilters(); ladderSincronizarSeleccion(); perfilSincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
+            if (!e.getValueIsAdjusting()) { applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); perfilSincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
         });
         delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
 
@@ -7169,7 +6662,14 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         centroCards.add(construirPanelTechTree(), "techtree");
         ToolTipManager.sharedInstance().setInitialDelay(350);
         ToolTipManager.sharedInstance().setDismissDelay(90_000);   // el tooltip aguanta mientras el ratón esté quieto
-        centroCards.add(construirPanelLadder(), "ladder");
+        ratings = new RatingsView(RatingsServiceSfr.SISTEMA, BUSQUEDA, SERVICIO_PERFIL, Tareas.SWING, new RatingsView.Anfitrion() {
+            @Override public List<Player> seleccion() { return playersList.getSelectedValuesList(); }
+            @Override public boolean seleccionado(long pid) { for (Player p : playersList.getSelectedValuesList()) if (p.id() == pid) return true; return false; }
+            @Override public void deseleccionar(long pid) { for (int i = 0; i < playersModel.getSize(); i++) if (playersModel.getElementAt(i).id() == pid) playersList.removeSelectionInterval(i, i); }
+            @Override public void limpiarSeleccion() { playersList.clearSelection(); }
+            @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
+        });
+        centroCards.add(ratings.panel(), "ladder");
         civStats = new CivStatsView(stats, filtroStats, listas, this, Tareas.SWING, this, () -> { if (techTreePanel != null) ttActualizarWr(); });
         centroCards.add(civStats.panel(), "civstats");
         centroCards.add(construirPanelPerfil(), "perfil");
@@ -8745,7 +8245,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (sujetosPanel != null && SwingUtilities.isDescendingFrom(c, sujetosPanel)) return false;  // «Partidas de:» es clicable
         if (table != null && SwingUtilities.isDescendingFrom(c, table)) return false;
         if (tablaDirectos != null && SwingUtilities.isDescendingFrom(c, tablaDirectos)) return false;
-        if (ladderPanel != null && SwingUtilities.isDescendingFrom(c, ladderPanel)) return false;   // mirar las campanas no suelta la selección (sus puntos desaparecerían)
+        if (ratings != null && SwingUtilities.isDescendingFrom(c, ratings.panel())) return false;   // mirar las campanas no suelta la selección (sus puntos desaparecerían)
         // los visores de las tablas (hueco bajo sus filas) tampoco: seleccionar partidas no debe cambiar el filtro de la lista
         for (Component p = c; p != null; p = p.getParent())
             if (p instanceof JScrollPane sp && sp.getViewport() != null

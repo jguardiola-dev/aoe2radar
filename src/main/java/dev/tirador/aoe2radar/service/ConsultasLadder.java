@@ -10,12 +10,25 @@ import dev.tirador.aoe2radar.model.LadderRow;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.clanes;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.hist;
 import static dev.tirador.aoe2radar.util.Formato.fmtTop;
+import static dev.tirador.aoe2radar.util.I18n.t;
 
 /** Consultas sobre los resúmenes del ladder ya cargados: percentiles de rango y rating, y clanes. */
 public final class ConsultasLadder {
     private ConsultasLadder() {}
 
     public static final int BIN_LADDER = 25;
+
+    /** Nombre legible de un ladder («rm_1v1» → «1v1 Random Map»): lo usan Ratings y la ficha de perfil. */
+    public static String ladderNombre(String id) {
+        return switch (id) {
+            case "rm_1v1" -> "1v1 Random Map"; case "rm_team" -> t("Equipos Random Map", "Team Random Map");
+            case "ew_1v1" -> "1v1 Empire Wars"; case "ew_team" -> t("Equipos Empire Wars", "Team Empire Wars");
+            default -> id;
+        };
+    }
+
+    /** Nombre de la familia de ladders («rm»/«ew») que elige el combo de Ratings. */
+    public static String familiaNombre(String f) { return "ew".equals(f) ? "Empire Wars" : "Random Map"; }
 
     /** «Top 1,30 %» a partir del rango del companion (entre TODOS los jugadores del ladder). */
     public static String percentilRango(String lb, Integer rank) {
