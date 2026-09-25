@@ -100,11 +100,11 @@ public final class Campanas {
                 if (id.startsWith("grupo|")) {
                     String g = id.substring(6);
                     for (Player p : todosJugadores) if (g.equalsIgnoreCase(t("Todos", "All")) || p.grupo().equalsIgnoreCase(g)) ids.add(p.id());
-                } else if (id.equals("★ladder")) {
+                } else if (id.equals("\u2605ladder")) {
                     for (long pid : idsLeaderboard(null, Integer.parseInt(leerConfig.apply("top_n", "50")))) ids.add(pid);
-                } else if (id.startsWith("★pais|")) {
+                } else if (id.startsWith("\u2605pais|")) {
                     for (long pid : idsLeaderboard(id.substring(6), Integer.parseInt(leerConfig.apply("top_n", "50")))) ids.add(pid);
-                } else if (id.startsWith("★clan|")) {
+                } else if (id.startsWith("\u2605clan|")) {
                     if (ladderAsegurar(false) == null) for (LadderRow r : miembrosClan(id.substring(6))) ids.add(r.pid());
                 }
             } catch (Exception ex) { log("campanas " + id + ": " + causa(ex)); }

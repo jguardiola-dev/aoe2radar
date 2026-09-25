@@ -14,12 +14,16 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.StringReader;
+import java.io.StringWriter;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
@@ -61,6 +65,10 @@ class CampanasTest {
     static String fila(long pid, String nombre, int rating, int rango, String pais) {
         return "{\"profile_id\":" + pid + ",\"name\":\"" + nombre + "\",\"rating\":" + rating + ",\"rank\":" + rango + ",\"country\":\"" + pais + "\"}";
     }
+    /** Como fila(...), pero sin "rank": FilaClasificacion.rango() sale null, como cuando la API no lo manda. */
+    static String filaSinRango(long pid, String nombre, int rating, String pais) {
+        return "{\"profile_id\":" + pid + ",\"name\":\"" + nombre + "\",\"rating\":" + rating + ",\"country\":\"" + pais + "\"}";
+    }
     void responder(String... filas) { red.cuerpo = "{\"players\":[" + String.join(",", filas) + "],\"total\":" + filas.length + ",\"per_page\":100}"; }
 
     // ----- campanas() / guardarCampanas(): el set en config, separado con el texto "\u0001" -----
@@ -91,6 +99,29 @@ class CampanasTest {
     @Test void leeUnaConfigVieja() {
         config.put("campanas", "grupo|A" + "\\u0001" + "grupo|B" + "\\u0001" + "★ladder");
         assertEquals(Set.of("grupo|A", "grupo|B", "★ladder"), campanas.campanas());
+    }
+
+    /**
+     * El formato REAL en disco: util.Config guarda y lee con java.util.Properties, que escapa cada barra al
+     * escribir («\» se guarda como «\\» en el .properties) y la restaura al leer. Aquí se hace ese mismo viaje
+     * (sin fichero: un StringWriter/StringReader) para comprobar que el separador sobrevive tal cual y las
+     * campanas salen separadas, no solo con el mapa en memoria de este test (que no escapa nada).
+     */
+    @Test void elSeparadorSobreviveAUnPropertiesStoreYLoad() throws IOException {
+        Set<String> tres = new LinkedHashSet<>(List.of("grupo|A", "grupo|B", "★ladder"));
+        Map<String, String> escrito = new HashMap<>();
+        new Campanas(api, leer, escrito::put).guardarCampanas(tres);
+
+        Properties paraGuardar = new Properties();
+        paraGuardar.setProperty("campanas", escrito.get("campanas"));
+        StringWriter sw = new StringWriter();
+        paraGuardar.store(sw, null);
+
+        Properties releidas = new Properties();
+        releidas.load(new StringReader(sw.toString()));
+
+        Campanas lector = new Campanas(api, (clave, porDefecto) -> releidas.getProperty(clave, porDefecto), guardar);
+        assertEquals(tres, lector.campanas());
     }
 
     // ----- alternar -----
@@ -175,10 +206,20 @@ class CampanasTest {
         assertFalse(campanas.tocaAvisarMiPartida(7, partida(555)));
     }
 
+    @Test void tocaAvisarMiPartidaSinPartidaNoAvisa() {
+        config.put("mi_pid", "7");
+        assertFalse(campanas.tocaAvisarMiPartida(7, null), "el pid es el mío, pero sin partida no hay nada que avisar");
+    }
+
     @Test void tocaAvisarSoloSiEstaEnUnaVistaConCampana() {
         Map<String, Set<Long>> campanaIds = Map.of("grupo|A", Set.of(42L));
         assertFalse(campanas.tocaAvisar(99L, partida(1), campanaIds), "99 no está vigilado");
         assertTrue(campanas.tocaAvisar(42L, partida(1), campanaIds), "42 sí, primera vez");
+    }
+
+    @Test void tocaAvisarSinPartidaNoAvisa() {
+        Map<String, Set<Long>> campanaIds = Map.of("grupo|A", Set.of(42L));
+        assertFalse(campanas.tocaAvisar(42L, null, campanaIds), "42 está vigilado, pero sin partida no hay nada que avisar");
     }
 
     @Test void tocaAvisarNoRepiteParaLaMismaPartida() {
@@ -186,6 +227,21 @@ class CampanasTest {
         assertTrue(campanas.tocaAvisar(42L, partida(1), campanaIds));
         assertFalse(campanas.tocaAvisar(42L, partida(1), campanaIds), "misma partida: no repite");
         assertTrue(campanas.tocaAvisar(42L, partida(2), campanaIds), "partida distinta: sí avisa");
+    }
+
+    /**
+     * tocaAvisar y tocaAvisarMiPartida comparten un único set (avisadosClave), con claves "pid|matchId" y
+     * "mi|matchId": distinta forma de construir la clave, así que no se pisan entre sí para el mismo jugador y
+     * la misma partida.
+     */
+    @Test void avisadosClaveNoMezclaMiPartidaConLaDeUnVigilado() {
+        config.put("mi_pid", "7");
+        Match m = partida(5);
+        Map<String, Set<Long>> campanaIds = Map.of("grupo|A", Set.of(7L));
+        assertTrue(campanas.tocaAvisar(7L, m, campanaIds), "clave \"7|5\": primera vez");
+        assertTrue(campanas.tocaAvisarMiPartida(7L, m), "clave \"mi|5\": distinta de \"7|5\", no la consumió la anterior");
+        assertFalse(campanas.tocaAvisar(7L, m, campanaIds), "\"7|5\" ya avisada");
+        assertFalse(campanas.tocaAvisarMiPartida(7L, m), "\"mi|5\" ya avisada, por su cuenta");
     }
 
     static Match partida(long id) { Match m = new Match(); m.id = id; m.map = "Arabia"; m.mode = "rm_1v1"; return m; }
@@ -230,6 +286,21 @@ class CampanasTest {
         List<Player> todos = List.of(new Player(920041, "Ana", "A"));
         List<Object[]> filas = campanas.cargarFuenteLive("grupo", "A", 250, todos, pid -> null);
         assertEquals(0, filas.get(0)[2]);
+    }
+
+    /** Sin rango de la API: en «top» se usa la posición (1-based, top.size()+1 antes de añadir la fila). */
+    @Test void fuenteLiveTopSinRangoUsaLaPosicion() throws Exception {
+        responder(filaSinRango(930001, "A", 2000, "es"), filaSinRango(930002, "B", 1900, "fr"));
+        List<Object[]> filas = campanas.cargarFuenteLive("top", "", 250, List.of(), pid -> null);
+        assertEquals(1, filas.get(0)[3]);
+        assertEquals(2, filas.get(1)[3]);
+    }
+
+    /** Sin rango de la API: en «pais» se usa 0 (no la posición, a diferencia de «top»). */
+    @Test void fuenteLivePaisSinRangoUsaCero() throws Exception {
+        responder(filaSinRango(930011, "A", 2000, "es"));
+        List<Object[]> filas = campanas.cargarFuenteLive("pais", "es", 250, List.of(), pid -> null);
+        assertEquals(0, filas.get(0)[3]);
     }
 
     // ----- utilidades para dejar sfrdata.Ladder listo sin red (LADDER_SELLO es privado: se marca por reflexión) -----
