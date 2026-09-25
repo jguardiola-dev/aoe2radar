@@ -131,7 +131,6 @@ import static dev.tirador.aoe2radar.cache.Anotaciones.NOTAS;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarAliases;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarNotas;
 import static dev.tirador.aoe2radar.cache.Anotaciones.nombreVisible;
-import static dev.tirador.aoe2radar.cache.Anotaciones.notaDe;
 import static dev.tirador.aoe2radar.cache.CachePerfiles.PERFIL_CACHE;
 import static dev.tirador.aoe2radar.cache.Canales.CANAL_DE;
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
@@ -297,15 +296,73 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // tarjeta, filaBarra, enlaceVerTodo y las ventanas de lista/tabla completa (ver ui.Listas); RegresionCapturas la usa por el nombre del campo.
     final Listas listas = new Listas(this, v -> ultimoClicCtrl = v);
-    /** Menús de jugador para las vistas: hoy los construye la ventana con sus métodos (ver ui.MenusJugador). */
-    final dev.tirador.aoe2radar.ui.MenusJugador menus = new dev.tirador.aoe2radar.ui.MenusJugador() {
-        @Override public void menuContextual(long pid, String nombre, MouseEvent e) { menuContextualJugador(pid, nombre, e); }
-        @Override public JMenu enPartida(long pid) { return menuEnPartida(pid); }
-        @Override public JMenu deJugador(long pid, String nombre) { return menuDeJugador(pid, nombre); }
-        @Override public JMenu perfilNavegador(long pid) { return menuPerfilNavegador(pid); }
-        @Override public JMenuItem itemJugadorPartida(MatchPlayer p) { return SpoilerFreeRecs.this.itemJugadorPartida(p); }
-        @Override public Integer elo1v1Conocido(long pid) { return SpoilerFreeRecs.this.elo1v1Conocido(pid); }
-    };
+
+    /** Grupos donde se puede fichar a alguien: «General», los grupos con gente ahora mismo y los guardados en
+     *  config (idéntico al bloque que arma menuContextualWatchlist/menuDeJugador/mostrarVinculadas). */
+    Set<String> gruposParaFichar() {
+        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        gs.add(GRUPO_GENERAL);
+        for (Player x : todosJugadores) gs.add(x.grupo());
+        gs.addAll(gruposConfig());
+        return gs;
+    }
+
+    /** Diálogos de un jugador (nota, alias, cuentas vinculadas, nicks anteriores): ver ui.DialogosJugador. Lo que
+     *  toca la tabla/lista de la ventana llega por su Anfitrion; la red de Steam, por RedSteam (ui no importa api). */
+    final dev.tirador.aoe2radar.ui.DialogosJugador dialogos = new dev.tirador.aoe2radar.ui.DialogosJugador(this, ANOTACIONES, SERVICIO_PERFIL,
+            new dev.tirador.aoe2radar.ui.DialogosJugador.RedSteam() {
+                @Override public String steamId(long pid) throws Exception { return COMPANION.perfil(pid).steamId(); }
+                @Override public List<String[]> alias(String steamId) throws Exception { return steam.alias(steamId); }
+            },
+            new dev.tirador.aoe2radar.ui.DialogosJugador.Anfitrion() {
+                @Override public void repintarLista() { playersList.repaint(); }
+                @Override public void refrescarAlturas() { refrescarAlturasWatch(); }
+                @Override public void refrescarTabla() { tableModel.fireTableDataChanged(); }
+                @Override public void ajustarColumnasTabla() { ajustarColumnas(); }
+                @Override public void actualizarControles() { actualizarControlesTabla(); }
+                @Override public void refrescarSujetos() { SpoilerFreeRecs.this.refrescarSujetos(ultimosSujetos, invitado != null); }
+                @Override public void mostrarEstado(String texto) { status.setText(texto); }
+                @Override public boolean enWatchlist(long pid) { return containsPlayerId(pid); }
+                @Override public void ponerEloWatch(long pid, int elo) { eloWatch.put(pid, elo); }
+                @Override public Set<String> gruposDisponibles() { return gruposParaFichar(); }
+                @Override public String grupoActivo() { return SpoilerFreeRecs.this.grupoActivo(); }
+                @Override public void agregarJugador(long pid, String nombre, String grupo) { todosJugadores.add(new Player(pid, nombre, grupo)); }
+                @Override public void guardarJugadores() { savePlayers(); }
+                @Override public void reconstruirGrupos() { rebuildGrupos(); }
+                @Override public void marcarFamiliaVinculada(Set<Long> familia) { marcarVinculo(familia); }
+                @Override public void aplicarFiltro() { aplicarFiltroGrupo(); }
+                @Override public void refrescarWatchlist() { SpoilerFreeRecs.this.refrescarWatchlist(); }
+                @Override public void pausaCortesia() { dormir(PAUSA_MS / 2); }
+            });
+
+    /** Menús de jugador para las vistas: ver ui.MenusJugadorSwing (implementación real). Lo que necesita de la
+     *  ventana y no es navegación llega por Acciones. */
+    final dev.tirador.aoe2radar.ui.MenusJugador menus = new dev.tirador.aoe2radar.ui.MenusJugadorSwing(VIVO, ELO_1V1, SERVICIO_PERFIL, this,
+            pid -> SpoilerFreeRecs.this.liveNow != null ? SpoilerFreeRecs.this.liveNow.liveFicha(pid) : null, dev.tirador.aoe2radar.ui.Tareas.SWING,
+            new dev.tirador.aoe2radar.ui.MenusJugadorSwing.Acciones() {
+                @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
+                @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
+                @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
+                @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
+                @Override public String notaDe(long pid) { return SpoilerFreeRecs.this.notaDe(pid); }
+                @Override public void pedirAlias(long pid, String nombreOriginal) { SpoilerFreeRecs.this.pedirAlias(pid, nombreOriginal); }
+                @Override public void pedirNota(long pid, String nombre) { SpoilerFreeRecs.this.pedirNota(pid, nombre); }
+                @Override public void borrarNota(long pid, String nombre) { SpoilerFreeRecs.this.borrarNota(pid, nombre); }
+                @Override public void mostrarVinculadas(long pid, String nombre) { SpoilerFreeRecs.this.mostrarVinculadas(pid, nombre); }
+                @Override public void nicksAnteriores(long pid, String nombre) { SpoilerFreeRecs.this.nicksAnteriores(pid, nombre); }
+                @Override public boolean enWatchlist(long pid) { return containsPlayerId(pid); }
+                @Override public Set<String> gruposDisponibles() { return gruposParaFichar(); }
+                @Override public void anadirAWatchlist(long pid, String nombre, String grupo) {
+                    todosJugadores.add(new Player(pid, nombre, grupo));
+                    savePlayers();
+                    rebuildGrupos();
+                    aplicarFiltroGrupo();
+                    refrescarWatchlist();
+                    status.setText(nombre + t(" añadido a «", " added to \u201C") + grupo + "\u00bb.");
+                    ofrecerVinculadasTrasAlta(pid, nombre, grupo);   // siempre que alguien entra en un grupo, se revisan sus cuentas vinculadas
+                }
+                @Override public String elegirGrupoDialog(String nombreSugerido) { return SpoilerFreeRecs.this.elegirGrupoDialog(nombreSugerido); }
+            });
 
     // --- Caché de sesión del «Al azar por ELO» (vive mientras la app está abierta) ---
     LbCtx ctxAzar;                       // páginas del leaderboard reutilizadas entre tiradas
@@ -1259,55 +1316,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         liveNow.alAbrirDespues();
     }
 
-    /** Menú contextual de un jugador fuera de la watchlist (Live now, listas): perfil, pestaña nueva y, si está en partida, aliados y rivales. */
-    void menuContextualJugador(long pid, String nombre, MouseEvent e) {
-        JPopupMenu pm = new JPopupMenu();
-        JMenuItem perf = new JMenuItem(t("Ver perfil", "View profile")); perf.addActionListener(a -> abrirPerfil(pid, nombre)); pm.add(perf);
-        JMenuItem perfN = new JMenuItem(t("Abrir perfil en pestaña nueva", "Open profile in a new tab")); perfN.addActionListener(a -> abrirPerfilEnPestana(pid, nombre)); pm.add(perfN);
-        JMenu enPartida = menuEnPartida(pid);
-        if (enPartida != null) { pm.addSeparator(); pm.add(enPartida); }
-        pm.show(e.getComponent(), e.getX(), e.getY());
-    }
-
-    /** Submenú «En partida ahora»: aliados y rivales de la partida en curso de pid, con bandera, ELO y civ; clic = su perfil. */
-    JMenu menuEnPartida(long pid) {
-        Match m = VIVO.partida(pid);
-        if (m == null || !enCursoReal(m)) return null;
-        MatchPlayer yo = null; for (MatchPlayer p : m.players) if (p.id == pid) yo = p;
-        if (yo == null) return null;
-        JMenu menu = new JMenu(t("En partida ahora", "In a game now") + (m.map != null ? " · " + m.map : "") + (m.started != null ? " · " + reloj(Duration.between(m.started, Instant.now())) : ""));
-        List<MatchPlayer> aliados = new ArrayList<>(), rivales = new ArrayList<>();
-        for (MatchPlayer p : m.players) { if (p.id == pid) continue; if (p.team == yo.team) aliados.add(p); else rivales.add(p); }
-        if (!aliados.isEmpty()) {
-            JMenuItem cab = new JMenuItem(t("Aliados", "Allies")); cab.setEnabled(false); menu.add(cab);
-            for (MatchPlayer p : aliados) menu.add(itemJugadorPartida(p));
-            menu.addSeparator();
-        }
-        JMenuItem cab2 = new JMenuItem(t("Rivales", "Opponents")); cab2.setEnabled(false); menu.add(cab2);
-        for (MatchPlayer p : rivales) menu.add(itemJugadorPartida(p));
-        if (m.id > 0) { menu.addSeparator(); JMenuItem esp = new JMenuItem(t("Espectar la partida", "Spectate the game")); esp.addActionListener(a -> espectarPartida(m.id)); menu.add(esp); }
-        return menu;
-    }
+    // Los seis métodos de MenusJugador (contextual, en partida, ítem de partida, ELO 1v1 conocido, submenú de
+    // jugador, perfil en el navegador) se movieron a ui.MenusJugadorSwing en la tanda 3 (oleada A2, T3-A2): estos
+    // son delegados de una línea con el mismo nombre para quien los llamaba (constructor, watchlist, tabla, Perfil).
+    void menuContextualJugador(long pid, String nombre, MouseEvent e) { menus.menuContextual(pid, nombre, e); }
+    JMenu menuEnPartida(long pid) { return menus.enPartida(pid); }
+    /** ÚNICA instancia del ELO 1v1 de sesión: la usan MenusJugadorSwing (inyectada) y submenuJugadorPartida (watchlist), aquí. */
     static final EloSesion ELO_1V1 = new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA);   // pid → ELO 1v1 RM (sesión; caduca al terminar una partida)
-    Integer elo1v1Conocido(long pid) {
-        Integer e = ELO_1V1.conocido(pid); if (e != null) return e > 0 ? e : null;
-        Object[] f = liveNow != null ? liveNow.liveFicha(pid) : null; if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
-        e = SERVICIO_PERFIL.eloVinculada(pid); if (e != null && e > 0) return e;
-        FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(pid); if (perfil != null && perfil.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
-        return null;
-    }
-    JMenuItem itemJugadorPartida(MatchPlayer p) {
-        String nombre = nombreVisible(p.id, p.name);
-        Integer e1 = elo1v1Conocido(p.id);
-        JMenuItem it = new JMenuItem(nombre + (e1 != null ? "  1v1 " + e1 : "") + (p.civ != null && !p.civ.isBlank() ? "  ·  " + p.civ : ""), iconoBandera(paisDe(p.id)));
-        it.setIconTextGap(6);
-        it.addActionListener(a -> abrirPerfil(p.id, nombre));
-        if (((e1 == null && ELO_1V1.conocido(p.id) == null) || ELO_1V1.caducado(p.id)) && ELO_1V1.reservar(p.id)) new Thread(() -> {   // el ELO 1v1 se pide una vez y se rellena en el propio ítem
-            long pedido = ELO_1V1.ahora(); Integer e = SERVICIO_PERFIL.elo1v1(p.id); ELO_1V1.apuntar(p.id, e, pedido);
-            if (e != null && e > 0) SwingUtilities.invokeLater(() -> it.setText(nombre + "  1v1 " + e + (p.civ != null && !p.civ.isBlank() ? "  ·  " + p.civ : "")));
-        }, "elo-1v1").start();
-        return it;
-    }
+    Integer elo1v1Conocido(long pid) { return menus.elo1v1Conocido(pid); }
+    JMenuItem itemJugadorPartida(MatchPlayer p) { return menus.itemJugadorPartida(p); }
 
     // ----- Campanas: aviso cuando alguien de una vista marcada entra en partida -----
     // La red, la config y la deduplicacion de avisos viven en service.Campanas; aqui solo queda
@@ -1733,50 +1750,14 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
      *  aquí, en la app. */
     static final AnotacionesService ANOTACIONES = new AnotacionesService(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
 
-    void borrarNota(long pid, String nombre) {
-        ANOTACIONES.ponerNota(pid, "");
-        playersList.repaint();
-        refrescarAlturasWatch();
-        tableModel.fireTableDataChanged();
-        ajustarColumnas();
-        actualizarControlesTabla();
-        status.setText(t("Nota quitada a ", "Note removed from ") + nombre + ".");
-    }
+    // notaDe, pedirAlias, pedirNota, borrarNota, mostrarVinculadas y nicksAnteriores se movieron a
+    // ui.DialogosJugador en la tanda 3 (oleada A2, T3-A2): delegados de una línea con el mismo nombre.
+    String notaDe(long pid) { return dialogos.notaDe(pid); }
+    void borrarNota(long pid, String nombre) { dialogos.borrarNota(pid, nombre); }
 
-    void pedirNota(long pid, String nombre) {
-        String notaActual = ANOTACIONES.notaDe(pid);
-        JTextArea area = new JTextArea(notaActual != null ? notaActual : "", 4, 34);
-        area.setLineWrap(true); area.setWrapStyleWord(true);
-        String guardarO = t("Guardar", "Save"), borrarO = t("Borrar", "Delete"), cancelarO = t("Cancelar", "Cancel");
-        boolean tenia = notaActual != null;
-        Object[] ops = tenia ? new Object[]{ guardarO, borrarO, cancelarO } : new Object[]{ guardarO, cancelarO };
-        int r = JOptionPane.showOptionDialog(this, new Object[]{
-                t("Nota sobre ", "Note about ") + nombre + t(" (solo la ves tú):", " (only you see it):"),
-                new JScrollPane(area) }, t("Nota", "Note"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, ops, guardarO);
-        if (r < 0 || ops[r].equals(cancelarO)) return;
-        String nota = ops[r].equals(borrarO) ? "" : area.getText().trim().replace("\n", " ");
-        ANOTACIONES.ponerNota(pid, nota);
-        playersList.repaint();
-        refrescarAlturasWatch();   // la sublínea de la nota nace o muere: re-medir
-        tableModel.fireTableDataChanged();
-        status.setText(nota.isEmpty() ? t("Nota quitada.", "Note removed.") : t("Nota guardada para ", "Note saved for ") + nombre + ".");
-    }
+    void pedirNota(long pid, String nombre) { dialogos.pedirNota(pid, nombre); }
 
-    void pedirAlias(long pid, String original) {
-        String actual = ANOTACIONES.aliasDe(pid);
-        String nuevo = (String) JOptionPane.showInputDialog(this,
-                t("Nombre con el que quieres ver a ", "Name you want to see for ") + original
-                        + t(" en toda la app (vacío = quitar el alias):", " across the app (empty = remove alias):"),
-                t("Mostrar como\u2026", "Show as\u2026"), JOptionPane.PLAIN_MESSAGE, null, null, actual != null ? actual : "");
-        if (nuevo == null) return;
-        nuevo = nuevo.trim();
-        ANOTACIONES.ponerAlias(pid, original, nuevo);
-        playersList.repaint();
-        tableModel.fireTableDataChanged();
-        refrescarSujetos(ultimosSujetos, invitado != null);
-        status.setText(nuevo.isEmpty() ? t("Alias quitado.", "Alias removed.")
-                : original + " \u2192 " + nuevo);
-    }
+    void pedirAlias(long pid, String original) { dialogos.pedirAlias(pid, original); }
     JButton pararDescargasBtn;
     static final Set<Long> SUJETOS = java.util.concurrent.ConcurrentHashMap.newKeySet();   // los buscados: negrita y cabecera
 
@@ -4898,16 +4879,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return sub;
     }
 
-    JMenu menuPerfilNavegador(long id) {
-        JMenu m = new JMenu(t("Ver perfil en el navegador", "View profile in browser"));
-        JMenuItem comp = new JMenuItem("aoe2companion");
-        comp.addActionListener(a -> abrirUrl("https://www.aoe2companion.com/players/" + id));
-        JMenuItem ins = new JMenuItem("aoe2insights");
-        ins.addActionListener(a -> abrirUrl("https://www.aoe2insights.com/user/" + id + "/"));
-        m.add(comp);
-        m.add(ins);
-        return m;
-    }
+    JMenu menuPerfilNavegador(long id) { return menus.perfilNavegador(id); }
 
     void abrirUrl(String url) {
         try { Desktop.getDesktop().browse(URI.create(url)); }
@@ -5001,135 +4973,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Historial de alias que guarda Steam para la cuenta (endpoint público
      *  de la comunidad, vía el steamId del companion). Solo bajo demanda. */
-    void nicksAnteriores(long pid, String nombre) {
-        status.setText(t("Consultando nicks anteriores de ", "Looking up previous names of ") + nombre + "\u2026");
-        new SwingWorker<List<String[]>, Void>() {
-            String motivo;
-            @Override protected List<String[]> doInBackground() {
-                try {
-                    String sid = COMPANION.perfil(pid).steamId();
-                    String steamId = sid == null ? "" : sid.trim();
-                    if (steamId.isBlank() || "null".equals(steamId)) {
-                        motivo = t("Esta cuenta no tiene Steam vinculado en el companion: sin historial disponible.",
-                                   "This account has no Steam link on the companion: no history available.");
-                        return null;
-                    }
-                    return steam.alias(steamId);
-                } catch (Exception ex) {
-                    motivo = t("No se pudo consultar el historial (perfil de Steam privado o servicio caído).",
-                               "Could not fetch the history (private Steam profile or service down).");
-                    return null;
-                }
-            }
-            @Override protected void done() {
-                status.setText(t("Listo.", "Ready."));
-                List<String[]> alias;
-                try { alias = get(); } catch (Exception e) { alias = null; }
-                if (alias == null) {
-                    JOptionPane.showMessageDialog(SpoilerFreeRecs.this, motivo,
-                            t("Nicks anteriores", "Previous names"), JOptionPane.INFORMATION_MESSAGE);
-                    return;
-                }
-                if (alias.isEmpty()) {
-                    JOptionPane.showMessageDialog(SpoilerFreeRecs.this,
-                            nombre + t(" no tiene cambios de nombre registrados en Steam.",
-                                       " has no name changes recorded on Steam."),
-                            t("Nicks anteriores", "Previous names"), JOptionPane.INFORMATION_MESSAGE);
-                    return;
-                }
-                StringBuilder sb = new StringBuilder("<html><b>")
-                        .append(t("Nicks anteriores de ", "Previous names of "))
-                        .append(escapeHtml(nombre)).append("</b><br><br>");
-                for (String[] a : alias) {
-                    sb.append(escapeHtml(a[0]));
-                    if (!a[1].isBlank()) sb.append("&nbsp;&nbsp;<font color='#8a8a8a'>").append(escapeHtml(a[1])).append("</font>");
-                    sb.append("<br>");
-                }
-                sb.append("<br><font color='#8a8a8a'>")
-                  .append(t("Fuente: historial público de Steam (últimos cambios).",
-                            "Source: Steam public history (latest changes)."))
-                  .append("</font></html>");
-                JOptionPane.showMessageDialog(SpoilerFreeRecs.this, sb.toString(),
-                        t("Nicks anteriores", "Previous names"), JOptionPane.PLAIN_MESSAGE);
-            }
-        }.execute();
-    }
+    void nicksAnteriores(long pid, String nombre) { dialogos.nicksAnteriores(pid, nombre); }
 
     /** Submenú de acciones sobre un jugador concreto (contextual de la tabla). */
-    JMenu menuDeJugador(long pid, String nombre) {
-        String vis = nombre.length() > 28 ? nombre.substring(0, 27) + "\u2026" : nombre;
-        JMenu mj = new JMenu(vis);
-        JMenuItem perfNueva = new JMenuItem(t("Abrir perfil en pestaña nueva", "Open profile in a new tab"));
-        perfNueva.addActionListener(a -> abrirPerfilEnPestana(pid, nombre));
-        mj.add(perfNueva);
-        JMenu enPartida = menuEnPartida(pid);
-        if (enPartida != null) mj.add(enPartida);
-        JMenuItem alias = new JMenuItem(t("Mostrar como\u2026", "Show as\u2026"));
-        alias.addActionListener(a -> pedirAlias(pid, nombre));
-        mj.add(alias);
-        JMenuItem nota = new JMenuItem(t("Nota\u2026", "Note\u2026"));
-        nota.addActionListener(a -> pedirNota(pid, nombre));
-        mj.add(nota);
-        if (notaDe(pid) != null) {
-            JMenuItem bn = new JMenuItem(t("Borrar nota", "Delete note"));
-            bn.addActionListener(a -> borrarNota(pid, nombre));
-            mj.add(bn);
-        }
-        JMenuItem perf = new JMenuItem(t("Perfil completo\u2026", "Full profile\u2026"));
-        perf.addActionListener(a -> abrirPerfil(pid, nombre));
-        mj.add(perf);
-        boolean ya = containsPlayerId(pid);
-        JMenu anadir = new JMenu(t("Añadir a mi watchlist", "Add to my watchlist"));
-        if (ya) {
-            anadir.setEnabled(false);
-            anadir.setToolTipText(t("Ya está en tu watchlist", "Already in your watchlist"));
-        } else {
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            gs.add(GRUPO_GENERAL);
-            for (Player x : todosJugadores) gs.add(x.grupo());
-            gs.addAll(gruposConfig());
-            for (String g : gs) {
-                JMenuItem it = new JMenuItem(g);
-                it.addActionListener(a -> {
-                    todosJugadores.add(new Player(pid, nombre, g));
-                    savePlayers();
-                    rebuildGrupos();
-                    aplicarFiltroGrupo();
-                    refrescarWatchlist();
-                    status.setText(nombre + t(" añadido a «", " added to \u201C") + g + "\u00bb.");
-                    ofrecerVinculadasTrasAlta(pid, nombre, g);   // siempre que alguien entra en un grupo, se revisan sus cuentas vinculadas
-                });
-                anadir.add(it);
-            }
-            anadir.addSeparator();
-            JMenuItem nuevoG = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
-            nuevoG.addActionListener(a -> {
-                String g = elegirGrupoDialog(nombre);
-                if (g == null) return;
-                todosJugadores.add(new Player(pid, nombre, g));
-                savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-                status.setText(nombre + t(" añadido a «", " added to \u201C") + g + "\u00bb.");
-                ofrecerVinculadasTrasAlta(pid, nombre, g);
-            });
-            anadir.add(nuevoG);
-        }
-        mj.add(anadir);
-        JMenuItem vinc = new JMenuItem(t("Cuentas vinculadas\u2026", "Linked accounts\u2026"));
-        vinc.addActionListener(a -> mostrarVinculadas(pid, nombre));
-        mj.add(vinc);
-        JMenuItem nicks = new JMenuItem(t("Nicks anteriores\u2026", "Previous names\u2026"));
-        nicks.addActionListener(a -> nicksAnteriores(pid, nombre));
-        mj.add(nicks);
-        JMenu nav = new JMenu(t("Ver perfil en el navegador", "View profile in browser"));
-        JMenuItem comp = new JMenuItem("aoe2companion");
-        comp.addActionListener(a -> abrirUrl("https://www.aoe2companion.com/players/" + pid));
-        JMenuItem ins = new JMenuItem("aoe2insights");
-        ins.addActionListener(a -> abrirUrl("https://www.aoe2insights.com/user/" + pid + "/"));
-        nav.add(comp);
-        nav.add(ins);
-        mj.add(nav);
-        return mj;
-    }
+    JMenu menuDeJugador(long pid, String nombre) { return menus.deJugador(pid, nombre); }
 
     /** La zona central alterna entre la tabla de recs y los directos. */
     void mostrarDirectos(boolean mostrar) {
@@ -5202,113 +5049,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     /** Diálogo de cuentas vinculadas: selección múltiple y grupo de destino. */
-    void mostrarVinculadas(long profileId, String nombre) {
-        final Integer[] eloPropio = new Integer[1];
-        status.setText(t("Buscando cuentas vinculadas de ", "Looking up linked accounts of ") + nombre + "…");
-        new SwingWorker<List<Perfil.Vinculada>, Void>() {
-            final Map<Long, Integer> elosV = new HashMap<>();   // vid → ELO 1v1 actual (null: sin ELO)
-            @Override protected List<Perfil.Vinculada> doInBackground() {
-                List<Perfil.Vinculada> vinc = SERVICIO_PERFIL.vinculadas(profileId);
-                for (Perfil.Vinculada v : vinc) {   // ELO 1v1 actual de cada cuenta, del ladder
-                    elosV.put(v.pid(), SERVICIO_PERFIL.elo1v1(v.pid()));
-                    dormir(PAUSA_MS / 2);
-                }
-                if (!containsPlayerId(profileId)) eloPropio[0] = SERVICIO_PERFIL.elo1v1(profileId);
-                return vinc;
-            }
-            @Override protected void done() {
-                List<Perfil.Vinculada> vinc;
-                try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
-                if (vinc.isEmpty()) {
-                    status.setText(t("Listo.", "Ready."));
-                    JOptionPane.showMessageDialog(SpoilerFreeRecs.this,
-                            nombre + t(" no tiene cuentas vinculadas conocidas.",
-                                       " has no known linked accounts."),
-                            t("Cuentas vinculadas", "Linked accounts"), JOptionPane.INFORMATION_MESSAGE);
-                    return;
-                }
-                status.setText(t("Listo.", "Ready."));
-                if (eloPropio[0] != null) eloWatch.put(profileId, eloPropio[0]);
-                for (Perfil.Vinculada v : vinc) {   // el ELO consultado siembra la watchlist al momento
-                    if (elosV.get(v.pid()) instanceof Integer e) eloWatch.put(v.pid(), e);
-                }
-                DefaultListModel<String> modelo = new DefaultListModel<>();
-                List<Perfil.Vinculada> anadibles = new ArrayList<>();
-                for (Perfil.Vinculada v : vinc) {
-                    boolean ya = containsPlayerId(v.pid());
-                    Integer eloV = elosV.get(v.pid());
-                    String fila = v.pais().isBlank() ? String.valueOf(v.nombre()) : v.nombre() + " \u00B7 " + v.pais();
-                    fila = fila + (eloV != null ? " \u00B7 " + eloV + " ELO" : t(" \u00B7 sin ELO", " \u00B7 no ELO"));
-                    if (v.partidas() >= 0)
-                        fila = fila + " \u00B7 " + v.partidas() + t(" partidas", " games");
-                    fila = fila + (ya ? t("  (ya en tu watchlist)", "  (already in your watchlist)") : "");
-                    modelo.addElement(fila);
-                    if (!ya) anadibles.add(v);
-                }
-                JList<String> lista = new JList<>(modelo);
-                lista.setFont(lista.getFont().deriveFont(lista.getFont().getSize2D() + 1f));
-                lista.setVisibleRowCount(Math.min(8, modelo.size()));
-                Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-                gs.add(GRUPO_GENERAL);
-                for (Player x : todosJugadores) gs.add(x.grupo());
-                gs.addAll(gruposConfig());
-                JComboBox<String> grupoDest = new JComboBox<>(gs.toArray(String[]::new));
-                String ga = grupoActivo();
-                if (ga != null) grupoDest.setSelectedItem(ga);
-                JPanel panel = new JPanel(new BorderLayout(0, 8));
-                panel.add(new JLabel(t("Cuentas vinculadas de ", "Linked accounts of ") + nombre + ":"),
-                        BorderLayout.NORTH);
-                panel.add(new JScrollPane(lista), BorderLayout.CENTER);
-                JPanel abajo = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-                abajo.add(new JLabel(t("Grupo destino:", "Target group:")));
-                abajo.add(grupoDest);
-                panel.add(abajo, BorderLayout.SOUTH);
-                // Visor primero: mirar no compromete. Solo el botón guarda.
-                String btnGuardar = t("Guardar en el grupo", "Save to group");
-                String btnCerrar  = t("Cerrar", "Close");
-                int r = JOptionPane.showOptionDialog(SpoilerFreeRecs.this, panel,
-                        t("Cuentas vinculadas", "Linked accounts"), JOptionPane.DEFAULT_OPTION,
-                        JOptionPane.PLAIN_MESSAGE, null,
-                        new Object[]{ btnGuardar, btnCerrar }, btnCerrar);
-                if (r != 0) return;   // Cerrar o Esc: nada se añade, nada se vincula
-                String g = String.valueOf(grupoDest.getSelectedItem());
-                int nuevos = 0;
-                Set<Long> familia = new HashSet<>();
-                familia.add(profileId);
-                if (!containsPlayerId(profileId)) {   // la MATRIZ entra también (caso ★/buscador)
-                    todosJugadores.add(new Player(profileId, nombre, g));
-                    nuevos++;
-                }
-                int[] selIdx = lista.getSelectedIndices();
-                List<Perfil.Vinculada> elegidos = new ArrayList<>();
-                if (selIdx.length == 0) elegidos.addAll(anadibles);   // sin selección: todas las nuevas
-                else {
-                    int i = 0;
-                    for (Perfil.Vinculada v : vinc) {
-                        boolean ya = containsPlayerId(v.pid());
-                        for (int s : selIdx) if (s == i && !ya) elegidos.add(v);
-                        i++;
-                    }
-                }
-                for (Perfil.Vinculada v : elegidos)
-                    if (!containsPlayerId(v.pid())) {
-                        todosJugadores.add(new Player(v.pid(), v.nombre(), g));
-                        nuevos++;
-                    }
-                for (Perfil.Vinculada v : vinc) if (containsPlayerId(v.pid())) familia.add(v.pid());
-                if (nuevos > 0) {
-                    savePlayers();
-                    rebuildGrupos();
-                }
-                marcarVinculo(familia);   // persiste y repinta por sí mismo
-                aplicarFiltroGrupo();
-                refrescarWatchlist();
-                status.setText(t("Familia de ", "Family of ") + nombre
-                        + t(" guardada en «", " saved to “") + g + "\u00bb ("
-                        + nuevos + t(" nuevas).", " new)."));
-            }
-        }.execute();
-    }
+    void mostrarVinculadas(long profileId, String nombre) { dialogos.mostrarVinculadas(profileId, nombre); }
 
     /** Panel con la mini gráfica del rating (termina 10 partidas atrás). */
     static class SparkPanel extends JPanel {
