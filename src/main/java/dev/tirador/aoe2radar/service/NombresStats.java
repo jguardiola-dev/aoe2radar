@@ -48,9 +48,9 @@ public final class NombresStats {
             if (lo == null && hi == null) return t("Todos los ELO", "All ELO");
             if (lo == null) return "<" + hi;
             if (hi == null) return lo + "+";
-            return lo + "–" + hi;
+            return lo + "\u2013" + hi;
         }
-        return tr.endsWith("+") ? tr : tr.replace("-", "–");
+        return tr.endsWith("+") ? tr : tr.replace("-", "\u2013");
     }
 
     /** Nombre de civ a partir de la clave del companion («burmese»): el del tech tree si está cargado, si no capitalizado. */

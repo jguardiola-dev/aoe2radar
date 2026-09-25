@@ -75,13 +75,13 @@ class StatsServiceTest {
     StatsService stats;
 
     @BeforeEach void preparar() {
+        limpiarCivStats();
         reloj.ahora = System.currentTimeMillis();
         sfr = new SfrDataClient(dir, red, new SfrDataClient.Etags() {
             @Override public String leer(String n) { return ""; }
             @Override public void guardar(String n, String e) { }
         }, new CacheService(reloj), () -> BASE);
         stats = new StatsServiceSfr(sfr);
-        limpiarCivStats();
         red.archivos.put("civstats/ventanas/v30.json.gz", gz(VENTANA_30));
         red.archivos.put("civstats/tendencias.json.gz", gz(TENDENCIAS));
     }
