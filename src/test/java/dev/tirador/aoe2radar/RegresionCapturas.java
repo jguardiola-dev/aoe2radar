@@ -295,7 +295,7 @@ class RegresionCapturas {
         foto("shot_ladder_ew.png");
         // ----- Civ Stats
         SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());
-        for (int i = 0; i < 120 && !CivStats.VENTANAS_STATS.containsKey(app.statsVentana); i++) Thread.sleep(250);
+        for (int i = 0; i < 120 && !CivStats.VENTANAS_STATS.containsKey(app.filtroStats.ventana()); i++) Thread.sleep(250);
         Thread.sleep(2500);
         cerrarDialogos();
         foto("shot_civstats_arriba.png");
@@ -307,7 +307,7 @@ class RegresionCapturas {
         foto("shot_civstats_matriz.png");
         SwingUtilities.invokeAndWait(() -> { app.stRango.rango("*"); app.stRango.alCambiar.accept("*"); app.stMapaCombo.setSelectedIndex(0); });
         Thread.sleep(1200);
-        System.out.println("stats filas tabla: " + app.stModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.stModelo.getDataVector().get(0).toArray()) + " | tramo=" + app.statsTramo + " mapa=" + app.statsMapa);
+        System.out.println("stats filas tabla: " + app.stModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.stModelo.getDataVector().get(0).toArray()) + " | tramo=" + app.filtroStats.tramo() + " mapa=" + app.filtroStats.mapa());
         // ----- Tech tree con WR
         SwingUtilities.invokeAndWait(() -> app.techTreeBtn.doClick());
         for (int i = 0; i < 160 && (TechTreeDatos.ttData == null || app.ttCivCombo.getItemCount() == 0); i++) Thread.sleep(250);
@@ -428,6 +428,6 @@ class RegresionCapturas {
         Thread.sleep(800);
         foto("shot_lista_completa.png");
         cerrarDialogos();
-        System.out.println("civstats 2000+ mapa: filas " + app.stModelo.getRowCount() + " | estado: " + app.stEstado.getText() + " | mapa=" + app.statsMapa + " tramo=" + app.statsTramo);
+        System.out.println("civstats 2000+ mapa: filas " + app.stModelo.getRowCount() + " | estado: " + app.stEstado.getText() + " | mapa=" + app.filtroStats.mapa() + " tramo=" + app.filtroStats.tramo());
     }
 }
