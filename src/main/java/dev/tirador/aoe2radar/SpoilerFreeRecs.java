@@ -32,6 +32,7 @@ package dev.tirador.aoe2radar;
 
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.SocketVivo;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
@@ -4840,7 +4841,7 @@ public class SpoilerFreeRecs extends JFrame {
         subirArriba(ahoraPanel);
         taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        if (ahoraTimer == null) { ahoraTimer = new javax.swing.Timer(1_800_000, e -> { if (ahoraAbierta && ahoraPanel.isShowing() && !socketConectado) ahoraRefrescar(false); }); ahoraTimer.start(); }   // con el socket vivo no hay barridos periódicos: los eventos mantienen el estado
+        if (ahoraTimer == null) { ahoraTimer = new javax.swing.Timer(1_800_000, e -> { if (ahoraAbierta && ahoraPanel.isShowing() && !socketVivo.conectado()) ahoraRefrescar(false); }); ahoraTimer.start(); }   // con el socket vivo no hay barridos periódicos: los eventos mantienen el estado
         if (!ctrlOn("live_now")) { ahoraEstado.setText(t("Live now está pausado temporalmente por mantenimiento de la fuente de datos.", "Live now is paused temporarily for data-source maintenance.")); ahoraCuerpo.removeAll(); ahoraCuerpo.revalidate(); ahoraCuerpo.repaint(); return; }
         liveReloj.start();
         rellenarFuentesLive();
@@ -5125,7 +5126,7 @@ public class SpoilerFreeRecs extends JFrame {
         }
         ahoraCuerpo.revalidate(); ahoraCuerpo.repaint();
         String hace = ahoraUltimaMs == 0 ? "" : t(" · barrido hace ", " · sweep ") + Math.max(0, (System.currentTimeMillis() - ahoraUltimaMs) / 60_000) + t(" min", " min ago");
-        ahoraEstado.setText(vivos.size() + t(" de ", " of ") + top.size() + t(" en partida", " in a game") + hace + (socketConectado ? t(" · socket en vivo", " · live socket") : ""));
+        ahoraEstado.setText(vivos.size() + t(" de ", " of ") + top.size() + t(" en partida", " in a game") + hace + (socketVivo.conectado() ? t(" · socket en vivo", " · live socket") : ""));
     }
 
     static void estiloCab(JLabel l) { l.setFont(l.getFont().deriveFont(Font.BOLD, 11f)); l.setForeground(colorSecundario()); }
@@ -6564,17 +6565,12 @@ public class SpoilerFreeRecs extends JFrame {
     // Se abre una conexión con los ids de la vista actual y el servidor empuja matchAdded /
     // matchUpdated / matchRemoved. El barrido por lotes sigue de respaldo (y no quita puntos
     // mientras el socket esté sano).
-    static final String SOCKET_URL = "wss://socket.aoe2companion.com/listen?handler=ongoing-matches";
-    volatile java.net.http.WebSocket socket;
-    volatile Set<Long> socketIds = Set.of(); volatile boolean socketHuboCaida;
+    /** El protocolo del socket (ver api.SocketVivo); aquí se decide qué significa cada evento. */
+    final SocketVivo socketVivo = new SocketVivo(SocketVivo.HTTP, new SocketVivo.Oyente() {
+        @Override public void conectado(boolean trasCaida) { if (trasCaida && ahoraAbierta) SwingUtilities.invokeLater(() -> ahoraRefrescar(true)); }   // tras una caída, un barrido para reparar el estado
+        @Override public void eventos(List<SocketVivo.Evento> eventos, Set<Long> ids) { procesarEventosSocket(eventos, ids); }
+    }, Reloj.SISTEMA, SocketVivo.planificadorSistema());
     long ultimoResyncMs;
-    volatile long socketUltimoMsgMs;       // último mensaje recibido (salud)
-    volatile boolean socketConectado;
-    volatile int socketReintentos;
-    final StringBuilder socketBuffer = new StringBuilder();   // los mensajes pueden llegar troceados
-    javax.swing.Timer socketPing, socketReconexion;
-
-    boolean socketSano() { return socketConectado && System.currentTimeMillis() - socketUltimoMsgMs < 10 * 60_000; }
 
     /** Conecta (o reconecta) con los ids visibles; si no cambian y el socket está sano, no hace nada. */
     void sincronizarSocket() {
@@ -6584,75 +6580,7 @@ public class SpoilerFreeRecs extends JFrame {
         synchronized (topLadder) { for (Player p : topLadder) ids.add(p.id()); }
         ids.addAll(socketExtra);   // Live now abierto y vistas con campana: también se vigilan aunque no estén a la vista
         try { String mi = leerConfig("mi_pid", ""); if (!mi.isBlank()) ids.add(Long.parseLong(mi)); } catch (Exception ignored) { }   // «Mi partida»: mi propio id siempre vigilado
-        if (ids.isEmpty()) { cerrarSocket(); return; }
-        if (ids.equals(socketIds) && socketConectado) return;
-        socketIds = ids;
-        cerrarSocket();
-        abrirSocket(ids);
-    }
-
-    void cerrarSocket() {
-        java.net.http.WebSocket s = socket;
-        socket = null;
-        socketConectado = false;
-        if (s != null) { try { s.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "bye"); } catch (Exception ignored) { } }
-    }
-
-    void abrirSocket(Set<Long> ids) {
-        StringBuilder csv = new StringBuilder();
-        for (long id : ids) { if (csv.length() > 0) csv.append(','); csv.append(id); }
-        String url = SOCKET_URL + "&language=" + ("es".equals(IDIOMA) ? "es" : "en") + "&profile_ids=" + csv;
-        final Set<Long> idsEsta = ids;
-        HTTP.newWebSocketBuilder().header("User-Agent", UA).connectTimeout(Duration.ofSeconds(15))
-            .buildAsync(URI.create(url), new java.net.http.WebSocket.Listener() {
-                @Override public void onOpen(java.net.http.WebSocket ws) {
-                    socketConectado = true;
-                    if (socketHuboCaida && ahoraAbierta) SwingUtilities.invokeLater(() -> ahoraRefrescar(true));   // tras una caída, un barrido para reparar el estado
-                    socketHuboCaida = false;
-                    socketReintentos = 0;
-                    socketUltimoMsgMs = System.currentTimeMillis();
-                    log("socket: conectado, vigilando " + idsEsta.size() + " jugadores en tiempo real");
-                    ws.request(1);
-                }
-                @Override public java.util.concurrent.CompletionStage<?> onText(java.net.http.WebSocket ws, CharSequence data, boolean last) {
-                    synchronized (socketBuffer) {
-                        socketBuffer.append(data);
-                        if (last) {
-                            String msg = socketBuffer.toString();
-                            socketBuffer.setLength(0);
-                            socketUltimoMsgMs = System.currentTimeMillis();
-                            try { procesarEventosSocket(msg, idsEsta); }
-                            catch (Exception ex) { log("socket: mensaje no entendido: " + causa(ex)); }
-                        }
-                    }
-                    ws.request(1);
-                    return null;
-                }
-                @Override public java.util.concurrent.CompletionStage<?> onClose(java.net.http.WebSocket ws, int code, String reason) {
-                    if (socket == ws || socket == null) { socketConectado = false; socketHuboCaida = true; log("socket: cerrado (" + code + " " + reason + ")"); programarReconexion(); }
-                    return null;
-                }
-                @Override public void onError(java.net.http.WebSocket ws, Throwable error) {
-                    socketConectado = false;
-                    log("socket: error: " + causa(error instanceof Exception ex ? ex : new RuntimeException(error)));
-                    programarReconexion();
-                }
-            })
-            .whenComplete((ws, err) -> {
-                if (err != null) { socketConectado = false; log("socket: no se pudo conectar: " + causa(new RuntimeException(err))); programarReconexion(); }
-                else if (socketIds.equals(idsEsta)) socket = ws;
-                else { try { ws.sendClose(java.net.http.WebSocket.NORMAL_CLOSURE, "stale"); } catch (Exception ignored) { } }
-            });
-    }
-
-    void programarReconexion() {
-        SwingUtilities.invokeLater(() -> {
-            if (socketReconexion != null && socketReconexion.isRunning()) return;
-            int seg = Math.min(120, 5 * (1 << Math.min(socketReintentos++, 5)));   // 5, 10, 20, 40, 80, 120 s
-            socketReconexion = new javax.swing.Timer(seg * 1000, e -> { socketConectado = false; Set<Long> ids = socketIds; if (!ids.isEmpty()) abrirSocket(ids); });
-            socketReconexion.setRepeats(false);
-            socketReconexion.start();
-        });
+        socketVivo.sincronizar(ids);
     }
 
     /** Antes de marcar a alguien como jugando por un evento del socket, se comprueba en la API que la
@@ -6672,24 +6600,18 @@ public class SpoilerFreeRecs extends JFrame {
         }, "socket-confirmar").start();
     }
 
-    /** Un mensaje del socket: {type:'pong'} o una lista de eventos [{type, data}]. */
-    void procesarEventosSocket(String msg, Set<Long> ids) {
-        Object root = Json.parse(msg);
-        if (!(root instanceof List<?> eventos)) return;   // pong u otro objeto: nada que hacer
+    /** Los eventos de un mensaje del socket (vacío si era un pong), ya traducidos por SocketVivo. */
+    void procesarEventosSocket(List<SocketVivo.Evento> eventos, Set<Long> ids) {
         boolean cambio = false;
-        for (Object ev : eventos) {
-            Map<String, Object> e = obj(ev);
-            String tipo = String.valueOf(val(e, "type"));
-            Map<String, Object> data = obj(val(e, "data"));
-            if ("matchRemoved".equals(tipo)) {
-                long mid = lng(val(data, "match_id", "matchId"));
+        for (SocketVivo.Evento ev : eventos) {
+            if (ev instanceof SocketVivo.Quitada q) {
+                long mid = q.matchId();
                 for (Long pid : new ArrayList<>(vivoWatch.keySet()))
                     if (Long.valueOf(mid).equals(vivoWatch.get(pid))) { vivoWatch.remove(pid); vivoInfo.remove(pid); VIVO_RIVAL.remove(pid); liveEvento(pid, null, true); cambio = true; }
                 continue;
             }
-            if (!"matchAdded".equals(tipo) && !"matchUpdated".equals(tipo)) continue;
-            Match m = parseMatch(data);
-            if (m == null) continue;
+            String tipo = ((SocketVivo.Partida) ev).tipo();
+            Match m = ((SocketVivo.Partida) ev).partida();
             int vigilados = 0; for (MatchPlayer mp : m.players) if (ids.contains(mp.id)) vigilados++;
             log("socket: " + tipo + " partida " + m.id + " started=" + m.started + " finished=" + m.finished + " · " + vigilados + " vigilados");
             if (m.id <= 0) continue;   // sin id de partida no hay nada que espectar
@@ -7127,7 +7049,7 @@ public class SpoilerFreeRecs extends JFrame {
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         aplicarVentanaGuardada();
         addWindowListener(new WindowAdapter() {
-            @Override public void windowClosing(WindowEvent e) { guardarVentana(); cerrarSocket(); }
+            @Override public void windowClosing(WindowEvent e) { guardarVentana(); socketVivo.cerrar(); }
         });
         addWindowFocusListener(new WindowAdapter() {
             @Override public void windowLostFocus(WindowEvent e) { ocultarHoverCard(true); }
@@ -8485,11 +8407,7 @@ public class SpoilerFreeRecs extends JFrame {
         });
         final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
-        socketPing = new javax.swing.Timer(30_000, e -> {
-            java.net.http.WebSocket s = socket;
-            if (s != null && socketConectado) { try { s.sendPing(java.nio.ByteBuffer.wrap(new byte[]{ 1 })); } catch (Exception ignored) { } }
-        });
-        socketPing.start();
+        socketVivo.iniciarPing();
         javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
             comprobarActualizacion(false); ttPrecargar();
             cargarPaises(); instalarAutoScroll();
@@ -8506,7 +8424,7 @@ public class SpoilerFreeRecs extends JFrame {
             // cada 10 min (× el multiplicador del mando a distancia). Si el socket cae, vuelven al ritmo del tick.
             long ahora = System.currentTimeMillis();
             long resync = (long) (10 * 60_000L * ctrlMult("tick_mult"));
-            boolean tocaSondear = ctrlOn("sondeo") && (!socketConectado || ahora - ultimoResyncMs >= resync);
+            boolean tocaSondear = ctrlOn("sondeo") && (!socketVivo.conectado() || ahora - ultimoResyncMs >= resync);
             if (tocaSondear) ultimoResyncMs = ahora;
             if (tocaSondear) vigilarVivos();
             if (!modoTop()) vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
