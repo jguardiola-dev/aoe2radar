@@ -499,34 +499,34 @@ class RegresionCapturas {
         java.util.List<Player> sujetosPartidas = java.util.List.of(
                 new Player(1L, "12Tirador", "", 0L), new Player(2L, "Turpiacho", "", 0L), new Player(3L, "pume", "", 0L));
         SwingUtilities.invokeAndWait(() -> {
-            SpoilerFreeRecs.SUJETOS.clear();
-            app.filtroSujetos.clear();
-            for (Player p : sujetosPartidas) SpoilerFreeRecs.SUJETOS.add(p.id());
-            app.refrescarSujetos(sujetosPartidas, false);   // cabecera «Partidas de:», antes de llenar la tabla (igual que fetchMatches)
-            app.all.clear();
-            app.all.addAll(partidasInventadas);
-            app.refreshModeCombo();
-            app.applyFilters();
+            dev.tirador.aoe2radar.ui.PartidasView.SUJETOS.clear();
+            app.partidas.filtroSujetos.clear();
+            for (Player p : sujetosPartidas) dev.tirador.aoe2radar.ui.PartidasView.SUJETOS.add(p.id());
+            app.partidas.refrescarSujetos(sujetosPartidas, false);   // cabecera «Partidas de:», antes de llenar la tabla (igual que fetchMatches)
+            app.partidas.all.clear();
+            app.partidas.all.addAll(partidasInventadas);
+            app.partidas.refreshModeCombo();
+            app.partidas.applyFilters();
         });
-        System.out.println("partidas filas tabla: " + app.tableModel.getRowCount());
+        System.out.println("partidas filas tabla: " + app.partidas.tableModel.getRowCount());
         Thread.sleep(500);
         foto("shot_partidas.png");
         // shot_partidas_sujetos.png: NO hace falta. refrescarSujetos() ya pintó la cabecera «Partidas de:» antes
         // de esta foto (mismo orden que fetchMatches.done()), así que shot_partidas.png ya la enseña.
-        SwingUtilities.invokeAndWait(() -> app.resultadosBtn.doClick());   // «Mostrar resultados»: el único punto con spoilers
+        SwingUtilities.invokeAndWait(() -> app.partidas.resultadosBtn.doClick());   // «Mostrar resultados»: el único punto con spoilers
         Thread.sleep(500);
         foto("shot_partidas_resultados.png");
-        SwingUtilities.invokeAndWait(() -> app.resultadosBtn.doClick());   // vuelve a tapar antes de la foto del menú
+        SwingUtilities.invokeAndWait(() -> app.partidas.resultadosBtn.doClick());   // vuelve a tapar antes de la foto del menú
         Thread.sleep(300);
         SwingUtilities.invokeAndWait(() -> {
-            Rectangle r = app.table.getCellRect(0, 0, true);   // fila 0: la más reciente tras el orden por fecha
-            app.table.dispatchEvent(new java.awt.event.MouseEvent(app.table, java.awt.event.MouseEvent.MOUSE_RELEASED,
+            Rectangle r = app.partidas.table.getCellRect(0, 0, true);   // fila 0: la más reciente tras el orden por fecha
+            app.partidas.table.dispatchEvent(new java.awt.event.MouseEvent(app.partidas.table, java.awt.event.MouseEvent.MOUSE_RELEASED,
                     System.currentTimeMillis(), 0, r.x + r.width / 2, r.y + r.height / 2, 1, true));   // popupTrigger=true: dispara el mismo menú que un clic derecho real
         });
         Thread.sleep(700);
         foto("shot_partidas_menu.png");
         SwingUtilities.invokeAndWait(() -> javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
-        SwingUtilities.invokeAndWait(app::cerrarBusqueda);   // deja `all`/`view`/SUJETOS/cabecera como los encontró
+        SwingUtilities.invokeAndWait(app.partidas::cerrarBusqueda);   // deja `all`/`view`/SUJETOS/cabecera como los encontró
         Thread.sleep(300);
 
         // ----- Cromo: menú Configuración y Acerca de (T3-H) — sin ninguna captura hasta ahora en esta zona.
