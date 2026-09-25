@@ -504,7 +504,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final JComboBox<String> periodoCombo = new JComboBox<>(new String[]{ t("Todo", "All"), t("7 días", "7 days"), t("30 días", "30 days"), t("90 días", "90 days"), t("365 días", "365 days") });   // filtro de periodo
     boolean actualizandoMapas;
     final MatchesTableModel tableModel = new MatchesTableModel();
-    final JTable table;
+    JTable table;   // no final: se asigna en construirTablaPartidas(), no en el constructor (T3-A1)
     final JLabel status = new JLabel(t("Listo.", "Ready.")) {
         @Override public void setText(String texto) {   // si no cabe, el tooltip lo enseña entero
             super.setText(texto);
@@ -1946,6 +1946,27 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     SpoilerFreeRecs(String temaInicial) {
         super(NOMBRE + " " + VERSION + t(" — tu radar del AoE2 competitivo, sin spoilers · por ", " — your competitive AoE2 radar, spoiler-free · by ") + AUTOR);
+        configurarVentana();
+
+        JPanel left = construirWatchlist();
+
+        JPanel top = construirBarraSuperior(temaInicial);
+
+        construirTablaPartidas();
+
+        JPanel bottom = construirBarraInferior();
+
+        JPanel center = construirCentro(top, bottom);
+
+        montarVentana(left, center);
+
+        arrancar();
+    }
+
+    // Cierre, ventana recordada, foco perdido e iconos: ajustes del JFrame antes
+    // de construir ningun panel. Se separa del resto del constructor porque es
+    // configuracion de ventana, no construccion de paneles.
+    private void configurarVentana() {
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         aplicarVentanaGuardada();
         addWindowListener(new WindowAdapter() {
@@ -1963,7 +1984,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 iconos.add(iconoCuadrado(logo, s));
             setIconImages(iconos);
         }
+    }
 
+    // El panel izquierdo: la Watchlist (buscador, grupos, pais/clan, la lista de
+    // jugadores seguidos con su ELO y su ~en vivo~, y los botones para quitarlos).
+    // Devuelve el panel para que el constructor lo pase al split principal.
+    private JPanel construirWatchlist() {
         // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
         playersList.setVisibleRowCount(12);
         playersList.addListSelectionListener(e -> {
@@ -2547,7 +2573,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         refrescarCabeceraOrden();
         left.add(leftButtons, BorderLayout.SOUTH);
         left.setPreferredSize(new Dimension(280, 0));
+        return left;
+    }
 
+    // La barra de arriba: ventana de horas/buscar, filtros, pestanas de vistas,
+    // flechas de historial y el menu Configuracion (idioma, tema, letra...). Recibe
+    // temaInicial porque el menu de Tema marca la opcion ya activa al abrir.
+    private JPanel construirBarraSuperior(String temaInicial) {
         // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
         fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
         modeCombo.setPrototypeDisplayValue("RM Team MegaRandom XL");
@@ -2890,7 +2922,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         top.add(barraSuperior);
         top.add(fila2);
         setMinimumSize(new Dimension(1100, 640));
+        return top;
+    }
 
+    // La tabla de partidas: el JTable con sus renderers (fila en vivo en negrita,
+    // el ojo de "revelar resultado"), el menu contextual por fila y los atajos de
+    // teclado (Enter descarga, Ctrl+F busca, F5 refresca Directos).
+    private void construirTablaPartidas() {
         // Tabla de partidas
         table = new JTable(tableModel) {
             @Override public String getToolTipText(MouseEvent ev) {
@@ -3119,7 +3157,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 else download(List.of(m));
             }
         });
+    }
 
+    // La franja inferior: los botones de descargar/enviar al juego, el menu de
+    // carpetas, la firma y donacion, y la barra de estado (progreso, detener,
+    // continuar buscando). Devuelve el panel para el centro de la ventana.
+    private JPanel construirBarraInferior() {
         // Botones inferiores + savegame + firma + donación
         JButton abrir  = new JButton(t("Abrir carpeta recs descargadas", "Open downloaded recs folder"));
         JButton vaciar = new JButton(t("Vaciar recs", "Empty recs folder"));
@@ -3218,7 +3261,14 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.add(filasBtns, BorderLayout.NORTH);
         bottom.add(filaEstado, BorderLayout.SOUTH);
+        return bottom;
+    }
 
+    // El centro de la ventana: las cartas (CardLayout) de cada vista -- tabla de
+    // partidas/guia, Directos, Live now, tech tree, Ratings, Civ Stats y Perfil --
+    // encima de "top" y con "bottom" debajo. Aqui se crean las vistas y sus
+    // anfitriones (las interfaces que les dan acceso a la ventana).
+    private JPanel construirCentro(JPanel top, JPanel bottom) {
         JPanel center = new JPanel(new BorderLayout());
         center.add(top, BorderLayout.NORTH);
         centroCards = new JPanel(new CardLayout());
@@ -3350,7 +3400,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         centroCards.add(perfil.panel(), "perfil");
         center.add(centroCards, BorderLayout.CENTER);
         center.add(bottom, BorderLayout.SOUTH);
+        return center;
+    }
 
+    // El split principal (Watchlist | resto) y el filtro global de clics: en
+    // cualquier fondo sin control, clic izquierdo = quitar la seleccion de la
+    // Watchlist (como el Explorador de Windows).
+    private void montarVentana(JPanel left, JPanel center) {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, center);
         split.setContinuousLayout(true);
         split.setDividerSize(7);
@@ -3383,7 +3439,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             if (!playersList.isSelectionEmpty()) { playersList.clearSelection(); actualizarTextoBuscar(); }
         }, AWTEvent.MOUSE_EVENT_MASK);
         add(split, BorderLayout.CENTER);
+    }
 
+    // Cargas iniciales (canales, jugadores, tema/fuentes) y el arranque de los
+    // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
+    // precarga del tech tree y del ladder. Es lo ultimo que hace el constructor.
+    private void arrancar() {
         cargarCanales();
         loadPlayers();
         sanearVinculosHuerfanos();
