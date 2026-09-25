@@ -28,7 +28,7 @@ public class SelectorRangoElo extends JPanel {
         this.padre = padre;
         this.tramoNombre = tramoNombre;
         add(preset);
-        preset.setToolTipText(t("Tramo de ELO (media de ELO de la partida). «Personalizado…» pide un rango de tramo a tramo, con «sin límite» en cualquier extremo", "ELO bracket (match ELO average). “Custom…” asks for a range from bracket to bracket, with “no limit” at either end"));
+        preset.setToolTipText(t("Tramo de ELO (media de ELO de la partida). «Personalizado…» pide un rango de tramo a tramo, con «sin límite» en cualquier extremo", "ELO bracket (match ELO average). \u201CCustom…\u201D asks for a range from bracket to bracket, with \u201Cno limit\u201D at either end"));
         preset.addActionListener(e -> {
             if (rellenando) return;
             int i = preset.getSelectedIndex();
