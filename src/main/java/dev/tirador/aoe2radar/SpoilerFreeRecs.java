@@ -77,6 +77,7 @@ import dev.tirador.aoe2radar.service.FormaCompanion;
 import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
 import dev.tirador.aoe2radar.service.Juego;
+import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.LiveService;
 import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
@@ -89,6 +90,7 @@ import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
+import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Json;
 import dev.tirador.aoe2radar.util.Reloj;
 
@@ -428,6 +430,8 @@ public class SpoilerFreeRecs extends JFrame {
 
     // ----- Estado UI ---------------------------------------------------------
     final List<Player> todosJugadores = new ArrayList<>();          // fuente de verdad (todos los grupos)
+    /** Persistencia, grupos y altas/bajas/movimientos de la watchlist: ver service.ListaSeguidos. */
+    final ListaSeguidos listaSeguidos = new ListaSeguidos(PLAYERS_FILE, GRUPO_GENERAL, Config::leerConfig, Config::guardarConfig);
     final Set<Long> watchBarridos = new HashSet<>();                // seguidos ya consultados en este arranque
     final JComboBox<String> grupoCombo = new JComboBox<>();
     final DefaultListModel<Player> playersModel = new DefaultListModel<>();
@@ -9069,22 +9073,16 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** Grupos creados por el usuario (existen aunque estén vacíos). */
     Set<String> gruposConfig() {
-        Set<String> out = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (String g : leerConfig("grupos", "").split(",")) if (!g.isBlank()) out.add(g.trim());
-        return out;
+        return listaSeguidos.gruposConfig();
     }
 
     void registrarGrupo(String g) {
-        Set<String> gs = gruposConfig();
-        gs.add(g);
-        guardarConfig("grupos", String.join(",", gs));
+        listaSeguidos.registrarGrupo(g);
         rebuildGrupos();
     }
 
     void moverJugador(Player p, String grupo) {
-        for (int i = 0; i < todosJugadores.size(); i++)
-            if (todosJugadores.get(i).id() == p.id())
-                todosJugadores.set(i, new Player(p.id(), p.name(), grupo));
+        listaSeguidos.moverJugador(todosJugadores, p, grupo);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
@@ -9093,31 +9091,14 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void renombrarGrupo(String viejo, String nuevo) {
-        for (int i = 0; i < todosJugadores.size(); i++) {
-            Player p = todosJugadores.get(i);
-            if (p.grupo().equalsIgnoreCase(viejo))
-                todosJugadores.set(i, new Player(p.id(), p.name(), nuevo));
-        }
-        Set<String> gs = gruposConfig();
-        gs.removeIf(g -> g.equalsIgnoreCase(viejo));
-        gs.add(nuevo);
-        guardarConfig("grupos", String.join(",", gs));
-        if (leerConfig("grupo_activo", "").equalsIgnoreCase(viejo)) guardarConfig("grupo_activo", nuevo);
+        listaSeguidos.renombrarGrupo(todosJugadores, viejo, nuevo);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
     }
 
     void borrarGrupo(String g) {
-        for (int i = 0; i < todosJugadores.size(); i++) {
-            Player p = todosJugadores.get(i);
-            if (p.grupo().equalsIgnoreCase(g))
-                todosJugadores.set(i, new Player(p.id(), p.name(), GRUPO_GENERAL));
-        }
-        Set<String> gs = gruposConfig();
-        gs.removeIf(x -> x.equalsIgnoreCase(g));
-        guardarConfig("grupos", String.join(",", gs));
-        if (leerConfig("grupo_activo", "").equalsIgnoreCase(g)) guardarConfig("grupo_activo", t("Todos", "All"));
+        listaSeguidos.borrarGrupo(todosJugadores, g);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
@@ -9213,8 +9194,7 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** Ficha a uno desde un top y, como el buscador, ofrece sus cuentas vinculadas. */
     void ficharDesdeTop(Player p, String g) {
-        if (containsPlayerId(p.id())) return;
-        todosJugadores.add(new Player(p.id(), p.name(), g));
+        if (!listaSeguidos.ficharDesdeTop(todosJugadores, p, g)) return;
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
@@ -9222,10 +9202,17 @@ public class SpoilerFreeRecs extends JFrame {
         ofrecerVinculadasTrasAlta(p.id(), p.name(), g);
     }
 
-    /** Ficha a varios de golpe; pregunta UNA vez si buscar sus cuentas vinculadas y lo hace en segundo plano. */
+    /**
+     * Ficha a varios de golpe; pregunta UNA vez si buscar sus cuentas vinculadas y lo hace en segundo plano.
+     * BUG corregido (fase 2, service.ListaSeguidos): la 1.1 mutaba todosJugadores y llamaba a marcarVinculo
+     * desde doInBackground (hilo de fondo) mientras el EDT recorre esa misma lista. Ahora, en el mismo punto
+     * donde la 1.1 mutaba, se aplica con SwingUtilities.invokeAndWait: la mutación ocurre en el EDT y
+     * doInBackground espera a que termine antes de seguir con el siguiente jugador; así, al acabar el
+     * bucle, ya está todo aplicado (done() no puede adelantarse al último hallazgo). Los textos de
+     * estado siguen yendo por publish/process, como antes.
+     */
     void ficharVarios(List<Player> lista, String g) {
-        List<Player> nuevos = new ArrayList<>();
-        for (Player p : lista) if (!containsPlayerId(p.id())) { todosJugadores.add(new Player(p.id(), p.name(), g)); nuevos.add(p); }
+        List<Player> nuevos = listaSeguidos.ficharVarios(todosJugadores, lista, g);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
@@ -9239,34 +9226,37 @@ public class SpoilerFreeRecs extends JFrame {
         if (r != JOptionPane.YES_OPTION) return;
         trabajando(true);
         final long miSerial = opSerial;
-        new SwingWorker<Integer, String>() {
-            @Override protected Integer doInBackground() {
+        final int[] anadidas = { 0 };
+        new SwingWorker<Void, String>() {
+            @Override protected Void doInBackground() {
                 hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
-                int anadidas = 0;
                 for (Player p : nuevos) {
                     if (stopOperacion) break;
                     publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "\u2026");
                     try {
                         List<Perfil.Vinculada> vinc = SERVICIO_PERFIL.vinculadas(p.id());
-                        Set<Long> familia = new HashSet<>(); familia.add(p.id());
-                        for (Perfil.Vinculada v : vinc) {
-                            long vid = v.pid();
-                            if (!containsPlayerId(vid)) { todosJugadores.add(new Player(vid, v.nombre(), g)); anadidas++; }
-                            familia.add(vid);
-                        }
-                        if (familia.size() > 1) marcarVinculo(familia);
+                        SwingUtilities.invokeAndWait(() -> {
+                            try {
+                                Set<Long> familia = new HashSet<>(); familia.add(p.id());
+                                for (Perfil.Vinculada v : vinc) {
+                                    long vid = v.pid();
+                                    if (listaSeguidos.ficharSiNuevo(todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
+                                    familia.add(vid);
+                                }
+                                if (familia.size() > 1) marcarVinculo(familia);
+                            } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
+                        });
                     } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
                     dormir(PAUSA_MS / 2);
                 }
-                return anadidas;
+                return null;
             }
             @Override protected void process(List<String> ch) { status.setText(ch.get(ch.size() - 1)); }
             @Override protected void done() {
                 if (miSerial != opSerial) return;
                 trabajando(false);
                 savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-                int n = 0; try { n = get(); } catch (Exception ignored) { }
-                status.setText(n + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + "\u00bb.");
+                status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + "\u00bb.");
             }
         }.execute();
     }
@@ -9280,10 +9270,9 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void moverVarios(List<Player> lista, String g) {
-        Set<Long> ids = new HashSet<>(); for (Player x : lista) ids.add(x.id());
-        todosJugadores.replaceAll(x -> ids.contains(x.id()) ? new Player(x.id(), x.name(), g, x.vinculo()) : x);
+        int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
         savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-        status.setText(ids.size() + t(" jugadores movidos a «", " players moved to \u201C") + g + "\u00bb.");
+        status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + "\u00bb.");
     }
 
     /** Pregunta a qué grupo fichar (preseleccionado el activo), con «Nuevo grupo…». null = cancelado. */
@@ -9323,12 +9312,7 @@ public class SpoilerFreeRecs extends JFrame {
         var listener = grupoCombo.getActionListeners();
         for (var l : listener) grupoCombo.removeActionListener(l);
         String guardado = leerConfig("grupo_activo", t("Todos", "All"));
-        Set<String> grupos = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (Player p : todosJugadores) grupos.add(p.grupo());
-        grupos.addAll(gruposConfig());
-        Set<String> persistir = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (String g : grupos) if (!g.equalsIgnoreCase(GRUPO_GENERAL)) persistir.add(g);
-        guardarConfig("grupos", String.join(",", persistir));   // un grupo ya nunca se esfuma al vaciarse
+        Set<String> grupos = listaSeguidos.calcularGrupos(todosJugadores);   // un grupo ya nunca se esfuma al vaciarse
         grupoCombo.removeAllItems();
         grupoCombo.addItem(t("Todos", "All"));
         grupoCombo.addItem(TOP_LADDER);
@@ -9964,15 +9948,14 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void quitarDeWatchlist(long id) {
-        todosJugadores.removeIf(x -> x.id() == id);
+        listaSeguidos.quitar(todosJugadores, id);
         savePlayers();
         aplicarFiltroGrupo();
         status.setText(t("Quitado de tu watchlist.", "Removed from your watchlist."));
     }
 
     String grupoDeJugador(long id) {
-        for (Player x : todosJugadores) if (x.id() == id) return x.grupo();
-        return null;
+        return listaSeguidos.grupoDeJugador(todosJugadores, id);
     }
 
     /** ¿Es un fondo (no un control) donde un clic debe soltar la selección de la lista? */
@@ -9997,8 +9980,7 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     boolean containsPlayerId(long id) {
-        for (Player x : todosJugadores) if (x.id() == id) return true;
-        return false;
+        return listaSeguidos.contiene(todosJugadores, id);
     }
 
     /** ¿El punto cae sobre el TEXTO del nick o del título (no el blanco)?
@@ -11609,9 +11591,7 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     boolean containsPlayer(long id) {
-        for (Player p : todosJugadores)
-            if (p.id() == id) return true;
-        return false;
+        return listaSeguidos.contiene(todosJugadores, id);
     }
 
     // ----- Consulta de partidas ----------------------------------------------
@@ -11873,50 +11853,20 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     // ----- Persistencia ------------------------------------------------------
+    // Delegado a service.ListaSeguidos (cargar/guardar players.txt); la ventana conserva el disparo de
+    // rebuildGrupos()/aplicarFiltroGrupo() (Swing) y muestra el error, si lo hay, en el status.
+    // OJO (deuda ya existente en la 1.1, no se cambia aquí): esta E/S de disco es síncrona y loadPlayers/savePlayers
+    // se llaman directamente desde el EDT (arranque, botones, menús): el disco se toca en el EDT.
     void loadPlayers() {
-        if (Files.exists(PLAYERS_FILE)) {
-            try {
-                for (String line : Files.readAllLines(PLAYERS_FILE, StandardCharsets.UTF_8)) {
-                    String[] parts = line.split(";", 4);
-                    if (parts.length >= 2 && !parts[0].isBlank()) {
-                        long vinc = 0L;
-                        if (parts.length == 4 && !parts[3].isBlank())
-                            try { vinc = Long.parseLong(parts[3].trim()); } catch (Exception ignored) {}
-                        todosJugadores.add(new Player(Long.parseLong(parts[0].trim()), parts[1].trim(),
-                                parts.length >= 3 && !parts[2].isBlank() ? parts[2].trim() : GRUPO_GENERAL, vinc));
-                    }
-                }
-            } catch (Exception e) {
-                status.setText(t("No se pudo leer players.txt: ", "Couldn't read players.txt: ") + causa(e));
-            }
-        } else if (leerConfig("grupos", "").isBlank()) {
-            // Primer arranque: grupo semilla (el top ya cubre a los pros)
-            guardarConfig("grupos", t("Amigos", "Friends"));
-        }
-        // Limpieza única: el «Pros» sembrado en versiones anteriores, si sigue vacío, sobra
-        for (String pros : new String[]{ "Pros" }) {
-            boolean conMiembros = false;
-            for (Player p : todosJugadores) if (p.grupo().equalsIgnoreCase(pros)) { conMiembros = true; break; }
-            if (!conMiembros) {
-                List<String> gs = new ArrayList<>();
-                for (String g : leerConfig("grupos", "").split(","))
-                    if (!g.isBlank() && !g.trim().equalsIgnoreCase(pros)) gs.add(g.trim());
-                guardarConfig("grupos", String.join(",", gs));
-            }
-        }
+        String error = listaSeguidos.cargar(todosJugadores);
+        if (error != null) status.setText(error);
         rebuildGrupos();       // SIEMPRE: sin esto, el combo quedaba vacío en instalaciones nuevas
         aplicarFiltroGrupo();
     }
 
     void savePlayers() {
-        try {
-            List<String> lines = new ArrayList<>();
-            for (Player p : todosJugadores)
-                lines.add(p.id() + ";" + p.name() + ";" + p.grupo() + (p.vinculo() != 0 ? ";" + p.vinculo() : ""));
-            Files.write(PLAYERS_FILE, lines, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            status.setText(t("No se pudo guardar players.txt: ", "Could not save players.txt: ") + causa(e));
-        }
+        String error = listaSeguidos.guardar(todosJugadores);
+        if (error != null) status.setText(error);
     }
 
     // ----- Tabla -------------------------------------------------------------
