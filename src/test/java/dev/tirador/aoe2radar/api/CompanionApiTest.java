@@ -104,6 +104,18 @@ class CompanionApiTest {
         assertTrue(companion.twitchDirectos().isEmpty());
     }
 
+    @Test void twitchCanalEnMinusculasSinDependerDelIdiomaDelSistema() throws Exception {
+        // Con la Locale turca, "I".toLowerCase() da «ı» (i sin punto) y el canal no existiría (DEUDA, fase 4).
+        java.util.Locale antes = java.util.Locale.getDefault();
+        try {
+            java.util.Locale.setDefault(java.util.Locale.forLanguageTag("tr-TR"));
+            companion.twitchCanal("TIRADOR");
+            assertEquals("https://api.aoe2companion.com/twitch/live?channel=tirador", ultima());
+        } finally {
+            java.util.Locale.setDefault(antes);
+        }
+    }
+
     @Test void twitchCanalPrimeroObjetoONull() throws Exception {
         red.cuerpo = "[]";
         assertNull(companion.twitchCanal("x"), "lista vacía: no hay directo");

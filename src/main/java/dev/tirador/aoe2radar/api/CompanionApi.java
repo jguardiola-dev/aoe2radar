@@ -216,11 +216,12 @@ public final class CompanionApi {
     }
 
     /**
-     * El directo de un canal concreto (el nombre va en minúsculas, como en la 1.1): el primero de la lista, o el objeto
-     * si no llega lista. null si no hay ninguno. Que esté en directo lo dice tipo() («live»): lo mira la pantalla.
+     * El directo de un canal concreto (el nombre va en minúsculas, como en la 1.1, pero con Locale.ROOT: con la Locale
+     * turca la «I» daría «ı»): el primero de la lista, o el objeto si no llega lista. null si no hay ninguno. Que esté
+     * en directo lo dice tipo() («live»): lo mira la pantalla.
      */
     public Directo twitchCanal(String canal) throws IOException, InterruptedException {
-        Object root = Json.parse(api.textoCon429(TWITCH_LIVE + "?channel=" + canal.toLowerCase()));
+        Object root = Json.parse(api.textoCon429(TWITCH_LIVE + "?channel=" + canal.toLowerCase(java.util.Locale.ROOT)));
         Object primero = root instanceof List<?> l ? (l.isEmpty() ? null : l.get(0)) : root;
         return primero == null ? null : aDirecto(primero);
     }
