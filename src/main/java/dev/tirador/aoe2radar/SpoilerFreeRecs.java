@@ -92,6 +92,7 @@ import dev.tirador.aoe2radar.service.TwitchServiceCompanion;
 import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.AcercaDe;
+import dev.tirador.aoe2radar.ui.AutoScroll;
 import dev.tirador.aoe2radar.ui.CivStatsView;
 import dev.tirador.aoe2radar.ui.DirectosView;
 import dev.tirador.aoe2radar.ui.FiltroStats;
@@ -106,6 +107,9 @@ import dev.tirador.aoe2radar.ui.SelectorRangoElo;
 import dev.tirador.aoe2radar.ui.Tareas;
 import dev.tirador.aoe2radar.ui.TechTreeView;
 import dev.tirador.aoe2radar.ui.TemaApp;
+import dev.tirador.aoe2radar.ui.ClicEnFondo;
+import dev.tirador.aoe2radar.ui.VentanaGuardada;
+import dev.tirador.aoe2radar.ui.VentanaPrincipalAjustes;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Reloj;
@@ -695,47 +699,14 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // =====================================================================================
     // Desplazamiento con la rueda pulsada (como Chrome) y vuelta arriba al cambiar de vista
     // =====================================================================================
-    Point autoAncla; JScrollPane autoPanel; javax.swing.Timer autoTimer; long autoInicioMs;
+    // Infraestructura de toda la ventana (no de una vista): ver ui.AutoScroll.
+    private final AutoScroll autoScroll = new AutoScroll(new AutoScroll.Anfitrion() {
+        @Override public void atras() { if (!perfil.h2hAtrasSiProcede()) volverAtras(); }
+        @Override public void adelante() { irAdelante(); }
+    });
 
-    void instalarAutoScroll() {
-        autoTimer = new javax.swing.Timer(30, e -> {
-            if (autoAncla == null || autoPanel == null) return;
-            PointerInfo pi = MouseInfo.getPointerInfo();
-            if (pi == null) return;
-            Point m = pi.getLocation();
-            int dy = m.y - autoAncla.y, dx = m.x - autoAncla.x;
-            JScrollBar v = autoPanel.getVerticalScrollBar(), h = autoPanel.getHorizontalScrollBar();
-            if (Math.abs(dy) > 8 && v.isVisible()) v.setValue(v.getValue() + (int) (Math.signum(dy) * Math.pow(Math.abs(dy) - 8, 1.25) / 4));
-            if (Math.abs(dx) > 8 && h.isVisible()) h.setValue(h.getValue() + (int) (Math.signum(dx) * Math.pow(Math.abs(dx) - 8, 1.25) / 4));
-        });
-        Toolkit.getDefaultToolkit().addAWTEventListener(ev -> {
-            if (!(ev instanceof MouseEvent me)) return;
-            if (me.getID() == MouseEvent.MOUSE_PRESSED && me.getButton() == 4) { if (!perfil.h2hAtrasSiProcede()) volverAtras(); me.consume(); return; }   // botones laterales del ratón: atrás / adelante (dentro del cara a cara, su propio atrás)
-            if (me.getID() == MouseEvent.MOUSE_PRESSED && me.getButton() == 5) { irAdelante(); me.consume(); return; }
-            if (me.getID() == MouseEvent.MOUSE_PRESSED) {
-                if (autoAncla != null) {   // cualquier clic termina el modo
-                    boolean rapido = SwingUtilities.isMiddleMouseButton(me) && System.currentTimeMillis() - autoInicioMs < 250;
-                    if (!rapido) { pararAutoScroll(); if (!SwingUtilities.isMiddleMouseButton(me)) return; else return; }
-                }
-                if (!SwingUtilities.isMiddleMouseButton(me)) return;
-                Component c = me.getComponent();
-                JScrollPane sp = c == null ? null : (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, c);
-                if (sp == null && c instanceof JScrollPane s) sp = s;
-                if (sp == null) return;
-                autoAncla = me.getLocationOnScreen(); autoPanel = sp; autoInicioMs = System.currentTimeMillis();
-                sp.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-                autoTimer.start();
-                me.consume();
-            } else if (me.getID() == MouseEvent.MOUSE_RELEASED && autoAncla != null && SwingUtilities.isMiddleMouseButton(me)) {
-                if (System.currentTimeMillis() - autoInicioMs >= 250) pararAutoScroll();   // arrastre: termina al soltar; clic corto: sigue hasta el próximo clic
-            }
-        }, AWTEvent.MOUSE_EVENT_MASK);
-    }
-    void pararAutoScroll() {
-        if (autoPanel != null) autoPanel.setCursor(Cursor.getDefaultCursor());
-        autoAncla = null; autoPanel = null;
-        if (autoTimer != null) autoTimer.stop();
-    }
+    void instalarAutoScroll() { autoScroll.instalar(); }
+    void pararAutoScroll() { autoScroll.parar(); }
 
     // =====================================================================================
     // TECH TREE — la vista (árbol, ficha, banda de winrate) vive en ui.TechTreeView; aquí solo el
@@ -1074,23 +1045,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // de construir ningun panel. Se separa del resto del constructor porque es
     // configuración de ventana, no construcción de paneles.
     private void configurarVentana() {
-        setDefaultCloseOperation(EXIT_ON_CLOSE);
-        aplicarVentanaGuardada();
-        addWindowListener(new WindowAdapter() {
-            @Override public void windowClosing(WindowEvent e) { guardarVentana(); socketVivo.cerrar(); }
+        VentanaPrincipalAjustes.configurar(this, logo, new VentanaPrincipalAjustes.Anfitrion() {
+            @Override public void alCerrar() { guardarVentana(); socketVivo.cerrar(); }
+            @Override public void alPerderFoco() { watchlist.ocultarHoverCard(true); }
         });
-        addWindowFocusListener(new WindowAdapter() {
-            @Override public void windowLostFocus(WindowEvent e) { watchlist.ocultarHoverCard(true); }
-        });
-        if (logo != null) {
-            // Varias escalas: Windows elige la adecuada para ventana y barra de
-            // tareas. El logo es vertical: se centra en un lienzo cuadrado
-            // transparente en vez de estirarlo (getScaledInstance lo deformaba).
-            List<Image> iconos = new ArrayList<>();
-            for (int s : new int[]{ 16, 24, 32, 48, 64, 128, 256 })
-                iconos.add(iconoCuadrado(logo, s));
-            setIconImages(iconos);
-        }
     }
 
 
@@ -1586,42 +1544,18 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         splitPrincipal = split;
         // Como el Explorador, en toda la ventana: clic en cualquier fondo que no sea un control = sin selección.
         // Excepciones: la cabecera de columnas (ordena) y la cabecera «Partidas de:» (sus nombres son clicables).
-        Toolkit.getDefaultToolkit().addAWTEventListener(ev -> {
-            if (!(ev instanceof MouseEvent me) || me.getID() != MouseEvent.MOUSE_PRESSED) return;
-            if (!SwingUtilities.isLeftMouseButton(me) || me.isControlDown() || me.isShiftDown()) return;
-            Component c = me.getComponent();
-            if (c == null) return;
-            Window w = c instanceof Window win ? win : SwingUtilities.getWindowAncestor(c);
-            if (w != SpoilerFreeRecs.this) return;   // solo la ventana principal (la hover-card y los diálogos, no)
-            techTree.ocultarDetalle();   // la ficha flotante se cierra al clicar fuera
-            // Un fondo sin listeners no recibe el clic (sube hasta la ventana): miramos qué hay REALMENTE bajo el ratón
-            Point p = SwingUtilities.convertPoint(c, me.getPoint(), getLayeredPane());
-            Component bajo = SwingUtilities.getDeepestComponentAt(getLayeredPane(), p.x, p.y);
-            if (bajo == null || !esFondoDeseleccionable(bajo)) return;
-            if (!playersList.isSelectionEmpty()) { playersList.clearSelection(); partidas.actualizarTextoBuscar(); }
-        }, AWTEvent.MOUSE_EVENT_MASK);
+        // Ver ui.ClicEnFondo: mezcla excepciones de varias vistas, así que se las pedimos por interfaz.
+        ClicEnFondo.instalarGlobal(this, new ClicEnFondo.Anfitrion() {
+            @Override public JLabel cabeceraWatchlist() { return watchlist.cabLabel; }
+            @Override public JPanel sujetosPanel() { return sujetosPanel; }
+            @Override public JTable tablaPartidas() { return partidas.table; }
+            @Override public JTable tablaDirectos() { return directos == null ? null : directos.tablaDirectos; }
+            @Override public JComponent panelRatings() { return ratings == null ? null : ratings.panel(); }
+            @Override public void ocultarDetalleTechTree() { techTree.ocultarDetalle(); }
+            @Override public boolean haySeleccionWatchlist() { return !playersList.isSelectionEmpty(); }
+            @Override public void limpiarSeleccionWatchlist() { playersList.clearSelection(); partidas.actualizarTextoBuscar(); }
+        });
         add(split, BorderLayout.CENTER);
-    }
-
-    /** ¿Es un fondo (no un control) donde un clic debe soltar la selección de la lista? */
-    boolean esFondoDeseleccionable(Component c) {
-        if (c instanceof AbstractButton || c instanceof javax.swing.text.JTextComponent || c instanceof JComboBox
-                || c instanceof JList || c instanceof JTable || c instanceof javax.swing.table.JTableHeader
-                || c instanceof JScrollBar || c instanceof JSpinner || c instanceof JMenuBar || c instanceof JPopupMenu
-                || c instanceof JSplitPane || c instanceof javax.swing.plaf.basic.BasicSplitPaneDivider || c instanceof JProgressBar)
-            return false;
-        if (c instanceof JLabel l && l.getMouseListeners().length > 0) return false;   // etiquetas clicables (firma, sujetos…)
-        if (watchlist.cabLabel != null && SwingUtilities.isDescendingFrom(c, watchlist.cabLabel)) return false;          // ordenar no suelta
-        if (sujetosPanel != null && SwingUtilities.isDescendingFrom(c, sujetosPanel)) return false;  // «Partidas de:» es clicable
-        if (partidas.table != null && SwingUtilities.isDescendingFrom(c, partidas.table)) return false;
-        if (directos != null && directos.tablaDirectos != null && SwingUtilities.isDescendingFrom(c, directos.tablaDirectos)) return false;
-        if (ratings != null && SwingUtilities.isDescendingFrom(c, ratings.panel())) return false;   // mirar las campanas no suelta la selección (sus puntos desaparecerían)
-        // los visores de las tablas (hueco bajo sus filas) tampoco: seleccionar partidas no debe cambiar el filtro de la lista
-        for (Component p = c; p != null; p = p.getParent())
-            if (p instanceof JScrollPane sp && sp.getViewport() != null
-                    && (sp.getViewport().getView() == partidas.table || (directos != null && sp.getViewport().getView() == directos.tablaDirectos))) return false;
-        return c instanceof JPanel || c instanceof JViewport || c instanceof JLabel || c instanceof JRootPane
-                || c instanceof JLayeredPane || c instanceof JFrame;
     }
 
     // Cargas iniciales (canales, jugadores, tema/fuentes) y el arranque de los
@@ -1852,42 +1786,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Restaura tamaño, posición y maximizado de la última sesión, con
      *  cordura: si la posición guardada cae fuera de la pantalla, se centra. */
-    void aplicarVentanaGuardada() {
-        setSize(1180, 680);
-        setLocationRelativeTo(null);
-        try {
-            String v = leerConfig("ventana", null);
-            if (v != null) {
-                String[] p = v.split(",");
-                int x = Integer.parseInt(p[0].trim()), y = Integer.parseInt(p[1].trim());
-                int w = Math.max(700, Integer.parseInt(p[2].trim()));
-                int h = Math.max(450, Integer.parseInt(p[3].trim()));
-                Rectangle pant = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-                w = Math.min(w, pant.width);
-                h = Math.min(h, pant.height);
-                if (x >= pant.x - 8 && y >= pant.y - 8
-                        && x + 100 < pant.x + pant.width && y + 100 < pant.y + pant.height) {
-                    setBounds(x, y, w, h);
-                } else {
-                    setSize(w, h);
-                    setLocationRelativeTo(null);
-                }
-            }
-            if (Boolean.parseBoolean(leerConfig("ventana_max", "false")))
-                setExtendedState(JFrame.MAXIMIZED_BOTH);
-        } catch (Exception ignored) {}
-    }
+    void aplicarVentanaGuardada() { VentanaGuardada.aplicar(this); }
 
-    void guardarVentana() {
-        if (splitPrincipal != null)
-            guardarConfig("divisor", String.valueOf(splitPrincipal.getDividerLocation()));
-        boolean max = (getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
-        guardarConfig("ventana_max", String.valueOf(max));
-        if (!max) {
-            Rectangle b = getBounds();
-            guardarConfig("ventana", b.x + "," + b.y + "," + b.width + "," + b.height);
-        }
-    }
+    void guardarVentana() { VentanaGuardada.guardar(this, splitPrincipal); }
 
     /** Muestra u oculta la barra de progreso de la fila de estado. */
     long opSerial;   // cada operación tiene su número: el watchdog del Detener solo cierra la suya
