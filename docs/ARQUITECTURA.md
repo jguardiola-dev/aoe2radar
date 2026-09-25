@@ -23,7 +23,9 @@ service   Reglas de negocio: ProfileService (perfil = shard + «Actualizar hoy»
 ui        Swing: una vista por pestaña (WatchlistView, MatchesView, LiveView, ProfileView, RatingsView,
           CivStatsView, TechTreeView) y su presentador (…Presenter). Las vistas no llaman a la red: piden al
           presentador y pintan lo que el presentador les da.
-app       AppState (estado observable: qué vista, qué jugador, qué filtros) y Main (arranque, tema, wiring).
+app       Main (arranque, tema, wiring). El estado compartido de la interfaz (AppState: qué vista, qué jugador, qué
+          filtros) vive en ui, en piezas pequeñas (ui.FiltroStats es la primera), para que las vistas lo usen sin
+          depender de app (decisión de la fase 3: si viviera en app, ui importaría hacia fuera).
 util      Json, t() (i18n), formatos, Log.
 ```
 Regla de dependencia: cada capa solo conoce las de dentro. `ui` conoce `service` y `model`; `service` conoce
