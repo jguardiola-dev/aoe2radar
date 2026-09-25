@@ -52,6 +52,24 @@ class ControlServiceTest {
         assertFalse(Freno.CONTROL.containsKey("intervalo"));
     }
 
+    @Test void estado201NoTocaControl() {
+        Freno.CONTROL.put("previo", "valor");
+        control.estado = 201;   // solo vale 200 exacto, ni siquiera otro 2xx
+        control.cuerpo = "{\"intervalo\":9}";
+        String msg = servicio.cargarControl("", txt -> fail("estado 201: no debería marcar visto"));
+        assertNull(msg);
+        assertEquals("valor", Freno.CONTROL.get("previo"), "solo vale 200 exacto");
+        assertFalse(Freno.CONTROL.containsKey("intervalo"));
+    }
+
+    @Test void controlBuenoBorraLasClavesAnteriores() {
+        Freno.CONTROL.put("viejo", "de una vuelta anterior");
+        control.cuerpo = "{\"intervalo\":3}";
+        servicio.cargarControl("", txt -> fail("sin mensaje no debería marcar visto"));
+        assertFalse(Freno.CONTROL.containsKey("viejo"), "control.json reemplaza el mapa entero (clear), no lo mezcla");
+        assertEquals(3.0, ((Number) Freno.CONTROL.get("intervalo")).doubleValue());
+    }
+
     @Test void jsonQueNoEsObjetoNoTocaControl() {
         Freno.CONTROL.put("previo", "valor");
         control.cuerpo = "[1,2,3]";
@@ -71,6 +89,12 @@ class ControlServiceTest {
     @Test void mensajeYaVistoDevuelveNull() {
         control.cuerpo = "{\"mensaje\":\"hola\"}";
         String msg = servicio.cargarControl("hola", txt -> fail("ya visto: no debería marcar de nuevo"));
+        assertNull(msg);
+    }
+
+    @Test void mensajeEnBlancoNoSeDevuelveNiSeMarcaVisto() {
+        control.cuerpo = "{\"mensaje\":\"   \"}";
+        String msg = servicio.cargarControl("", txt -> fail("mensaje en blanco: no debería marcar visto"));
         assertNull(msg);
     }
 
@@ -104,5 +128,25 @@ class ControlServiceTest {
         version.fallo = new RuntimeException("sin red");
         String tag = assertDoesNotThrow(() -> servicio.ultimaVersion("https://api.github.com/releases/latest"));
         assertNull(tag);
+    }
+
+    /** En la 1.1, httpText delegaba en ApiClient.texto, que ante un estado que no es 2xx lanzaba
+     *  IOException("HTTP nnn"); comprobarActualizacion lo anotaba como «actualizaciones: HTTP nnn». Aquí no hay
+     *  ApiClient de por medio, así que ultimaVersion lanza esa misma IOException para que su propio catch la
+     *  anote igual. */
+    @Test void ultimaVersionAnte404AnotaHttpEnElLogYNoDaTag() {
+        version.estado = 404;
+        version.cuerpo = "{\"tag_name\":\"v1.3\"}";
+        java.io.ByteArrayOutputStream captura = new java.io.ByteArrayOutputStream();
+        java.io.PrintStream original = System.out;
+        System.setOut(new java.io.PrintStream(captura));
+        String tag;
+        try {
+            tag = servicio.ultimaVersion("https://api.github.com/releases/latest");
+        } finally {
+            System.setOut(original);
+        }
+        assertNull(tag);
+        assertTrue(captura.toString().contains("actualizaciones: HTTP 404"), captura.toString());
     }
 }

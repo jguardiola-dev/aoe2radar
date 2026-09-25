@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.service;
 import dev.tirador.aoe2radar.api.Freno;
 import dev.tirador.aoe2radar.api.Transporte;
 
+import java.io.IOException;
 import java.util.Map;
 import java.util.function.Consumer;
 
@@ -57,12 +58,16 @@ public final class ControlService {
         }
     }
 
-    /** Última versión publicada en GitHub Releases (el «tag_name», p. ej. «v1.2»), o null si no se pudo consultar. */
+    /**
+     * Última versión publicada en GitHub Releases (el «tag_name», p. ej. «v1.2»), o null si no se pudo consultar.
+     * Un estado que no es 2xx se anota en el log como «actualizaciones: HTTP nnn», igual que en la 1.1 (ahí
+     * httpText delegaba en ApiClient.texto, que lanzaba esa misma IOException).
+     */
     public String ultimaVersion(String releasesApi) {
         avisarSiUi("ControlService.ultimaVersion");
         try {
             Transporte.Respuesta r = transporteVersion.get(releasesApi);
-            if (r.estado() / 100 != 2) return null;
+            if (r.estado() / 100 != 2) throw new IOException("HTTP " + r.estado());
             Object t = val(obj(parse(r.cuerpo())), "tag_name");
             return t == null ? null : String.valueOf(t).trim();
         } catch (Exception ex) {

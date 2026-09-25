@@ -81,8 +81,6 @@ import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
 import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
 import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
-import static dev.tirador.aoe2radar.api.Freno.CONTROL;
-import static dev.tirador.aoe2radar.api.Freno.CONTROL_URL;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
