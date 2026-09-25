@@ -89,6 +89,7 @@ import dev.tirador.aoe2radar.service.StatsServiceSfr;
 import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
+import dev.tirador.aoe2radar.ui.Listas;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
@@ -254,6 +255,8 @@ import static dev.tirador.aoe2radar.ui.Iconos.banderaHtml;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoCiv;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoMapa;
+import static dev.tirador.aoe2radar.ui.Listas.Celda;
+import static dev.tirador.aoe2radar.ui.Listas.Pct;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 
 import javax.swing.*;
@@ -284,6 +287,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     static final String TEMA_CLARO = "claro", TEMA_OSCURO = "oscuro", TEMA_SISTEMA = "sistema";
     static final int    PER_PAGE     = 50;   // partidas consultadas por jugador
     static final long   PAUSA_MS     = 300;  // cortesía entre llamadas
+
+    // tarjeta, filaBarra, enlaceVerTodo y las ventanas de lista/tabla completa (ver ui.Listas); RegresionCapturas la usa por el nombre del campo.
+    final Listas listas = new Listas(this, v -> ultimoClicCtrl = v);
 
     // --- Caché de sesión del «Al azar por ELO» (vive mientras la app está abierta) ---
     LbCtx ctxAzar;                       // páginas del leaderboard reutilizadas entre tiradas
@@ -1948,66 +1954,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return civStatsPanel;
     }
 
-    JPanel tarjeta(String titulo, String valor, String pie) {
-        JPanel p = new JPanel(new BorderLayout(0, 0));
-        p.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(128, 128, 128, 70), 1, true), BorderFactory.createEmptyBorder(4, 8, 4, 8)));
-        JLabel t1 = new JLabel(titulo.toUpperCase(Locale.ROOT)); t1.setFont(t1.getFont().deriveFont(Font.BOLD, 10.5f)); t1.setForeground(colorSecundario());
-        JLabel v = new JLabel(valor); v.setFont(v.getFont().deriveFont(Font.BOLD, 18f));
-        JLabel t2 = new JLabel(pie); t2.setFont(t2.getFont().deriveFont(Font.PLAIN, 10.5f)); t2.setForeground(colorSecundario());
-        p.add(t1, BorderLayout.NORTH); p.add(v, BorderLayout.CENTER); p.add(t2, BorderLayout.SOUTH);
-        return p;
-    }
-
-    /** Una fila «nombre ····· barra ····· valor» para las listas laterales. */
-    JPanel filaBarra(String nombre, double fraccion, String valor, Color color, String tooltip) { return filaBarra(nombre, fraccion, valor, color, tooltip, null); }
-
-    JPanel filaBarra(String nombre, double fraccion, String valor, Color color, String tooltip, Runnable alClicar) { return filaBarra(null, nombre, fraccion, valor, color, tooltip, alClicar); }
-
-    boolean esFilaJugador;   // la fila que se está construyendo es de un jugador (rival/aliado): clic derecho ofrece pestaña nueva
-    JPanel filaBarra(Icon icono, String nombre, double fraccion, String valor, Color color, String tooltip, Runnable alClicar) {
-        JPanel f = new JPanel(new BorderLayout(6, 0)) {
-            @Override protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                int x0 = 130, x1 = getWidth() - 62;
-                if (x1 <= x0) return;
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setColor(new Color(128, 128, 128, 40));
-                g2.fillRoundRect(x0, getHeight() / 2 - 4, x1 - x0, 8, 6, 6);
-                g2.setColor(color);
-                g2.fillRoundRect(x0, getHeight() / 2 - 4, (int) ((x1 - x0) * Math.max(0, Math.min(1, fraccion))), 8, 6, 6);
-                g2.dispose();
-            }
-        };
-        f.setOpaque(false);
-        f.setAlignmentX(0f);
-        f.setMaximumSize(new Dimension(Integer.MAX_VALUE, 22));
-        f.setPreferredSize(new Dimension(10, 22));
-        JLabel n = new JLabel(nombre, icono, SwingConstants.LEFT); n.setIconTextGap(5); n.setPreferredSize(new Dimension(126, 20));
-        JLabel v = new JLabel(valor, SwingConstants.RIGHT); v.setPreferredSize(new Dimension(58, 18)); v.setFont(v.getFont().deriveFont(Font.BOLD));
-        f.add(n, BorderLayout.WEST); f.add(v, BorderLayout.EAST);
-        if (tooltip != null) { f.setToolTipText(tooltip); n.setToolTipText(tooltip); v.setToolTipText(tooltip); }
-        if (alClicar != null) {
-            MouseAdapter ma = new MouseAdapter() {
-                @Override public void mouseClicked(MouseEvent e) {
-                    if (SwingUtilities.isLeftMouseButton(e) || SwingUtilities.isMiddleMouseButton(e)) { ultimoClicCtrl = e.isControlDown() || SwingUtilities.isMiddleMouseButton(e); alClicar.run(); ultimoClicCtrl = false; }   // botón central = pestaña nueva
-                }
-                @Override public void mousePressed(MouseEvent e) { menu(e); }
-                @Override public void mouseReleased(MouseEvent e) { menu(e); }
-                void menu(MouseEvent e) {
-                    if (!e.isPopupTrigger() || !esFilaJugador) return;
-                    JPopupMenu pm = new JPopupMenu();
-                    JMenuItem it = new JMenuItem(t("Abrir perfil en pestaña nueva", "Open profile in a new tab"));
-                    it.addActionListener(a -> { ultimoClicCtrl = true; alClicar.run(); ultimoClicCtrl = false; });
-                    pm.add(it);
-                    pm.show(e.getComponent(), e.getX(), e.getY());
-                }
-            };
-            for (JComponent c : new JComponent[]{ f, n, v }) { c.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)); c.addMouseListener(ma); }
-            n.setForeground(temaOscuroActivo ? new Color(0x7f, 0xb3, 0xe0) : new Color(0x2f, 0x5f, 0x8f));
-        }
-        return f;
-    }
-
     /** Fila «Arabia · [icono] Romanos · 55,1 %» para «Mejor civ por mapa». */
     JPanel filaMejorCiv(String mapa, String claveMapa, CivAgg mejor, int partidasMapa) {
         JPanel f = new JPanel(new BorderLayout(6, 0));
@@ -2140,11 +2086,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         int brutas = modo.getOrDefault("partidas", 0) + abandonos + espejos + sinRes;
         String ambito = ventanaNombre(statsVentana) + " · " + v.desde() + " → " + v.hasta() + (v.parche().isEmpty() ? "" : " · " + t("parche ", "patch ") + v.parche());
         stTarjetas.removeAll();
-        stTarjetas.add(tarjeta(t("Partidas", "Games"), miles(partidas), ambito));
-        stTarjetas.add(tarjeta(t("Duración media", "Avg. length"), stats.duracionMedia(totalD, (int) Math.min(Integer.MAX_VALUE, totalN)), t("tiempo de juego, sin abandonos", "in-game time, dodges excluded")));
-        stTarjetas.add(tarjeta(t("Civs con datos", "Civs with data"), String.valueOf(agg.values().stream().filter(a -> a.n() >= MIN_PARTIDAS_CIV).count()), t("con ", "with ") + MIN_PARTIDAS_CIV + t("+ partidas (gris: menos de 100)", "+ games (grey: under 100)")));
-        stTarjetas.add(tarjeta(t("Espejos", "Mirrors"), brutas == 0 ? "-" : pct1(100.0 * espejos / brutas), t("misma civ en ambos lados (fuera)", "same civ on both sides (excluded)")));
-        stTarjetas.add(tarjeta(t("Abandonos", "Dodges"), brutas == 0 ? "-" : pct1(100.0 * abandonos / brutas), t("menos de 2 minutos (fuera)", "under 2 minutes (excluded)")));
+        stTarjetas.add(listas.tarjeta(t("Partidas", "Games"), miles(partidas), ambito));
+        stTarjetas.add(listas.tarjeta(t("Duración media", "Avg. length"), stats.duracionMedia(totalD, (int) Math.min(Integer.MAX_VALUE, totalN)), t("tiempo de juego, sin abandonos", "in-game time, dodges excluded")));
+        stTarjetas.add(listas.tarjeta(t("Civs con datos", "Civs with data"), String.valueOf(agg.values().stream().filter(a -> a.n() >= MIN_PARTIDAS_CIV).count()), t("con ", "with ") + MIN_PARTIDAS_CIV + t("+ partidas (gris: menos de 100)", "+ games (grey: under 100)")));
+        stTarjetas.add(listas.tarjeta(t("Espejos", "Mirrors"), brutas == 0 ? "-" : pct1(100.0 * espejos / brutas), t("misma civ en ambos lados (fuera)", "same civ on both sides (excluded)")));
+        stTarjetas.add(listas.tarjeta(t("Abandonos", "Dodges"), brutas == 0 ? "-" : pct1(100.0 * abandonos / brutas), t("menos de 2 minutos (fuera)", "under 2 minutes (excluded)")));
         stTarjetas.revalidate(); stTarjetas.repaint();
 
         List<CivAgg> lista = new ArrayList<>(agg.values());
@@ -2166,11 +2112,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         List<CivAgg> porPick = new ArrayList<>(lista); porPick.sort((a, b) -> b.n() - a.n());
         double maxPick = porPick.isEmpty() ? 1 : porPick.get(0).n();
         for (CivAgg a : porPick.subList(0, Math.min(8, porPick.size())))
-            stMasJugadas.add(filaBarra(iconoCiv(a.civ(), 18), nombreCivStats(a.civ()), a.n() / maxPick, pct1(totalN == 0 ? 0 : 100.0 * a.n() / totalN), barra, miles(a.n()) + t(" partidas · WR ", " games · WR ") + pct1(a.wr()) + t(" · clic: tech tree", " · click: tech tree"), () -> abrirTechTree(a.civ())));
-        if (porPick.size() > 8) { long totalNF = totalN; stMasJugadas.add(enlaceVerTodo(porPick.size(), () -> {
+            stMasJugadas.add(listas.filaBarra(iconoCiv(a.civ(), 18), nombreCivStats(a.civ()), a.n() / maxPick, pct1(totalN == 0 ? 0 : 100.0 * a.n() / totalN), barra, miles(a.n()) + t(" partidas · WR ", " games · WR ") + pct1(a.wr()) + t(" · clic: tech tree", " · click: tech tree"), () -> abrirTechTree(a.civ())));
+        if (porPick.size() > 8) { long totalNF = totalN; stMasJugadas.add(listas.enlaceVerTodo(porPick.size(), () -> {
             List<Object[]> filas = new ArrayList<>();
             for (CivAgg a : porPick) filas.add(new Object[]{ new Celda(iconoCiv(a.civ(), 18), nombreCivStats(a.civ()), () -> abrirTechTree(a.civ())), new Pct(totalNF == 0 ? 0 : 100.0 * a.n() / totalNF, 0, 0, false), (long) a.n(), new Pct(a.wr(), a.w(), a.n(), true) });
-            mostrarTablaCompleta(t("Más jugadas", "Most played") + " · " + modoNombre(statsModo), new String[]{ t("Civ", "Civ"), "Pick", t("Partidas", "Games"), "WR" }, filas, 1);
+            listas.mostrarTablaCompleta(t("Más jugadas", "Most played") + " · " + modoNombre(statsModo), new String[]{ t("Civ", "Civ"), "Pick", t("Partidas", "Games"), "WR" }, filas, 1);
         })); }
         stMejorPorMapa.removeAll();
         stMejorPorMapa.add(tituloSeccion(t("Mejor civ por mapa", "Best civ per map"), t("En cada mapa del pool, la civ con mejor winrate con el modo y el tramo elegidos: mínimo 20 partidas de esa civ en ese mapa, y gana la que tiene mejor límite inferior del intervalo de confianza (no la muestra pequeña con suerte). El número gris son sus partidas: por debajo de 100, orientativo. Responde a «qué me cojo en este mapa».", "For each map in the pool, the civ with the best win rate with the chosen mode and bracket: at least 20 games of that civ on that map, and the winner is the best lower bound of the confidence interval (not a lucky small sample). The grey number is its games: under 100, indicative only. Answers \u201Cwhat should I pick on this map\u201D.")));
@@ -2191,10 +2137,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             todasMejor.add(new Object[]{ en.getKey(), mejor, en.getValue() });
             if (filasMejor < 12) { stMejorPorMapa.add(filaMejorCiv(nombreMapaStats(v, en.getKey()), en.getKey(), mejor, en.getValue())); filasMejor++; }
         }
-        if (todasMejor.size() > 12) stMejorPorMapa.add(enlaceVerTodo(todasMejor.size(), () -> {
+        if (todasMejor.size() > 12) stMejorPorMapa.add(listas.enlaceVerTodo(todasMejor.size(), () -> {
             List<Object[]> filas = new ArrayList<>();
             for (Object[] x : todasMejor) { CivAgg mejor = (CivAgg) x[1]; filas.add(new Object[]{ new Celda(iconoMapa(nombreMapaStats(v, (String) x[0]), (String) x[0], 18), nombreMapaStats(v, (String) x[0]), null), new Celda(iconoCiv(mejor.civ(), 18), nombreCivStats(mejor.civ()), () -> abrirTechTree(mejor.civ())), (long) mejor.n(), new Pct(mejor.wr(), mejor.w(), mejor.n(), true), (long) (Integer) x[2] }); }
-            mostrarTablaCompleta(t("Mejor civ por mapa", "Best civ per map") + " · " + modoNombre(statsModo) + " · " + tramoNombre(statsTramo), new String[]{ t("Mapa", "Map"), t("Mejor civ", "Best civ"), t("Partidas civ", "Civ games"), "WR", t("Partidas mapa", "Map games") }, filas, 4);
+            listas.mostrarTablaCompleta(t("Mejor civ por mapa", "Best civ per map") + " · " + modoNombre(statsModo) + " · " + tramoNombre(statsTramo), new String[]{ t("Mapa", "Map"), t("Mejor civ", "Best civ"), t("Partidas civ", "Civ games"), "WR", t("Partidas mapa", "Map games") }, filas, 4);
         }));
         if (filasMejor == 0) { JLabel vac = new JLabel(t("Sin mapas con 20+ partidas por civ.", "No maps with 20+ games per civ.")); vac.setForeground(Color.GRAY); vac.setFont(vac.getFont().deriveFont(Font.PLAIN, 11f)); stMejorPorMapa.add(vac); }
         stPool.removeAll();
@@ -2205,15 +2151,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         long mostradas = 0;
         for (Map.Entry<String, Integer> en : lm.subList(0, Math.min(12, lm.size()))) {
             mostradas += en.getValue();
-            stPool.add(filaBarra(iconoMapa(nombreMapaStats(v, en.getKey()), en.getKey(), 18), nombreMapaStats(v, en.getKey()), en.getValue() / maxMapa, pct1(totalMapas == 0 ? 0 : 100.0 * en.getValue() / totalMapas), oliva, miles(en.getValue()) + t(" partidas", " games"), null));
+            stPool.add(listas.filaBarra(iconoMapa(nombreMapaStats(v, en.getKey()), en.getKey(), 18), nombreMapaStats(v, en.getKey()), en.getValue() / maxMapa, pct1(totalMapas == 0 ? 0 : 100.0 * en.getValue() / totalMapas), oliva, miles(en.getValue()) + t(" partidas", " games"), null));
         }
         if (lm.size() > 12 && totalMapas > mostradas) {
-            stPool.add(filaBarra(null, t("Otros (", "Others (") + (lm.size() - 12) + t(" mapas)", " maps)"), (totalMapas - mostradas) / maxMapa, pct1(100.0 * (totalMapas - mostradas) / totalMapas), new Color(128, 128, 128, 120), miles(totalMapas - mostradas) + t(" partidas en el resto del pool", " games in the rest of the pool"), null));
+            stPool.add(listas.filaBarra(null, t("Otros (", "Others (") + (lm.size() - 12) + t(" mapas)", " maps)"), (totalMapas - mostradas) / maxMapa, pct1(100.0 * (totalMapas - mostradas) / totalMapas), new Color(128, 128, 128, 120), miles(totalMapas - mostradas) + t(" partidas en el resto del pool", " games in the rest of the pool"), null));
             long totalMapasF = totalMapas; double maxMapaF = maxMapa;
-            stPool.add(enlaceVerTodo(lm.size(), () -> {
+            stPool.add(listas.enlaceVerTodo(lm.size(), () -> {
                 List<Object[]> filas = new ArrayList<>();
                 for (Map.Entry<String, Integer> en : lm) filas.add(new Object[]{ new Celda(iconoMapa(nombreMapaStats(v, en.getKey()), en.getKey(), 18), nombreMapaStats(v, en.getKey()), null), (long) en.getValue(), new Pct(totalMapasF == 0 ? 0 : 100.0 * en.getValue() / totalMapasF, 0, 0, false) });
-                mostrarTablaCompleta(t("Pool de mapas", "Map pool") + " · " + modoNombre(statsModo) + " · " + tramoNombre(statsTramo), new String[]{ t("Mapa", "Map"), t("Partidas", "Games"), "%" }, filas, 1);
+                listas.mostrarTablaCompleta(t("Pool de mapas", "Map pool") + " · " + modoNombre(statsModo) + " · " + tramoNombre(statsTramo), new String[]{ t("Mapa", "Map"), t("Partidas", "Games"), "%" }, filas, 1);
             }));
         }
         for (JPanel p : new JPanel[]{ stMasJugadas, stMejorPorMapa, stPool }) { p.revalidate(); p.repaint(); }
@@ -2773,7 +2719,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             if (!"*".equals(statsMapa)) for (CivAgg x : pm) if (x.civ().equals(statsMapa) && !mostrar.contains(x)) { mostrar.add(3 < mostrar.size() ? 3 : mostrar.size(), x); break; }   // el mapa del filtro, siempre presente
             for (CivAgg x : mostrar) {
                 boolean elegido = x.civ().equals(statsMapa);
-                ttMapasPanel.add(filaBarra(iconoMapa(nombreMapaStats(v, x.civ()), x.civ(), 16), (elegido ? "\u25B8 " : "") + nombreMapaStats(v, x.civ()), x.n() / maxN, pct1(x.wr()), colorWr(x.w(), x.n()), miles(x.n()) + t(" partidas", " games") + (elegido ? t(" · el mapa elegido", " · the chosen map") : ""), null));
+                ttMapasPanel.add(listas.filaBarra(iconoMapa(nombreMapaStats(v, x.civ()), x.civ(), 16), (elegido ? "\u25B8 " : "") + nombreMapaStats(v, x.civ()), x.n() / maxN, pct1(x.wr()), colorWr(x.w(), x.n()), miles(x.n()) + t(" partidas", " games") + (elegido ? t(" · el mapa elegido", " · the chosen map") : ""), null));
             }
             if (pm.isEmpty()) { JLabel vac = new JLabel(t("Sin mapas con 20+ partidas.", "No maps with 20+ games.")); vac.setForeground(Color.GRAY); vac.setFont(vac.getFont().deriveFont(Font.PLAIN, 11f)); ttMapasPanel.add(vac); }
         }
@@ -3203,83 +3149,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         actividadPanel.add(pie, BorderLayout.SOUTH);
         actMostrarCuerpo(false);
         return actividadPanel;
-    }
-
-
-    /** Enlace «ver los N…» al pie de una lista recortada. */
-    JButton enlaceVerTodo(int total, Runnable abrir) {
-        JButton b = new JButton(t("ver los ", "see all ") + total + "\u2026");
-        b.setFocusable(false); b.setMargin(new Insets(0, 4, 0, 4)); b.putClientProperty("JButton.buttonType", "borderless");
-        b.setFont(b.getFont().deriveFont(Font.PLAIN, 11f));
-        b.setForeground(temaOscuroActivo ? new Color(0x7f, 0xb3, 0xe0) : new Color(0x2f, 0x5f, 0x8f));
-        b.setAlignmentX(0f);
-        b.addActionListener(e -> abrir.run());
-        return b;
-    }
-
-    /** Ventana aparte con una lista entera (misma pintura que la recortada), con scroll. */
-    /** Celda con icono y texto (tablas ordenables). */
-    record Celda(Icon icono, String texto, Runnable alClicar) implements Comparable<Celda> { @Override public String toString() { return texto; } @Override public int compareTo(Celda o) { return texto.compareToIgnoreCase(o.texto); } }
-    /** Porcentaje con color (tablas ordenables): se ordena por valor y se pinta con el color del winrate. */
-    record Pct(double valor, int w, int n, boolean colorear) implements Comparable<Pct> { @Override public String toString() { return pct1(valor); } @Override public int compareTo(Pct o) { return Double.compare(valor, o.valor); } }
-    /** Ventana con una tabla ordenable por cualquier columna: iconos, porcentajes coloreados, números a la derecha; doble clic en una fila ejecuta su acción si la tiene. */
-    void mostrarTablaCompleta(String titulo, String[] columnas, List<Object[]> filas, int ordenInicial) {
-        JDialog d = new JDialog(this, titulo, false);
-        DefaultTableModel modelo = new DefaultTableModel(columnas, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return false; }
-            @Override public Class<?> getColumnClass(int c) { for (Object[] f : filas) if (f[c] != null) return f[c].getClass(); return Object.class; }
-        };
-        for (Object[] f : filas) modelo.addRow(f);
-        JTable tabla = new JTable(modelo);
-        tabla.setRowHeight(tabla.getRowHeight() + 8);
-        tabla.setAutoCreateRowSorter(true);
-        tabla.getTableHeader().setReorderingAllowed(false);
-        DefaultTableCellRenderer render = new DefaultTableCellRenderer() {
-            @Override public Component getTableCellRendererComponent(JTable tb, Object value, boolean sel, boolean foc, int row, int col) {
-                JLabel lab = (JLabel) super.getTableCellRendererComponent(tb, value, sel, foc, row, col);
-                lab.setIcon(null); lab.setForeground(sel ? tb.getSelectionForeground() : tb.getForeground()); lab.setFont(tb.getFont());
-                if (value instanceof Celda c) { lab.setText(c.texto()); lab.setIcon(c.icono()); lab.setIconTextGap(6); lab.setHorizontalAlignment(SwingConstants.LEFT); if (c.alClicar() != null) lab.setFont(tb.getFont().deriveFont(Font.BOLD)); }
-                else if (value instanceof Pct pc) { lab.setText(pct1(pc.valor())); lab.setHorizontalAlignment(SwingConstants.RIGHT); if (pc.colorear() && !sel) lab.setForeground(colorWr(pc.w(), pc.n())); lab.setFont(tb.getFont().deriveFont(Font.BOLD)); }
-                else if (value instanceof Number nn) { lab.setText(nn instanceof Double db ? pct1(db) : miles(nn.longValue())); lab.setHorizontalAlignment(SwingConstants.RIGHT); }
-                else { lab.setText(value == null ? "" : String.valueOf(value)); lab.setHorizontalAlignment(SwingConstants.LEFT); }
-                return lab;
-            }
-        };
-        for (int c = 0; c < columnas.length; c++) tabla.getColumnModel().getColumn(c).setCellRenderer(render);
-        tabla.getColumnModel().getColumn(0).setPreferredWidth(220);
-        for (int c = 1; c < columnas.length; c++) tabla.getColumnModel().getColumn(c).setPreferredWidth(90);
-        if (ordenInicial >= 0 && ordenInicial < columnas.length) tabla.getRowSorter().setSortKeys(List.of(new RowSorter.SortKey(ordenInicial, SortOrder.DESCENDING)));
-        tabla.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() != 2) return;
-                int vr = tabla.rowAtPoint(e.getPoint()); if (vr < 0) return;
-                Object v0 = modelo.getValueAt(tabla.convertRowIndexToModel(vr), 0);
-                if (v0 instanceof Celda c && c.alClicar() != null) { c.alClicar().run(); }
-            }
-        });
-        JScrollPane sp = new JScrollPane(tabla);
-        sp.setBorder(null);
-        JLabel pie = new JLabel(t("Clic en una cabecera: ordenar · doble clic en una fila con negrita: abrir", "Click a header: sort · double-click a bold row: open"));
-        pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f)); pie.setForeground(colorSecundario()); pie.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
-        d.add(sp, BorderLayout.CENTER); d.add(pie, BorderLayout.SOUTH);
-        d.getRootPane().registerKeyboardAction(e -> d.dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        d.setSize(Math.min(760, 260 + 100 * columnas.length), Math.min(720, 90 + (tabla.getRowHeight() + 1) * (filas.size() + 1)));
-        d.setLocationRelativeTo(this);
-        d.setVisible(true);
-    }
-    void mostrarListaCompleta(String titulo, java.util.function.Consumer<JPanel> rellenar) {
-        JDialog d = new JDialog(this, titulo, false);
-        PanelScrollable cuerpo = new PanelScrollable();
-        cuerpo.setBorder(BorderFactory.createEmptyBorder(8, 10, 8, 10));
-        cuerpo.add(tituloSeccion(titulo));
-        rellenar.accept(cuerpo);
-        JScrollPane sp = new JScrollPane(cuerpo, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        sp.setBorder(null);
-        d.add(sp);
-        d.getRootPane().registerKeyboardAction(e -> d.dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        d.setSize(460, Math.min(720, 60 + 24 * cuerpo.getComponentCount()));
-        d.setLocationRelativeTo(this);
-        d.setVisible(true);
     }
 
     void actMostrarCuerpo(boolean hay) {
@@ -3944,17 +3813,17 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         long diasUltimo = ultimo == null ? -1 : Duration.between(ultimo, Instant.now()).toDays();
         double meses = primero == null || ultimo == null ? 1 : Math.max(1, Duration.between(primero, ultimo).toDays() / 30.0);
         JPanel fila1 = new JPanel(new GridLayout(1, 0, 8, 0)); fila1.setOpaque(false); fila1.setAlignmentX(0f); fila1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
-        fila1.add(tarjeta(t("Partidas", "Games"), miles(cruce.size()), (sinRes > 0 ? sinRes + t(" sin resultado · ", " without result · ") : "") + String.format(Locale.ROOT, "%.1f", cruce.size() / meses).replace('.', ',') + t(" al mes", " per month")));
-        fila1.add(tarjeta(t("Balance", "Record"), w + "-" + l, conRes > 0 ? pct1(100.0 * w / conRes) + t(" para ", " for ") + actNombre : t("sin resultados", "no results")));
-        fila1.add(tarjeta(t("Forma", "Form"), ultimos.isEmpty() ? "-" : formaHtml(ultimos), t("últimas ", "last ") + ultimos.size() + t(", la más reciente a la izquierda", ", most recent on the left")));
-        fila1.add(tarjeta(t("Racha actual", "Current streak"), rachaActual == 0 ? "-" : String.valueOf(rachaActual), rachaActual == 0 ? "" : (rachaGana ? t("seguidas de ", "in a row for ") + actNombre : t("seguidas de ", "in a row for ") + rivalNombre)));
-        fila1.add(tarjeta(t("Último cruce", "Last game"), diasUltimo < 0 ? "-" : diasUltimo == 0 ? t("hoy", "today") : t("hace ", "") + diasUltimo + t(" días", " days ago"), (primero == null ? "" : t("primero: ", "first: ") + primero.atZone(ZoneId.systemDefault()).format(fmt)) + (ultimo == null ? "" : " · " + ultimo.atZone(ZoneId.systemDefault()).format(fmt))));
+        fila1.add(listas.tarjeta(t("Partidas", "Games"), miles(cruce.size()), (sinRes > 0 ? sinRes + t(" sin resultado · ", " without result · ") : "") + String.format(Locale.ROOT, "%.1f", cruce.size() / meses).replace('.', ',') + t(" al mes", " per month")));
+        fila1.add(listas.tarjeta(t("Balance", "Record"), w + "-" + l, conRes > 0 ? pct1(100.0 * w / conRes) + t(" para ", " for ") + actNombre : t("sin resultados", "no results")));
+        fila1.add(listas.tarjeta(t("Forma", "Form"), ultimos.isEmpty() ? "-" : formaHtml(ultimos), t("últimas ", "last ") + ultimos.size() + t(", la más reciente a la izquierda", ", most recent on the left")));
+        fila1.add(listas.tarjeta(t("Racha actual", "Current streak"), rachaActual == 0 ? "-" : String.valueOf(rachaActual), rachaActual == 0 ? "" : (rachaGana ? t("seguidas de ", "in a row for ") + actNombre : t("seguidas de ", "in a row for ") + rivalNombre)));
+        fila1.add(listas.tarjeta(t("Último cruce", "Last game"), diasUltimo < 0 ? "-" : diasUltimo == 0 ? t("hoy", "today") : t("hace ", "") + diasUltimo + t(" días", " days ago"), (primero == null ? "" : t("primero: ", "first: ") + primero.atZone(ZoneId.systemDefault()).format(fmt)) + (ultimo == null ? "" : " · " + ultimo.atZone(ZoneId.systemDefault()).format(fmt))));
         h2hCuerpo.add(fila1);
         h2hCuerpo.add(Box.createVerticalStrut(6));
         JPanel fila2 = new JPanel(new GridLayout(1, 0, 8, 0)); fila2.setOpaque(false); fila2.setAlignmentX(0f); fila2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
-        if (!juntos.isEmpty()) fila2.add(tarjeta(t("Como aliados", "As allies"), miles(juntos.size()), wJ + "-" + lJ + t(" juntos", " together")));
-        if (eloN > 0) fila2.add(tarjeta(t("ELO del cruce (1v1 RM)", "Pairing ELO (1v1 RM)"), Math.round(eloYoSum / (double) eloN) + " / " + Math.round(eloElSum / (double) eloN), t("media de cada uno · diferencia ", "average of each · gap ") + (Math.round(eloYoSum / (double) eloN) - Math.round(eloElSum / (double) eloN) >= 0 ? "+" : "") + (Math.round(eloYoSum / (double) eloN) - Math.round(eloElSum / (double) eloN))));
-        if (durN > 0) fila2.add(tarjeta(t("Duración media", "Average duration"), duracionMedia(durSum, durN), t("de las partidas entre ambos", "of the games between them")));
+        if (!juntos.isEmpty()) fila2.add(listas.tarjeta(t("Como aliados", "As allies"), miles(juntos.size()), wJ + "-" + lJ + t(" juntos", " together")));
+        if (eloN > 0) fila2.add(listas.tarjeta(t("ELO del cruce (1v1 RM)", "Pairing ELO (1v1 RM)"), Math.round(eloYoSum / (double) eloN) + " / " + Math.round(eloElSum / (double) eloN), t("media de cada uno · diferencia ", "average of each · gap ") + (Math.round(eloYoSum / (double) eloN) - Math.round(eloElSum / (double) eloN) >= 0 ? "+" : "") + (Math.round(eloYoSum / (double) eloN) - Math.round(eloElSum / (double) eloN))));
+        if (durN > 0) fila2.add(listas.tarjeta(t("Duración media", "Average duration"), duracionMedia(durSum, durN), t("de las partidas entre ambos", "of the games between them")));
         if (fila2.getComponentCount() > 0) h2hCuerpo.add(fila2);
         h2hCuerpo.add(Box.createVerticalStrut(10));
         JPanel columnas = new JPanel(new GridLayout(1, 2, 16, 0)); columnas.setOpaque(false); columnas.setAlignmentX(0f);
@@ -4259,11 +4128,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         Collections.reverse(serie);
         actGrafica.datos(serie, (modoGrafica == null ? "" : modoGrafica + " · ") + t("últimas ", "last ") + serie.size() + t(" partidas", " games"));
         actTarjetas.removeAll();
-        actTarjetas.add(tarjeta(t("Partidas", "Games"), miles(partidas), (a.completo() ? t("último año", "last year") : t("últimas ", "last ") + miles(a.partidas().size()) + t(" (tope)", " (cap)")) + " · " + ("*".equals(actModo) ? t("todos los modos", "all modes") : actModo) + (actDesde != null ? " · " + (actHasta == null ? t("desde ", "since ") + actDesde : actDesde + " → " + actHasta) : "")));
-        actTarjetas.add(tarjeta(t("Winrate", "Win rate"), conResultado == 0 ? "-" : pct1(100.0 * victorias / conResultado), victorias + "-" + (conResultado - victorias) + t(" con resultado", " with a result")));
-        actTarjetas.add(tarjeta(t("Duración media", "Avg. length"), duracionMedia(duracion, conDuracion), t("de reloj, inicio a fin", "wall clock, start to end")));
-        actTarjetas.add(tarjeta(t("Días con partidas", "Days with games"), String.valueOf(diasActivos), t("de los últimos ", "of the last ") + ACT_DIAS));
-        actTarjetas.add(tarjeta(t("Por día activo", "Per active day"), diasActivos == 0 ? "-" : String.format(Locale.ROOT, "%.1f", partidas / (double) diasActivos).replace('.', "en".equals(IDIOMA) ? '.' : ','), t("partidas de media", "games on average")));
+        actTarjetas.add(listas.tarjeta(t("Partidas", "Games"), miles(partidas), (a.completo() ? t("último año", "last year") : t("últimas ", "last ") + miles(a.partidas().size()) + t(" (tope)", " (cap)")) + " · " + ("*".equals(actModo) ? t("todos los modos", "all modes") : actModo) + (actDesde != null ? " · " + (actHasta == null ? t("desde ", "since ") + actDesde : actDesde + " → " + actHasta) : "")));
+        actTarjetas.add(listas.tarjeta(t("Winrate", "Win rate"), conResultado == 0 ? "-" : pct1(100.0 * victorias / conResultado), victorias + "-" + (conResultado - victorias) + t(" con resultado", " with a result")));
+        actTarjetas.add(listas.tarjeta(t("Duración media", "Avg. length"), duracionMedia(duracion, conDuracion), t("de reloj, inicio a fin", "wall clock, start to end")));
+        actTarjetas.add(listas.tarjeta(t("Días con partidas", "Days with games"), String.valueOf(diasActivos), t("de los últimos ", "of the last ") + ACT_DIAS));
+        actTarjetas.add(listas.tarjeta(t("Por día activo", "Per active day"), diasActivos == 0 ? "-" : String.format(Locale.ROOT, "%.1f", partidas / (double) diasActivos).replace('.', "en".equals(IDIOMA) ? '.' : ','), t("partidas de media", "games on average")));
         actTarjetas.revalidate(); actTarjetas.repaint();
         actCalendario.datos(porDia, inicio, hoy);
         String[] dias = "en".equals(IDIOMA) ? new String[]{ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" } : new String[]{ "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom" };
@@ -4288,7 +4157,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         pintarListaAgg(actTramos, t("Winrate por ELO del rival", "Win rate by opponent ELO") + (eloActualJugador > 0 ? " \u00B7 " + t("franjas centradas en ", "brackets centred on ") + eloActualJugador : ""), trOrd, 9, SpoilerFreeRecs::tramoNombre, null);
         // duración
         actDuracionFila.removeAll();
-        for (int i = 0; i < 5; i++) actDuracionFila.add(tarjeta(DURACION_TRAMOS[i], durN[i] == 0 ? "\u2013" : pct1(100.0 * durW[i] / durN[i]), durN[i] == 0 ? t("sin partidas", "no games") : miles(durN[i]) + t(" partidas, ", " games, ") + miles(durW[i]) + t(" victorias", " wins")));
+        for (int i = 0; i < 5; i++) actDuracionFila.add(listas.tarjeta(DURACION_TRAMOS[i], durN[i] == 0 ? "\u2013" : pct1(100.0 * durW[i] / durN[i]), durN[i] == 0 ? t("sin partidas", "no games") : miles(durN[i]) + t(" partidas, ", " games, ") + miles(durW[i]) + t(" victorias", " wins")));
         actDuracionFila.revalidate(); actDuracionFila.repaint();
         // pocket / flanco
         Map<String, int[]> posOrd = new LinkedHashMap<>(); if (posicion.containsKey("pocket")) posOrd.put("pocket", posicion.get("pocket")); if (posicion.containsKey("flanco")) posOrd.put("flanco", posicion.get("flanco"));
@@ -4298,7 +4167,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             for (Map.Entry<String, int[]> en : posicionMapa.entrySet()) { String[] kv = en.getKey().split("\u0000"); int[][] f = porMapa.computeIfAbsent(kv[0], k -> new int[][]{ new int[2], new int[2] }); f["pocket".equals(kv[1]) ? 0 : 1] = en.getValue(); }
             List<Object[]> filasPos = new ArrayList<>();
             for (Map.Entry<String, int[][]> en : porMapa.entrySet()) { int[] pk = en.getValue()[0], fl = en.getValue()[1]; filasPos.add(new Object[]{ new Celda(iconoMapa(en.getKey(), 18), en.getKey(), null), (long) pk[0], pk[0] == 0 ? null : new Pct(100.0 * pk[1] / pk[0], pk[1], pk[0], true), (long) fl[0], fl[0] == 0 ? null : new Pct(100.0 * fl[1] / fl[0], fl[1], fl[0], true) }); }
-            actPosicion.add(enlaceVerTodo(porMapa.size(), () -> mostrarTablaCompleta(t("Pocket o flanco por mapa", "Pocket or flank by map") + " \u00B7 " + actNombre, new String[]{ t("Mapa", "Map"), t("Partidas pocket", "Pocket games"), t("WR pocket", "Pocket WR"), t("Partidas flanco", "Flank games"), t("WR flanco", "Flank WR") }, filasPos, 1)));
+            actPosicion.add(listas.enlaceVerTodo(porMapa.size(), () -> listas.mostrarTablaCompleta(t("Pocket o flanco por mapa", "Pocket or flank by map") + " \u00B7 " + actNombre, new String[]{ t("Mapa", "Map"), t("Partidas pocket", "Pocket games"), t("WR pocket", "Pocket WR"), t("Partidas flanco", "Flank games"), t("WR flanco", "Flank WR") }, filasPos, 1)));
         }
         // últimos 30 días
         pintarListaAgg(actUltimos30Civs, t("Últimos 30 días · civs", "Last 30 days · civs"), civs30, 5, k -> k, null, k -> iconoCiv(claveCivDeNombre(k), 18));
@@ -4343,18 +4212,18 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (Map.Entry<String, int[]> en : l.subList(0, Math.min(tope, l.size()))) {
             int n = en.getValue()[0], w = en.getValue()[1];
             Runnable r = alClicar == null ? null : alClicar.get(en.getKey());
-            panel.add(filaBarra(icono == null ? null : icono.apply(en.getKey()), nombre.apply(en.getKey()), n / max, pct1(100.0 * w / n), colorWr(w, n), w + "-" + (n - w) + " · " + n + t(" partidas", " games") + (r != null ? (icono != null ? t(" · clic: tech tree", " · click: tech tree") : t(" · clic: abrir su perfil", " · click: open their profile")) : ""), r));
+            panel.add(listas.filaBarra(icono == null ? null : icono.apply(en.getKey()), nombre.apply(en.getKey()), n / max, pct1(100.0 * w / n), colorWr(w, n), w + "-" + (n - w) + " · " + n + t(" partidas", " games") + (r != null ? (icono != null ? t(" · clic: tech tree", " · click: tech tree") : t(" · clic: abrir su perfil", " · click: open their profile")) : ""), r));
         }
         if (l.size() > tope) {
             double maxF = max;
-            panel.add(enlaceVerTodo(l.size(), () -> {
+            panel.add(listas.enlaceVerTodo(l.size(), () -> {
                 List<Object[]> filas = new ArrayList<>();
                 for (Map.Entry<String, int[]> en : l) {
                     int n = en.getValue()[0], w = en.getValue()[1];
                     Runnable r = alClicar == null ? null : alClicar.get(en.getKey());
                     filas.add(new Object[]{ new Celda(icono == null ? null : icono.apply(en.getKey()), nombre.apply(en.getKey()), r), (long) n, (long) w, (long) (n - w), new Pct(100.0 * w / n, w, n, true) });
                 }
-                mostrarTablaCompleta(titulo, new String[]{ t("Nombre", "Name"), t("Partidas", "Games"), t("V", "W"), t("D", "L"), "WR" }, filas, 1);
+                listas.mostrarTablaCompleta(titulo, new String[]{ t("Nombre", "Name"), t("Partidas", "Games"), t("V", "W"), t("D", "L"), "WR" }, filas, 1);
             }));
         }
         panel.revalidate(); panel.repaint();
@@ -4362,8 +4231,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Rivales o aliados: como la lista de agregados, con clic para abrir el perfil de cada uno. */
     void pintarListaJugadores(JPanel panel, String titulo, Map<Long, Object[]> jugadores) {
-        esFilaJugador = true;
-        try { pintarListaJugadoresImpl(panel, titulo, jugadores); } finally { esFilaJugador = false; }
+        listas.esFilaJugador = true;
+        try { pintarListaJugadoresImpl(panel, titulo, jugadores); } finally { listas.esFilaJugador = false; }
     }
     void pintarListaJugadoresImpl(JPanel panel, String titulo, Map<Long, Object[]> jugadores) {
         Map<String, int[]> datos = new HashMap<>();
@@ -4374,7 +4243,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             datos.put(clave, new int[]{ (int) en.getValue()[1], (int) en.getValue()[2] });
             clics.put(clave, () -> { if (ultimoClicCtrl) abrirPerfilEnPestana(pid, nombreVisible(pid, nombre)); else abrirPerfil(pid, nombreVisible(pid, nombre)); });
         }
-        pintarListaAgg(panel, titulo, datos, esFilaJugador && h2hDialogo != null && h2hDialogo.isShowing() ? 10 : 5, k -> nombreVisible(Long.parseLong(k.substring(k.indexOf('\u0000') + 1)), k.substring(0, k.indexOf('\u0000'))), clics);
+        pintarListaAgg(panel, titulo, datos, listas.esFilaJugador && h2hDialogo != null && h2hDialogo.isShowing() ? 10 : 5, k -> nombreVisible(Long.parseLong(k.substring(k.indexOf('\u0000') + 1)), k.substring(0, k.indexOf('\u0000'))), clics);
     }
 
     /** Calendario de un año: una celda por día, más oscura cuantas más partidas. */
