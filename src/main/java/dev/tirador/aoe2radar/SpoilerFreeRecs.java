@@ -1960,63 +1960,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         montarVentana(left, center);
 
-        cargarCanales();
-        loadPlayers();
-        sanearVinculosHuerfanos();
-        getRootPane().setDefaultButton(fetchBtn);   // acción primaria: acento y Enter
-        ajustarGrises(flatLafDisponible && temaOscuroActivo);
-        ajustarBotonesEspeciales(flatLafDisponible && temaOscuroActivo);
-        ajustarFuentesSecundarias();
-        table.getInputMap(JComponent.WHEN_FOCUSED)
-             .put(KeyStroke.getKeyStroke("ENTER"), "descargarSeleccion");
-        table.getActionMap().put("descargarSeleccion", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { download(selectedRows()); }
-        });
-        refrescarWatchlist();
-        SwingUtilities.invokeLater(() -> {
-            grupoCombo.setSelectedItem(TOP_LADDER);   // la app abre en ★
-            mostrarDirectos(true);                    // …con los Directos a la vista, no una tabla vacía
-            if (Boolean.parseBoolean(leerConfig("inicio_min", "false")))
-                setExtendedState(JFrame.ICONIFIED);
-        });
-        final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
-        new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
-        socketVivo.iniciarPing();
-        javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
-            comprobarActualizacion(false); techTree.precargar();
-            cargarPaises(); instalarAutoScroll();
-            new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
-            refrescarCampanas();
-            campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> refrescarCampanas()); campanasTimer.start();
-            new javax.swing.Timer(1000, ev -> { if (!VIVO.nadieJugando() && playersList.isShowing()) playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
-            Thread lh = new Thread(() -> ladderAsegurar(false), "ladder-precarga"); lh.setDaemon(true); lh.start();   // el volcado del ladder, en silencio
-        });
-        tUpd.setRepeats(false);
-        tUpd.start();
-        vigilante = new javax.swing.Timer(tickMs(), e -> {
-            // Con el socket conectado, quién está en partida llega al instante: los sondeos pasan a ser una resincronización
-            // cada 10 min (× el multiplicador del mando a distancia). Si el socket cae, vuelven al ritmo del tick.
-            long ahora = System.currentTimeMillis();
-            long resync = (long) (10 * 60_000L * ctrlMult("tick_mult"));
-            boolean tocaSondear = ctrlOn("sondeo") && (!socketVivo.conectado() || ahora - ultimoResyncMs >= resync);
-            if (tocaSondear) ultimoResyncMs = ahora;
-            if (tocaSondear) vigilarVivos();
-            if (!modoTop()) directos.vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
-            if (modoTop() && !modoClan()) {
-                // recuperación automática: si el top no pudo cargarse (o solo hay caché), reintenta
-                if (topLadder.isEmpty() || ahora - topCargado > 15 * 60_000L)
-                    cargarTopLadder(true);
-                else if (tocaSondear) vigilarTop();
-            } else if (modoClan() && tocaSondear) vigilarTop();   // el clan se vigila, pero nunca se sustituye por el top del ladder
-        });
-        new Thread(() -> { cargarControl(); cargarEloAyer(); }, "control").start();
-        if (!leerConfig("mi_pid", "").isBlank()) iniciarVigilanciaLogJuego();   // «Mi partida»: aviso temprano al encontrar partida
-
-        new javax.swing.Timer(3_600_000, e -> new Thread(SpoilerFreeRecs::cargarControl, "control").start()).start();
-        vigilante.setInitialDelay(tickMs());
-        vigilante.start();
-        if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
-            SwingUtilities.invokeLater(() -> { if (!modoTop() && playersModel.size() > 0) fetchMatches(fetchBtn); });
+        arrancar();
     }
 
     // Cierre, ventana recordada, foco perdido e iconos: ajustes del JFrame antes
@@ -3495,6 +3439,69 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             if (!playersList.isSelectionEmpty()) { playersList.clearSelection(); actualizarTextoBuscar(); }
         }, AWTEvent.MOUSE_EVENT_MASK);
         add(split, BorderLayout.CENTER);
+    }
+
+    // Cargas iniciales (canales, jugadores, tema/fuentes) y el arranque de los
+    // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
+    // precarga del tech tree y del ladder. Es lo ultimo que hace el constructor.
+    private void arrancar() {
+        cargarCanales();
+        loadPlayers();
+        sanearVinculosHuerfanos();
+        getRootPane().setDefaultButton(fetchBtn);   // acción primaria: acento y Enter
+        ajustarGrises(flatLafDisponible && temaOscuroActivo);
+        ajustarBotonesEspeciales(flatLafDisponible && temaOscuroActivo);
+        ajustarFuentesSecundarias();
+        table.getInputMap(JComponent.WHEN_FOCUSED)
+             .put(KeyStroke.getKeyStroke("ENTER"), "descargarSeleccion");
+        table.getActionMap().put("descargarSeleccion", new AbstractAction() {
+            @Override public void actionPerformed(ActionEvent e) { download(selectedRows()); }
+        });
+        refrescarWatchlist();
+        SwingUtilities.invokeLater(() -> {
+            grupoCombo.setSelectedItem(TOP_LADDER);   // la app abre en ★
+            mostrarDirectos(true);                    // …con los Directos a la vista, no una tabla vacía
+            if (Boolean.parseBoolean(leerConfig("inicio_min", "false")))
+                setExtendedState(JFrame.ICONIFIED);
+        });
+        final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
+        new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
+        socketVivo.iniciarPing();
+        javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
+            comprobarActualizacion(false); techTree.precargar();
+            cargarPaises(); instalarAutoScroll();
+            new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
+            refrescarCampanas();
+            campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> refrescarCampanas()); campanasTimer.start();
+            new javax.swing.Timer(1000, ev -> { if (!VIVO.nadieJugando() && playersList.isShowing()) playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
+            Thread lh = new Thread(() -> ladderAsegurar(false), "ladder-precarga"); lh.setDaemon(true); lh.start();   // el volcado del ladder, en silencio
+        });
+        tUpd.setRepeats(false);
+        tUpd.start();
+        vigilante = new javax.swing.Timer(tickMs(), e -> {
+            // Con el socket conectado, quién está en partida llega al instante: los sondeos pasan a ser una resincronización
+            // cada 10 min (× el multiplicador del mando a distancia). Si el socket cae, vuelven al ritmo del tick.
+            long ahora = System.currentTimeMillis();
+            long resync = (long) (10 * 60_000L * ctrlMult("tick_mult"));
+            boolean tocaSondear = ctrlOn("sondeo") && (!socketVivo.conectado() || ahora - ultimoResyncMs >= resync);
+            if (tocaSondear) ultimoResyncMs = ahora;
+            if (tocaSondear) vigilarVivos();
+            if (!modoTop()) directos.vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
+            if (modoTop() && !modoClan()) {
+                // recuperación automática: si el top no pudo cargarse (o solo hay caché), reintenta
+                if (topLadder.isEmpty() || ahora - topCargado > 15 * 60_000L)
+                    cargarTopLadder(true);
+                else if (tocaSondear) vigilarTop();
+            } else if (modoClan() && tocaSondear) vigilarTop();   // el clan se vigila, pero nunca se sustituye por el top del ladder
+        });
+        new Thread(() -> { cargarControl(); cargarEloAyer(); }, "control").start();
+        if (!leerConfig("mi_pid", "").isBlank()) iniciarVigilanciaLogJuego();   // «Mi partida»: aviso temprano al encontrar partida
+
+        new javax.swing.Timer(3_600_000, e -> new Thread(SpoilerFreeRecs::cargarControl, "control").start()).start();
+        vigilante.setInitialDelay(tickMs());
+        vigilante.start();
+        if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
+            SwingUtilities.invokeLater(() -> { if (!modoTop() && playersModel.size() > 0) fetchMatches(fetchBtn); });
     }
 
     // ----- Carpeta de recs ---------------------------------------------------
