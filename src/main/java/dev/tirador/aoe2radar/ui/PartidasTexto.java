@@ -68,7 +68,7 @@ final class PartidasTexto {
         for (Map.Entry<Integer, List<String>> e : porEquipo.entrySet()) {
             String lado = String.join(", ", e.getValue());
             if (revelar && algunGanador && Boolean.TRUE.equals(equipoGano.get(e.getKey())))
-                lado = "✦ " + lado;   // corona discreta: el color vive en la columna Jugador
+                lado = "\u2726 " + lado;   // corona discreta: el color vive en la columna Jugador
             lados.add(lado);
         }
         String s = String.join("  vs  ", lados);
@@ -84,18 +84,18 @@ final class PartidasTexto {
         return "?";
     }
 
-    /** «2364 → 2378 (+14)»: el rating con el que entró y con el que salió. */
+    /** «2364 \u2192 2378 (+14)»: el rating con el que entró y con el que salió. */
     static String eloAntesDespues(MatchPlayer p) {   // devuelve HTML (sin envoltorio): gris + diff en verde/rojo
         if (p == null || p.rating == null) return "";
         if (p.ratingDiff == null) return " <font color='#8a8a8a'>" + p.rating + "</font>";
         String colD = p.ratingDiff > 0 ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : p.ratingDiff < 0 ? (temaOscuroActivo ? "#e57373" : "#c62828") : "#8a8a8a";
         return " <font color='" + colD + "'>(" + (p.ratingDiff >= 0 ? "+" : "") + p.ratingDiff + ")</font> <font color='#8a8a8a'>"
-                + p.rating + " → " + (p.rating + p.ratingDiff) + "</font>";
+                + p.rating + " \u2192 " + (p.rating + p.ratingDiff) + "</font>";
     }
 
     String rivalTexto(Match m) { return rivalTexto(m, false); }
 
-    /** Columna Rival: en 1v1 el otro (con su ELO antes → después si la fila está revelada); en equipos «2v2 · vs A, B». */
+    /** Columna Rival: en 1v1 el otro (con su ELO antes → después si la fila está revelada); en equipos «2v2 \u00B7 vs A, B». */
     String rivalTexto(Match m, boolean revelado) {
         if (m.gte > 0 && !revelado) return "";
         MatchPlayer yo = null;
@@ -105,7 +105,7 @@ final class PartidasTexto {
             for (MatchPlayer p : m.players) if (p.id != m.refId) {
                 if (!revelado) return nombreVisible(p.id, p.name);
                 String colR = Boolean.TRUE.equals(p.won) ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : (temaOscuroActivo ? "#e57373" : "#c62828");
-                return "<html><font color='" + colR + "'>" + (Boolean.TRUE.equals(p.won) ? "✦ " : "") + escapeHtml(nombreVisible(p.id, p.name))
+                return "<html><font color='" + colR + "'>" + (Boolean.TRUE.equals(p.won) ? "\u2726 " : "") + escapeHtml(nombreVisible(p.id, p.name))
                         + eloAntesDespues(p) + "</font></html>";
             }
             return "";
@@ -116,10 +116,10 @@ final class PartidasTexto {
         for (int n : porEquipo.values()) { if (tam.length() > 0) tam.append('v'); tam.append(n); }
         List<String> riv = new ArrayList<>();
         for (MatchPlayer p : m.players) if (p.team != yo.team) riv.add(nombreVisible(p.id, p.name));
-        return tam + " · vs " + String.join(", ", riv);
+        return tam + " \u00B7 vs " + String.join(", ", riv);
     }
 
-    /** El veredicto del buscado, en su columna: verde con ✦ si ganó,
+    /** El veredicto del buscado, en su columna: verde con \u2726 si ganó,
      *  rojo si perdió; a pelo en vivas, colgadas y GTE. */
     String refConVeredicto(Match m) {
         String nombre = refNombre(m, true);
@@ -131,7 +131,7 @@ final class PartidasTexto {
                           : (temaOscuroActivo ? "#e57373" : "#c62828");
         MatchPlayer yo = null;
         for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
-        return "<html><font color='" + col + "'>" + (gano ? "✦ " : "")
+        return "<html><font color='" + col + "'>" + (gano ? "\u2726 " : "")
                 + escapeHtml(nombre)
                 + eloAntesDespues(yo)
                 + "</font></html>";
@@ -140,7 +140,7 @@ final class PartidasTexto {
     /** Tooltip del modo consulta: la duración (el ±ELO ya va inline). */
     static String tipResultado(Match m) {
         if (m.finished == null || m.started == null) return null;
-        return t("Duración: ", "Duration: ")
+        return t("Duraci\u00f3n: ", "Duration: ")
                 + Duration.between(m.started, m.finished).toMinutes() + " min";
     }
 
@@ -184,7 +184,7 @@ final class PartidasTexto {
         @Override public int compareTo(FechaCell o) { return clave().compareTo(o.clave()); }
         @Override public String toString() {
             if (t != null) return F.format(t);
-            return orden != null ? "—" : dev.tirador.aoe2radar.util.I18n.t("EN DIRECTO", "LIVE");
+            return orden != null ? "\u2014" : dev.tirador.aoe2radar.util.I18n.t("EN DIRECTO", "LIVE");
         }
     }
 }

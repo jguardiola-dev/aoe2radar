@@ -6,33 +6,20 @@ import java.time.Instant;
 /**
  * Las decisiones de Partidas que no tocan Swing. fetchMatches, download, buscarAleatorias y buscarGte siguen
  * siendo {@code SwingWorker} dentro de {@link PartidasView} (la tanda 3 lo permite explícitamente para no
- * reescribir su publish/process/done, que ya funcionan hoy): lo que este presentador aísla es la pregunta que
- * cada uno de esos {@code done()} se hace primero — «¿sigo siendo la operación vigente, o ya me superó otra? ¿ha
- * habido error, o me han cancelado?» — y los filtros de la tabla (modo, mapa, periodo), que antes eran
- * condiciones sueltas dentro de {@code applyFilters}. Al ser métodos puros (mismas entradas, misma salida, sin
- * Swing), se prueban con JUnit normal, sin arrancar ninguna ventana.
+ * reescribir su publish/process/done, que ya funcionan hoy): lo que este presentador aísla es {@link #vigente}
+ * — la comprobación de «¿sigo siendo la operación vigente, o ya me superó otra?» que cada {@code done()} hace
+ * antes de pintar nada — y los tres filtros de la tabla (modo, mapa, periodo), que antes eran condiciones
+ * sueltas dentro de {@code applyFilters}. Al ser métodos puros (mismas entradas, misma salida, sin Swing), se
+ * prueban con JUnit normal, sin arrancar ninguna ventana.
  */
 public final class PartidasPresenter {
 
     private PartidasPresenter() { }
 
-    /** Lo que significa el desenlace de una operación larga (buscar, descargar, azar, GTE) al terminar. */
-    public enum Resultado { CADUCADA, CANCELADA, ERROR, EXITO }
-
     /** true si la operación que acaba de terminar (miSerial) sigue siendo la vigente: nadie la ha superado
      *  mientras corría (equivalente a {@code miSerial == opSerial} en el código de la 1.1). */
     public static boolean vigente(long miSerial, long serialActual) {
         return miSerial == serialActual;
-    }
-
-    /** Decide qué hacer con el resultado de fetchMatches/buscarAleatorias/buscarGte/download al llegar a done():
-     *  primero si la operación sigue vigente (si no, se ignora en silencio, como hoy), después si la cancelaron,
-     *  después si terminó con excepción, y si no, que fue un éxito. */
-    public static Resultado decidir(long miSerial, long serialActual, boolean cancelada, boolean conError) {
-        if (!vigente(miSerial, serialActual)) return Resultado.CADUCADA;
-        if (cancelada) return Resultado.CANCELADA;
-        if (conError) return Resultado.ERROR;
-        return Resultado.EXITO;
     }
 
     /** El ojo de una fila: abierto si el modo consulta global está activo (y la fila no es de Guess the ELO,

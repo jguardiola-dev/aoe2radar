@@ -733,9 +733,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return v;
     }
 
-
-
-    /** Cada tabla nueva nace tapada: se apaga el modo consulta y se cierran los ojos. */
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     static final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
@@ -2562,7 +2559,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     @Override public boolean confirmarEspectar(String nombre) { return SpoilerFreeRecs.this.confirmarEspectar(nombre); }
                     @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
                     @Override public void cargarPartidasEnTabla(List<Match> lista, Player sujeto) {
-                        playersList.clearSelection();
                         partidas.cargarPartidasEnTabla(lista, sujeto, vistaActualId());
                         mostrarDirectos(false);
                     }
@@ -2683,21 +2679,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
             SwingUtilities.invokeLater(() -> { if (!modoTop() && playersModel.size() > 0) partidas.fetchMatches(partidas.fetchBtn); });
     }
-
-
-
-
-
-    /** Enviar al juego: copia lo descargado y descarga+envía lo que falte. */
-
-
-
-
-    // ----- Revelar resultado (único punto que enseña spoilers, bajo demanda) --
-
-
-
-
 
     String grupoActivo() {   // null = «Todos»
         Object sel = grupoCombo.getSelectedItem();
@@ -3759,8 +3740,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         hoverCard.setVisible(true);
     }
 
-
-
     /** BarridoVivos: la red y la decisión de vigilarVivos/refrescarWatchlist/«Buscar partidas» (ver
      *  service.BarridoVivos). Campo de instancia, junto al código que lo usa (como recService). */
     final BarridoVivos barridoVivos = new BarridoVivos(COMPANION, Reloj.SISTEMA, SpoilerFreeRecs::resumenVivo,
@@ -4299,9 +4278,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 @Override public void ajustarGrisesNota(boolean oscuro) { SpoilerFreeRecs.this.ajustarGrises(oscuro); }
                 @Override public void actualizarControlesTabla() { SpoilerFreeRecs.this.actualizarControlesTabla(); }
             });
-
-
-
 
     // ----- Persistencia ------------------------------------------------------
     // Delegado a service.ListaSeguidos (cargar/guardar players.txt); la ventana conserva el disparo de

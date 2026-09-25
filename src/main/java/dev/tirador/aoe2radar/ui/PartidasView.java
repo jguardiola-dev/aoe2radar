@@ -87,8 +87,8 @@ import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
  * <p>
  * fetchMatches/download/buscarAleatorias/buscarGte SIGUEN siendo {@code SwingWorker} aquí (la tanda lo permite
  * explícitamente: reescribirlos con {@code Tareas} cambiaría cuándo se pinta cada trozo de publish/process).
- * Lo que sí se aisló en {@link PartidasPresenter} es la pregunta que cada uno se hace al terminar («¿sigo
- * vigente? ¿hubo error? ¿me cancelaron?») y los tres filtros de la tabla, que ahora son métodos puros con test.
+ * Lo que sí se aisló en {@link PartidasPresenter}, sin Swing, es {@code vigente()} (la comprobación de caducidad
+ * por opSerial que cada uno hace al terminar, antes de decidir qué pintar) y los tres filtros de la tabla.
  * <p>
  * Watchlist sigue en la ventana en esta rama: se pide por {@link EnlaceWatchlist}. El resto de la ventana
  * (navegación, semáforo de operación en curso, perfil abierto, red) llega por {@link Anfitrion}.
@@ -259,10 +259,6 @@ public final class PartidasView {
         return horas + " h";
     }
 
-    /** Añade a los catálogos los mapas y civs de las partidas recibidas (delegado: la ventana sigue guardando
-     *  cache.Catalogos, que ui no puede importar). */
-    static void aprenderCatalogosVia(Anfitrion anfitrion, List<Match> res) { anfitrion.aprenderCatalogos(res); }
-
     /** El panel de la pestaña, para el CardLayout de la ventana (card "recs": tabla + guía). */
     public JPanel panel() { return recsCards; }
 
@@ -406,7 +402,7 @@ public final class PartidasView {
             @Override public Component getTableCellRendererComponent(JTable tb, Object v, boolean sel, boolean foc, int row, int col) {
                 JLabel l = (JLabel) super.getTableCellRendererComponent(tb, v, sel, foc, row, col);
                 l.setHorizontalAlignment(SwingConstants.CENTER);
-                boolean abierto = "◉".equals(String.valueOf(v));
+                boolean abierto = "\u25C9".equals(String.valueOf(v));
                 l.setFont(l.getFont().deriveFont(abierto ? Font.BOLD : Font.PLAIN, 14f));
                 if (!sel) l.setForeground(abierto ? (temaOscuroActivo ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f))
                                                   : new Color(0x8a, 0x8a, 0x8a));
@@ -479,7 +475,7 @@ public final class PartidasView {
                         else if (titular != null) {
                             for (MatchPlayer mp : conId) if (mp.id == titular.id) menu.add(menus.deJugador(mp.id, mp.name));
                             JMenu al = new JMenu(t("Aliados", "Allies")), ri = new JMenu(t("Rivales", "Opponents"));
-                            for (MatchPlayer mp : conId) { if (mp.id == titular.id) continue; String pos = posicionEnEquipo(m, mp); JMenu dst = mp.team == titular.team ? al : ri; Integer e1 = menus.elo1v1Conocido(mp.id); JMenu sub = menus.deJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "") + (pos == null ? "" : "  · " + posicionNombre(pos))); sub.setIcon(iconoBandera(anfitrion.paisDe(mp.id))); dst.add(sub); }
+                            for (MatchPlayer mp : conId) { if (mp.id == titular.id) continue; String pos = posicionEnEquipo(m, mp); JMenu dst = mp.team == titular.team ? al : ri; Integer e1 = menus.elo1v1Conocido(mp.id); JMenu sub = menus.deJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "") + (pos == null ? "" : "  \u00B7 " + posicionNombre(pos))); sub.setIcon(iconoBandera(anfitrion.paisDe(mp.id))); dst.add(sub); }
                             if (al.getItemCount() > 0) menu.add(al); if (ri.getItemCount() > 0) menu.add(ri);
                         } else {
                             JMenu js = new JMenu(t("Jugadores de la partida", "Match players"));
@@ -512,7 +508,7 @@ public final class PartidasView {
                         menu.add(dl);
                     }
                     menu.addSeparator();
-                    JMenuItem rev = new JMenuItem(t("Revelar resultado…", "Reveal result…"));
+                    JMenuItem rev = new JMenuItem(t("Revelar resultado\u2026", "Reveal result\u2026"));
                     rev.addActionListener(a -> revelarResultado());
                     menu.add(rev);
                     if (m.gte == 0) {
@@ -527,8 +523,8 @@ public final class PartidasView {
                         }
                     }
                     if (m.gte == 0) {
-                        JMenuItem ana = new JMenuItem(t("Análisis de la partida (¡spoilers!)…",
-                                "Match analysis (spoilers!)…"));
+                        JMenuItem ana = new JMenuItem(t("Análisis de la partida (¡spoilers!)\u2026",
+                                "Match analysis (spoilers!)\u2026"));
                         ana.addActionListener(a -> {
                             int ok = JOptionPane.showConfirmDialog(ventana,
                                     t("Se abrirá el análisis completo en aoe2insights: resultado, estrategias y minimapa.\n¿Seguro?",
@@ -607,7 +603,7 @@ public final class PartidasView {
         abrir.addActionListener(e -> abrirCarpeta());
         vaciar.addActionListener(e -> vaciarRecs());
         JPanel btns1 = new JPanel(new WrapLayout(java.awt.FlowLayout.LEFT, 8, 2));
-        JButton carpetasBtn = new JButton(t("Carpetas ▾", "Folders ▾"));
+        JButton carpetasBtn = new JButton(t("Carpetas \u25BE", "Folders \u25BE"));
         carpetasBtn.setFocusable(false);
         carpetasBtn.addActionListener(e -> {
             JPopupMenu pm = new JPopupMenu();
@@ -667,7 +663,7 @@ public final class PartidasView {
         tit.setFont(tit.getFont().deriveFont(Font.PLAIN, 11f));
         tit.setForeground(gris);
         tit.setBorder(BorderFactory.createEmptyBorder(3, 6, 1, 0));
-        JButton cerrarBusq = new JButton("×");
+        JButton cerrarBusq = new JButton("\u00D7");
         cerrarBusq.setFocusable(false);
         cerrarBusq.setMargin(new Insets(0, 5, 0, 5));
         cerrarBusq.putClientProperty("JButton.buttonType", "roundRect");
@@ -690,7 +686,7 @@ public final class PartidasView {
         if (muchos) {
             JLabel todos = new JLabel("<html><i>" + escapeHtml(watchlist.vistaActualId().split("\\|")[0]) + "</i> <font color='#8a8a8a'>(" + ultimosSujetos.size() + ")</font></html>");
             todos.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
-            JButton filtrarBtn = new JButton(t("Filtrar ▾", "Filter ▾"));
+            JButton filtrarBtn = new JButton(t("Filtrar \u25BE", "Filter \u25BE"));
             filtrarBtn.setFocusable(false); filtrarBtn.setMargin(new Insets(1, 6, 1, 6));
             filtrarBtn.putClientProperty("JButton.buttonType", "roundRect");
             filtrarBtn.addActionListener(e -> {
@@ -715,15 +711,15 @@ public final class PartidasView {
         for (Player s : muchos ? List.<Player>of() : ultimosSujetos) {
             Integer elo = watchlist.eloDe(s.id());
             JLabel l = new JLabel("<html><i>" + escapeHtml(anfitrion.nombreVisible(s.id(), s.name())) + "</i>"
-                    + (elo != null ? " <font color='#8a8a8a'>· " + elo + "</font>" : "") + "</html>");
+                    + (elo != null ? " <font color='#8a8a8a'>\u00B7 " + elo + "</font>" : "") + "</html>");
             final boolean activo = filtroSujetos.contains(s.id());
             l.setOpaque(activo);
             if (activo) l.setBackground(temaOscuroActivo ? new Color(0x4a, 0x3a, 0x1e) : new Color(0xf3, 0xe3, 0xc0));
             l.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(activo ? (temaOscuroActivo ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f)) : new Color(0, 0, 0, 0), 1, true),
                     BorderFactory.createEmptyBorder(1, 6, 1, 6)));
-            l.setToolTipText(t("Clic: ver solo sus partidas (Ctrl+clic: varios; otro clic: todas) — clic derecho: perfil, nicks, grupos…",
-                    "Click: only their games (Ctrl+click: several; click again: all) — right-click: profile, names, groups…"));
+            l.setToolTipText(t("Clic: ver solo sus partidas (Ctrl+clic: varios; otro clic: todas) — clic derecho: perfil, nicks, grupos\u2026",
+                    "Click: only their games (Ctrl+click: several; click again: all) — right-click: profile, names, groups\u2026"));
             l.setCursor(java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR));
             final long pid = s.id(); final String nom = s.name();
             l.addMouseListener(new MouseAdapter() {
@@ -759,7 +755,7 @@ public final class PartidasView {
             });
             String grupoYa = ultimosSujetos.size() == 1 ? watchlist.grupoDeJugador(pid) : null;
             if (ultimosSujetos.size() == 1 && grupoYa != null && !esInvitado) {
-                JLabel ya = new JLabel("★ " + t("en ", "in ") + (grupoYa.isBlank() ? t("tu watchlist", "your watchlist") : grupoYa));
+                JLabel ya = new JLabel("\u2605 " + t("en ", "in ") + (grupoYa.isBlank() ? t("tu watchlist", "your watchlist") : grupoYa));
                 ya.setFont(ya.getFont().deriveFont(Font.PLAIN, 11f));
                 ya.setForeground(gris);
                 JPanel filaYa = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 6, 0));
@@ -850,8 +846,8 @@ public final class PartidasView {
     void actualizarNotaSpoilers() {
         boolean oscuro = temaOscuroActivo;
         if (mostrarResultados) {
-            nota.setText(t("✦ Mostrando resultados: Jugador en verde si ganó y rojo si perdió, con su ±ELO; enfrentamiento completo y duración, en el tooltip de la fila.",
-                           "✦ Showing results: Player in green if they won, red if they lost, with their ±ELO; full matchup and duration in the row tooltip."));
+            nota.setText(t("\u2726 Mostrando resultados: Jugador en verde si ganó y rojo si perdió, con su ±ELO; enfrentamiento completo y duración, en el tooltip de la fila.",
+                           "\u2726 Showing results: Player in green if they won, red if they lost, with their ±ELO; full matchup and duration in the row tooltip."));
             nota.setForeground(oscuro ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f));
         } else {
             nota.setText(t("Sin spoilers: nunca se muestra ganador, ±ELO ni duración. Doble clic en una fila = descargar.",
@@ -881,7 +877,7 @@ public final class PartidasView {
             JOptionPane.showMessageDialog(ventana, PartidasTexto.textoResultado(m), t("Resultado", "Result"), JOptionPane.PLAIN_MESSAGE);
             return;
         }
-        String verAn = t("Ver análisis en aoe2insights…", "View analysis on aoe2insights…");
+        String verAn = t("Ver análisis en aoe2insights\u2026", "View analysis on aoe2insights\u2026");
         String cerrar = t("Cerrar", "Close");
         int ra = JOptionPane.showOptionDialog(ventana, PartidasTexto.textoResultado(m), t("Resultado", "Result"),
                 JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
@@ -1113,7 +1109,7 @@ public final class PartidasView {
             }
             asignarRef(m);
             if (m.finished == null) {
-                m.estado = anfitrion.enCursoReal(m) ? "▶" : "—";
+                m.estado = anfitrion.enCursoReal(m) ? "\u25B6" : "\u2014";
                 m.enDisco = false;
                 m.enJuego = false;
             } else {
@@ -1161,8 +1157,6 @@ public final class PartidasView {
 
     /** Repinta la tabla sin recalcular filtros (usado por DialogosJugador tras editar nota/alias). */
     public void refrescarTabla() { tableModel.fireTableDataChanged(); }
-
-    public boolean fetchEnCurso() { return fetchWorker != null; }
 
     // ======================================================================
     // Azar por ELO / Guess the ELO
@@ -1494,11 +1488,11 @@ public final class PartidasView {
                     applyFilters();
                     anfitrion.estado(view.size() + t(" de ", " of ") + all.size() + t(" partidas en las últimas ", " games in the last ") + textoVentana(hours) + "."
                             + (topeAlcanzado
-                                ? "  ⚠ " + t("Tope de la búsqueda alcanzado: puede faltar historial antiguo — acorta la ventana o filtra por modo.",
+                                ? "  \u26A0 " + t("Tope de la búsqueda alcanzado: puede faltar historial antiguo — acorta la ventana o filtra por modo.",
                                                   "Search cap reached: older history may be missing — shorten the window or filter by mode.")
                                 : "")
                             + (fallosFetch > 0
-                                ? "  ⚠ " + fallosFetch + t(" jugador(es) SIN RESPUESTA del servicio (¿429/caído?): sus partidas faltan — reintenta en un minuto.",
+                                ? "  \u26A0 " + fallosFetch + t(" jugador(es) SIN RESPUESTA del servicio (¿429/caído?): sus partidas faltan — reintenta en un minuto.",
                                                               " player(s) got NO RESPONSE from the service (429/down?): their games are missing — retry in a minute.")
                                 : ""));
                 } catch (Exception ex) {
@@ -1599,14 +1593,15 @@ public final class PartidasView {
         });
     }
 
-    /** Llamado por Perfil (vía el Anfitrion de la ventana) cuando trae partidas ya cargadas a la tabla:
-     *  mismo efecto que hoy, la ventana sigue limpiando la selección de la watchlist y ocultando Directos
-     *  alrededor de esta llamada. */
+    /** Llamado por Perfil (vía el Anfitrion de la ventana) cuando trae partidas ya cargadas a la tabla: mismo
+     *  orden que hoy (limpiar la selección de la watchlist va justo después de volcar en `all`, antes de
+     *  refrescar el combo de modos); la ventana sigue ocultando Directos alrededor de esta llamada. */
     public void cargarPartidasEnTabla(List<Match> partidas, Player sujeto, String vistaId) {
         SUJETOS.clear(); SUJETOS.add(sujeto.id());
         vistaDeSujetos = vistaId;
         refrescarSujetos(List.of(sujeto), false);
         all.clear(); all.addAll(partidas);
+        watchlist.limpiarSeleccion();
         refreshModeCombo();
         applyFilters();
         mostrarGuiaVacia(false);
@@ -1666,7 +1661,7 @@ public final class PartidasView {
                 case 4 -> m.map;
                 case 5 -> texto.rivalTexto(m, revelada(m));
                 case 6 -> m.civRival();
-                case 8 -> m.finished == null ? "" : (revelada(m) ? "◉" : "◎");
+                case 8 -> m.finished == null ? "" : (revelada(m) ? "\u25C9" : "\u25CE");
                 case 7 -> !m.estado.isBlank() ? m.estado
                           : m.enJuego ? t("✓✓ en juego", "✓✓ in game")
                           : m.enDisco ? t("✓ en disco", "✓ on disk")

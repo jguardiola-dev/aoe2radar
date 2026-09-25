@@ -9,38 +9,17 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * PartidasPresenter es puro (sin Swing, sin hilos): estas pruebas llaman a sus métodos estáticos directamente,
  * sin Tareas.EN_LINEA ni dobles de servicio, porque no hay ninguna operación asíncrona que orquestar (fetchMatches/
- * download/buscarAleatorias/buscarGte siguen siendo SwingWorker en PartidasView; el presentador solo decide qué
- * significa su desenlace). Cubre las cuatro categorías que pedía el encargo: éxito/error/cancelación/caducada,
- * download (reutiliza vigente()), filtros y revelar.
+ * download/buscarAleatorias/buscarGte siguen siendo SwingWorker en PartidasView, y son ellos —no este
+ * presentador— quienes deciden qué hacer con el error o la cancelación). Cubre lo que el presentador SÍ hace:
+ * vigente() (la comprobación de caducidad por opSerial que usan fetchMatches/download/azar/GTE al terminar),
+ * los tres filtros de la tabla y el ojo de revelar.
  */
 class PartidasPresenterTest {
 
-    // ----- fetchMatches: éxito/error/cancelación/operación caducada por opSerial -----
+    /** Hora fija (nunca Instant.now(): un test con la hora real es un test que a veces falla solo). */
+    private static final Instant AHORA = Instant.ofEpochMilli(1_700_000_000_000L);
 
-    @Test void fetchMatches_exito() {
-        assertEquals(PartidasPresenter.Resultado.EXITO, PartidasPresenter.decidir(5, 5, false, false));
-    }
-
-    @Test void fetchMatches_error() {
-        assertEquals(PartidasPresenter.Resultado.ERROR, PartidasPresenter.decidir(5, 5, false, true));
-    }
-
-    @Test void fetchMatches_cancelada() {
-        assertEquals(PartidasPresenter.Resultado.CANCELADA, PartidasPresenter.decidir(5, 5, true, false));
-    }
-
-    @Test void fetchMatches_operacionCaducada() {
-        // otra operación (serial 6) ya manda: la 5 se ignora, aunque no hubiera ni error ni cancelación
-        assertEquals(PartidasPresenter.Resultado.CADUCADA, PartidasPresenter.decidir(5, 6, false, false));
-    }
-
-    @Test void fetchMatches_caducadaGanaAErrorYCancelacion() {
-        // el orden de las comprobaciones importa: caducada se decide ANTES que error/cancelación (igual que el
-        // "if (miSerial != opSerial) return;" de la 1.1, que corta antes de mirar isCancelled()/la excepción)
-        assertEquals(PartidasPresenter.Resultado.CADUCADA, PartidasPresenter.decidir(5, 6, true, true));
-    }
-
-    // ----- download (vigente(): la misma comprobación de caducidad que usan fetchMatches/download/azar/GTE) -----
+    // ----- vigente(): la comprobación de caducidad por opSerial que usan fetchMatches/download/azar/GTE -----
 
     @Test void download_vigente() {
         assertTrue(PartidasPresenter.vigente(3, 3));
@@ -104,7 +83,7 @@ class PartidasPresenterTest {
     // ----- filtros: periodo -----
 
     @Test void filtroPeriodo_indiceCeroPasaAunSinFecha() {
-        assertTrue(PartidasPresenter.pasaFiltroPeriodo(0, null, Instant.now()));
+        assertTrue(PartidasPresenter.pasaFiltroPeriodo(0, null, AHORA));
     }
 
     @Test void filtroPeriodo_dentroDeLaVentana() {
@@ -120,6 +99,6 @@ class PartidasPresenterTest {
     }
 
     @Test void filtroPeriodo_sinFechaDeInicioQuedaFuera() {
-        assertFalse(PartidasPresenter.pasaFiltroPeriodo(1, null, Instant.now()));
+        assertFalse(PartidasPresenter.pasaFiltroPeriodo(1, null, AHORA));
     }
 }
