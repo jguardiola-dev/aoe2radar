@@ -54,6 +54,14 @@ class SteamApiTest {
         assertArrayEquals(new String[]{ "Solo", "" }, out.get(0));
     }
 
+    @Test void aliasSinNewnameSeFiltra() throws Exception {
+        // Sin la clave «newname»: firstNonNull(val(a, "newname"), "") da "", como un nombre en blanco.
+        red.cuerpo = "[{\"timechanged\":\"1\"},{\"newname\":\"Solo\",\"timechanged\":\"\"}]";
+        List<String[]> out = steam.alias(STEAM_ID);
+        assertEquals(1, out.size());
+        assertArrayEquals(new String[]{ "Solo", "" }, out.get(0));
+    }
+
     @Test void sinAliasElCuerpoNoEsListaYSaleVacio() throws Exception {
         // Steam responde «false» cuando la cuenta no tiene historial de nombres.
         red.cuerpo = "false";

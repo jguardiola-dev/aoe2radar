@@ -10,12 +10,12 @@ import java.util.function.BiConsumer;
  * config por jugador, «alias_&lt;pid&gt;» / «nota_&lt;pid&gt;») queda INYECTADA (guardarConfig), así que esta clase
  * se prueba sin disco. Los diálogos (JOptionPane, JTextArea) se quedan en la app.
  */
-public final class Anotaciones {
+public final class AnotacionesService {
     private final Map<Long, String> alias;
     private final Map<Long, String> notas;
     private final BiConsumer<String, String> guardarConfig;
 
-    public Anotaciones(Map<Long, String> alias, Map<Long, String> notas, BiConsumer<String, String> guardarConfig) {
+    public AnotacionesService(Map<Long, String> alias, Map<Long, String> notas, BiConsumer<String, String> guardarConfig) {
         this.alias = alias;
         this.notas = notas;
         this.guardarConfig = guardarConfig;
@@ -41,10 +41,4 @@ public final class Anotaciones {
     public String aliasDe(long pid) { return alias.get(pid); }
 
     public String notaDe(long pid) { return notas.get(pid); }
-
-    /** Igual que cache.Anotaciones.nombreVisible: el alias si lo hay, si no el nombre original. */
-    public String nombreVisible(long pid, String original) {
-        String a = alias.get(pid);
-        return a != null && !a.isBlank() ? a : original;
-    }
 }

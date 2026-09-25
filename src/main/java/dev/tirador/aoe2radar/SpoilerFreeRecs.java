@@ -65,7 +65,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
-import dev.tirador.aoe2radar.service.Anotaciones;
+import dev.tirador.aoe2radar.service.AnotacionesService;
 import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.DescargaRecs;
 import dev.tirador.aoe2radar.service.EloSesion;
@@ -6709,10 +6709,10 @@ public class SpoilerFreeRecs extends JFrame {
         catch (Exception e) { return 60_000; }
     }
 
-    /** Poner/quitar/leer alias y notas, con la persistencia inyectada (service.Anotaciones): un solo estado
+    /** Poner/quitar/leer alias y notas, con la persistencia inyectada (service.AnotacionesService): un solo estado
      *  compartido con cache.Anotaciones, cuyos mapas ALIASES/NOTAS se le pasan tal cual. Los diálogos se quedan
      *  aquí, en la app. */
-    static final Anotaciones ANOTACIONES = new Anotaciones(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
+    static final AnotacionesService ANOTACIONES = new AnotacionesService(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
 
     void borrarNota(long pid, String nombre) {
         ANOTACIONES.ponerNota(pid, "");
@@ -10108,7 +10108,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** El endpoint de Steam (api.SteamApi), aparte del companion. Campo de instancia, no static: así no importa el
      *  orden de texto frente a API_CLIENTE (static, definido más abajo) — se crea cuando ya existe la ventana, y para
      *  entonces la clase entera (con sus static) ya está inicializada. */
-    final SteamApi STEAM = new SteamApi(API_CLIENTE);
+    final SteamApi steam = new SteamApi(API_CLIENTE);
 
     /** Historial de alias que guarda Steam para la cuenta (endpoint público
      *  de la comunidad, vía el steamId del companion). Solo bajo demanda. */
@@ -10125,7 +10125,7 @@ public class SpoilerFreeRecs extends JFrame {
                                    "This account has no Steam link on the companion: no history available.");
                         return null;
                     }
-                    return STEAM.alias(steamId);
+                    return steam.alias(steamId);
                 } catch (Exception ex) {
                     motivo = t("No se pudo consultar el historial (perfil de Steam privado o servicio caído).",
                                "Could not fetch the history (private Steam profile or service down).");

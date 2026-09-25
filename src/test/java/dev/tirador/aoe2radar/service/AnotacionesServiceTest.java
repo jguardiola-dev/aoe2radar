@@ -10,15 +10,15 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Caracterización de service.Anotaciones (antes, la parte sin diálogo de pedirAlias/pedirNota/borrarNota de la
- * app): con mapas y config en memoria, sin disco.
+ * Caracterización de service.AnotacionesService (antes, la parte sin diálogo de pedirAlias/pedirNota/borrarNota de
+ * la app): con mapas y config en memoria, sin disco.
  */
-class AnotacionesTest {
+class AnotacionesServiceTest {
 
     final Map<Long, String> alias = new HashMap<>();
     final Map<Long, String> notas = new HashMap<>();
     final List<String[]> guardado = new ArrayList<>();   // [clave, valor] de cada llamada a guardarConfig
-    final Anotaciones anotaciones = new Anotaciones(alias, notas, (k, v) -> guardado.add(new String[]{ k, v }));
+    final AnotacionesService anotaciones = new AnotacionesService(alias, notas, (k, v) -> guardado.add(new String[]{ k, v }));
 
     // ----- alias --------------------------------------------------------------
 
@@ -32,6 +32,8 @@ class AnotacionesTest {
         alias.put(1L, "Apodo");
         anotaciones.ponerAlias(1L, "Original", "");
         assertNull(alias.get(1L));
+        assertEquals(1, guardado.size(), "se guarda una sola vez");
+        assertEquals("alias_1", guardado.get(0)[0]);
         assertEquals("", guardado.get(0)[1]);
     }
 
@@ -62,26 +64,12 @@ class AnotacionesTest {
         notas.put(5L, "algo");
         anotaciones.ponerNota(5L, "");
         assertNull(notas.get(5L));
+        assertEquals(1, guardado.size(), "se guarda una sola vez");
+        assertEquals("nota_5", guardado.get(0)[0]);
         assertEquals("", guardado.get(0)[1]);
     }
 
     @Test void notaDeSinNotaEsNull() {
         assertNull(anotaciones.notaDe(5L));
-    }
-
-    // ----- nombreVisible ----------------------------------------------------------
-
-    @Test void nombreVisibleConAliasDevuelveElAlias() {
-        alias.put(2L, "Capitán");
-        assertEquals("Capitán", anotaciones.nombreVisible(2L, "NombreReal"));
-    }
-
-    @Test void nombreVisibleSinAliasDevuelveElOriginal() {
-        assertEquals("NombreReal", anotaciones.nombreVisible(2L, "NombreReal"));
-    }
-
-    @Test void nombreVisibleConAliasEnBlancoDevuelveElOriginal() {
-        alias.put(2L, "   ");
-        assertEquals("NombreReal", anotaciones.nombreVisible(2L, "NombreReal"));
     }
 }
