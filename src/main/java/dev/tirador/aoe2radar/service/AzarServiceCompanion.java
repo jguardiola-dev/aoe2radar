@@ -129,7 +129,7 @@ public final class AzarServiceCompanion implements AzarService {
             if (idsRes.add(m.id)) encontradas.add(m);
         if (!encontradas.isEmpty())
             progreso.accept(t("De lo ya leído en esta sesión: ", "From this session's cache: ")
-                    + encontradas.size() + "/10…");
+                    + encontradas.size() + "/10\u2026");
 
         try {
             // Tramo del rango en el ladder (bisección sobre páginas cacheadas).
@@ -149,13 +149,13 @@ public final class AzarServiceCompanion implements AzarService {
                 int maxPagRio = mapaSel != null ? 25 : 15;
                 int pagLeidas = 0;
                 for (int pag = 1; pag <= maxPagRio && encontradas.size() < 10 && !stopOperacion; pag++) {
-                    progreso.accept(t("Leyendo partidas recientes del ladder… (pág. ", "Reading recent ladder games… (page ")
+                    progreso.accept(t("Leyendo partidas recientes del ladder\u2026 (p\u00e1g. ", "Reading recent ladder games\u2026 (page ")
                             + pag + ", " + encontradas.size() + "/10)");
                     PaginaPartidas ms;
                     try {
                         ms = companion.recientes(variantesLb[varLb], pag, 50);   // con reintento ante 429, como antes
                     } catch (Exception ex) {
-                        log("al azar (río): fallo en página " + pag + " (variante " + varLb + "): " + causa(ex));
+                        log("al azar (r\u00edo): fallo en p\u00e1gina " + pag + " (variante " + varLb + "): " + causa(ex));
                         if (varLb < variantesLb.length - 1 && pagLeidas == 0) { varLb++; pag = 0; continue; }
                         break;
                     }
@@ -174,11 +174,11 @@ public final class AzarServiceCompanion implements AzarService {
                         if (cumpleAzar(m, lo, hi, cutoff, mapaSel, civSel) && idsRes.add(m.id))
                             encontradas.add(m);
                     }
-                    if (!algunaEnVentana) break;      // el río ya quedó más viejo que la ventana
+                    if (!algunaEnVentana) break;      // el r\u00edo ya qued\u00f3 m\u00e1s viejo que la ventana
                     dormir.accept(pausaMs / 2);
                 }
-                log("al azar (río): " + pagLeidas + " páginas leídas (variante " + varLb + "), "
-                        + encontradas.size() + " válidas acumuladas");
+                log("al azar (r\u00edo): " + pagLeidas + " p\u00e1ginas le\u00eddas (variante " + varLb + "), "
+                        + encontradas.size() + " v\u00e1lidas acumuladas");
             }
             if (encontradas.size() >= 10) return ordenaYRecorta(encontradas);
 
@@ -194,14 +194,14 @@ public final class AzarServiceCompanion implements AzarService {
                 int nPerfiles = civSel != null ? 40 : (intento == 1 ? 12 : 24);
                 int nPags = Math.min(pagsAzar.size(), civSel != null ? 12 : (intento == 1 ? 6 : 10));
                 if (intento > 1 || continua)
-                    progreso.accept(t("Aún ", "Still ") + encontradas.size()
-                            + t(" de 10; muestreando jugadores nuevos… (pasada ", " of 10; sampling new players… (pass ")
+                    progreso.accept(t("A\u00fan ", "Still ") + encontradas.size()
+                            + t(" de 10; muestreando jugadores nuevos\u2026 (pasada ", " of 10; sampling new players\u2026 (pass ")
                             + intento + "/" + pasadas + ")");
                 Map<Long, Match> unicos = new LinkedHashMap<>();
                 List<long[]> lb = new ArrayList<>();
                 for (int i = 0; i < nPags; i++) {
                     int pag = pagsAzar.get((cursorPagsAzar + i) % pagsAzar.size());
-                    progreso.accept(t("Muestreando el ladder… (", "Sampling the ladder… (") + (i + 1) + "/" + nPags + ")");
+                    progreso.accept(t("Muestreando el ladder\u2026 (", "Sampling the ladder\u2026 (") + (i + 1) + "/" + nPags + ")");
                     lb.addAll(lbPagina(ctxAzar, pag).jugadores());
                 }
                 cursorPagsAzar += nPags;
@@ -212,10 +212,10 @@ public final class AzarServiceCompanion implements AzarService {
                         + (mapaSel != null ? ", mapa=" + mapaSel : "")
                         + (civSel != null ? ", civ=" + civSel : "")
                         + ": pasada " + intento + "/" + pasadas
-                        + ", tramo en páginas " + pIni + "–" + pFin
+                        + ", tramo en p\u00e1ginas " + pIni + "\u2013" + pFin
                         + " (" + String.format("%.1f", fraccion * 100) + "% del ladder), "
                         + lb.size() + " jugadores a la vista, "
-                        + perfilVistoAzar.size() + " consultados en la sesión");
+                        + perfilVistoAzar.size() + " consultados en la sesi\u00f3n");
                 List<Long> perfiles = new ArrayList<>();
                 for (long pid : elegirPerfiles(lb, lo, hi, cutoff.toEpochMilli(), nPerfiles * 4, rnd)) {
                     if (perfiles.size() >= nPerfiles) break;
@@ -226,7 +226,7 @@ public final class AzarServiceCompanion implements AzarService {
                 for (long pid : perfiles) {
                     if (stopOperacion) break;
                     progreso.accept(t("Perfil ", "Profile ") + (++i) + "/" + perfiles.size()
-                            + " · " + encontradas.size() + "/10…");
+                            + " \u00b7 " + encontradas.size() + "/10\u2026");
                     try {
                         Iterable<Match> leidas = companion.partidas(pid, 1, perPage);
                         perfilVistoAzar.put(pid, System.currentTimeMillis());
@@ -245,7 +245,7 @@ public final class AzarServiceCompanion implements AzarService {
                     if (idsRes.add(m.id)) encontradas.add(m);
             }
             log("al azar: total acumulado " + encontradas.size() + " partidas"
-                    + (azarTramoAgotado ? " (tramo activo agotado en esta sesión)" : ""));
+                    + (azarTramoAgotado ? " (tramo activo agotado en esta sesi\u00f3n)" : ""));
             return ordenaYRecorta(encontradas);
         } catch (InterruptedException ex) {   // Detener durante la bisección o el muestreo: se aplica lo encontrado, como en la 1.1
             if (stopOperacion) return ordenaYRecorta(encontradas);

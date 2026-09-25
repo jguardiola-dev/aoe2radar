@@ -208,7 +208,6 @@ import static dev.tirador.aoe2radar.util.Identidad.RELEASES_API;
 import static dev.tirador.aoe2radar.util.Identidad.RELEASES_URL;
 import static dev.tirador.aoe2radar.util.Identidad.TWITCH;
 import static dev.tirador.aoe2radar.util.Identidad.VERSION;
-import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.firstNonNull;
 import static dev.tirador.aoe2radar.util.Json.lng;
 import static dev.tirador.aoe2radar.util.Json.obj;
