@@ -67,6 +67,8 @@ import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
 import dev.tirador.aoe2radar.service.AnotacionesService;
 import dev.tirador.aoe2radar.service.BarridoVivos;
+import dev.tirador.aoe2radar.service.BusquedaPerfiles;
+import dev.tirador.aoe2radar.service.BusquedaPerfilesCompanion;
 import dev.tirador.aoe2radar.service.Campanas;
 import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.DescargaRecs;
@@ -11827,6 +11829,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             }, Reloj.SISTEMA),
             new HistorialPerfil(COMPANION, ACTIVIDAD_CACHE, pid -> cargarActividad(pid), a -> guardarActividad(a), ms -> dormir(ms), PER_PAGE, PAUSA_MS, Reloj.SISTEMA),
             new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA));
+    /** Búsqueda de perfiles por nick (service.BusquedaPerfiles), la usan los cinco buscadores de la interfaz. Va
+     *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
+    static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
 
     static void dormir(long ms) {
         long fin = System.currentTimeMillis() + ms;
@@ -11838,8 +11843,17 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
     }
 
-    /** Búsqueda de jugadores por nombre en el companion: {id, nombre, etiqueta legible}. */
-    /** Sugerencias locales del índice nocturno de nombres (top 40.000): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero. */
+    /** Búsqueda de jugadores por nombre en el companion: {id, nombre, etiqueta legible}. Delegados de service.BusquedaPerfiles
+     *  (BUSQUEDA): la lógica vive allí, aquí solo queda la fachada para no tocar los cinco buscadores de la interfaz ahora. */
+    /** Sugerencias al teclear: el índice local si tiene algo (sin llamada); si no, la API. */
+    static List<String[]> sugerirPerfiles(String q) { return BUSQUEDA.sugerir(q); }
+    /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. Así un nick cambiado hace poco (que el volcado aún no conoce) también aparece. */
+    static List<String[]> buscarPerfiles(String q) { return BUSQUEDA.buscar(q); }
+    /** Sugerencias locales del índice nocturno de nombres (top 40.000): {pid, nombre, «nombre · país · ELO»}, hasta 8, las de más ELO primero.
+     *  NO delegado (deuda anotada en el informe): lo usa también addPlayerDialog fuera del trío sugerir/buscar/buscarApi,
+     *  con un orden distinto (API primero); moverlo habría exigido inventar un tercer método en la interfaz, fuera del
+     *  diseño pedido. Se queda aquí tal cual; service.BusquedaPerfilesCompanion trae su propia copia privada, sobre los
+     *  mismos mapas (NOMBRES_AYER/ELO_AYER), para no depender de este método estático. */
     static List<String[]> buscarLocal(String q) {
         List<String[]> out = new ArrayList<>();
         if (q == null || q.length() < 2 || NOMBRES_AYER.isEmpty()) return out;
@@ -11848,33 +11862,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (Map.Entry<Long, String[]> en : NOMBRES_AYER.entrySet()) if (en.getValue()[0].toLowerCase(Locale.ROOT).contains(ql)) l.add(en);
         l.sort((a, b) -> { int[] ea = ELO_AYER.get(a.getKey()), eb = ELO_AYER.get(b.getKey()); return Integer.compare(eb == null ? 0 : eb[0], ea == null ? 0 : ea[0]); });
         for (Map.Entry<Long, String[]> en : l) { int[] e = ELO_AYER.get(en.getKey()); out.add(new String[]{ String.valueOf(en.getKey()), en.getValue()[0], en.getValue()[0] + (en.getValue()[1].isBlank() ? "" : " · " + en.getValue()[1].toUpperCase(Locale.ROOT)) + (e != null && e[0] > 0 ? " · " + e[0] : "") }); if (out.size() >= 8) break; }
-        return out;
-    }
-    /** Sugerencias al teclear: el índice local si tiene algo (sin llamada); si no, la API. */
-    static List<String[]> sugerirPerfiles(String q) {
-        List<String[]> local = buscarLocal(q);
-        return local.isEmpty() ? buscarPerfiles(q) : local;
-    }
-    /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. Así un nick cambiado hace poco (que el volcado aún no conoce) también aparece. */
-    static List<String[]> buscarPerfiles(String q) {
-        List<String[]> local = buscarLocal(q), out = new ArrayList<>(local);
-        Set<String> vistos = new HashSet<>(); for (String[] r : local) vistos.add(r[0]);
-        for (String[] r : buscarPerfilesApi(q)) if (vistos.add(r[0])) out.add(r);
-        return out;
-    }
-    static List<String[]> buscarPerfilesApi(String q) {
-        List<String[]> out = new ArrayList<>();
-        try {
-            for (PerfilEncontrado p : COMPANION.buscarPerfiles(q)) {   // sin reintento, como antes
-                long id = p.pid();
-                if (id <= 0) continue;
-                String name = p.nombre();
-                String pais = p.pais();
-                aprenderPais(id, pais);
-                long games = p.partidas();
-                out.add(new String[]{ String.valueOf(id), name, name + (pais != null ? "  [" + pais + "]" : "") + "  ·  " + id + (games > 0 ? "  ·  " + games + t(" partidas", " games") : "") });
-            }
-        } catch (Exception ex) { log("buscarPerfiles: " + causa(ex)); }
         return out;
     }
 }
