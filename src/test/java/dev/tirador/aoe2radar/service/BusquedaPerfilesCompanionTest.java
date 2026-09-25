@@ -4,6 +4,8 @@ import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Throttle;
 import dev.tirador.aoe2radar.api.Transporte;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -11,11 +13,13 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * BusquedaPerfilesCompanion (service.BusquedaPerfiles) sin red: un Transporte falso responde el JSON de
  * /profiles?search=… y un mapa en memoria hace de índice local (NOMBRES_AYER/ELO_AYER de sfr-data en la app).
+ * El idioma se fija a "es" porque el texto de la API lleva t(" partidas", " games").
  */
 class BusquedaPerfilesCompanionTest {
 
@@ -44,15 +48,18 @@ class BusquedaPerfilesCompanionTest {
     final BusquedaPerfilesCompanion servicio = new BusquedaPerfilesCompanion(api, nombresAyer, eloAyer,
             (pid, pais) -> paisAprendido.put(pid, pais));
 
+    String idiomaPrevio;
+    @BeforeEach void fijarIdioma() { idiomaPrevio = IDIOMA; IDIOMA = "es"; }
+    @AfterEach void restaurarIdioma() { IDIOMA = idiomaPrevio; }
+
     // ----- local(): solo el índice local, sin red -----
 
-    @Test void localConCoincidenciaDevuelveLaFila() {
+    @Test void localConCoincidenciaDevuelveLaFilaExacta() {
         nombresAyer.put(1L, new String[]{ "Hera", "es" });
         eloAyer.put(1L, new int[]{ 2000 });
         List<String[]> res = servicio.local("her");
         assertEquals(1, res.size());
-        assertEquals("1", res.get(0)[0]);
-        assertEquals("Hera", res.get(0)[1]);
+        assertArrayEquals(new String[]{ "1", "Hera", "Hera · ES · 2000" }, res.get(0));
         assertTrue(red.pedidas.isEmpty(), "local() nunca llama a la API");
     }
 
@@ -63,6 +70,20 @@ class BusquedaPerfilesCompanionTest {
         assertTrue(red.pedidas.isEmpty());
     }
 
+    @Test void localConQNuloDevuelveVacioYSinRed() {
+        nombresAyer.put(1L, new String[]{ "Hera", "es" });
+        List<String[]> res = servicio.local(null);
+        assertTrue(res.isEmpty());
+        assertTrue(red.pedidas.isEmpty());
+    }
+
+    @Test void localConUnSoloCaracterDevuelveVacioYSinRed() {
+        nombresAyer.put(1L, new String[]{ "Hera", "es" });
+        List<String[]> res = servicio.local("h");
+        assertTrue(res.isEmpty(), "menos de 2 caracteres: ni se mira el índice");
+        assertTrue(red.pedidas.isEmpty());
+    }
+
     // ----- sugerir(): local si tiene algo, si no la API -----
 
     @Test void sugerirConLocalNoLlamaALaApi() {
@@ -70,9 +91,7 @@ class BusquedaPerfilesCompanionTest {
         eloAyer.put(1L, new int[]{ 2000 });
         List<String[]> res = servicio.sugerir("her");
         assertEquals(1, res.size());
-        assertEquals("1", res.get(0)[0]);
-        assertEquals("Hera", res.get(0)[1]);
-        assertTrue(res.get(0)[2].contains("2000"), "el texto local lleva el ELO");
+        assertArrayEquals(new String[]{ "1", "Hera", "Hera · ES · 2000" }, res.get(0));
         assertTrue(red.pedidas.isEmpty(), "con resultado local no se llama a la API");
     }
 
@@ -120,15 +139,38 @@ class BusquedaPerfilesCompanionTest {
         assertEquals("1", res.get(0)[0], "el de más ELO primero");
     }
 
-    // ----- la fila de la API con país aprende el país y el texto lleva [pais] y partidas -----
+    // ----- fila de la API: país, partidas, id descartado -----
 
-    @Test void filaDeLaApiConPaisAprendeElPaisYElTextoLlevaPaisYPartidas() {
+    @Test void filaDeLaApiConPaisAprendeElPaisYElTextoExacto() {
         red.cuerpo = "{\"profiles\":[{\"profile_id\":9000001,\"name\":\"Hera\",\"country\":\"ca\",\"games\":10}]}";
         List<String[]> res = servicio.buscar("hera");
         assertEquals(1, res.size());
         assertEquals("ca", paisAprendido.get(9000001L), "el BiConsumer recibe (pid, pais)");
-        assertTrue(res.get(0)[2].contains("[ca]"), "el texto lleva el país entre corchetes");
-        assertTrue(res.get(0)[2].contains("10"), "el texto lleva las partidas");
+        assertArrayEquals(new String[]{ "9000001", "Hera", "Hera  [ca]  ·  9000001  ·  10 partidas" }, res.get(0));
+    }
+
+    @Test void filaDeLaApiConPaisNuloVaSinCorchetes() {
+        red.cuerpo = "{\"profiles\":[{\"profile_id\":9000002,\"name\":\"Foo\",\"games\":5}]}";
+        List<String[]> res = servicio.buscar("foo");
+        assertEquals(1, res.size());
+        assertNull(paisAprendido.get(9000002L), "el BiConsumer también recibe el país null");
+        assertTrue(paisAprendido.containsKey(9000002L));
+        assertArrayEquals(new String[]{ "9000002", "Foo", "Foo  ·  9000002  ·  5 partidas" }, res.get(0));
+    }
+
+    @Test void filaDeLaApiConCeroPartidasVaSinSufijo() {
+        red.cuerpo = "{\"profiles\":[{\"profile_id\":9000001,\"name\":\"Hera\",\"country\":\"ca\",\"games\":0}]}";
+        List<String[]> res = servicio.buscar("hera");
+        assertEquals(1, res.size());
+        assertArrayEquals(new String[]{ "9000001", "Hera", "Hera  [ca]  ·  9000001" }, res.get(0));
+    }
+
+    @Test void filaConProfileIdCeroOMenorSeDescarta() {
+        red.cuerpo = "{\"profiles\":[{\"profile_id\":0,\"name\":\"Cero\"},{\"profile_id\":-1,\"name\":\"Negativo\"},"
+                + "{\"profile_id\":9000001,\"name\":\"Hera\",\"country\":\"ca\",\"games\":10}]}";
+        List<String[]> res = servicio.buscar("hera");
+        assertEquals(1, res.size(), "los id <= 0 se descartan, solo queda el válido");
+        assertEquals("9000001", res.get(0)[0]);
     }
 
     // ----- error de la API: no revienta -----
