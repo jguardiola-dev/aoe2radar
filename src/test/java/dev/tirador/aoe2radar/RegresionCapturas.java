@@ -219,7 +219,7 @@ class RegresionCapturas {
                     }
                 // dependen de la fecha del día (LocalDate.now() en actPintar, sin reloj inyectable: DEUDA.md): mañana se
                 // desplazarían aunque nada cambie. Se ignoran donde se vean; la gráfica por horas sí se compara.
-                for (JComponent c : new JComponent[]{ app.actCalendario, app.actSemana, app.actMeses })
+                for (JComponent c : new JComponent[]{ app.perfil.actCalendario, app.perfil.actSemana, app.perfil.actMeses })
                     zonaVisible(c, raiz, zonas);
                 for (JComponent c : ignorar.get()) zonaVisible(c, raiz, zonas);   // se resuelven aquí, en el EDT
             });
@@ -361,7 +361,7 @@ class RegresionCapturas {
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(app::volverAtras);
         Thread.sleep(800);
-        System.out.println("tras volver: perfil abierto=" + app.actividadAbierta + " pid=" + app.actPid + " pestañas=" + app.perfilPestanas.size() + " activa=" + app.perfilPestanaActiva + " historial=" + app.historial.size());
+        System.out.println("tras volver: perfil abierto=" + app.perfil.abierto() + " pid=" + app.perfil.pidAbierto() + " pestañas=" + app.perfil.perfilPestanas.size() + " activa=" + app.perfil.perfilPestanaActiva + " historial=" + app.historial.size());
         foto("shot_perfil_atras.png");
         SwingUtilities.invokeAndWait(app::irAdelante);
         Thread.sleep(600);
@@ -407,10 +407,10 @@ class RegresionCapturas {
         Thread.sleep(700);
         foto("shot_menu.png");
         SwingUtilities.invokeAndWait(() -> javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
-        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.actCalendario); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
+        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.perfil.actCalendario); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
         Thread.sleep(700);
         foto("shot_actividad_abajo.png");
-        System.out.println("actividad estado: " + app.actEstado.getText() + " | título: " + app.getTitle());
+        System.out.println("actividad estado: " + app.perfil.actEstado.getText() + " | título: " + app.getTitle());
         System.out.println("tabla filas: " + app.ratings.ladderModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.ratings.ladderModelo.getDataVector().get(0).toArray()));
         System.out.println("pct rango 12Tirador todos rm_1v1: " + ConsultasLadder.percentilRango("rm_1v1", 260) + " | por rating activos: " + ConsultasLadder.percentilRating("rm_1v1", true, 1905) + " | novato: " + ConsultasLadder.percentilRating("rm_1v1", true, 760));
         SwingUtilities.invokeAndWait(() -> { app.civStats.stRango.rango("1600-1800|*"); app.civStats.stRango.alCambiar.accept("1600-1800|*"); app.civStats.stMapaCombo.setSelectedIndex(3); });

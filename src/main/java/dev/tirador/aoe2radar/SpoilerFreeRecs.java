@@ -96,6 +96,7 @@ import dev.tirador.aoe2radar.ui.CivStatsView;
 import dev.tirador.aoe2radar.ui.FiltroStats;
 import dev.tirador.aoe2radar.ui.Listas;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
+import dev.tirador.aoe2radar.ui.PerfilView;
 import dev.tirador.aoe2radar.ui.RatingsView;
 import dev.tirador.aoe2radar.ui.SelectorRangoElo;
 import dev.tirador.aoe2radar.ui.Tareas;
@@ -811,7 +812,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     JToggleButton recsBtn;                    // pestaña «Partidas»
     void actualizarControlesTabla() {
-        boolean tablaVisible = recsCards != null && recsCards.isShowing() && !(directosBtn != null && directosBtn.isSelected()) && !(techTreeBtn != null && techTreeBtn.isSelected()) && !(ladderBtn != null && ladderBtn.isSelected()) && !(civStatsBtn != null && civStatsBtn.isSelected()) && !actividadAbierta && !ahoraAbierta;
+        boolean tablaVisible = recsCards != null && recsCards.isShowing() && !(directosBtn != null && directosBtn.isSelected()) && !(techTreeBtn != null && techTreeBtn.isSelected()) && !(ladderBtn != null && ladderBtn.isSelected()) && !(civStatsBtn != null && civStatsBtn.isSelected()) && !(perfil != null && perfil.abierto()) && !ahoraAbierta;
         boolean hay = tablaVisible && !all.isEmpty();
         if (filaNota != null) filaNota.setVisible(tablaVisible);
         if (filaBotonesInferiores != null) filaBotonesInferiores.setVisible(tablaVisible);
@@ -1092,7 +1093,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (ladderBtn != null && !ladderBtn.isSelected()) ladderBtn.setSelected(true);
         directosBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        actividadAbierta = false;
+        if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
@@ -1121,7 +1122,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (civStatsBtn != null && !civStatsBtn.isSelected()) civStatsBtn.setSelected(true);
         directosBtn.setSelected(false);
         if (ladderBtn != null) ladderBtn.setSelected(false);
-        actividadAbierta = false;
+        if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
@@ -1133,446 +1134,22 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // =====================================================================================
-    // PERFIL — la página de un jugador: cabecera (ELO, rango y Top % por ladder, máximo, totales,
-    // forma y gráfica del año) y su actividad del último año (calendario, horas, meses, civs,
-    // mapas, rivales, aliados y tramos). Solo agregados con un mínimo de partidas: nunca el
-    // resultado de una partida suelta.
+    // PERFIL — la página de un jugador: ver ui.PerfilView/ui.PerfilPresenter y, para el diálogo de cara a
+    // cara, ui.CaraACaraDialogo/ui.CaraACaraPresenter. Aquí solo queda el cromo (botón, CardLayout, historial).
     // =====================================================================================
-
-
-    /** Calienta en segundo plano los perfiles ya guardados (solo páginas nuevas, despacio): así los tuyos abren al instante. */
-    void precalentarPerfiles() {
-        Thread h = new Thread(() -> {
-            try {
-                Thread.sleep(90_000);
-                if (!Files.isDirectory(PERFILES_DIR)) return;
-                List<Path> ficheros;
-                try (var st = Files.list(PERFILES_DIR)) { ficheros = st.filter(p -> p.toString().endsWith(".json")).toList(); } catch (IOException ex) { return; }
-                ficheros = new ArrayList<>(ficheros);
-                ficheros.removeIf(p -> { try { return System.currentTimeMillis() - Files.getLastModifiedTime(p).toMillis() > 7L * 24 * 3_600_000L; } catch (IOException ex) { return true; } });   // solo los abiertos en la última semana
-                ficheros.sort((x, y) -> { try { return Files.getLastModifiedTime(y).compareTo(Files.getLastModifiedTime(x)); } catch (IOException ex) { return 0; } });
-                if (ficheros.size() > 10) ficheros = ficheros.subList(0, 10);   // y como mucho diez: la precarga es una comodidad, no una obligación
-                for (Path p : ficheros) {
-                    long pid;
-                    try { pid = Long.parseLong(p.getFileName().toString().replace(".json", "")); } catch (NumberFormatException ex) { continue; }
-                    while (actCargando) Thread.sleep(5000);   // nunca competir con una carga pedida por el usuario
-                    Actividad base = ACTIVIDAD_CACHE.get(pid);
-                    if (base == null) base = cargarActividad(pid);
-                    if (base == null || System.currentTimeMillis() - base.ms() < 6 * 3_600_000L) continue;
-                    try { SERVICIO_PERFIL.historial(pid, base.nombre(), base, false, 3, a -> { }, () -> false); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
-                    Thread.sleep(4000);
-                }
-            } catch (InterruptedException ignored) { }
-        }, "perfiles-precarga");
-        h.setDaemon(true);
-        h.setPriority(Thread.MIN_PRIORITY);
-        h.start();
-    }
     JToggleButton perfilBtn;
-    JPanel actividadPanel, actCabecera, actChips, actBuscaPanel; JLabel actTitulo, actEstado, actSubtitulo, actPista; JComboBox<String> actModoCombo; PanelScrollable actCuerpo;
-    JTextField perfilBusca; JPopupMenu perfilPopup; javax.swing.Timer perfilDebounce; JProgressBar actProgreso; JButton actMasBtn;
-    boolean actividadAbierta, actCargando, actRellenandoModos; long actPid; String actNombre = "", actModo = "*";
-    CalendarioPanel actCalendario; BarrasActividad actSemana, actHoras, actMeses; JPanel actSpark, actPosicion, actUltimos30Civs, actUltimos30Mapas, actDuracionFila; GraficaElo actGrafica;
-    // ----- filtros del perfil: periodo y cara a cara -----
-    JComboBox<String> actPeriodoCombo, actH2hSet; JTextField actH2hBusca; JPopupMenu actH2hPopup; javax.swing.Timer actH2hDebounce;
-    LocalDate actDesde, actHasta; int actPeriodoIdx;
-    Set<Long> h2hIds; String h2hNombre;   // null = sin cara a cara
+    /** La pestaña Perfil (cabecera, actividad, calendario, cara a cara): ver ui.PerfilView. */
+    PerfilView perfil;
 
-    boolean pedirRangoFechas() {
-        JTextField d1 = new JTextField(actDesde == null ? LocalDate.now().minusDays(29).toString() : actDesde.toString(), 10), d2 = new JTextField(actHasta == null ? LocalDate.now().toString() : actHasta.toString(), 10);
-        JPanel pnl = new JPanel(new GridLayout(2, 2, 6, 6));
-        pnl.add(new JLabel(t("Desde (AAAA-MM-DD):", "From (YYYY-MM-DD):"))); pnl.add(d1); pnl.add(new JLabel(t("Hasta:", "To:"))); pnl.add(d2);
-        int r = JOptionPane.showConfirmDialog(this, pnl, t("Rango de fechas", "Date range"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (r != JOptionPane.OK_OPTION) return false;
-        try { actDesde = LocalDate.parse(d1.getText().trim()); actHasta = LocalDate.parse(d2.getText().trim()); if (actHasta.isBefore(actDesde)) { LocalDate x = actDesde; actDesde = actHasta; actHasta = x; } return true; }
-        catch (Exception ex) { status.setText(t("Fecha no válida: usa AAAA-MM-DD.", "Invalid date: use YYYY-MM-DD.")); return false; }
-    }
-    boolean enPeriodo(Match m) {
-        if (m.started == null) return actDesde == null;
-        LocalDate d = m.started.atZone(ZoneId.systemDefault()).toLocalDate();
-        if (actDesde != null && d.isBefore(actDesde)) return false;
-        return actHasta == null || !d.isAfter(actHasta);
-    }
-    /** ¿La partida es contra el conjunto del cara a cara (algún rival de otro equipo está en el conjunto)? */
-    boolean contraH2h(Match m, MatchPlayer yo) {
-        if (h2hIds == null) return true;
-        for (MatchPlayer p : m.players) if (p.id != yo.id && p.team != yo.team && h2hIds.contains(p.id)) return true;
-        return false;
-    }
-    void h2hSugerir() {
-        String q = actH2hBusca.getText().trim();
-        actH2hPopup.setVisible(false); actH2hPopup.removeAll();
-        if (q.length() < 2) return;
-        // primero, rivales del propio historial que coincidan (sin llamada): los más frecuentes
-        Actividad a = ACTIVIDAD_CACHE.get(actPid);
-        Map<Long, String> locales = new LinkedHashMap<>();
-        if (a != null) for (Match m : a.partidas()) for (MatchPlayer p : m.players) if (p.id != actPid && p.name != null && p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))) locales.putIfAbsent(p.id, p.name);
-        int n = 0;
-        for (Map.Entry<Long, String> en : locales.entrySet()) { long pid = en.getKey(); String nombre = en.getValue(); JMenuItem it = new JMenuItem(nombre + t("  (rival en tu historial)", "  (opponent in the history)")); it.addActionListener(x -> fijarH2h(Set.of(pid), nombre)); actH2hPopup.add(it); if (++n >= 6) break; }
-        if (n > 0 && actH2hBusca.isShowing()) actH2hPopup.show(actH2hBusca, 0, actH2hBusca.getHeight());
-        new Thread(() -> {
-            List<String[]> res = sugerirPerfiles(q);
-            SwingUtilities.invokeLater(() -> {
-                if (!q.equals(actH2hBusca.getText().trim())) return;
-                int k = 0;
-                for (String[] r : res) { long pid = Long.parseLong(r[0]); if (locales.containsKey(pid)) continue; JMenuItem it = new JMenuItem(r[2]); String nombre = r[1]; it.addActionListener(x -> fijarH2h(Set.of(pid), nombre)); actH2hPopup.add(it); if (++k >= 6) break; }
-                if (actH2hPopup.getComponentCount() > 0 && actH2hBusca.isShowing()) actH2hPopup.show(actH2hBusca, 0, actH2hBusca.getHeight());
-            });
-        }, "h2h-sugerir").start();
-    }
-    void fijarH2h(Set<Long> ids, String nombre) {
-        actH2hPopup.setVisible(false);
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(nombre); actH2hSet.setSelectedIndex(0); } finally { actRellenandoModos = false; }
-        actPintar();
-    }
-    void rellenarH2hConjuntos() {
-        if (actH2hSet == null) return;
-        actRellenandoModos = true;
-        try {
-            List<String[]> claves = new ArrayList<>();
-            actH2hSet.removeAllItems(); actH2hSet.addItem(t("Contra un conjunto…", "Against a set…")); claves.add(new String[]{ "", "" });
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); for (Player x : todosJugadores) gs.add(x.grupo());
-            for (String g : gs) { actH2hSet.addItem(t("Grupo ", "Group ") + g); claves.add(new String[]{ "grupo", g }); }
-            for (String tag : clanesGuardados()) { actH2hSet.addItem(t("Clan ", "Clan ") + tag); claves.add(new String[]{ "clan", tag }); }
-            if (!ahoraTop.isEmpty()) { actH2hSet.addItem(t("Top 250 mundial", "World top 250")); claves.add(new String[]{ "top", "" }); }
-            actH2hSet.putClientProperty("claves", claves);
-        } finally { actRellenandoModos = false; }
-    }
-    void aplicarH2hConjunto() {
-        Object cl = actH2hSet.getClientProperty("claves");
-        int i = actH2hSet.getSelectedIndex();
-        if (!(cl instanceof List<?> l) || i <= 0 || i >= l.size()) { if (i == 0 && h2hIds != null && (h2hNombre == null || !h2hNombre.equals(actH2hBusca.getText().trim()))) { h2hIds = null; h2hNombre = null; actPintar(); } return; }
-        String[] f = (String[]) l.get(i);
-        Set<Long> ids = new HashSet<>();
-        String nombre = String.valueOf(actH2hSet.getSelectedItem());
-        switch (f[0]) {
-            case "grupo" -> { for (Player x : todosJugadores) if (x.grupo().equalsIgnoreCase(f[1])) ids.add(x.id()); }
-            case "clan" -> { new Thread(() -> { if (ladderAsegurar(false) == null) for (LadderRow r : miembrosClan(f[1])) ids.add(r.pid()); SwingUtilities.invokeLater(() -> { h2hIds = ids; h2hNombre = nombre; actRellenandoModos = true; actH2hBusca.setText(""); actRellenandoModos = false; actPintar(); }); }, "h2h-clan").start(); return; }
-            case "top" -> { synchronized (ahoraTop) { for (Object[] x : ahoraTop) ids.add((Long) x[0]); } }
-            default -> { }
-        }
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(""); } finally { actRellenandoModos = false; }
-        actPintar();
-    }
-
-    /** ELO tras cada partida de UN ladder (las últimas 100): línea con escala, máximo, mínimo y actual; tooltip con fecha y ±diff. */
-    class GraficaElo extends JPanel {
-        List<long[]> puntos = List.of();   // {epochMs, rating, diff} de más antigua a más nueva
-        String etiqueta = "";
-        int ml = 40, mr = 44, mt = 18, mb = 16;
-        GraficaElo() { setOpaque(false); ToolTipManager.sharedInstance().registerComponent(this); }
-        void datos(List<long[]> p, String et) { puntos = p; etiqueta = et; repaint(); }
-        int indiceEn(int x) {
-            if (puntos.size() < 2) return -1;
-            double sx = (double) (getWidth() - ml - mr) / (puntos.size() - 1);
-            int i = (int) Math.round((x - ml) / sx);
-            return i < 0 || i >= puntos.size() ? -1 : i;
-        }
-        @Override public String getToolTipText(MouseEvent e) {
-            int i = indiceEn(e.getX());
-            if (i < 0) return null;
-            long[] p = puntos.get(i);
-            String fecha = Instant.ofEpochMilli(p[0]).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES")));
-            return "<html>" + fecha + "<br><b>" + p[1] + "</b>" + (p[2] != 0 ? " <span style='color:" + (p[2] > 0 ? "#3a9d5d" : "#c0392b") + "'>" + (p[2] > 0 ? "+" : "") + p[2] + "</span>" : "") + "<br><span style='color:gray'>" + t("partida ", "game ") + (i + 1) + t(" de ", " of ") + puntos.size() + "</span></html>";
-        }
-        @Override protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            Color fg = UIManager.getColor("Label.foreground"); if (fg == null) fg = Color.GRAY;
-            Color gris = new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 120 : 190);
-            int w = getWidth(), h = getHeight();
-            Font base = g2.getFont();
-            g2.setFont(base.deriveFont(11f)); g2.setColor(gris);
-            g2.drawString(etiqueta, ml, 12);
-            if (puntos.size() < 2) { g2.drawString(t("Sin partidas suficientes en este ladder", "Not enough games on this ladder"), ml, h / 2); g2.dispose(); return; }
-            long min = Long.MAX_VALUE, max = Long.MIN_VALUE;
-            for (long[] p : puntos) { min = Math.min(min, p[1]); max = Math.max(max, p[1]); }
-            if (max - min < 40) { long c = (min + max) / 2; min = c - 20; max = c + 20; }
-            long paso = (long) pasoBonito((max - min) / 3.0);
-            double sy = (double) (h - mt - mb) / (max - min), sx = (double) (w - ml - mr) / (puntos.size() - 1);
-            g2.setFont(base.deriveFont(9f));
-            for (long v = (long) Math.ceil(min / (double) paso) * paso; v <= max; v += paso) {
-                int y = (int) (h - mb - (v - min) * sy);
-                g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), 35)); g2.drawLine(ml, y, w - mr, y);
-                g2.setColor(gris); String sv = String.valueOf(v); g2.drawString(sv, ml - 4 - g2.getFontMetrics().stringWidth(sv), y + 4);
-            }
-            Color linea = temaOscuroActivo ? new Color(0xff, 0xc9, 0x4d) : new Color(0xb0, 0x78, 0x00);
-            g2.setColor(linea); g2.setStroke(new BasicStroke(1.8f));
-            int px = -1, py = -1;
-            for (int i = 0; i < puntos.size(); i++) {
-                int x = ml + (int) Math.round(i * sx), y = (int) (h - mb - (puntos.get(i)[1] - min) * sy);
-                if (px >= 0) g2.drawLine(px, py, x, y);
-                px = x; py = y;
-            }
-            long ultimo = puntos.get(puntos.size() - 1)[1];
-            g2.fillOval(px - 3, py - 3, 6, 6);
-            g2.setFont(base.deriveFont(Font.BOLD, 11f));
-            g2.drawString(String.valueOf(ultimo), Math.min(px + 6, w - mr + 2), py + 4);
-            g2.setFont(base.deriveFont(9f)); g2.setColor(gris);
-            String etMax = t("máx ", "max ") + max, etMin = t("mín ", "min ") + min;
-            g2.drawString(etMax, w - mr + 2, mt + 4); g2.drawString(etMin, w - mr + 2, h - mb);
-            String fIni = Instant.ofEpochMilli(puntos.get(0)[0]).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM", "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES")));
-            String fFin = Instant.ofEpochMilli(puntos.get(puntos.size() - 1)[0]).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("d MMM", "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES")));
-            g2.drawString(fIni, ml, h - 3); g2.drawString(fFin, w - mr - g2.getFontMetrics().stringWidth(fFin), h - 3);
-            g2.dispose();
-        }
-    }
-    JPanel actTarjetas, actCivs, actCivsRival, actMapas, actRivales, actAliados, actTramos;
-
-    JPanel construirPanelPerfil() {
-        actividadPanel = new JPanel(new BorderLayout(8, 6));
-        actividadPanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-        JPanel norte = new JPanel(new BorderLayout(8, 0));
-        JPanel izq = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-        actTitulo = new JLabel();
-        actTitulo.setFont(actTitulo.getFont().deriveFont(Font.BOLD, 14f));
-        actTitulo.setToolTipText(t("Clic derecho: nota, alias, nicks anteriores, cuentas vinculadas, watchlist…", "Right-click: note, alias, previous names, linked accounts, watchlist…"));
-        actTitulo.addMouseListener(new MouseAdapter() { @Override public void mousePressed(MouseEvent e) { if (e.isPopupTrigger()) actMenuNombre(e, actTitulo); } @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) actMenuNombre(e, actTitulo); } });
-        actModoCombo = new JComboBox<>();
-        actModoCombo.addActionListener(e -> { if (actRellenandoModos) return; Object cl = actModoCombo.getClientProperty("claves"); if (cl instanceof List<?> l && actModoCombo.getSelectedIndex() >= 0 && actModoCombo.getSelectedIndex() < l.size()) { actModo = String.valueOf(l.get(actModoCombo.getSelectedIndex())); actPintar(); } });
-        izq.add(actModoCombo);
-        actPeriodoCombo = new JComboBox<>(new String[]{ t("Todo el historial", "Whole history"), t("7 días", "7 days"), t("30 días", "30 days"), t("90 días", "90 days"), t("365 días", "365 days"), t("Rango de fechas…", "Date range…") });
-        actPeriodoCombo.setToolTipText(t("Periodo: todas las tarjetas y listas del perfil se calculan solo con las partidas de ese periodo", "Period: every card and list of the profile is computed with the games in that period only"));
-        actPeriodoCombo.addActionListener(e -> {
-            if (actRellenandoModos) return;
-            int i = actPeriodoCombo.getSelectedIndex();
-            if (i == 5) { if (!pedirRangoFechas()) { actRellenandoModos = true; actPeriodoCombo.setSelectedIndex(actPeriodoIdx); actRellenandoModos = false; return; } }
-            else { actDesde = i == 0 ? null : LocalDate.now().minusDays(new int[]{ 0, 6, 29, 89, 364 }[i]); actHasta = null; }
-            actPeriodoIdx = i; actPintar();
-        });
-        izq.add(actPeriodoCombo);
-        actHastaLabel = new JLabel(); actHastaLabel.setFont(actHastaLabel.getFont().deriveFont(Font.PLAIN, 11f)); actHastaLabel.setForeground(colorSecundario()); actHastaLabel.setVisible(false);
-        actHoyBtn = new JButton(t("Actualizar hoy", "Update today"));
-        actHoyBtn.setFocusable(false); actHoyBtn.setMargin(new Insets(1, 8, 1, 8)); actHoyBtn.putClientProperty("JButton.buttonType", "roundRect"); actHoyBtn.setVisible(false);
-        actHoyBtn.addActionListener(e -> perfilActualizarHoy());
-        izq.add(actHastaLabel); izq.add(actHoyBtn);
-        JButton histBtn = new JButton(t("Todas las partidas…", "All games…"));
-        histBtn.setFocusable(false); histBtn.setMargin(new Insets(1, 8, 1, 8)); histBtn.putClientProperty("JButton.buttonType", "roundRect");
-        histBtn.setToolTipText(t("El histórico del perfil en páginas, con filtro de modo y rec a un clic", "The profile's history in pages, with a mode filter and recs one click away"));
-        histBtn.addActionListener(e -> { if (actPid > 0) verHistorialEnTabla(actPid, actNombre); });
-        izq.add(histBtn);
-        JButton h2hBtn = new JButton(t("Cara a cara…", "Head-to-head…"));
-        h2hBtn.setFocusable(false); h2hBtn.setMargin(new Insets(1, 8, 1, 8)); h2hBtn.putClientProperty("JButton.buttonType", "roundRect");
-        h2hBtn.setToolTipText(t("El cruce con un rival: balance, mapas, civ contra civ y últimas partidas entre ambos", "The pairing with an opponent: record, maps, civ vs civ and latest games between them"));
-        h2hBtn.addActionListener(e -> mostrarCaraACara());
-        izq.add(h2hBtn);
-        JButton masBtn = new JButton("\u22EF");
-        masBtn.setFocusable(false); masBtn.setMargin(new Insets(1, 6, 1, 6)); masBtn.putClientProperty("JButton.buttonType", "roundRect");
-        masBtn.setToolTipText(t("Nota, alias, nicks anteriores, cuentas vinculadas, watchlist…", "Note, alias, previous names, linked accounts, watchlist…"));
-        masBtn.addActionListener(e -> actMenuNombre(new MouseEvent(masBtn, MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, 0, masBtn.getHeight(), 1, true), masBtn));
-        izq.add(masBtn);
-        actH2hBusca = new JTextField(14);
-        actH2hBusca.putClientProperty("JTextField.placeholderText", t("Cara a cara con… (nick)", "Head-to-head vs… (nick)"));
-        actH2hBusca.putClientProperty("JTextField.showClearButton", true);
-        actH2hBusca.setToolTipText(t("Escribe un nick: el perfil pasa a mostrar solo las partidas contra ese jugador (o elige un grupo, clan o top en el desplegable)", "Type a nick: the profile shows only the games against that player (or pick a group, clan or top in the dropdown)"));
-        actH2hPopup = new JPopupMenu(); actH2hPopup.setFocusable(false);
-        actH2hDebounce = new javax.swing.Timer(450, e -> h2hSugerir()); actH2hDebounce.setRepeats(false);
-        actH2hBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { if (actH2hBusca.getText().trim().isEmpty()) { if (h2hIds != null) { h2hIds = null; h2hNombre = null; actPintar(); } actH2hPopup.setVisible(false); } else actH2hDebounce.restart(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        actH2hSet = new JComboBox<>();
-        actH2hSet.setToolTipText(t("Cara a cara contra un conjunto: tu grupo, un clan guardado o el top 250", "Head-to-head against a set: your group, a saved clan or the top 250"));
-        actH2hSet.addActionListener(e -> { if (actRellenandoModos) return; aplicarH2hConjunto(); });
-        perfilBusca = new JTextField(18);
-        perfilBusca.putClientProperty("JTextField.placeholderText", t("Buscar jugador… o selecciona en la watchlist", "Search a player… or select in the watchlist"));
-        perfilBusca.putClientProperty("JTextField.showClearButton", true);
-        perfilPopup = new JPopupMenu(); perfilPopup.setFocusable(false);
-        perfilDebounce = new javax.swing.Timer(450, e -> perfilSugerir());
-        perfilDebounce.setRepeats(false);
-        perfilBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { perfilDebounce.restart(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        perfilBusca.addActionListener(e -> { if (perfilPopup.isVisible() && perfilPopup.getComponentCount() > 0) ((JMenuItem) perfilPopup.getComponent(0)).doClick(); else perfilSugerir(); });
-        perfilBusca.addKeyListener(new KeyAdapter() {
-            @Override public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_DOWN && perfilPopup.isVisible() && perfilPopup.getComponentCount() > 0) { ((JMenuItem) perfilPopup.getComponent(0)).doClick(); e.consume(); }
-                else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) perfilPopup.setVisible(false);
-            }
-        });
-        izq.add(perfilBusca, 0);   // el buscador, siempre lo primero de la barra (igual en Ratings)
-        izq.add(actTitulo, 1);
-        actEstado = new JLabel();
-        actEstado.setFont(actEstado.getFont().deriveFont(Font.PLAIN, 11f));
-        izq.add(actEstado);
-        norte.add(izq, BorderLayout.CENTER);
-        JButton cerrar = new JButton("\u00D7");
-        cerrar.setFocusable(false); cerrar.setMargin(new Insets(0, 7, 0, 7)); cerrar.putClientProperty("JButton.buttonType", "roundRect");
-        cerrar.setToolTipText(t("Cerrar", "Close"));
-        cerrar.addActionListener(e -> { actividadAbierta = false; mostrarDirectos(false); });
-        norte.add(cerrar, BorderLayout.EAST);
-        actProgreso = new JProgressBar(0, ACT_MAX_PAGINAS);
-        actProgreso.setStringPainted(true);
-        actProgreso.setVisible(false);
-        actProgreso.setPreferredSize(new Dimension(10, 16));
-        norte.add(actProgreso, BorderLayout.SOUTH);
-        actMasBtn = new JButton(t("Cargar más partidas", "Load more games"));
-        actMasBtn.setFocusable(false); actMasBtn.setMargin(new Insets(1, 8, 1, 8)); actMasBtn.putClientProperty("JButton.buttonType", "roundRect");
-        actMasBtn.setToolTipText(t("Este jugador tiene más de 1.000 partidas en el último año: baja las 500 siguientes", "This player has over 1,000 games in the last year: fetch the next 500"));
-        actMasBtn.setVisible(false);
-        actMasBtn.addActionListener(e -> perfilCargarMas());
-        izq.add(actMasBtn);
-        perfilTira = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 0));
-        perfilTira.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(128, 128, 128, 70)));
-        perfilTira.setVisible(false);
-        JPanel norteTodo = new JPanel(new BorderLayout(0, 4));
-        norteTodo.add(perfilTira, BorderLayout.NORTH);
-        norteTodo.add(norte, BorderLayout.CENTER);
-        actividadPanel.add(norteTodo, BorderLayout.NORTH);
-
-        actCuerpo = new PanelScrollable();
-        actCuerpo.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 4));
-        actPista = new JLabel(t("Selecciona un jugador en la watchlist, clic derecho → «Perfil completo…», o escribe un nick arriba.", "Select a player in the watchlist, right-click → \u201CFull profile…\u201D, or type a nick above."));
-        actPista.setFont(actPista.getFont().deriveFont(Font.ITALIC, 12f)); actPista.setForeground(Color.GRAY); actPista.setAlignmentX(0f);
-        actCuerpo.add(actPista);
-        // cabecera: identidad + chips por ladder + gráfica del año
-        actCabecera = new JPanel(new BorderLayout(10, 2));
-        actCabecera.setAlignmentX(0f); actCabecera.setMaximumSize(new Dimension(Integer.MAX_VALUE, 170)); actCabecera.setPreferredSize(new Dimension(10, 170));
-        actCabecera.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(128, 128, 128, 70), 1, true), BorderFactory.createEmptyBorder(4, 8, 4, 8)));
-        JPanel identidad = new JPanel(new BorderLayout(0, 2));
-        identidad.setOpaque(false);
-        actSubtitulo = new JLabel();
-        actSubtitulo.setFont(actSubtitulo.getFont().deriveFont(Font.PLAIN, 11.5f)); actSubtitulo.setForeground(colorSecundario());
-        actChips = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 2));
-        actChips.setOpaque(false);
-        JPanel lineas = new JPanel(); lineas.setLayout(new BoxLayout(lineas, BoxLayout.Y_AXIS)); lineas.setOpaque(false);
-        actSubtitulo.setAlignmentX(0f); lineas.add(actSubtitulo);
-        actVinculadasPanel = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 0)); actVinculadasPanel.setOpaque(false); actVinculadasPanel.setAlignmentX(0f);
-        lineas.add(actVinculadasPanel);
-        actNotaLinea = new JLabel(); actNotaLinea.setFont(actNotaLinea.getFont().deriveFont(Font.PLAIN, 11.5f)); actNotaLinea.setForeground(new Color(0xb0, 0x8d, 0x57)); actNotaLinea.setAlignmentX(0f); actNotaLinea.setVisible(false);
-        lineas.add(actNotaLinea);
-        identidad.add(lineas, BorderLayout.NORTH);
-        identidad.add(actChips, BorderLayout.CENTER);
-        actCabecera.add(identidad, BorderLayout.CENTER);
-        actSpark = new JPanel(new BorderLayout());
-        actSpark.setOpaque(false); actSpark.setPreferredSize(new Dimension(480, 150));
-        actGrafica = new GraficaElo();
-        actSpark.add(actGrafica, BorderLayout.CENTER);
-        JButton ampliar = new JButton("\u26F6");
-        ampliar.setFocusable(false); ampliar.setMargin(new Insets(0, 4, 0, 4)); ampliar.putClientProperty("JButton.buttonType", "roundRect");
-        ampliar.setToolTipText(t("Ampliar la gráfica de ELO", "Enlarge the ELO chart"));
-        ampliar.addActionListener(e -> {
-            JDialog d = new JDialog(this, t("ELO de ", "ELO of ") + actNombre + " · " + actGrafica.etiqueta, false);
-            GraficaElo g = new GraficaElo(); g.datos(actGrafica.puntos, actGrafica.etiqueta);
-            d.add(g);
-            d.getRootPane().registerKeyboardAction(ev -> d.dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-            d.setSize(1000, 480); d.setLocationRelativeTo(this); d.setVisible(true);
-        });
-        JPanel esq = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0)); esq.setOpaque(false); esq.add(ampliar);
-        actSpark.add(esq, BorderLayout.NORTH);
-        actCabecera.add(actSpark, BorderLayout.EAST);
-        actCuerpo.add(actCabecera);
-        actCuerpo.add(Box.createVerticalStrut(8));
-        actTarjetas = new JPanel(new GridLayout(1, 5, 8, 0));
-        actTarjetas.setAlignmentX(0f); actTarjetas.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
-        actCuerpo.add(actTarjetas);
-        actCuerpo.add(Box.createVerticalStrut(8));
-        actCalendario = new CalendarioPanel();
-        actCalendario.setAlignmentX(0f);
-        actCalendario.setPreferredSize(new Dimension(10, 150)); actCalendario.setMaximumSize(new Dimension(Integer.MAX_VALUE, 150));
-        actCuerpo.add(actCalendario);
-        JPanel fila2 = new JPanel(new GridLayout(1, 3, 8, 0));
-        fila2.setAlignmentX(0f); fila2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 170)); fila2.setPreferredSize(new Dimension(10, 170));
-        actSemana = new BarrasActividad(t("Por día de la semana", "By day of week"));
-        actHoras = new BarrasActividad(t("Por hora (hora local)", "By hour (local time)"));
-        actMeses = new BarrasActividad(t("Por mes", "By month"));
-        fila2.add(actSemana); fila2.add(actHoras); fila2.add(actMeses);
-        actCuerpo.add(fila2);
-        actCuerpo.add(Box.createVerticalStrut(8));
-        JLabel tDur = tituloSeccion(t("Winrate por duración de la partida", "Win rate by match duration"), t("Tramos como en aoe2insights; solo partidas con resultado", "Buckets as in aoe2insights; games with a result only")); tDur.setAlignmentX(0f); actCuerpo.add(tDur);
-        actDuracionFila = new JPanel(new GridLayout(1, 5, 8, 0)); actDuracionFila.setAlignmentX(0f); actDuracionFila.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
-        actCuerpo.add(actDuracionFila);
-        actCuerpo.add(Box.createVerticalStrut(8));
-        JPanel fila3 = new JPanel(new GridLayout(1, 3, 8, 0));
-        fila3.setAlignmentX(0f);
-        actCivs = listaVertical(); actCivsRival = listaVertical(); actMapas = listaVertical();
-        fila3.add(actCivs); fila3.add(actCivsRival); fila3.add(actMapas);
-        actCuerpo.add(fila3);
-        actCuerpo.add(Box.createVerticalStrut(8));
-        JPanel fila4 = new JPanel(new GridLayout(1, 3, 8, 0));
-        fila4.setAlignmentX(0f);
-        actRivales = listaVertical(); actAliados = listaVertical(); actTramos = listaVertical();
-        fila4.add(actRivales); fila4.add(actAliados); fila4.add(actTramos);
-        actCuerpo.add(fila4);
-        actCuerpo.add(Box.createVerticalStrut(8));
-        JPanel fila5 = new JPanel(new GridLayout(1, 3, 8, 0));
-        fila5.setAlignmentX(0f);
-        actPosicion = listaVertical(); actUltimos30Civs = listaVertical(); actUltimos30Mapas = listaVertical();
-        fila5.add(actPosicion); fila5.add(actUltimos30Civs); fila5.add(actUltimos30Mapas);
-        actCuerpo.add(fila5);
-        JScrollPane scroll = new JScrollPane(actCuerpo, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        scroll.setBorder(null);
-        actividadPanel.add(scroll, BorderLayout.CENTER);
-        JLabel pie = new JLabel(t("Perfil e historial de aoe2companion.com (hasta 1 año o 1.500 partidas). Solo agregados: cada línea exige al menos 3 partidas; el calendario cuenta partidas, no resultados. Clic en un rival o aliado abre su perfil.",
-                "Profile and history from aoe2companion.com (up to 1 year or 1,500 games). Aggregates only: every line needs at least 3 games; the calendar counts games, not results. Click a rival or ally to open their profile."));
-        pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
-        actividadPanel.add(pie, BorderLayout.SOUTH);
-        actMostrarCuerpo(false);
-        return actividadPanel;
-    }
-
-    void actMostrarCuerpo(boolean hay) {
-        if (hay) actPista.setText(t("Selecciona un jugador en la watchlist, clic derecho → «Perfil completo…», o escribe un nick arriba.", "Select a player in the watchlist, right-click → \u201CFull profile…\u201D, or type a nick above."));
-        actPista.setVisible(!hay);
-        for (Component c : actCuerpo.getComponents()) if (c != actPista) c.setVisible(hay);
-        actModoCombo.setVisible(hay);
-        actCuerpo.revalidate(); actCuerpo.repaint();
-    }
-
-    /** Sugerencias de nick para el buscador del perfil (búsqueda del companion, con retardo). */
-    void perfilSugerir() {
-        String q = perfilBusca.getText().trim();
-        perfilPopup.setVisible(false); perfilPopup.removeAll();
-        if (q.length() < 2) return;
-        new Thread(() -> {
-            List<String[]> res = sugerirPerfiles(q);
-            SwingUtilities.invokeLater(() -> {
-                if (!q.equals(perfilBusca.getText().trim())) return;
-                perfilPopup.removeAll();
-                int n = 0;
-                for (String[] r : res) {
-                    JMenuItem it = new JMenuItem(r[2]);
-                    long pid = Long.parseLong(r[0]); String nombre = r[1];
-                    it.addActionListener(a -> { perfilBusca.setText(""); perfilPopup.setVisible(false); abrirPerfil(pid, nombre); });
-                    perfilPopup.add(it);
-                    if (++n >= 8) break;
-                }
-                if (n > 0 && perfilBusca.isShowing()) perfilPopup.show(perfilBusca, 0, perfilBusca.getHeight());
-            });
-        }, "perfil-sugerir").start();
-    }
-
-    /** Con Perfil abierto, seleccionar a alguien en la watchlist abre su perfil. */
-    javax.swing.Timer perfilSeleccionTimer;
-    void perfilSincronizarSeleccion() {
-        if (!actividadAbierta || actividadPanel == null || !actividadPanel.isShowing()) return;
-        if (perfilSeleccionTimer == null) {
-            perfilSeleccionTimer = new javax.swing.Timer(500, ev -> {   // medio segundo de respiro: pasar por diez filas con las flechas no dispara diez cargas
-                if (!actividadAbierta) return;
-                List<Player> sel = playersList.getSelectedValuesList();
-                if (sel.isEmpty()) return;
-                Player p = sel.get(0);
-                if (p.id() != actPid) abrirPerfil(p.id(), nombreVisible(p.id(), p.name()));
-            });
-            perfilSeleccionTimer.setRepeats(false);
-        }
-        perfilSeleccionTimer.restart();
-    }
+    /** Calienta en segundo plano los perfiles ya guardados: lo pide TechTreePresenter.precargar() la primera vez que se abre el tech tree. */
+    void precalentarPerfiles() { perfil.precalentar(); }
 
     /** El botón «Perfil»: el jugador seleccionado en la watchlist o, si no hay, la página con el buscador. */
     void perfilDesdeBoton() {
         List<Player> sel = playersList.getSelectedValuesList();
         if (!sel.isEmpty()) abrirPerfil(sel.get(0).id(), nombreVisible(sel.get(0).id(), sel.get(0).name()));
         else if (ultimosSujetos.size() == 1 && recsCards != null && recsCards.isShowing()) abrirPerfil(ultimosSujetos.get(0).id(), nombreVisible(ultimosSujetos.get(0).id(), ultimosSujetos.get(0).name()));   // «Partidas de: X» → su perfil
-        else if (actPid > 0 && ACTIVIDAD_CACHE.containsKey(actPid)) abrirPerfil(actPid, actNombre);
+        else if (perfil.pidAbierto() > 0 && ACTIVIDAD_CACHE.containsKey(perfil.pidAbierto())) abrirPerfil(perfil.pidAbierto(), perfil.nombreAbierto());
         else abrirPerfil(0, "");
     }
 
@@ -1627,123 +1204,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     final Set<Long> azarEnsenadas = new HashSet<>();
     final Map<Long, Integer> gamesWatch = new java.util.concurrent.ConcurrentHashMap<>();
-    boolean actOrigenSfr; String actHastaSfr; JButton actHoyBtn; JLabel actHastaLabel;
 
-    /** Ficha de cabecera sin llamada: el ELO más reciente que conocemos (watchlist, o el de su última partida por ladder). */
-    FichaPerfil perfilSintetico(long pid, Actividad a, String pais) {
-        Map<String, int[]> m = new HashMap<>();
-        for (Match x : a.partidas()) {
-            String lb = x.mode == null ? null : x.mode.contains("Empire") ? (x.mode.contains("1v1") ? "ew_1v1" : "ew_team") : x.mode.contains("Death") ? (x.mode.contains("1v1") ? "dm_1v1" : "dm_team") : x.mode.contains("1v1") ? "rm_1v1" : "rm_team";
-            if (lb == null || m.containsKey(lb)) continue;
-            for (MatchPlayer mp : x.players) if (mp.id == pid && mp.rating != null) { m.put(lb, new int[]{ mp.rating + (mp.ratingDiff == null ? 0 : mp.ratingDiff), 0, 0, 0, 0 }); }
-        }
-        Integer eloW = eloWatch.get(pid);
-        if (eloW != null && eloW > 0) { int[] v = m.computeIfAbsent("rm_1v1", k -> new int[5]); v[0] = eloW; }
-        return new FichaPerfil(m, pais == null ? "" : pais, "", (long) a.partidas().size());
-    }
-    /** «Actualizar hoy»: dos llamadas (ficha del jugador y sus partidas recientes) y se funden con el año del paquete. */
-    void perfilActualizarHoy() {
-        long pid = actPid;
-        if (pid <= 0 || actHoyBtn == null) return;
-        actHoyBtn.setEnabled(false); actHoyBtn.setText(t("Actualizando…", "Updating…"));
-        new Thread(() -> {
-            int nuevas = 0; String error = null;
-            try {
-                FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
-                vinculadasPedidas.add(pid);
-                nuevas = SERVICIO_PERFIL.traerHoy(pid);
-                final int n = nuevas;
-                SwingUtilities.invokeLater(() -> {
-                    if (actPid != pid) return;
-                    actPintarCabecera(perfil);
-                    Actividad a = ACTIVIDAD_CACHE.get(pid);
-                    if (a != null) { actRellenarModos(a); actPintar(); }
-                    actHoyBtn.setText(n == 0 ? t("Al día · sin partidas nuevas", "Up to date · no new games") : t("Actualizado · +", "Updated · +") + n + t(" partidas", " games"));
-                    actHoyBtn.setForeground(UIManager.getColor("Button.foreground"));
-                    actHoyBtn.setEnabled(false);
-                    if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta hoy", "Data up to today"));
-                });
-            } catch (Exception ex) {
-                error = causa(ex);
-                final String err = error;
-                SwingUtilities.invokeLater(() -> { if (actPid != pid) return; actHoyBtn.setEnabled(true); actHoyBtn.setText(t("Actualizar hoy", "Update today")); status.setText(t("No se pudo actualizar: ", "Couldn't update: ") + err); });
-            }
-        }, "perfil-hoy").start();
-    }
-    /** «Todas las partidas del perfil»: el histórico en páginas de 25, con filtro de modo; del paquete de sfr-data si está (sin llamadas) o de la API a 50 por llamada, solo al pedir más. Cada fila: descargar la rec o enviarla al juego. */
-    JDialog histDialogo; int histPagina; String histModo = "*";
-    void mostrarHistorialPerfil(long pid, String nombre) {
-        if (histDialogo != null) { histDialogo.dispose(); histDialogo = null; }
-        histDialogo = new JDialog(this, t("Todas las partidas de ", "All games of ") + nombre, false);
-        JPanel norte = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        JComboBox<String> modo = new JComboBox<>(new String[]{ t("Todos los modos", "All modes"), "1v1 Random Map", "Team Random Map", "1v1 Empire Wars", "Team Empire Wars", "1v1 Death Match", "Team Death Match" });
-        norte.add(new JLabel(t("Modo:", "Mode:"))); norte.add(modo);
-        JLabel info = new JLabel(); info.setForeground(colorSecundario()); norte.add(info);
-        JButton ant = new JButton("\u2190"), sig = new JButton("\u2192"); for (JButton b : new JButton[]{ ant, sig }) { b.setFocusable(false); b.setMargin(new Insets(1, 8, 1, 8)); b.putClientProperty("JButton.buttonType", "roundRect"); }
-        JButton mas = new JButton(t("Cargar 50 más (1 llamada)", "Load 50 more (1 request)")); mas.setFocusable(false); mas.setMargin(new Insets(1, 8, 1, 8)); mas.putClientProperty("JButton.buttonType", "roundRect"); mas.setVisible(false);
-        JLabel pag = new JLabel();
-        norte.add(ant); norte.add(pag); norte.add(sig); norte.add(mas);
-        String[] cols = { t("Fecha", "Date"), t("Mapa", "Map"), t("Modo", "Mode"), t("Partida", "Game"), t("Rec", "Rec") };
-        DefaultTableModel modelo = new DefaultTableModel(cols, 0) { @Override public boolean isCellEditable(int r, int c) { return false; } };
-        JTable tabla = new JTable(modelo); tabla.setRowHeight(tabla.getRowHeight() + 6); tabla.getTableHeader().setReorderingAllowed(false);
-        tabla.getColumnModel().getColumn(0).setPreferredWidth(120); tabla.getColumnModel().getColumn(1).setPreferredWidth(120); tabla.getColumnModel().getColumn(2).setPreferredWidth(120); tabla.getColumnModel().getColumn(3).setPreferredWidth(360); tabla.getColumnModel().getColumn(4).setPreferredWidth(60);
-        List<Match> visibles = new ArrayList<>();
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("d MMM yyyy, HH:mm", "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES"));
-        histPagina = 0; histModo = "*";
-        Runnable pintar = () -> {
-            Actividad a = ACTIVIDAD_CACHE.get(pid);
-            List<Match> todas = new ArrayList<>();
-            if (a != null) for (Match m : a.partidas()) if ("*".equals(histModo) || histModo.equals(m.mode)) todas.add(m);
-            int porPag = 25, paginas = Math.max(1, (todas.size() + porPag - 1) / porPag);
-            histPagina = Math.max(0, Math.min(histPagina, paginas - 1));
-            modelo.setRowCount(0); visibles.clear();
-            for (int i = histPagina * porPag; i < Math.min(todas.size(), (histPagina + 1) * porPag); i++) {
-                Match m = todas.get(i); visibles.add(m);
-                StringBuilder j = new StringBuilder(); int team = -1;
-                for (MatchPlayer mp : m.players) { if (team != -1 && mp.team != team) j.append("  vs  "); else if (j.length() > 0) j.append(", "); j.append(nombreVisible(mp.id, mp.name)).append(mp.civ == null ? "" : " (" + mp.civ + ")"); team = mp.team; }
-                modelo.addRow(new Object[]{ m.started == null ? "" : m.started.atZone(ZoneId.systemDefault()).format(fmt), m.map, m.mode, j.toString(), m.enDisco ? "\u2713" : "" });
-            }
-            pag.setText((histPagina + 1) + " / " + paginas);
-            ant.setEnabled(histPagina > 0); sig.setEnabled(histPagina < paginas - 1);
-            boolean deSfr = a != null && a.completo() && actOrigenSfr && pid == actPid;
-            info.setText(a == null ? t("sin datos", "no data") : miles(todas.size()) + t(" partidas", " games") + (deSfr ? t(" · último año · de sfr-data", " · last year · from sfr-data") : t(" · cargadas hasta ahora", " · loaded so far")));
-            mas.setVisible(a != null && !deSfr && !a.completo());   // completo: no hay 50 más que traer (cada clic sería una llamada en vano)
-        };
-        modo.addActionListener(e -> { histModo = modo.getSelectedIndex() == 0 ? "*" : String.valueOf(modo.getSelectedItem()); histPagina = 0; pintar.run(); });
-        ant.addActionListener(e -> { histPagina--; pintar.run(); });
-        sig.addActionListener(e -> { histPagina++; pintar.run(); });
-        mas.addActionListener(e -> { mas.setEnabled(false); new Thread(() -> { try { Actividad base = ACTIVIDAD_CACHE.get(pid); Actividad a2 = SERVICIO_PERFIL.historial(pid, nombre, base, true, 1, a -> { }, () -> false);   /* 50 más: la página siguiente a las que hay */ ACTIVIDAD_CACHE.put(pid, a2); } catch (Exception ex) { log("historial: " + causa(ex)); } SwingUtilities.invokeLater(() -> { mas.setEnabled(true); pintar.run(); }); }, "historial-mas").start(); });
-        JPanel sur = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
-        JButton desc = new JButton(t("Descargar rec", "Download rec")), env = new JButton(t("Enviar al juego", "Send to game"));
-        for (JButton b : new JButton[]{ desc, env }) { b.setFocusable(false); b.setMargin(new Insets(2, 10, 2, 10)); b.putClientProperty("JButton.buttonType", "roundRect"); }
-        java.util.function.Supplier<List<Match>> sel = () -> { List<Match> l = new ArrayList<>(); for (int r : tabla.getSelectedRows()) l.add(visibles.get(r)); return l; };
-        desc.addActionListener(e -> { List<Match> l = sel.get(); if (l.isEmpty()) return; descargaSinCambiarVista = true; alTerminarDescarga = pintar; download(l); });
-        env.addActionListener(e -> { List<Match> l = sel.get(); if (l.isEmpty()) return; descargaSinCambiarVista = true; alTerminarDescarga = pintar; download(l, true); });
-        JLabel nota = new JLabel(t("Sin resultado: como en Live now. Selecciona filas y descarga o envía al juego.", "No result shown, like Live now. Select rows and download or send to game.")); nota.setForeground(colorSecundario()); nota.setFont(nota.getFont().deriveFont(Font.PLAIN, 11f));
-        sur.add(desc); sur.add(env); sur.add(nota);
-        histDialogo.add(norte, BorderLayout.NORTH); histDialogo.add(new JScrollPane(tabla), BorderLayout.CENTER); histDialogo.add(sur, BorderLayout.SOUTH);
-        histDialogo.getRootPane().registerKeyboardAction(e -> histDialogo.dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        pintar.run();
-        histDialogo.setSize(900, 640); histDialogo.setLocationRelativeTo(this); histDialogo.setVisible(true);
-    }
-    /** Estado del botón «Actualizar hoy» según lo que sabemos: ámbar si lo hemos visto en partida después del volcado; gris si no consta nada nuevo. */
-    void perfilEstadoHoy() {
-        if (actHoyBtn == null) return;
-        boolean visible = actOrigenSfr && actPid > 0;
-        actHoyBtn.setVisible(visible); if (actHastaLabel != null) actHastaLabel.setVisible(visible);
-        if (!visible) return;
-        long hastaMs = 0;
-        try { if (actHastaSfr != null && actHastaSfr.length() >= 10) hastaMs = LocalDate.parse(actHastaSfr.substring(0, 10)).plusDays(1).atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli(); } catch (Exception ignored) { }
-        Long visto = VIVO.vistoMs(actPid);
-        boolean hayNuevas = (visto != null && visto > hastaMs) || VIVO.partida(actPid) != null;
-        actHoyBtn.setEnabled(true);
-        actHoyBtn.setText(t("Actualizar hoy", "Update today"));
-        actHoyBtn.setForeground(hayNuevas ? (temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)) : UIManager.getColor("Button.foreground"));
-        actHoyBtn.setToolTipText(hayNuevas ? t("Le hemos visto en partida después del volcado: hay partidas de hoy que traer (2 llamadas)", "Seen in a game after the dump: there are today's games to fetch (2 requests)")
-                : t("No consta ninguna partida nueva desde el volcado; actualizar solo si crees que ha jugado hoy (2 llamadas)", "No new game is known since the dump; update only if you think they played today (2 requests)"));
-        if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta el ", "Data up to ") + (actHastaSfr == null ? "?" : actHastaSfr) + (hayNuevas ? "" : t(" · sin partidas nuevas conocidas", " · no new games known")));
-    }
-    /** Abre el perfil de un jugador; pid 0 = página vacía con el buscador. Pinta al instante lo guardado y va completando página a página. */
+    /** Abre el perfil de un jugador; pid 0 = página vacía con el buscador. El cromo (botones, CardLayout, historial) vive
+     *  aquí; la carga y la pintura son de ui.PerfilView (perfil.alAbrir). */
     @Override public void abrirPerfil(long pid, String nombre) {
         if (perfilBtn != null && !perfilBtn.isSelected()) perfilBtn.setSelected(true);
         directosBtn.setSelected(false);
@@ -1751,979 +1214,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        actividadAbierta = true;
         ((CardLayout) centroCards.getLayout()).show(centroCards, "perfil");
-        subirArriba(actividadPanel);
+        subirArriba(perfil.panel());
         taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        if (pid <= 0) { actTitulo.setText(t("Perfil", "Profile")); actEstado.setText(""); actProgreso.setVisible(false); actMostrarCuerpo(false); perfilBusca.requestFocusInWindow(); refrescarTiraPerfil(); return; }
-        perfilContabilizarPestana(pid, nombre);
-        registrarDestino(new Destino("perfil", pid, nombre, null));
-        if (actCargando && pid == actPid) return;
-        actPid = pid; actNombre = nombre;
-        actTitulo.setText(t("Perfil de ", "Profile of ") + nombre);
-        actNombreReal = nombre;
-        actualizarTextoBuscar();
-        actMasBtn.setVisible(false);
-        Actividad base = SERVICIO_PERFIL.actividad(pid);
-        boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
-        if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
-        else { actMostrarCuerpo(false); actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in.")); }
-        FichaPerfil perfilCache = SERVICIO_PERFIL.fichaConocida(pid);
-        if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
-        if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
-        actCargando = true;
-        actEstado.setText(t("Consultando el perfil…", "Fetching the profile…"));
-        actProgreso.setVisible(true); actProgreso.setIndeterminate(true); actProgreso.setString(t("Perfil…", "Profile…"));
-        Actividad baseF = base;
-        boolean actualizar = base != null && !base.partidas().isEmpty();
-        actOrigenSfr = false; actHastaSfr = null; perfilEstadoHoy();
-        new Thread(() -> {
-            try {
-                ladderAsegurar(false);   // para el Top % (si ya está cargado, no cuesta nada)
-                // 1) sfr-data: el año completo del paquete, sin tocar la API
-                Actividad desdeSfr = null; String hastaSfr = null; String paisSfr = null;
-                try {
-                    AnioSfr anio = SERVICIO_PERFIL.anioSfr(pid, actNombre);
-                    if (anio != null) { desdeSfr = anio.actividad(); hastaSfr = anio.hasta(); paisSfr = anio.pais(); }
-                } catch (Exception ex) { log("perfiles: " + causa(ex)); }
-                if (desdeSfr != null) {
-                    Actividad a = desdeSfr; String hastaF = hastaSfr; String paisF = paisSfr;
-                    ACTIVIDAD_CACHE.put(pid, a);
-                    FichaPerfil perfilConocido = SERVICIO_PERFIL.fichaConocida(pid);
-                    FichaPerfil perfil = perfilConocido != null ? perfilConocido : perfilSintetico(pid, a, paisF);
-                    SwingUtilities.invokeLater(() -> {
-                        actCargando = false;
-                        if (actPid != pid) return;
-                        actOrigenSfr = true; actHastaSfr = hastaF;
-                        actPintarCabecera(perfil);
-                        actProgreso.setVisible(false); actMostrarCuerpo(true); actRellenarModos(a); actPintar();
-                        actEstado.setText(miles(a.partidas().size()) + t(" partidas · último año · de sfr-data", " games · last year · from sfr-data"));
-                        actMasBtn.setVisible(false);
-                        perfilEstadoHoy();
-                    });
-                    return;
-                }
-                // 2) fuera del alcance de sfr-data: la API, con lo mínimo
-                FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
-                SwingUtilities.invokeLater(() -> { if (actPid == pid) actPintarCabecera(perfil); });
-                int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // nuevo: primero 250 partidas; el resto solo si te quedas
-                Actividad a = (fresco && baseF.completo()) ? baseF : SERVICIO_PERFIL.historial(pid, nombre, baseF, false, max, parcialA -> SwingUtilities.invokeLater(() -> {
-                    if (actPid != pid) return;
-                    ACTIVIDAD_CACHE.put(pid, parcialA);
-                    actProgreso.setIndeterminate(false); actProgreso.setMaximum(ACT_MAX_PAGINAS); actProgreso.setValue(Math.min(ACT_MAX_PAGINAS, parcialA.paginas()));
-                    actProgreso.setString(t("Historial: página ", "History: page ") + parcialA.paginas() + t(" de ", " of ") + ACT_MAX_PAGINAS + " · " + miles(parcialA.partidas().size()) + t(" partidas", " games"));
-                    actEstado.setText(t("datos parciales…", "partial data…"));
-                    actMostrarCuerpo(true); actRellenarModos(parcialA); actPintar();
-                }), () -> actPid != pid);
-                SwingUtilities.invokeLater(() -> {
-                    actCargando = false;
-                    if (actPid != pid) return;
-                    actProgreso.setVisible(false); actMostrarCuerpo(true); actRellenarModos(a); actPintar();
-                    // nada se descarga solo: «Cargar más» es una decisión tuya (cada página son 50 partidas y una llamada)
-                });
-            } catch (Exception ex) {
-                SwingUtilities.invokeLater(() -> { actCargando = false; if (actPid == pid) { actProgreso.setVisible(false); actEstado.setText(t("No se pudo cargar el perfil: ", "Couldn't load the profile: ") + causa(ex)); } });
-            }
-        }, "perfil-" + pid).start();
+        perfil.alAbrir(pid, nombre);
     }
 
-    /** «Cargar más»: más páginas del historial (a mano, o solas cuando te quedas en el perfil). */
-    void perfilCargarMas() { perfilCargarMas(ACT_MAS_PAGINAS); }
-    void perfilCargarMas(int paginas) {
-        Actividad base = ACTIVIDAD_CACHE.get(actPid);
-        if (base == null || actCargando || paginas <= 0) return;
-        long pid = actPid; String nombre = actNombre;
-        actCargando = true; actMasBtn.setVisible(false);
-        actProgreso.setVisible(true); actProgreso.setIndeterminate(true); actProgreso.setString(t("Cargando más…", "Loading more…"));
-        new Thread(() -> {
-            try {
-                Actividad a = SERVICIO_PERFIL.historial(pid, nombre, base, true, paginas, parcialA -> SwingUtilities.invokeLater(() -> {
-                    if (actPid != pid) return;
-                    ACTIVIDAD_CACHE.put(pid, parcialA);
-                    actProgreso.setIndeterminate(false); actProgreso.setMaximum(base.paginas() + paginas); actProgreso.setValue(parcialA.paginas());
-                    actProgreso.setString(t("Historial: página ", "History: page ") + parcialA.paginas() + " · " + miles(parcialA.partidas().size()) + t(" partidas", " games"));
-                    actRellenarModos(parcialA); actPintar();
-                }), () -> actPid != pid);
-                SwingUtilities.invokeLater(() -> { actCargando = false; if (actPid == pid) { actProgreso.setVisible(false); actRellenarModos(a); actPintar(); } });
-            } catch (Exception ex) {
-                SwingUtilities.invokeLater(() -> { actCargando = false; if (actPid == pid) { actProgreso.setVisible(false); actEstado.setText(t("No se pudo cargar más: ", "Couldn't load more: ") + causa(ex)); } });
-            }
-        }, "perfil-mas-" + pid).start();
-    }
-
-    void actRellenarModos(Actividad a) {
-        Map<String, Integer> cuenta = new LinkedHashMap<>();
-        for (Match m : a.partidas()) cuenta.merge(m.mode == null ? "?" : m.mode, 1, Integer::sum);
-        List<Map.Entry<String, Integer>> l = new ArrayList<>(cuenta.entrySet());
-        l.sort((x, y) -> y.getValue() - x.getValue());
-        List<String> claves = new ArrayList<>(); claves.add("*");
-        actRellenandoModos = true;
-        try {
-            actModoCombo.removeAllItems();
-            actModoCombo.addItem(t("Todos los modos", "All modes") + " (" + a.partidas().size() + ")");
-            for (Map.Entry<String, Integer> en : l) { claves.add(en.getKey()); actModoCombo.addItem(en.getKey() + " (" + en.getValue() + ")"); }
-            actModoCombo.putClientProperty("claves", claves);
-            if (!claves.contains(actModo)) actModo = "*";
-            actModoCombo.setSelectedIndex(claves.indexOf(actModo));
-        } finally { actRellenandoModos = false; }
-    }
-
-    JLabel chipPerfil(String titulo, String valor, String tooltip) {
-        JLabel l = new JLabel("<html><span style='color:" + colorSecundarioHex() + ";font-size:9.5px;font-weight:bold'>" + escapeHtml(titulo).toUpperCase(Locale.ROOT) + "</span><br><b>" + valor + "</b></html>");
-        l.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(128, 128, 128, 60), 1, true), BorderFactory.createEmptyBorder(1, 6, 1, 6)));
-        if (tooltip != null) l.setToolTipText(tooltip);
-        return l;
-    }
-
-    // ----- Cara a cara: ventana con buscador de rival y ficha del cruce (partidas del historial cargado) -----
-    JDialog h2hDialogo; JTextField h2hBusca; JPopupMenu h2hPopup; javax.swing.Timer h2hDebounce; PanelScrollable h2hCuerpo; JComboBox<String> h2hModo; long h2hPidActual; String h2hNombreActual, h2hMapaFiltro;
-    final List<Object[]> h2hHistorial = new ArrayList<>(); boolean h2hNavegando; JButton h2hAtrasBtn;   // {pid, nombre, mapa, modoIdx}
-    void h2hRegistrar() { if (h2hNavegando) return; Object[] est = { h2hPidActual, h2hNombreActual, h2hMapaFiltro, h2hModo == null ? 0 : h2hModo.getSelectedIndex() }; if (!h2hHistorial.isEmpty()) { Object[] u = h2hHistorial.get(h2hHistorial.size() - 1); if (Objects.equals(u[0], est[0]) && Objects.equals(u[2], est[2]) && Objects.equals(u[3], est[3])) return; } h2hHistorial.add(est); if (h2hAtrasBtn != null) h2hAtrasBtn.setEnabled(h2hHistorial.size() > 1); }
-    void h2hAtras() {
-        if (h2hHistorial.size() < 2) return;
-        h2hHistorial.remove(h2hHistorial.size() - 1);
-        Object[] est = h2hHistorial.get(h2hHistorial.size() - 1);
-        h2hNavegando = true;
-        try {
-            h2hMapaFiltro = (String) est[2];
-            if (h2hModo != null && (Integer) est[3] != h2hModo.getSelectedIndex()) h2hModo.setSelectedIndex((Integer) est[3]);
-            if ((Long) est[0] > 0) h2hFijar((Long) est[0], (String) est[1]); else { h2hPidActual = 0; h2hNombreActual = null; h2hBusca.setText(""); h2hPintarSugerenciasIniciales(); }
-        } finally { h2hNavegando = false; }
-        if (h2hAtrasBtn != null) h2hAtrasBtn.setEnabled(h2hHistorial.size() > 1);
-    }
-    static final String[] H2H_MODOS = { "*", "1v1", "tg", "ew", "dm", "unranked" };
-
-    void mostrarCaraACara() {
-        if (actPid <= 0 || ACTIVIDAD_CACHE.get(actPid) == null) { status.setText(t("Abre primero un perfil con historial cargado.", "Open a profile with its history loaded first.")); return; }
-        if (h2hDialogo != null) { h2hDialogo.dispose(); h2hDialogo = null; }
-        h2hDialogo = new JDialog(this, t("Cara a cara · ", "Head-to-head · ") + actNombre, false);
-        JPanel norte = new JPanel(new BorderLayout(8, 4));
-        norte.setBorder(BorderFactory.createEmptyBorder(8, 10, 4, 10));
-        h2hBusca = new JTextField(22);
-        h2hBusca.putClientProperty("JTextField.placeholderText", t("Rival: escribe un nick (primero salen los de su historial)", "Opponent: type a nick (their history's opponents come first)"));
-        h2hBusca.putClientProperty("JTextField.showClearButton", true);
-        h2hPopup = new JPopupMenu(); h2hPopup.setFocusable(false);
-        h2hDebounce = new javax.swing.Timer(400, e -> h2hSugerirDialogo()); h2hDebounce.setRepeats(false);
-        h2hBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { h2hDebounce.restart(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { h2hDebounce.restart(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { h2hDebounce.restart(); }
-        });
-        h2hBusca.addActionListener(e -> { if (h2hPopup.getComponentCount() > 0) ((JMenuItem) h2hPopup.getComponent(0)).doClick(); });
-        JPanel izq = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        h2hAtrasBtn = new JButton("\u2190"); h2hAtrasBtn.setFocusable(false); h2hAtrasBtn.setMargin(new Insets(1, 7, 1, 7)); h2hAtrasBtn.putClientProperty("JButton.buttonType", "roundRect"); h2hAtrasBtn.setEnabled(false);
-        h2hAtrasBtn.setToolTipText(t("Atrás dentro de esta ventana (también el botón lateral del ratón)", "Back within this window (also the mouse's back button)"));
-        h2hAtrasBtn.addActionListener(e -> h2hAtras());
-        izq.add(h2hAtrasBtn);
-        izq.add(new JLabel(t("Cara a cara de ", "Head-to-head of ") + actNombre + t(" contra:", " against:")));
-        norte.add(izq, BorderLayout.WEST);
-        norte.add(h2hBusca, BorderLayout.CENTER);
-        h2hModo = new JComboBox<>(new String[]{ t("Todos los modos", "All modes"), "1v1 RM", t("Equipos RM", "Team RM"), "Empire Wars", "Deathmatch", "Unranked / Custom" });
-        h2hModo.setToolTipText(t("Modo de las partidas del cruce (y de la lista de rivales)", "Mode of the pairing's games (and of the opponent list)"));
-        h2hModo.addActionListener(e -> { if (h2hNavegando) return; h2hMapaFiltro = null; if (h2hPidActual > 0) h2hFijar(h2hPidActual, h2hNombreActual); else { h2hPintarSugerenciasIniciales(); h2hRegistrar(); } });
-        JPanel der = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0)); der.add(new JLabel(t("Modo:", "Mode:"))); der.add(h2hModo);
-        norte.add(der, BorderLayout.EAST);
-        h2hDialogo.add(norte, BorderLayout.NORTH);
-        h2hCuerpo = new PanelScrollable();
-        h2hCuerpo.setBorder(BorderFactory.createEmptyBorder(6, 10, 10, 10));
-        JScrollPane sp = new JScrollPane(h2hCuerpo, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
-        sp.setBorder(null);
-        h2hDialogo.add(sp, BorderLayout.CENTER);
-        h2hPidActual = 0; h2hMapaFiltro = null; h2hHistorial.clear();
-        h2hPintarSugerenciasIniciales();
-        h2hRegistrar();
-        h2hDialogo.getRootPane().registerKeyboardAction(e -> h2hDialogo.dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        h2hDialogo.setSize(1040, 760); h2hDialogo.setLocationRelativeTo(this); h2hDialogo.setVisible(true);
-        SwingUtilities.invokeLater(h2hBusca::requestFocusInWindow);
-    }
-
-    boolean h2hModoOk(Match m) {
-        String sel = H2H_MODOS[Math.max(0, h2hModo == null ? 0 : h2hModo.getSelectedIndex())];
-        String modo = m.mode == null ? "" : m.mode.toLowerCase(Locale.ROOT);
-        boolean unranked = modo.contains("unranked") || modo.contains("custom");
-        return switch (sel) {
-            case "1v1" -> m.players.size() == 2 && !modo.contains("empire") && !modo.contains("death") && !unranked;
-            case "tg" -> m.players.size() > 2 && !modo.contains("empire") && !modo.contains("death") && !unranked;
-            case "ew" -> modo.contains("empire");
-            case "dm" -> modo.contains("death");
-            case "unranked" -> unranked;
-            default -> true;
-        };
-    }
-
-    /** Rivales del historial (los más frecuentes) con partidas y winrate del cruce, para no tener que escribir. */
-    void h2hPintarSugerenciasIniciales() {
-        h2hCuerpo.removeAll();
-        Actividad a = ACTIVIDAD_CACHE.get(actPid);
-        Map<Long, Object[]> riv = new HashMap<>();   // pid → {nombre, n, w, conRes}
-        if (a != null) for (Match m : a.partidas()) {
-            if (!h2hModoOk(m)) continue;
-            MatchPlayer yo = null; for (MatchPlayer p : m.players) if (p.id == actPid) yo = p;
-            if (yo == null) continue;
-            for (MatchPlayer p : m.players) if (p.id != actPid && p.team != yo.team) { Object[] r = riv.computeIfAbsent(p.id, k -> new Object[]{ p.name, 0, 0, 0 }); r[1] = (Integer) r[1] + 1; if (yo.won != null) { r[3] = (Integer) r[3] + 1; if (yo.won) r[2] = (Integer) r[2] + 1; } }
-        }
-        List<Map.Entry<Long, Object[]>> l = new ArrayList<>(riv.entrySet());
-        l.sort((x, y) -> (Integer) y.getValue()[1] - (Integer) x.getValue()[1]);
-        h2hCuerpo.add(tituloSeccion(t("Rivales más frecuentes en su historial", "Most frequent opponents in their history") + " · " + t("clic para ver el cruce", "click to see the pairing")));
-        JPanel cab = new JPanel(new BorderLayout()); cab.setOpaque(false); cab.setAlignmentX(0f);
-        JLabel c1 = new JLabel(t("Partidas", "Games"), SwingConstants.RIGHT), c2 = new JLabel(t("Winrate de ", "Win rate of ") + actNombre, SwingConstants.RIGHT);
-        c1.setPreferredSize(new Dimension(70, 16)); c2.setPreferredSize(new Dimension(150, 16)); estiloCab(c1); estiloCab(c2);
-        JPanel cabDer = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0)); cabDer.setOpaque(false); cabDer.add(c1); cabDer.add(c2);
-        cab.add(cabDer, BorderLayout.EAST);
-        h2hCuerpo.add(cab);
-        double max = l.isEmpty() ? 1 : (Integer) l.get(0).getValue()[1];
-        int n = 0;
-        for (Map.Entry<Long, Object[]> en : l) {
-            long pid = en.getKey(); String nombre = nombreVisible(pid, (String) en.getValue()[0]); int veces = (Integer) en.getValue()[1], w = (Integer) en.getValue()[2], conRes = (Integer) en.getValue()[3];
-            h2hCuerpo.add(filaRival(pid, nombre, veces / max, veces, w, conRes));
-            if (++n >= 25) break;
-        }
-        if (l.isEmpty()) { JLabel vac = new JLabel(t("Sin rivales en el historial cargado con este modo.", "No opponents in the loaded history with this mode.")); vac.setForeground(Color.GRAY); vac.setAlignmentX(0f); h2hCuerpo.add(vac); }
-        h2hCuerpo.revalidate(); h2hCuerpo.repaint();
-    }
-
-    /** Fila de rival: bandera · nombre · barra · partidas · winrate (color). Clic: el cruce; botón central: su perfil en pestaña nueva. */
-    JPanel filaRival(long pid, String nombre, double fraccion, int n, int w, int conRes) {
-        JPanel f = new JPanel(new BorderLayout(8, 0)) {
-            @Override protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                int x0 = 300, ancho = Math.max(40, getWidth() - x0 - 250);
-                g.setColor(new Color(128, 128, 128, 40)); g.fillRoundRect(x0, getHeight() / 2 - 4, ancho, 8, 4, 4);
-                g.setColor(new Color(90, 140, 220, 200)); g.fillRoundRect(x0, getHeight() / 2 - 4, (int) (ancho * fraccion), 8, 4, 4);
-            }
-        };
-        f.setOpaque(false); f.setAlignmentX(0f); f.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
-        f.setBorder(BorderFactory.createEmptyBorder(2, 4, 2, 4));
-        JLabel nom = new JLabel(nombre, iconoBandera(paisDe(pid)), SwingConstants.LEFT); nom.setIconTextGap(6); nom.setPreferredSize(new Dimension(280, 20)); nom.setFont(nom.getFont().deriveFont(Font.BOLD, 12.5f));
-        f.add(nom, BorderLayout.WEST);
-        JPanel der = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0)); der.setOpaque(false);
-        JLabel ln = new JLabel(miles(n), SwingConstants.RIGHT); ln.setPreferredSize(new Dimension(70, 20));
-        JLabel lw = new JLabel(conRes > 0 ? w + "-" + (conRes - w) + "  ·  " + pct1(100.0 * w / conRes) : "-", SwingConstants.RIGHT); lw.setPreferredSize(new Dimension(150, 20)); lw.setFont(lw.getFont().deriveFont(Font.BOLD)); lw.setForeground(conRes > 0 ? colorWr(w, conRes) : Color.GRAY);
-        der.add(ln); der.add(lw);
-        f.add(der, BorderLayout.EAST);
-        f.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        f.setToolTipText(t("Clic: ver el cruce · botón central: su perfil en pestaña nueva · clic derecho: más", "Click: see the pairing · middle button: their profile in a new tab · right-click: more"));
-        MouseAdapter ma = new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) { if (SwingUtilities.isMiddleMouseButton(e)) abrirPerfilEnPestana(pid, nombre); else if (SwingUtilities.isLeftMouseButton(e)) h2hFijar(pid, nombre); }
-            @Override public void mousePressed(MouseEvent e) { if (e.isPopupTrigger()) menuContextualJugador(pid, nombre, e); }
-            @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) menuContextualJugador(pid, nombre, e); }
-        };
-        f.addMouseListener(ma); nom.addMouseListener(ma);
-        return f;
-    }
-
-    void h2hSugerirDialogo() {
-        String q = h2hBusca.getText().trim();
-        h2hPopup.setVisible(false); h2hPopup.removeAll();
-        if (q.length() < 2) { if (q.isEmpty() && h2hPidActual == 0) h2hPintarSugerenciasIniciales(); return; }
-        Actividad a = ACTIVIDAD_CACHE.get(actPid);
-        Map<Long, String> locales = new LinkedHashMap<>();
-        if (a != null) for (Match m : a.partidas()) for (MatchPlayer p : m.players) if (p.id != actPid && p.name != null && p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))) locales.putIfAbsent(p.id, p.name);
-        int n = 0;
-        for (Map.Entry<Long, String> en : locales.entrySet()) { long pid = en.getKey(); String nombre = nombreVisible(pid, en.getValue()); JMenuItem it = new JMenuItem(nombre + t("  (en su historial)", "  (in their history)"), iconoBandera(paisDe(pid))); it.addActionListener(x -> h2hFijar(pid, nombre)); h2hPopup.add(it); if (++n >= 6) break; }
-        if (n > 0 && h2hBusca.isShowing()) h2hPopup.show(h2hBusca, 0, h2hBusca.getHeight());
-        new Thread(() -> {
-            List<String[]> res = sugerirPerfiles(q);
-            SwingUtilities.invokeLater(() -> {
-                if (h2hBusca == null || !q.equals(h2hBusca.getText().trim())) return;
-                int k = 0;
-                for (String[] r : res) { long pid = Long.parseLong(r[0]); if (locales.containsKey(pid) || pid == actPid) continue; JMenuItem it = new JMenuItem(r[2]); String nombre = r[1]; it.addActionListener(x -> h2hFijar(pid, nombre)); h2hPopup.add(it); if (++k >= 6) break; }
-                if (h2hPopup.getComponentCount() > 0 && h2hBusca.isShowing()) h2hPopup.show(h2hBusca, 0, h2hBusca.getHeight());
-            });
-        }, "h2h-sugerir").start();
-    }
-
-    String formaHtml(List<Boolean> ultimos) {
-        StringBuilder b = new StringBuilder("<html>");
-        for (Boolean g : ultimos) b.append(b.length() > 6 ? " " : "").append("<font color='").append(colorHex(colorWr(g ? 100 : 0, 100))).append("'>").append(g ? t("V", "W") : t("D", "L")).append("</font>");
-        return b.append("</html>").toString();
-    }
-    /** «Todas las partidas»: el año completo del perfil (del paquete de sfr-data o de lo cargado por API) en la pestaña Partidas, con todo lo de la tabla: clic derecho, rec, enviar, resultado. */
-    void verHistorialEnTabla(long pid, String nombre) {
-        Actividad a = ACTIVIDAD_CACHE.get(pid);
-        if (a == null || a.partidas().isEmpty()) { status.setText(t("Sin historial cargado para este perfil.", "No history loaded for this profile.")); return; }
-        List<Match> todas = new ArrayList<>(a.partidas());
-        for (Match m : todas) if (m.refId == 0) m.refId = pid;
-        SUJETOS.clear(); SUJETOS.add(pid);
-        vistaDeSujetos = vistaActualId();
-        refrescarSujetos(List.of(new Player(pid, nombre, "", 0)), false);
-        all.clear(); all.addAll(todas);
-        playersList.clearSelection();
-        refreshModeCombo();
-        applyFilters();
-        mostrarGuiaVacia(false);
-        mostrarDirectos(false);
-        historialEnTabla = pid;
-        status.setText(miles(todas.size()) + t(" partidas · histórico de ", " games · history of ") + nombre + (a.completo() ? t(" · último año · de sfr-data", " · last year · from sfr-data") : t(" · cargadas hasta ahora", " · loaded so far")) + t(" · sin resultado hasta que lo pidas", " · no result until you ask"));
-    }
-    long historialEnTabla;   // pid cuyo histórico está en la tabla (para que la pestaña Partidas no vuelva a buscar)
-    /** Carga en la pestaña Partidas los enfrentamientos del cruce (del historial ya descargado): la tabla los enseña sin resultado. */
-    void verPartidasEntre(List<Match> cruce, long rivalPid, String rivalNombre) {
-        if (cruce.isEmpty()) return;
-        for (Match m : cruce) if (m.refId == 0) m.refId = actPid;
-        SUJETOS.clear(); SUJETOS.add(actPid);
-        vistaDeSujetos = vistaActualId();
-        refrescarSujetos(List.of(new Player(actPid, actNombre, "", 0)), false);
-        all.clear(); all.addAll(cruce);
-        playersList.clearSelection();
-        refreshModeCombo();
-        applyFilters();
-        mostrarGuiaVacia(false);
-        mostrarDirectos(false);
-        if (h2hDialogo != null) { h2hDialogo.setVisible(false); }   // el diálogo se aparta; la app queda delante, en la pestaña Partidas
-        toFront(); requestFocus();
-        status.setText(cruce.size() + t(" partidas entre ", " games between ") + actNombre + t(" y ", " and ") + rivalNombre + t(" · cargadas en la pestaña Partidas (sin resultado hasta que lo pidas).", " · loaded in the Games tab (no result until you ask for it)."));
-    }
-
-    /** La ficha del cruce con un rival concreto. */
-    void h2hFijar(long rivalPid, String rivalNombre) {
-        h2hPopup.setVisible(false);
-        h2hPidActual = rivalPid; h2hNombreActual = rivalNombre;
-        if (!rivalNombre.equals(h2hBusca.getText().trim())) h2hBusca.setText(rivalNombre);
-        h2hRegistrar();
-        Actividad a = ACTIVIDAD_CACHE.get(actPid);
-        h2hCuerpo.removeAll();
-        if (a == null) return;
-        List<Match> cruce = new ArrayList<>(), juntos = new ArrayList<>();
-        int w = 0, l = 0, sinRes = 0, wJ = 0, lJ = 0; Instant primero = null, ultimo = null;
-        List<Boolean> ultimos = new ArrayList<>(); int rachaActual = 0; Boolean rachaGana = null; boolean rachaViva = true;
-        Map<String, int[]> porMapa = new HashMap<>(), porCivs = new HashMap<>(), civYo = new HashMap<>(), civEl = new HashMap<>(), porModo = new LinkedHashMap<>();
-        long eloYoSum = 0, eloElSum = 0; int eloN = 0; long durSum = 0; int durN = 0; long durMax = 0, durMin = Long.MAX_VALUE;
-        List<Match> ordenCrono = new ArrayList<>();
-        for (Match m : a.partidas()) {   // llegan de más nueva a más vieja
-            if (!h2hModoOk(m)) continue;
-            MatchPlayer yo = null, el = null;
-            for (MatchPlayer p : m.players) { if (p.id == actPid) yo = p; else if (p.id == rivalPid) el = p; }
-            if (yo == null || el == null) continue;
-            if (yo.team == el.team) { juntos.add(m); if (yo.won != null) { if (yo.won) wJ++; else lJ++; } continue; }
-            if (h2hMapaFiltro != null && !h2hMapaFiltro.equals(m.map)) continue;
-            cruce.add(m); ordenCrono.add(m);
-            if (m.started != null) { if (ultimo == null) ultimo = m.started; primero = m.started; }
-            String modoL = m.mode == null ? "" : m.mode.toLowerCase(Locale.ROOT);
-            boolean unoRanked = m.players.size() == 2 && !modoL.contains("empire") && !modoL.contains("death") && !modoL.contains("unranked") && !modoL.contains("custom");
-            if (unoRanked && yo.rating != null && el.rating != null) { eloYoSum += yo.rating; eloElSum += el.rating; eloN++; }   // el ELO del cruce, solo con 1v1 RM ranked
-            if (m.started != null && m.finished != null) { long d = Duration.between(m.started, m.finished).getSeconds(); if (d > 120) { durSum += d; durN++; durMax = Math.max(durMax, d); durMin = Math.min(durMin, d); } }
-            Boolean gana = yo.won;
-            if (gana == null) { sinRes++; continue; }
-            if (gana) w++; else l++;
-            if (ultimos.size() < 5) ultimos.add(gana);
-            if (rachaViva) { if (rachaGana == null) { rachaGana = gana; rachaActual = 1; } else if (rachaGana == gana) rachaActual++; else rachaViva = false; }
-            String mapa = m.map == null ? "?" : m.map;
-            int[] pm = porMapa.computeIfAbsent(mapa, k -> new int[2]); pm[0]++; if (gana) pm[1]++;
-            if (yo.civ != null && el.civ != null) { int[] pc = porCivs.computeIfAbsent(yo.civ + " vs " + el.civ, k -> new int[2]); pc[0]++; if (gana) pc[1]++; }
-            if (yo.civ != null) { int[] c = civYo.computeIfAbsent(yo.civ, k -> new int[2]); c[0]++; if (gana) c[1]++; }
-            if (el.civ != null) { int[] c = civEl.computeIfAbsent(el.civ, k -> new int[2]); c[0]++; if (!gana) c[1]++; }
-        }
-        int conRes = w + l;
-        // cabecera: título + botones
-        JPanel cab = new JPanel(new BorderLayout(10, 0)); cab.setOpaque(false); cab.setAlignmentX(0f);
-        JPanel tituloFila = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0)); tituloFila.setOpaque(false);
-        JLabel tYo = new JLabel("<html><span style='font-size:16px'><b>" + escapeHtml(actNombre) + "</b> vs</span></html>");
-        JLabel tEl = new JLabel("<html><span style='font-size:16px'><b><u>" + escapeHtml(rivalNombre) + "</u></b></span></html>", iconoBandera(paisDe(rivalPid), 18), SwingConstants.LEFT);
-        tEl.setIconTextGap(6); tEl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        tEl.setToolTipText(t("Clic o botón central: su perfil en pestaña nueva · clic derecho: más", "Click or middle button: their profile in a new tab · right-click: more"));
-        tEl.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) { if (SwingUtilities.isLeftMouseButton(e) || SwingUtilities.isMiddleMouseButton(e)) abrirPerfilEnPestana(rivalPid, rivalNombre); }
-            @Override public void mousePressed(MouseEvent e) { if (e.isPopupTrigger()) menuContextualJugador(rivalPid, rivalNombre, e); }
-            @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) menuContextualJugador(rivalPid, rivalNombre, e); }
-        });
-        tituloFila.add(tYo); tituloFila.add(tEl);
-        if (h2hMapaFiltro != null) {
-            JLabel tMapa = new JLabel("<html><span style='color:gray;font-size:13px'>· " + escapeHtml(h2hMapaFiltro) + " <u>×</u></span></html>");
-            tMapa.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)); tMapa.setToolTipText(t("Clic: quitar el filtro de mapa", "Click: remove the map filter"));
-            tMapa.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { h2hMapaFiltro = null; h2hFijar(rivalPid, rivalNombre); } });
-            tituloFila.add(tMapa);
-        }
-        cab.add(tituloFila, BorderLayout.CENTER);
-        JPanel botones = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0)); botones.setOpaque(false);
-        JButton perfN = new JButton(t("Su perfil en pestaña nueva", "Their profile in a new tab")); perfN.setFocusable(false); perfN.setMargin(new Insets(1, 8, 1, 8)); perfN.putClientProperty("JButton.buttonType", "roundRect");
-        perfN.addActionListener(e -> abrirPerfilEnPestana(rivalPid, rivalNombre));
-        botones.add(perfN);
-        JButton verP = new JButton(t("Ver sus partidas", "View their games")); verP.setFocusable(false); verP.setMargin(new Insets(1, 8, 1, 8)); verP.putClientProperty("JButton.buttonType", "roundRect");
-        verP.addActionListener(e -> { Player p = new Player(rivalPid, rivalNombre, grupoDestino()); objetivoForzado = p; invitado = p; vistaDelInvitado = vistaActualId(); playersList.clearSelection(); aplicarFiltroGrupo(); mostrarDirectos(false); fetchMatches(fetchBtn); });
-        botones.add(verP);
-        Match viva = VIVO.partida(rivalPid);
-        if (viva != null && enCursoReal(viva) && viva.id > 0) { JButton esp = new JButton(t("Espectar", "Spectate")); esp.setFocusable(false); esp.setMargin(new Insets(1, 8, 1, 8)); esp.putClientProperty("JButton.buttonType", "roundRect"); esp.addActionListener(e -> { if (confirmarEspectar(rivalNombre)) espectarPartida(viva.id); }); botones.add(esp); }
-        cab.add(botones, BorderLayout.EAST);
-        h2hCuerpo.add(cab);
-        if (conRes > 0) {
-            String mejorMapa = null; int[] mm = null; for (Map.Entry<String, int[]> en : porMapa.entrySet()) if (en.getValue()[0] >= 2 && (mm == null || (double) en.getValue()[1] / en.getValue()[0] > (double) mm[1] / mm[0])) { mejorMapa = en.getKey(); mm = en.getValue(); }
-            String civFuerteEl = null; int[] ce = null; for (Map.Entry<String, int[]> en : civEl.entrySet()) if (en.getValue()[0] >= 2 && (ce == null || (double) en.getValue()[1] / en.getValue()[0] > (double) ce[1] / ce[0])) { civFuerteEl = en.getKey(); ce = en.getValue(); }
-            String quien = w > l ? actNombre : l > w ? rivalNombre : null;
-            StringBuilder fr = new StringBuilder();
-            fr.append(quien == null ? t("Cruce igualado: ", "Even pairing: ") + w + "-" + l : quien + t(" domina el cruce: ", " leads the pairing: ") + (w > l ? w + "-" + l : l + "-" + w));
-            if (rachaActual >= 2) fr.append(", ").append(rachaActual).append(rachaGana ? t(" victorias seguidas de ", " wins in a row for ") + actNombre : t(" seguidas para ", " in a row for ") + rivalNombre);
-            if (mejorMapa != null && mm[0] >= 2 && mm[1] > mm[0] - mm[1]) fr.append(t("; mejor en ", "; best on ")).append(mejorMapa).append(" (").append(mm[1]).append("-").append(mm[0] - mm[1]).append(")");
-            if (civFuerteEl != null && ce[1] > ce[0] - ce[1]) fr.append("; ").append(rivalNombre).append(t(" le gana con ", " beats them with ")).append(civFuerteEl).append(" (").append(ce[1]).append("-").append(ce[0] - ce[1]).append(")");
-            fr.append(".");
-            JLabel resumen = new JLabel(fr.toString()); resumen.setFont(resumen.getFont().deriveFont(Font.PLAIN, 12.5f)); resumen.setAlignmentX(0f); resumen.setBorder(BorderFactory.createEmptyBorder(2, 2, 0, 0));
-            h2hCuerpo.add(resumen);
-        }
-        h2hCuerpo.add(Box.createVerticalStrut(6));
-        // fichas de ambos, lado a lado (ELO y puesto actuales)
-        JPanel fichas = new JPanel(new GridLayout(1, 2, 12, 0)); fichas.setOpaque(false); fichas.setAlignmentX(0f); fichas.setMaximumSize(new Dimension(Integer.MAX_VALUE, 46));
-        fichas.add(fichaJugadorH2h(actPid, actNombre)); fichas.add(fichaJugadorH2h(rivalPid, rivalNombre));
-        h2hCuerpo.add(fichas);
-        h2hCuerpo.add(Box.createVerticalStrut(8));
-        if (cruce.isEmpty()) {
-            JLabel vac = new JLabel(t("No se han enfrentado en el historial cargado (", "No games between them in the loaded history (") + (a.completo() ? t("último año", "last year") : miles(a.partidas().size()) + t(" partidas", " games")) + (h2hMapaFiltro != null ? ", " + h2hMapaFiltro : "") + ")."); vac.setForeground(Color.GRAY); vac.setAlignmentX(0f); h2hCuerpo.add(vac);
-            if (!juntos.isEmpty()) { h2hCuerpo.add(Box.createVerticalStrut(6)); JLabel jl = new JLabel(t("Como aliados: ", "As allies: ") + juntos.size() + t(" partidas · ", " games · ") + wJ + "-" + lJ); jl.setAlignmentX(0f); h2hCuerpo.add(jl); }
-            h2hCuerpo.revalidate(); h2hCuerpo.repaint(); return;
-        }
-        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("d MMM yyyy", "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES"));
-        long diasUltimo = ultimo == null ? -1 : Duration.between(ultimo, Instant.now()).toDays();
-        double meses = primero == null || ultimo == null ? 1 : Math.max(1, Duration.between(primero, ultimo).toDays() / 30.0);
-        JPanel fila1 = new JPanel(new GridLayout(1, 0, 8, 0)); fila1.setOpaque(false); fila1.setAlignmentX(0f); fila1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
-        fila1.add(listas.tarjeta(t("Partidas", "Games"), miles(cruce.size()), (sinRes > 0 ? sinRes + t(" sin resultado · ", " without result · ") : "") + String.format(Locale.ROOT, "%.1f", cruce.size() / meses).replace('.', ',') + t(" al mes", " per month")));
-        fila1.add(listas.tarjeta(t("Balance", "Record"), w + "-" + l, conRes > 0 ? pct1(100.0 * w / conRes) + t(" para ", " for ") + actNombre : t("sin resultados", "no results")));
-        fila1.add(listas.tarjeta(t("Forma", "Form"), ultimos.isEmpty() ? "-" : formaHtml(ultimos), t("últimas ", "last ") + ultimos.size() + t(", la más reciente a la izquierda", ", most recent on the left")));
-        fila1.add(listas.tarjeta(t("Racha actual", "Current streak"), rachaActual == 0 ? "-" : String.valueOf(rachaActual), rachaActual == 0 ? "" : (rachaGana ? t("seguidas de ", "in a row for ") + actNombre : t("seguidas de ", "in a row for ") + rivalNombre)));
-        fila1.add(listas.tarjeta(t("Último cruce", "Last game"), diasUltimo < 0 ? "-" : diasUltimo == 0 ? t("hoy", "today") : t("hace ", "") + diasUltimo + t(" días", " days ago"), (primero == null ? "" : t("primero: ", "first: ") + primero.atZone(ZoneId.systemDefault()).format(fmt)) + (ultimo == null ? "" : " · " + ultimo.atZone(ZoneId.systemDefault()).format(fmt))));
-        h2hCuerpo.add(fila1);
-        h2hCuerpo.add(Box.createVerticalStrut(6));
-        JPanel fila2 = new JPanel(new GridLayout(1, 0, 8, 0)); fila2.setOpaque(false); fila2.setAlignmentX(0f); fila2.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
-        if (!juntos.isEmpty()) fila2.add(listas.tarjeta(t("Como aliados", "As allies"), miles(juntos.size()), wJ + "-" + lJ + t(" juntos", " together")));
-        if (eloN > 0) fila2.add(listas.tarjeta(t("ELO del cruce (1v1 RM)", "Pairing ELO (1v1 RM)"), Math.round(eloYoSum / (double) eloN) + " / " + Math.round(eloElSum / (double) eloN), t("media de cada uno · diferencia ", "average of each · gap ") + (Math.round(eloYoSum / (double) eloN) - Math.round(eloElSum / (double) eloN) >= 0 ? "+" : "") + (Math.round(eloYoSum / (double) eloN) - Math.round(eloElSum / (double) eloN))));
-        if (durN > 0) fila2.add(listas.tarjeta(t("Duración media", "Average duration"), duracionMedia(durSum, durN), t("de las partidas entre ambos", "of the games between them")));
-        if (fila2.getComponentCount() > 0) h2hCuerpo.add(fila2);
-        h2hCuerpo.add(Box.createVerticalStrut(10));
-        JPanel columnas = new JPanel(new GridLayout(1, 2, 16, 0)); columnas.setOpaque(false); columnas.setAlignmentX(0f);
-        JPanel c1 = new JPanel(); c1.setLayout(new BoxLayout(c1, BoxLayout.Y_AXIS)); c1.setOpaque(false);
-        JPanel c2 = new JPanel(); c2.setLayout(new BoxLayout(c2, BoxLayout.Y_AXIS)); c2.setOpaque(false);
-        Map<String, Runnable> clicMapa = new HashMap<>(); for (String k : porMapa.keySet()) clicMapa.put(k, () -> { h2hMapaFiltro = k; h2hFijar(rivalPid, rivalNombre); });
-        pintarListaAgg(c1, t("Winrate por mapa · ", "Win rate by map · ") + actNombre + t(" · clic: filtrar", " · click: filter"), porMapa, 10, k -> k, h2hMapaFiltro == null ? clicMapa : null, k -> iconoMapa(k, 18));
-        pintarListaAgg(c2, t("Civ contra civ", "Civ vs civ"), porCivs, 10, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k.substring(0, k.indexOf(" vs "))), 18));
-        columnas.add(c1); columnas.add(c2);
-        h2hCuerpo.add(columnas);
-        h2hCuerpo.add(Box.createVerticalStrut(8));
-        JPanel columnas2 = new JPanel(new GridLayout(1, 2, 16, 0)); columnas2.setOpaque(false); columnas2.setAlignmentX(0f);
-        JPanel c3 = new JPanel(); c3.setLayout(new BoxLayout(c3, BoxLayout.Y_AXIS)); c3.setOpaque(false);
-        JPanel c4 = new JPanel(); c4.setLayout(new BoxLayout(c4, BoxLayout.Y_AXIS)); c4.setOpaque(false);
-        pintarListaAgg(c3, t("Mejores civs · ", "Best civs · ") + actNombre, civYo, 5, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
-        pintarListaAgg(c4, t("Mejores civs · ", "Best civs · ") + rivalNombre, civEl, 5, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
-        columnas2.add(c3); columnas2.add(c4);
-        h2hCuerpo.add(columnas2);
-        h2hCuerpo.add(Box.createVerticalStrut(10));
-        // cada uno por su lado: dos columnas alineadas, el rival desde sfr-data (sin llamadas)
-        JPanel comparacion = new JPanel(); comparacion.setLayout(new BoxLayout(comparacion, BoxLayout.Y_AXIS)); comparacion.setOpaque(false); comparacion.setAlignmentX(0f);
-        comparacion.add(tituloSeccion(t("Cada uno por su lado", "Each on their own") + " \u00B7 " + t("último año", "last year")));
-        JLabel cargando = new JLabel(t("cargando el perfil del rival…", "loading the opponent's profile…")); cargando.setForeground(colorSecundario()); cargando.setAlignmentX(0f); comparacion.add(cargando);
-        h2hCuerpo.add(comparacion);
-        h2hCuerpo.add(Box.createVerticalStrut(10));
-        new Thread(() -> {
-            Actividad ar = ACTIVIDAD_CACHE.get(rivalPid);
-            if (ar == null) { try { AnioSfr an = SERVICIO_PERFIL.anioSfr(rivalPid, actNombre); if (an != null) { ar = an.actividad(); ACTIVIDAD_CACHE.put(rivalPid, ar); } } catch (Exception ex) { log("h2h rival: " + causa(ex)); } }   // actNombre: ver DEUDA (nombre del rival)
-            final Actividad arF = ar;
-            SwingUtilities.invokeLater(() -> {
-                if (h2hPidActual != rivalPid) return;
-                comparacion.remove(cargando);
-                if (arF == null) { JLabel no = new JLabel(t("El rival no está en sfr-data; abre su perfil para cargarlo por la API.", "The opponent isn't in sfr-data; open their profile to load it from the API.")); no.setForeground(colorSecundario()); no.setAlignmentX(0f); comparacion.add(no); }
-                else {
-                    Map<String, Map<String, int[]>> mio = resumenLado(a, actPid), suyo = resumenLado(arF, rivalPid);
-                    for (String[] sec : new String[][]{ { "mapas", t("Winrate por mapa", "Win rate by map") }, { "civs", t("Winrate por civ", "Win rate by civ") }, { "duracion", t("Por duración (min)", "By duration (min)") }, { "posicion", t("Pocket o flanco", "Pocket or flank") } }) {
-                        JPanel par = new JPanel(new GridLayout(1, 2, 16, 0)); par.setOpaque(false); par.setAlignmentX(0f);
-                        JPanel l1 = new JPanel(); l1.setLayout(new BoxLayout(l1, BoxLayout.Y_AXIS)); l1.setOpaque(false);
-                        JPanel l2 = new JPanel(); l2.setLayout(new BoxLayout(l2, BoxLayout.Y_AXIS)); l2.setOpaque(false);
-                        java.util.function.Function<String, Icon> ic = "mapas".equals(sec[0]) ? k -> iconoMapa(k, 18) : "civs".equals(sec[0]) ? k -> iconoCiv(techTree.claveCivDeNombre(k), 18) : null;
-                        pintarListaAgg(l1, sec[1] + " \u00B7 " + actNombre, mio.get(sec[0]), 5, k -> k, null, ic);
-                        pintarListaAgg(l2, sec[1] + " \u00B7 " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic);
-                        par.add(l1); par.add(l2);
-                        comparacion.add(par); comparacion.add(Box.createVerticalStrut(6));
-                    }
-                }
-                comparacion.revalidate(); comparacion.repaint();
-            });
-        }, "h2h-comparar").start();
-        JButton verEntre = new JButton(t("Ver las partidas entre ambos en Partidas (sin spoilers)", "See the games between them in Games (spoiler-free)"));
-        verEntre.setFocusable(false); verEntre.setMargin(new Insets(2, 10, 2, 10)); verEntre.putClientProperty("JButton.buttonType", "roundRect"); verEntre.setAlignmentX(0f);
-        verEntre.setToolTipText(t("Carga en la pestaña Partidas los enfrentamientos del historial (con el modo y el mapa elegidos aquí): sin resultado y con la rec a un clic", "Loads the pairing's games from the history into the Games tab (with the mode and map chosen here): no result, rec one click away"));
-        final List<Match> cruceF = new ArrayList<>(cruce);
-        verEntre.addActionListener(e -> verPartidasEntre(cruceF, rivalPid, rivalNombre));
-        h2hCuerpo.add(verEntre);
-        h2hCuerpo.revalidate(); h2hCuerpo.repaint();
-        subirArriba(h2hCuerpo);
-    }
-
-    /** Resumen de un jugador para la comparación: winrate por mapa, por civ, por duración y pocket/flanco, respetando el modo elegido en la ventana. */
-    Map<String, Map<String, int[]>> resumenLado(Actividad a, long pid) {
-        Map<String, int[]> mapas = new HashMap<>(), civs = new HashMap<>(), dur = new LinkedHashMap<>(), pos = new LinkedHashMap<>();
-        for (String d : DURACION_TRAMOS) dur.put(d, new int[2]);
-        for (Match m : a.partidas()) {
-            if (!h2hModoOk(m)) continue;
-            MatchPlayer yo = null; for (MatchPlayer p : m.players) if (p.id == pid) yo = p;
-            if (yo == null || yo.won == null) continue;
-            boolean g = yo.won;
-            if (m.map != null) { int[] x = mapas.computeIfAbsent(m.map, k -> new int[2]); x[0]++; if (g) x[1]++; }
-            if (yo.civ != null) { int[] x = civs.computeIfAbsent(yo.civ, k -> new int[2]); x[0]++; if (g) x[1]++; }
-            int td = tramoDuracion(m); if (td >= 0) { int[] x = dur.get(DURACION_TRAMOS[td]); x[0]++; if (g) x[1]++; }
-            String p = posicionEnEquipo(m, yo); if (p != null) { int[] x = pos.computeIfAbsent(posicionNombre(p), k -> new int[2]); x[0]++; if (g) x[1]++; }
-        }
-        dur.values().removeIf(v -> v[0] == 0);
-        Map<String, Map<String, int[]>> out = new HashMap<>(); out.put("mapas", mapas); out.put("civs", civs); out.put("duracion", dur); out.put("posicion", pos);
-        return out;
-    }
-    /** Ficha compacta de un jugador para el cara a cara: bandera, nick, ELO y puesto en 1v1 y equipos (se pide en segundo plano si no está). */
-    JPanel fichaJugadorH2h(long pid, String nombre) {
-        JPanel f = new JPanel(new BorderLayout(8, 0)); f.setOpaque(false);
-        f.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(128, 128, 128, 70), 1, true), BorderFactory.createEmptyBorder(4, 8, 4, 8)));
-        JLabel l = new JLabel(nombre, iconoBandera(paisDe(pid), 18), SwingConstants.LEFT); l.setIconTextGap(6); l.setFont(l.getFont().deriveFont(Font.BOLD, 13f));
-        f.add(l, BorderLayout.WEST);
-        JLabel datos = new JLabel();
-        datos.setFont(datos.getFont().deriveFont(Font.PLAIN, 12f));
-        FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(pid);
-        if (perfil == null && ELO_AYER.get(pid) != null) {   // del snapshot nocturno: sin llamada
-            int[] sn = ELO_AYER.get(pid); Map<String, int[]> mm = new HashMap<>();
-            if (sn[0] > 0) mm.put("rm_1v1", new int[]{ sn[0], 0, 0, 0, 0 }); if (sn[2] > 0) mm.put("rm_team", new int[]{ sn[2], 0, 0, 0, 0 });
-            perfil = new FichaPerfil(mm, NOMBRES_AYER.getOrDefault(pid, new String[]{ "", "" })[1], "", 0L);
-        }
-        if (perfil == null) {
-            datos.setText(t("cargando…", "loading…")); datos.setForeground(Color.GRAY);
-            new Thread(() -> { FichaPerfil p2 = SERVICIO_PERFIL.ficha(pid); SwingUtilities.invokeLater(() -> pintarDatosFicha(datos, p2)); }, "h2h-ficha").start();
-        } else pintarDatosFicha(datos, perfil);
-        f.add(datos, BorderLayout.CENTER);
-        return f;
-    }
-    void pintarDatosFicha(JLabel datos, FichaPerfil perfil) {
-        if (perfil == null) { datos.setText(""); return; }
-        Map<String, int[]> m = perfil.ladders();
-        StringBuilder h = new StringBuilder("<html>");
-        for (String lb : new String[]{ "rm_1v1", "rm_team" }) { int[] v = m.get(lb); if (v == null || v[0] <= 0) continue; if (h.length() > 6) h.append("&nbsp;&nbsp;·&nbsp;&nbsp;"); h.append("<span style='color:gray'>").append(escapeHtml(ladderNombre(lb))).append("</span> <b>").append(v[0]).append("</b>").append(v[1] > 0 ? " <span style='color:gray'>#" + miles(v[1]) + "</span>" : ""); }
-        datos.setText(h.append("</html>").toString()); datos.setForeground(UIManager.getColor("Label.foreground"));
-    }
-
-    // ----- Cabecera del perfil: cuentas vinculadas visibles (con ELO) y menú contextual en el nombre -----
-    void actPintarVinculadas() {
-        if (actVinculadasPanel == null) return;
-        long pid = actPid;
-        List<Perfil.Vinculada> v = SERVICIO_PERFIL.vinculadasConocidas(pid);
-        actVinculadasPanel.removeAll();
-        JLabel etq = new JLabel(t("Cuentas vinculadas:", "Linked accounts:")); etq.setFont(etq.getFont().deriveFont(Font.BOLD, 13f));
-        actVinculadasPanel.add(etq);
-        if (v == null && !vinculadasPedidas.contains(pid)) {   // no se consulta sola: un clic, y se recuerda para la sesión
-            JLabel b = new JLabel("<html><u>" + t("comprobar", "check") + "</u></html>"); b.setForeground(colorSecundario()); b.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            b.setToolTipText(t("Busca cuentas vinculadas (una llamada, más una por cuenta para su ELO)", "Looks up linked accounts (one request, plus one per account for its ELO)"));
-            b.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { vinculadasPedidas.add(pid); actPintarVinculadas(); } });
-            actVinculadasPanel.add(b);
-        } else if (v == null) {
-            JLabel b = new JLabel(t("buscando…", "looking up…")); b.setForeground(Color.GRAY); actVinculadasPanel.add(b);
-            new Thread(() -> {
-                SERVICIO_PERFIL.vinculadasConElo(pid);   // las recuerda para la sesión, con el ELO de cada una
-                SwingUtilities.invokeLater(() -> { if (actPid == pid) actPintarVinculadas(); });
-            }, "perfil-vinculadas").start();
-        } else if (v.isEmpty()) {
-            JLabel b = new JLabel(t("ninguna conocida", "none known")); b.setForeground(Color.GRAY); actVinculadasPanel.add(b);
-        } else {
-            for (Perfil.Vinculada x : v) {
-                long vid = x.pid(); String nombre = nombreVisible(vid, String.valueOf(x.nombre()));
-                Integer elo = SERVICIO_PERFIL.eloVinculada(vid);
-                JLabel l = new JLabel("<html><u>" + escapeHtml(nombre) + "</u>" + (elo != null && elo > 0 ? " <span style='color:gray'>(" + elo + ")</span>" : "") + (containsPlayerId(vid) ? " <span style='color:gray'>\u2605</span>" : "") + "</html>", iconoBandera(x.pais() != null ? String.valueOf(x.pais()) : paisDe(vid)), SwingConstants.LEFT);
-                l.setIconTextGap(4); l.setFont(l.getFont().deriveFont(Font.BOLD, 13f));
-                l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                l.setToolTipText(t("Clic: abrir su perfil · botón central o clic derecho: en pestaña nueva", "Click: open their profile · middle or right button: in a new tab"));
-                l.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { if (SwingUtilities.isLeftMouseButton(e)) abrirPerfil(vid, nombre); else abrirPerfilEnPestana(vid, nombre); } });
-                actVinculadasPanel.add(l);
-            }
-        }
-        actVinculadasPanel.revalidate(); actVinculadasPanel.repaint();
-    }
-    JPanel actVinculadasPanel; JLabel actNotaLinea; String actNombreReal = ""; final Set<Long> vinculadasPedidas = new HashSet<>();
-
-    void actMenuNombre(MouseEvent e, Component sobre) {
-        long pid = actPid; String nombre = actNombre;
-        if (pid <= 0) return;
-        JPopupMenu menu = new JPopupMenu();
-        JMenuItem perfN = new JMenuItem(t("Perfil en pestaña nueva", "Profile in a new tab")); perfN.addActionListener(a -> abrirPerfilEnPestana(pid, nombre)); menu.add(perfN);
-        menu.add(menuPerfilNavegador(pid));
-        if (twitchLive.containsKey(pid)) { JMenuItem tw = new JMenuItem(t("Ver directo en Twitch", "Watch live on Twitch")); tw.addActionListener(a -> abrirUrl("https://twitch.tv/" + twitchLive.get(pid)[0])); menu.add(tw); }
-        JMenu enPartida = menuEnPartida(pid); if (enPartida != null) menu.add(enPartida);
-        menu.addSeparator();
-        if (!containsPlayerId(pid)) {
-            JMenu anadir = new JMenu(t("Añadir a mi watchlist", "Add to my watchlist"));
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.add(GRUPO_GENERAL); for (Player x : todosJugadores) gs.add(x.grupo()); gs.addAll(gruposConfig());
-            for (String g : gs) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> ficharDesdeTop(new Player(pid, nombre, g), g)); anadir.add(it); }
-            menu.add(anadir);
-        } else { JMenuItem ya = new JMenuItem(t("(ya está en tu watchlist)", "(already in your watchlist)")); ya.setEnabled(false); menu.add(ya); }
-        JMenuItem vinc = new JMenuItem(t("Cuentas vinculadas…", "Linked accounts…")); vinc.addActionListener(a -> mostrarVinculadas(pid, nombre)); menu.add(vinc);
-        menu.addSeparator();
-        JMenuItem alias = new JMenuItem(t("Mostrar como…", "Show as…")); alias.addActionListener(a -> { pedirAlias(pid, nombre); actPintarCabecera(SERVICIO_PERFIL.fichaConocida(pid)); }); menu.add(alias);
-        JMenuItem nota = new JMenuItem(t("Nota…", "Note…")); nota.addActionListener(a -> { pedirNota(pid, nombre); actPintarCabecera(SERVICIO_PERFIL.fichaConocida(pid)); }); menu.add(nota);
-        if (notaDe(pid) != null) { JMenuItem bn = new JMenuItem(t("Borrar nota", "Delete note")); bn.addActionListener(a -> { borrarNota(pid, nombre); actPintarCabecera(SERVICIO_PERFIL.fichaConocida(pid)); }); menu.add(bn); }
-        JMenuItem nicks = new JMenuItem(t("Nicks anteriores…", "Previous names…")); nicks.addActionListener(a -> nicksAnteriores(pid, nombre)); menu.add(nicks);
-        menu.show(sobre, e.getX(), e.getY());
-    }
-
-    /** Cabecera: país y clan, un chip por ladder con ELO · rango · Top %, máximo y totales, y la forma reciente. */
-    void actPintarCabecera(FichaPerfil perfil) {
-        actChips.removeAll();
-        actPintarVinculadas();
-        actNotaLinea.setText(notaDe(actPid) != null ? "\u270E " + notaDe(actPid) : (ALIASES.get(actPid) != null && !ALIASES.get(actPid).isBlank() ? t("Mostrado como ", "Shown as ") + ALIASES.get(actPid) + t(" · nick real ", " · real nick ") + actNombreReal : ""));
-        actNotaLinea.setVisible(!actNotaLinea.getText().isEmpty());
-        String pais = perfil == null ? "" : String.valueOf(perfil.pais()), clan = perfil == null ? "" : String.valueOf(perfil.clan());
-        long games = perfil == null ? 0 : perfil.partidas();
-        StringBuilder sub = new StringBuilder();
-        if (!pais.isBlank()) sub.append(pais.toUpperCase(Locale.ROOT));
-        if (!clan.isBlank()) sub.append(sub.length() > 0 ? "  ·  " : "").append(t("clan ", "clan ")).append(clan);
-        if (games > 0) sub.append(sub.length() > 0 ? "  ·  " : "").append(miles(games)).append(t(" partidas en total", " games in total"));
-        String canal = CANAL_DE.get(actPid);
-        if (canal != null && !canal.isBlank()) sub.append(sub.length() > 0 ? "  ·  " : "").append("twitch.tv/").append(canal);
-        actSubtitulo.setText(sub.length() == 0 ? t("Sin datos de perfil", "No profile data") : sub.toString());
-        actSubtitulo.setIcon(iconoBandera(pais)); actSubtitulo.setIconTextGap(6);
-        if (perfil != null) {
-            Map<String, int[]> m = perfil.ladders();
-            for (String lb : LADDER_IDS) {
-                int[] v = m.get(lb);
-                if (v == null || v[0] <= 0) continue;
-                String top = percentilRating(lb, true, v[0]);   // Top % entre los jugadores ACTIVOS (≥10 partidas en 28 días), que es contra quien juegas; si no hay campana de activos, contra todos
-                if (top == null && v[1] > 0) top = percentilRango(lb, v[1]);
-                StringBuilder val = new StringBuilder("<span style='font-size:13px'>" + v[0] + "</span>");
-                if (v[1] > 0) val.append(" <span style='font-weight:normal'>#").append(miles(v[1])).append("</span>");
-                if (top != null) val.append(" <span style='color:gray;font-weight:normal'>").append(escapeHtml(top)).append("</span>");
-                if (v.length > 2 && v[2] > 0) val.append("<br><span style='font-weight:normal;font-size:10px;color:gray'>").append(t("máx ", "peak ")).append("</span><span style='font-weight:normal;font-size:10px'>").append(v[2]).append("</span>");
-                String tip = (v.length > 2 && v[2] > 0 ? t("Máximo ", "Peak ") + v[2] : "") + (v.length > 4 && v[3] + v[4] > 0 ? (v.length > 2 && v[2] > 0 ? " · " : "") + v[3] + "-" + v[4] + t(" en total (", " in total (") + pct1(100.0 * v[3] / (v[3] + v[4])) + ")" : "");
-                if (top != null) tip = (tip.isBlank() ? "" : tip + " · ") + t("Top % entre los jugadores activos (al menos una partida en los últimos 28 días); el # es el puesto en el ladder completo", "Top % among active players (at least one game in the last 28 days); # is the rank in the full ladder");
-                actChips.add(chipPerfil(ladderNombre(lb), val.toString(), tip.isBlank() ? null : tip));
-            }
-            for (String lbTot : new String[]{ "rm_1v1", "rm_team" }) {
-                int[] tot = m.get(lbTot);
-                if (tot == null || tot.length < 5 || tot[3] + tot[4] == 0) continue;
-                actChips.add(chipPerfil(ladderNombre(lbTot) + t(" en total", " overall"), "<b>" + miles(tot[3]) + "</b> " + t("victorias", "wins") + " - <b>" + miles(tot[4]) + "</b> " + t("derrotas", "losses") + " · <b>" + escapeHtml(pct1(100.0 * tot[3] / (tot[3] + tot[4]))) + "</b> · " + miles(tot[3] + tot[4]) + t(" partidas", " games"), null));
-            }
-        }
-        actChips.revalidate(); actChips.repaint();
-    }
-
-    void actPintar() {
-        Actividad a = ACTIVIDAD_CACHE.get(actPid);
-        if (a == null) return;
-        ZoneId zona = ZoneId.systemDefault();
-        LocalDate hoy = LocalDate.now(zona), inicio = hoy.minusDays(ACT_DIAS - 1);
-        Map<LocalDate, Integer> porDia = new HashMap<>();
-        int[] semana = new int[7], semanaW = new int[7], semanaN = new int[7];
-        int[] horas = new int[24], horasW = new int[24], horasN = new int[24];
-        Map<String, int[]> meses = new TreeMap<>();
-        Map<String, int[]> civs = new HashMap<>(), civsRival = new HashMap<>(), mapas = new HashMap<>(), tramos = new HashMap<>();
-        int[] durN = new int[5], durW = new int[5];                                     // winrate por duración (tramos de aoe2insights)
-        Map<String, int[]> posicion = new LinkedHashMap<>(), posicionMapa = new LinkedHashMap<>();   // pocket/flanco (3v3 y 4v4) y por mapa
-        Map<String, int[]> civs30 = new HashMap<>(), mapas30 = new HashMap<>();          // últimos 30 días
-        Instant hace30 = Instant.now().minus(Duration.ofDays(30));
-        int eloActualJugador = 0;
-        { FichaPerfil pf = SERVICIO_PERFIL.fichaConocida(actPid); if (pf != null && pf.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) eloActualJugador = v[0]; if (eloActualJugador == 0) { Integer e = eloWatch.get(actPid); if (e != null && e > 0) eloActualJugador = e; } }
-        String[] franjas = null;
-        Map<Long, Object[]> rivales = new HashMap<>(), aliados = new HashMap<>();   // pid → {nombre, n, w}
-        String modoGrafica = "*".equals(actModo) ? modoPrincipal(a) : actModo;   // la gráfica de ELO va siempre por ladder
-        List<long[]> serie = new ArrayList<>();   // {epochMs, rating tras la partida, diff}, de más nueva a más vieja (como llega)
-        int partidas = 0, conResultado = 0, victorias = 0; long duracion = 0; int conDuracion = 0;
-        int f10 = 0, fW = 0, fL = 0, fDiff = 0, fRacha = 0; Boolean fRachaGana = null; boolean fRachaViva = true;
-        for (Match m : a.partidas()) {
-            if (!"*".equals(actModo) && !actModo.equals(m.mode)) continue;
-            if (!enPeriodo(m)) continue;
-            MatchPlayer yo = null;
-            for (MatchPlayer p : m.players) if (p.id == actPid) { yo = p; break; }
-            if (yo == null) continue;
-            partidas++;
-            ZonedDateTime z = m.started.atZone(zona);
-            porDia.merge(z.toLocalDate(), 1, Integer::sum);
-            int dow = z.getDayOfWeek().getValue() - 1;
-            int h = z.getHour();
-            String mes = z.getYear() + "-" + String.format("%02d", z.getMonthValue());
-            int[] mm = meses.computeIfAbsent(mes, k -> new int[2]);
-            semana[dow]++; horas[h]++; mm[0]++;
-            if (yo.ratingDiff != null && m.finished != null && modoGrafica != null && modoGrafica.equals(m.mode) && serie.size() < 100) serie.add(new long[]{ m.started.toEpochMilli(), yo.rating == null ? 0 : yo.rating, yo.ratingDiff });   // el rating de la API no es fiable en algunas partidas: la curva se reconstruye después desde el ELO actual
-            Boolean gano = yo.won;
-            if (gano != null && m.finished != null) {
-                conResultado++; if (gano) victorias++;
-                if (f10 < 10) {   // forma de las 10 más recientes
-                    f10++;
-                    if (gano) fW++; else fL++;
-                    if (yo.ratingDiff != null) fDiff += yo.ratingDiff;
-                    if (fRachaViva) {
-                        if (fRachaGana == null) { fRachaGana = gano; fRacha = 1; }
-                        else if (fRachaGana == gano) fRacha++;
-                        else fRachaViva = false;
-                    }
-                }
-                semanaN[dow]++; horasN[h]++; if (gano) { semanaW[dow]++; horasW[h]++; mm[1]++; }
-                if (m.finished.isAfter(m.started)) { duracion += Duration.between(m.started, m.finished).getSeconds(); conDuracion++; }
-                String civ = yo.civ == null || yo.civ.isBlank() ? "?" : yo.civ;
-                int[] c = civs.computeIfAbsent(civ, k -> new int[2]); c[0]++; if (gano) c[1]++;
-                if (m.map != null && !m.map.isBlank()) { int[] x = mapas.computeIfAbsent(m.map, k -> new int[2]); x[0]++; if (gano) x[1]++; }
-                if (m.started != null && m.started.isAfter(hace30)) { int[] c30 = civs30.computeIfAbsent(civ, k -> new int[2]); c30[0]++; if (gano) c30[1]++; if (m.map != null && !m.map.isBlank()) { int[] x30 = mapas30.computeIfAbsent(m.map, k -> new int[2]); x30[0]++; if (gano) x30[1]++; } }
-                { int td = tramoDuracion(m); if (td >= 0) { durN[td]++; if (gano) durW[td]++; } }
-                if ("Team Random Map".equals(m.mode)) { String pos = posicionEnEquipo(m, yo); if (pos != null) { int[] px = posicion.computeIfAbsent(pos, k -> new int[2]); px[0]++; if (gano) px[1]++; if (m.map != null) { int[] pm = posicionMapa.computeIfAbsent(m.map + "\u0000" + pos, k -> new int[2]); pm[0]++; if (gano) pm[1]++; } } }   // solo ranked de equipos
-                if (eloActualJugador == 0 && yo.rating != null && yo.rating > 0 && m.mode != null && m.mode.contains("1v1")) eloActualJugador = yo.rating + (yo.ratingDiff == null ? 0 : yo.ratingDiff);   // el ELO más reciente conocido
-                int rivalRating = 0, nRivales = 0;
-                for (MatchPlayer p : m.players) {
-                    if (p.id == actPid) continue;
-                    if (p.team != yo.team) {
-                        Object[] r = rivales.computeIfAbsent(p.id, k -> new Object[]{ p.name, 0, 0 });
-                        r[1] = (int) r[1] + 1; if (gano) r[2] = (int) r[2] + 1;
-                        if (p.rating != null) { rivalRating += p.rating; nRivales++; }
-                        if (m.players.size() == 2 && p.civ != null && !p.civ.isBlank()) { int[] x = civsRival.computeIfAbsent(p.civ, k -> new int[2]); x[0]++; if (gano) x[1]++; }
-                    } else {
-                        Object[] r = aliados.computeIfAbsent(p.id, k -> new Object[]{ p.name, 0, 0 });
-                        r[1] = (int) r[1] + 1; if (gano) r[2] = (int) r[2] + 1;
-                    }
-                }
-                if (nRivales > 0) {
-                    if (franjas == null) franjas = franjasCentradas(eloActualJugador > 0 ? eloActualJugador : (int) Math.round(rivalRating / (double) nRivales));
-                    String tr = franjaDe(rivalRating / (double) nRivales, franjas, eloActualJugador > 0 ? eloActualJugador : (int) Math.round(rivalRating / (double) nRivales));
-                    int[] x = tramos.computeIfAbsent(tr, k -> new int[2]); x[0]++; if (gano) x[1]++;
-                }
-            }
-        }
-        int diasActivos = porDia.size();
-        // forma reciente y gráfica del año, en la cabecera
-        for (Component c : actChips.getComponents()) if (c instanceof JLabel l && "forma".equals(l.getName())) actChips.remove(l);
-        if (f10 > 0) {
-            String forma = fW + "-" + fL + " · " + (fDiff >= 0 ? "+" : "") + fDiff + (fDiff > 0 ? " \u25B2" : fDiff < 0 ? " \u25BC" : "")
-                    + (fRacha >= 2 ? " · " + t("racha ", "streak ") + fRacha + (Boolean.TRUE.equals(fRachaGana) ? "V" : "D") : "");
-            JLabel lf = chipPerfil(t("Últimas ", "Last ") + f10 + ("*".equals(actModo) ? "" : " · " + actModo), escapeHtml(forma), t("Las partidas más recientes con resultado, en el modo elegido", "The most recent games with a result, in the chosen mode"));
-            lf.setName("forma");
-            actChips.add(lf);
-        }
-        actChips.revalidate(); actChips.repaint();
-        if (!serie.isEmpty()) {   // el punto más reciente = ELO actual del ladder; hacia atrás se resta la diferencia de cada partida (las diferencias sí son fiables)
-            long acum = eloActualLadder(modoGrafica, serie.get(0));
-            for (long[] pt : serie) { pt[1] = acum; acum -= pt[2]; }
-        }
-        Collections.reverse(serie);
-        actGrafica.datos(serie, (modoGrafica == null ? "" : modoGrafica + " · ") + t("últimas ", "last ") + serie.size() + t(" partidas", " games"));
-        actTarjetas.removeAll();
-        actTarjetas.add(listas.tarjeta(t("Partidas", "Games"), miles(partidas), (a.completo() ? t("último año", "last year") : t("últimas ", "last ") + miles(a.partidas().size()) + t(" (tope)", " (cap)")) + " · " + ("*".equals(actModo) ? t("todos los modos", "all modes") : actModo) + (actDesde != null ? " · " + (actHasta == null ? t("desde ", "since ") + actDesde : actDesde + " → " + actHasta) : "")));
-        actTarjetas.add(listas.tarjeta(t("Winrate", "Win rate"), conResultado == 0 ? "-" : pct1(100.0 * victorias / conResultado), victorias + "-" + (conResultado - victorias) + t(" con resultado", " with a result")));
-        actTarjetas.add(listas.tarjeta(t("Duración media", "Avg. length"), duracionMedia(duracion, conDuracion), t("de reloj, inicio a fin", "wall clock, start to end")));
-        actTarjetas.add(listas.tarjeta(t("Días con partidas", "Days with games"), String.valueOf(diasActivos), t("de los últimos ", "of the last ") + ACT_DIAS));
-        actTarjetas.add(listas.tarjeta(t("Por día activo", "Per active day"), diasActivos == 0 ? "-" : String.format(Locale.ROOT, "%.1f", partidas / (double) diasActivos).replace('.', "en".equals(IDIOMA) ? '.' : ','), t("partidas de media", "games on average")));
-        actTarjetas.revalidate(); actTarjetas.repaint();
-        actCalendario.datos(porDia, inicio, hoy);
-        String[] dias = "en".equals(IDIOMA) ? new String[]{ "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun" } : new String[]{ "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom" };
-        actSemana.datos(dias, semana, semanaW, semanaN);
-        String[] hl = new String[24], ht = new String[24]; int[] hv = new int[24], hw = new int[24], hn = new int[24];
-        for (int i = 0; i < 24; i++) { hl[i] = i % 3 == 0 ? String.valueOf(i) : ""; ht[i] = String.format("%02d:00–%02d:59", i, i); hv[i] = horas[i]; hw[i] = horasW[i]; hn[i] = horasN[i]; }
-        actHoras.datos(hl, hv, hw, hn, ht);
-        List<String> mk = new ArrayList<>(meses.keySet());
-        String[] ml = new String[mk.size()], mt2 = new String[mk.size()]; int[] mv = new int[mk.size()], mw = new int[mk.size()], mn = new int[mk.size()];
-        for (int i = 0; i < mk.size(); i++) { ml[i] = String.valueOf(Integer.parseInt(mk.get(i).substring(5))); mt2[i] = mk.get(i); mv[i] = meses.get(mk.get(i))[0]; mw[i] = meses.get(mk.get(i))[1]; mn[i] = mv[i]; }
-        actMeses.datos(ml, mv, mw, mn, mt2);
-        Map<String, Runnable> irTechTree = new HashMap<>();
-        for (String k : civs.keySet()) { String cl = techTree.claveCivDeNombre(k); if (cl != null) irTechTree.put(k, () -> abrirTechTree(cl)); }
-        for (String k : civsRival.keySet()) { String cl = techTree.claveCivDeNombre(k); if (cl != null) irTechTree.put(k, () -> abrirTechTree(cl)); }
-        pintarListaAgg(actCivs, t("Winrate por civ propia", "Win rate by own civ"), civs, 5, k -> k, irTechTree, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
-        pintarListaAgg(actCivsRival, t("Winrate contra civ rival (1v1)", "Win rate vs opponent civ (1v1)"), civsRival, 5, k -> k, irTechTree, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
-        pintarListaAgg(actMapas, t("Winrate por mapa", "Win rate by map"), mapas, 5, k -> k, null, k -> iconoMapa(k, 18));
-        pintarListaJugadores(actRivales, t("Rivales más frecuentes", "Most frequent opponents"), rivales);
-        pintarListaJugadores(actAliados, t("Aliados más frecuentes", "Most frequent allies"), aliados);
-        Map<String, int[]> trOrd = new LinkedHashMap<>();
-        if (franjas != null) for (String tr : franjas) if (tramos.containsKey(tr)) trOrd.put(tr, tramos.get(tr));
-        pintarListaAgg(actTramos, t("Winrate por ELO del rival", "Win rate by opponent ELO") + (eloActualJugador > 0 ? " \u00B7 " + t("franjas centradas en ", "brackets centred on ") + eloActualJugador : ""), trOrd, 9, NombresStats::tramoNombre, null);
-        // duración
-        actDuracionFila.removeAll();
-        for (int i = 0; i < 5; i++) actDuracionFila.add(listas.tarjeta(DURACION_TRAMOS[i], durN[i] == 0 ? "\u2013" : pct1(100.0 * durW[i] / durN[i]), durN[i] == 0 ? t("sin partidas", "no games") : miles(durN[i]) + t(" partidas, ", " games, ") + miles(durW[i]) + t(" victorias", " wins")));
-        actDuracionFila.revalidate(); actDuracionFila.repaint();
-        // pocket / flanco
-        Map<String, int[]> posOrd = new LinkedHashMap<>(); if (posicion.containsKey("pocket")) posOrd.put("pocket", posicion.get("pocket")); if (posicion.containsKey("flanco")) posOrd.put("flanco", posicion.get("flanco"));
-        pintarListaAgg(actPosicion, t("Pocket o flanco (Team RM, 3v3 y 4v4)", "Pocket or flank (Team RM, 3v3 & 4v4)"), posOrd, 2, k -> posicionNombre(k), null);
-        if (!posicionMapa.isEmpty()) {   // por mapa: una tabla ordenable (mapa · pocket · flanco)
-            Map<String, int[][]> porMapa = new TreeMap<>();
-            for (Map.Entry<String, int[]> en : posicionMapa.entrySet()) { String[] kv = en.getKey().split("\u0000"); int[][] f = porMapa.computeIfAbsent(kv[0], k -> new int[][]{ new int[2], new int[2] }); f["pocket".equals(kv[1]) ? 0 : 1] = en.getValue(); }
-            List<Object[]> filasPos = new ArrayList<>();
-            for (Map.Entry<String, int[][]> en : porMapa.entrySet()) { int[] pk = en.getValue()[0], fl = en.getValue()[1]; filasPos.add(new Object[]{ new Celda(iconoMapa(en.getKey(), 18), en.getKey(), null), (long) pk[0], pk[0] == 0 ? null : new Pct(100.0 * pk[1] / pk[0], pk[1], pk[0], true), (long) fl[0], fl[0] == 0 ? null : new Pct(100.0 * fl[1] / fl[0], fl[1], fl[0], true) }); }
-            actPosicion.add(listas.enlaceVerTodo(porMapa.size(), () -> listas.mostrarTablaCompleta(t("Pocket o flanco por mapa", "Pocket or flank by map") + " \u00B7 " + actNombre, new String[]{ t("Mapa", "Map"), t("Partidas pocket", "Pocket games"), t("WR pocket", "Pocket WR"), t("Partidas flanco", "Flank games"), t("WR flanco", "Flank WR") }, filasPos, 1)));
-        }
-        // últimos 30 días
-        pintarListaAgg(actUltimos30Civs, t("Últimos 30 días · civs", "Last 30 days · civs"), civs30, 5, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
-        pintarListaAgg(actUltimos30Mapas, t("Últimos 30 días · mapas", "Last 30 days · maps"), mapas30, 5, k -> k, null, k -> iconoMapa(k, 18));
-        if (!actCargando) actEstado.setText(miles(a.partidas().size()) + t(" partidas", " games") + (a.completo() ? t(" · último año completo", " · full last year") : t(" · las más recientes", " · the most recent")));
-        actMasBtn.setVisible(!a.completo() && !actCargando);
-        actCuerpo.revalidate(); actCuerpo.repaint();
-    }
-
-    /** ELO actual del ladder que corresponde a un modo (de la ficha del perfil); si no hay ficha, el de la partida más reciente más su diferencia. */
-    long eloActualLadder(String modo, long[] masReciente) {
-        String lb = modo == null ? null : (modo.toLowerCase(Locale.ROOT).contains("empire") || modo.toLowerCase(Locale.ROOT).startsWith("ew")) ? (modo.contains("1v1") ? "ew_1v1" : "ew_team") : modo.contains("1v1") ? "rm_1v1" : "rm_team";
-        FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(actPid);
-        if (perfil != null && lb != null && perfil.ladders().get(lb) instanceof int[] v && v[0] > 0) return v[0];
-        return masReciente[1] + masReciente[2];
-    }
-
-    /** Lista «nombre · barra por partidas · WR» ordenada por partidas; solo entradas con ACT_MIN partidas. */
-    void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar) { pintarListaAgg(panel, titulo, datos, tope, nombre, alClicar, null); }
-
-    final Map<String, Integer> ordenListas = new HashMap<>();   // título → 0 partidas, 1 winrate, 2 A-Z
-    void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar, java.util.function.Function<String, Icon> icono) {
-        panel.removeAll();
-        boolean ordenado = datos instanceof LinkedHashMap;
-        int modo = ordenado ? -1 : ordenListas.getOrDefault(titulo, 0);
-        JLabel cab = tituloSeccion(titulo + (modo == 1 ? t("  · por winrate", "  · by win rate") : modo == 2 ? "  · A-Z" : ""),
-                ordenado ? null : t("Clic para cambiar el orden: partidas → winrate → A-Z", "Click to change the order: games → win rate → A-Z"));
-        if (!ordenado) {
-            cab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            cab.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ordenListas.put(titulo, (ordenListas.getOrDefault(titulo, 0) + 1) % 3); actPintar(); } });
-        }
-        panel.add(cab);
-        List<Map.Entry<String, int[]>> l = new ArrayList<>();
-        for (Map.Entry<String, int[]> en : datos.entrySet()) if (en.getValue()[0] >= ACT_MIN) l.add(en);
-        if (!ordenado) {
-            if (modo == 1) l.sort((x, y) -> { double a = 100.0 * x.getValue()[1] / x.getValue()[0], b = 100.0 * y.getValue()[1] / y.getValue()[0]; int c = Double.compare(b, a); return c != 0 ? c : y.getValue()[0] - x.getValue()[0]; });
-            else if (modo == 2) l.sort((x, y) -> nombre.apply(x.getKey()).compareToIgnoreCase(nombre.apply(y.getKey())));
-            else l.sort((x, y) -> y.getValue()[0] - x.getValue()[0]);
-        }
-        double max = l.isEmpty() ? 1 : l.stream().mapToInt(e -> e.getValue()[0]).max().orElse(1);
-        if (l.isEmpty()) { JLabel v = new JLabel(t("Nada con 3+ partidas.", "Nothing with 3+ games.")); v.setForeground(Color.GRAY); v.setFont(v.getFont().deriveFont(Font.PLAIN, 11f)); panel.add(v); }
-        for (Map.Entry<String, int[]> en : l.subList(0, Math.min(tope, l.size()))) {
-            int n = en.getValue()[0], w = en.getValue()[1];
-            Runnable r = alClicar == null ? null : alClicar.get(en.getKey());
-            panel.add(listas.filaBarra(icono == null ? null : icono.apply(en.getKey()), nombre.apply(en.getKey()), n / max, pct1(100.0 * w / n), colorWr(w, n), w + "-" + (n - w) + " · " + n + t(" partidas", " games") + (r != null ? (icono != null ? t(" · clic: tech tree", " · click: tech tree") : t(" · clic: abrir su perfil", " · click: open their profile")) : ""), r));
-        }
-        if (l.size() > tope) {
-            double maxF = max;
-            panel.add(listas.enlaceVerTodo(l.size(), () -> {
-                List<Object[]> filas = new ArrayList<>();
-                for (Map.Entry<String, int[]> en : l) {
-                    int n = en.getValue()[0], w = en.getValue()[1];
-                    Runnable r = alClicar == null ? null : alClicar.get(en.getKey());
-                    filas.add(new Object[]{ new Celda(icono == null ? null : icono.apply(en.getKey()), nombre.apply(en.getKey()), r), (long) n, (long) w, (long) (n - w), new Pct(100.0 * w / n, w, n, true) });
-                }
-                listas.mostrarTablaCompleta(titulo, new String[]{ t("Nombre", "Name"), t("Partidas", "Games"), t("V", "W"), t("D", "L"), "WR" }, filas, 1);
-            }));
-        }
-        panel.revalidate(); panel.repaint();
-    }
-
-    /** Rivales o aliados: como la lista de agregados, con clic para abrir el perfil de cada uno. */
-    void pintarListaJugadores(JPanel panel, String titulo, Map<Long, Object[]> jugadores) {
-        listas.esFilaJugador = true;
-        try { pintarListaJugadoresImpl(panel, titulo, jugadores); } finally { listas.esFilaJugador = false; }
-    }
-    void pintarListaJugadoresImpl(JPanel panel, String titulo, Map<Long, Object[]> jugadores) {
-        Map<String, int[]> datos = new HashMap<>();
-        Map<String, Runnable> clics = new HashMap<>();
-        for (Map.Entry<Long, Object[]> en : jugadores.entrySet()) {
-            long pid = en.getKey(); String nombre = String.valueOf(en.getValue()[0]);
-            String clave = nombre + "\u0000" + pid;   // dos rivales con el mismo nick no se mezclan
-            datos.put(clave, new int[]{ (int) en.getValue()[1], (int) en.getValue()[2] });
-            clics.put(clave, () -> { if (ultimoClicCtrl) abrirPerfilEnPestana(pid, nombreVisible(pid, nombre)); else abrirPerfil(pid, nombreVisible(pid, nombre)); });
-        }
-        pintarListaAgg(panel, titulo, datos, listas.esFilaJugador && h2hDialogo != null && h2hDialogo.isShowing() ? 10 : 5, k -> nombreVisible(Long.parseLong(k.substring(k.indexOf('\u0000') + 1)), k.substring(0, k.indexOf('\u0000'))), clics);
-    }
-
-    /** Calendario de un año: una celda por día, más oscura cuantas más partidas. */
-    class CalendarioPanel extends JPanel {
-        Map<LocalDate, Integer> porDia = Map.of(); LocalDate inicio, fin; int max = 1;
-        int celda = 11, hueco = 2, ml = 30, mt = 34;
-        CalendarioPanel() { setOpaque(false); ToolTipManager.sharedInstance().registerComponent(this); }
-        void datos(Map<LocalDate, Integer> d, LocalDate ini, LocalDate f) {
-            porDia = d; fin = f;
-            inicio = ini.minusDays(ini.getDayOfWeek().getValue() - 1);   // arranca en lunes
-            max = 1; for (int v : d.values()) max = Math.max(max, v);
-            repaint();
-        }
-        LocalDate diaEn(Point p) {
-            if (inicio == null || p.x < ml || p.y < mt) return null;
-            int col = (p.x - ml) / (celda + hueco), fila = (p.y - mt) / (celda + hueco);
-            if (fila < 0 || fila > 6) return null;
-            LocalDate d = inicio.plusDays(col * 7L + fila);
-            return d.isAfter(fin) ? null : d;
-        }
-        @Override public String getToolTipText(MouseEvent e) {
-            LocalDate d = diaEn(e.getPoint());
-            if (d == null) return null;
-            int n = porDia.getOrDefault(d, 0);
-            return d.format(DateTimeFormatter.ofPattern("EEE d MMM yyyy", "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES"))) + ": " + n + t(" partidas", " games");
-        }
-        @Override protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            if (inicio == null) return;
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            Color fg = UIManager.getColor("Label.foreground"); if (fg == null) fg = Color.GRAY;
-            int w = getWidth();
-            long dias = java.time.temporal.ChronoUnit.DAYS.between(inicio, fin) + 1;
-            int columnas = (int) ((dias + 6) / 7);
-            celda = Math.max(8, Math.min(13, (w - ml - 8) / columnas - hueco));
-            Font base = g2.getFont();
-            g2.setFont(base.deriveFont(Font.BOLD, 13f)); g2.setColor(fg);
-            g2.drawString(t("Actividad: partidas por día, último año", "Activity: games per day, last year") + "  ·  " + t("máximo ", "max ") + max + t(" en un día", " in a day"), 4, 14);
-            g2.setFont(base.deriveFont(9f));
-            String[] etq = "en".equals(IDIOMA) ? new String[]{ "Mon", "", "Wed", "", "Fri", "", "Sun" } : new String[]{ "Lun", "", "Mié", "", "Vie", "", "Dom" };
-            g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 160 : 205));
-            for (int f = 0; f < 7; f++) if (!etq[f].isEmpty()) g2.drawString(etq[f], 4, mt + f * (celda + hueco) + celda - 2);
-            Color verde = temaOscuroActivo ? new Color(0x4c, 0xaf, 0x50) : new Color(0x2e, 0x7d, 0x32);
-            int mesPrevio = -1;
-            for (int c = 0; c < columnas; c++) {
-                for (int f = 0; f < 7; f++) {
-                    LocalDate d = inicio.plusDays(c * 7L + f);
-                    if (d.isAfter(fin)) break;
-                    int x = ml + c * (celda + hueco), y = mt + f * (celda + hueco);
-                    if (f == 0 || c == 0) {
-                        if (d.getMonthValue() != mesPrevio && d.getDayOfMonth() <= 7) {
-                            mesPrevio = d.getMonthValue();
-                            g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 160 : 205));
-                            g2.drawString(d.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES")), x, mt - 4);
-                        }
-                    }
-                    int n = porDia.getOrDefault(d, 0);
-                    if (n == 0) g2.setColor(new Color(128, 128, 128, temaOscuroActivo ? 45 : 30));
-                    else { double k = 0.25 + 0.75 * Math.min(1, Math.sqrt(n / (double) max)); g2.setColor(new Color(verde.getRed(), verde.getGreen(), verde.getBlue(), (int) (255 * k))); }
-                    g2.fillRoundRect(x, y, celda, celda, 3, 3);
-                }
-            }
-            g2.dispose();
-        }
-    }
-
-    /** Barras verticales con etiqueta y, si hay partidas suficientes, el winrate encima. */
-    class BarrasActividad extends JPanel {
-        final String titulo; String[] etiquetas = new String[0], tips = null; int[] valores = new int[0], ganadas = new int[0], conRes = new int[0];
-        BarrasActividad(String titulo) { this.titulo = titulo; setOpaque(false); ToolTipManager.sharedInstance().registerComponent(this); }
-        void datos(String[] e, int[] v, int[] w, int[] n) { datos(e, v, w, n, null); }
-        void datos(String[] e, int[] v, int[] w, int[] n, String[] t) { etiquetas = e; valores = v; ganadas = w; conRes = n; tips = t; repaint(); }
-        int barraEn(Point p) {
-            if (valores.length == 0) return -1;
-            int ml = 8, mr = 8, w = getWidth();
-            double sx = (double) (w - ml - mr) / valores.length;
-            int i = (int) ((p.x - ml) / sx);
-            return i < 0 || i >= valores.length ? -1 : i;
-        }
-        @Override public String getToolTipText(MouseEvent e) {
-            int i = barraEn(e.getPoint());
-            if (i < 0) return null;
-            String base = tips != null ? tips[i] : etiquetas[i].isEmpty() ? String.valueOf(i) : etiquetas[i];
-            return base + ": " + valores[i] + t(" partidas", " games") + (conRes[i] >= ACT_MIN ? " · WR " + pct1(100.0 * ganadas[i] / conRes[i]) : "");
-        }
-        @Override protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            Color fg = UIManager.getColor("Label.foreground"); if (fg == null) fg = Color.GRAY;
-            int w = getWidth(), h = getHeight(), ml = 8, mr = 8, mt = 42, mb = 18;
-            Font base = g2.getFont();
-            g2.setFont(base.deriveFont(Font.BOLD, 12f)); g2.setColor(fg);
-            g2.drawString(titulo, 4, 14);
-            g2.setFont(base.deriveFont(10.5f)); g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 160 : 205));
-            g2.drawString(t("barras: partidas · número: % de victorias", "bars: games · number: win rate %"), 4, 27);
-            if (valores.length == 0) { g2.dispose(); return; }
-            int max = 1; for (int v : valores) max = Math.max(max, v);
-            double sx = (double) (w - ml - mr) / valores.length;
-            Color barra = temaOscuroActivo ? new Color(0x5a, 0x8f, 0xc7) : new Color(0x3b, 0x6e, 0xa8);
-            g2.setFont(base.deriveFont(9f));
-            for (int i = 0; i < valores.length; i++) {
-                int x = ml + (int) (i * sx), bw = Math.max(2, (int) sx - 2);
-                int bh = (int) ((h - mt - mb) * valores[i] / (double) max);
-                g2.setColor(barra);
-                g2.fillRoundRect(x, h - mb - bh, bw, bh, 3, 3);
-                if (conRes[i] >= ACT_MIN && sx >= 22) {
-                    double wr = 100.0 * ganadas[i] / conRes[i];
-                    g2.setColor(colorWr(ganadas[i], conRes[i]));
-                    String s = String.format(Locale.ROOT, "%.0f", wr) + "%";
-                    g2.drawString(s, x + bw / 2 - g2.getFontMetrics().stringWidth(s) / 2, h - mb - bh - 3);
-                }
-                if (!etiquetas[i].isEmpty()) { g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 170 : 210)); g2.drawString(etiquetas[i], x + bw / 2 - g2.getFontMetrics().stringWidth(etiquetas[i]) / 2, h - 5); }
-            }
-            g2.dispose();
-        }
-    }
+    /** Abre a un jugador en una pestaña NUEVA (Ctrl+clic, «+»); la cuenta de pestañas es de ui.PerfilView. */
+    @Override public void abrirPerfilEnPestana(long pid, String nombre) { perfil.abrirEnPestanaNueva(pid, nombre); }
 
     // =====================================================================================
     // LIVE NOW — partidas en curso de los 250 mejores del ladder 1v1 (tarjetas por partida) y las
@@ -2940,7 +1439,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
-        actividadAbierta = false;
+        if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         ahoraAbierta = true;
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ahora");
@@ -3598,7 +2097,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             mostrarToast(txt.toString(), m.id);
             if (rival != null && rival.id > 0 && toast != null) {   // accesos rápidos en el propio aviso
                 JButton perf = new JButton(t("Su perfil", "Their profile")); perf.setFocusable(false); perf.setMargin(new Insets(0, 6, 0, 6)); perf.addActionListener(a -> abrirPerfilEnPestana(rival.id, nombreVisible(rival.id, rival.name)));
-                JButton cara = new JButton(t("Cara a cara", "Head-to-head")); cara.setFocusable(false); cara.setMargin(new Insets(0, 6, 0, 6)); cara.addActionListener(a -> { abrirPerfil(pid, leerConfig("mi_nombre", nombreVisible(pid, yo.name))); javax.swing.Timer tt = new javax.swing.Timer(1200, ev -> { if (actPid == pid) { mostrarCaraACara(); if (h2hDialogo != null) h2hFijar(rival.id, nombreVisible(rival.id, rival.name)); } }); tt.setRepeats(false); tt.start(); });
+                JButton cara = new JButton(t("Cara a cara", "Head-to-head")); cara.setFocusable(false); cara.setMargin(new Insets(0, 6, 0, 6)); cara.addActionListener(a -> { abrirPerfil(pid, leerConfig("mi_nombre", nombreVisible(pid, yo.name))); javax.swing.Timer tt = new javax.swing.Timer(1200, ev -> { if (perfil.pidAbierto() == pid) perfil.abrirCaraACaraCon(rival.id, nombreVisible(rival.id, rival.name)); }); tt.setRepeats(false); tt.start(); });
                 JPanel acc = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0)); acc.setOpaque(false); acc.add(perf); acc.add(cara);
                 toast.add(acc, BorderLayout.SOUTH); toast.revalidate();
             }
@@ -3636,14 +2135,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // Banderas, icono de civ e icono de mapa: ver ui.Iconos (cachés y escalado) y service.ImagenesJuego
     // (rutas fijas y descarga de miniaturas de mapa).
-
-    // =====================================================================================
-    // Pestañas de perfiles (una tira sobre el panel de perfil) e historial de navegación («←», botón lateral del ratón)
-    // =====================================================================================
-    static final int PERFIL_MAX_PESTANAS = 6;
-    final List<Object[]> perfilPestanas = new ArrayList<>();   // {pid Long, nombre String}
-    int perfilPestanaActiva = -1;
-    JPanel perfilTira;
     boolean ultimoClicCtrl;
     record Destino(String vista, long pid, String nombre, String civ) { }
     final List<Destino> historial = new ArrayList<>();
@@ -3694,72 +2185,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
     }
 
-    int indicePestana(long pid) { for (int i = 0; i < perfilPestanas.size(); i++) if ((Long) perfilPestanas.get(i)[0] == pid) return i; return -1; }
-
-    /** Abre a un jugador en una pestaña NUEVA (Ctrl+clic, «+»); si ya está abierto, se activa la suya. */
-    @Override public void abrirPerfilEnPestana(long pid, String nombre) {
-        int i = indicePestana(pid);
-        if (i >= 0) { perfilPestanaActiva = i; abrirPerfil(pid, nombre); return; }
-        if (perfilPestanas.size() >= PERFIL_MAX_PESTANAS) {
-            JOptionPane.showMessageDialog(this, t("Ya hay " + PERFIL_MAX_PESTANAS + " perfiles abiertos, el máximo. Cierra alguno con su × para abrir otro.\n(Sin Ctrl, el clic abre al jugador en la pestaña actual.)",
-                    "There are already " + PERFIL_MAX_PESTANAS + " profiles open, the maximum. Close one with its × to open another.\n(Without Ctrl, a click opens the player in the current tab.)"),
-                    t("Pestañas de perfil", "Profile tabs"), JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-        perfilPestanaActiva = -1;   // la siguiente apertura crea pestaña
-        abrirPerfil(pid, nombre);
-    }
-
-    /** Lleva la cuenta de pestañas al abrir un perfil: la existente, la actual (sustituyendo), o una nueva. */
-    void perfilContabilizarPestana(long pid, String nombre) {
-        int i = indicePestana(pid);
-        if (i >= 0) perfilPestanaActiva = i;
-        else if (perfilPestanaActiva >= 0 && perfilPestanaActiva < perfilPestanas.size()) perfilPestanas.set(perfilPestanaActiva, new Object[]{ pid, nombre });
-        else { perfilPestanas.add(new Object[]{ pid, nombre }); perfilPestanaActiva = perfilPestanas.size() - 1; }
-        refrescarTiraPerfil();
-    }
-
-    void cerrarPestana(int i) {
-        if (i < 0 || i >= perfilPestanas.size()) return;
-        perfilPestanas.remove(i);
-        if (perfilPestanas.isEmpty()) { perfilPestanaActiva = -1; refrescarTiraPerfil(); abrirPerfil(0, ""); return; }
-        if (perfilPestanaActiva >= perfilPestanas.size()) perfilPestanaActiva = perfilPestanas.size() - 1;
-        else if (i < perfilPestanaActiva) perfilPestanaActiva--;
-        Object[] p = perfilPestanas.get(Math.max(0, perfilPestanaActiva));
-        perfilPestanaActiva = Math.max(0, perfilPestanaActiva);
-        refrescarTiraPerfil();
-        abrirPerfil((Long) p[0], (String) p[1]);
-    }
-
-    void refrescarTiraPerfil() {
-        if (perfilTira == null) return;
-        perfilTira.removeAll();
-        for (int i = 0; i < perfilPestanas.size(); i++) {
-            final int idx = i;
-            Object[] p = perfilPestanas.get(i);
-            JPanel caja = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0)); caja.setOpaque(false);
-            JToggleButton tb = pestana((String) p[1], iconoBandera(paisDe((Long) p[0])));
-            tb.setSelected(i == perfilPestanaActiva);
-            tb.addActionListener(e -> { if (!tb.isSelected()) { tb.setSelected(true); return; } perfilPestanaActiva = idx; abrirPerfil((Long) p[0], (String) p[1]); });
-            JButton x = new JButton("\u00D7");
-            x.setFocusable(false); x.setMargin(new Insets(0, 4, 0, 4)); x.putClientProperty("JButton.buttonType", "borderless");
-            x.setToolTipText(t("Cerrar esta pestaña", "Close this tab"));
-            x.addActionListener(e -> cerrarPestana(idx));
-            caja.add(tb); caja.add(x);
-            perfilTira.add(caja);
-        }
-        JButton mas = new JButton("+");
-        mas.setFocusable(false); mas.setMargin(new Insets(2, 8, 2, 8)); mas.putClientProperty("JButton.buttonType", "roundRect");
-        mas.setToolTipText(t("Nueva pestaña: busca a otro jugador (también Ctrl+clic en un rival o aliado)", "New tab: search another player (also Ctrl+click on a rival or ally)"));
-        mas.addActionListener(e -> {
-            if (perfilPestanas.size() >= PERFIL_MAX_PESTANAS) { abrirPerfilEnPestana(-1, ""); return; }
-            perfilPestanaActiva = -1; abrirPerfil(0, "");
-        });
-        perfilTira.add(mas);
-        perfilTira.setVisible(!perfilPestanas.isEmpty());
-        perfilTira.revalidate(); perfilTira.repaint();
-    }
-
     // =====================================================================================
     // Desplazamiento con la rueda pulsada (como Chrome) y vuelta arriba al cambiar de vista
     // =====================================================================================
@@ -3778,7 +2203,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         });
         Toolkit.getDefaultToolkit().addAWTEventListener(ev -> {
             if (!(ev instanceof MouseEvent me)) return;
-            if (me.getID() == MouseEvent.MOUSE_PRESSED && me.getButton() == 4) { if (h2hDialogo != null && h2hDialogo.isShowing() && h2hDialogo.isFocused()) h2hAtras(); else volverAtras(); me.consume(); return; }   // botones laterales del ratón: atrás / adelante (dentro del cara a cara, su propio atrás)
+            if (me.getID() == MouseEvent.MOUSE_PRESSED && me.getButton() == 4) { if (!perfil.h2hAtrasSiProcede()) volverAtras(); me.consume(); return; }   // botones laterales del ratón: atrás / adelante (dentro del cara a cara, su propio atrás)
             if (me.getID() == MouseEvent.MOUSE_PRESSED && me.getButton() == 5) { irAdelante(); me.consume(); return; }
             if (me.getID() == MouseEvent.MOUSE_PRESSED) {
                 if (autoAncla != null) {   // cualquier clic termina el modo
@@ -3820,7 +2245,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         directosBtn.setSelected(false);
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        actividadAbierta = false;
+        if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         ((CardLayout) centroCards.getLayout()).show(centroCards, "techtree");
@@ -3941,7 +2366,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         String quien;
         objetivoEtiqueta = null;
         if (invitado != null) quien = nombreVisible(invitado.id(), invitado.name());
-        else if (actPid > 0 && playersList.getSelectedIndices().length == 0 && (actividadAbierta || modoTop())) { quien = actNombre; objetivoEtiqueta = new Player(actPid, actNombre, ""); }   // el perfil abierto (o el último visto, si en el top no hay nadie seleccionado)
+        else if (perfil.pidAbierto() > 0 && playersList.getSelectedIndices().length == 0 && (perfil.abierto() || modoTop())) { quien = perfil.nombreAbierto(); objetivoEtiqueta = new Player(perfil.pidAbierto(), perfil.nombreAbierto(), ""); }   // el perfil abierto (o el último visto, si en el top no hay nadie seleccionado)
         else {
             int n = playersList.getSelectedIndices().length;
             if (n > 0) quien = n + t(" seleccionado" + (n > 1 ? "s" : ""), " selected");
@@ -4340,7 +2765,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
         playersList.setVisibleRowCount(12);
         playersList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) { applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); perfilSincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
+            if (!e.getValueIsAdjusting()) { applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); if (perfil != null) perfil.sincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
         });
         delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
 
@@ -4999,7 +3424,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         filaVistas.add(adelanteBtn);
         recsBtn = pestana(t("Partidas", "Games"), iconoVista("partidas"));
         recsBtn.addActionListener(e -> {   // desde un perfil: la tabla pasa a ser de ese jugador (búsqueda de sus partidas recientes), salvo que ya lo sea
-            if (actPid > 0 && objetivoEtiqueta != null && objetivoEtiqueta.id() == actPid && historialEnTabla != actPid && (ultimosSujetos.size() != 1 || ultimosSujetos.get(0).id() != actPid) && fetchWorker == null)
+            if (perfil.pidAbierto() > 0 && objetivoEtiqueta != null && objetivoEtiqueta.id() == perfil.pidAbierto() && perfil.historialEnTabla() != perfil.pidAbierto() && (ultimosSujetos.size() != 1 || ultimosSujetos.get(0).id() != perfil.pidAbierto()) && fetchWorker == null)
                 SwingUtilities.invokeLater(() -> fetchMatches(fetchBtn));
         });
         recsBtn.setSelected(true);
@@ -5522,7 +3947,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         todasPerfilBtn = new JButton(t("Todas las partidas del perfil", "All games of the profile"));
         todasPerfilBtn.setFocusable(false); todasPerfilBtn.putClientProperty("JButton.buttonType", "roundRect");
         todasPerfilBtn.setToolTipText(t("Abre el perfil del jugador buscado con su histórico completo en páginas (del último año, sin llamadas si está en sfr-data)", "Opens the searched player's profile with their full history in pages (last year, no requests when in sfr-data)"));
-        todasPerfilBtn.addActionListener(e -> { if (ultimosSujetos.size() == 1) { Player p = ultimosSujetos.get(0); abrirPerfil(p.id(), nombreVisible(p.id(), p.name())); javax.swing.Timer tt = new javax.swing.Timer(900, ev -> { if (actPid == p.id()) mostrarHistorialPerfil(p.id(), nombreVisible(p.id(), p.name())); }); tt.setRepeats(false); tt.start(); } });
+        todasPerfilBtn.addActionListener(e -> { if (ultimosSujetos.size() == 1) { Player p = ultimosSujetos.get(0); abrirPerfil(p.id(), nombreVisible(p.id(), p.name())); javax.swing.Timer tt = new javax.swing.Timer(900, ev -> { if (perfil.pidAbierto() == p.id()) perfil.mostrarHistorialPerfil(p.id(), nombreVisible(p.id(), p.name())); }); tt.setRepeats(false); tt.start(); } });
         todasPerfilBtn.setVisible(false);
         btns1.add(todasPerfilBtn);
         btns2.add(carpetasBtn);    // carpetas, en la segunda, bajo un solo botón
@@ -5642,7 +4067,58 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         centroCards.add(ratings.panel(), "ladder");
         civStats = new CivStatsView(stats, filtroStats, listas, this, Tareas.SWING, this, () -> { if (techTree != null) techTree.actualizarWr(); });
         centroCards.add(civStats.panel(), "civstats");
-        centroCards.add(construirPanelPerfil(), "perfil");
+        perfil = new PerfilView(SERVICIO_PERFIL, RatingsServiceSfr.SISTEMA, BUSQUEDA, stats, VIVO, menus, this, techTree, listas, Tareas.SWING,
+                new PerfilView.Anfitrion() {
+                    @Override public List<Player> seleccionWatchlist() { return playersList.getSelectedValuesList(); }
+                    @Override public boolean estaEnWatchlist(long pid) { return containsPlayerId(pid); }
+                    @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
+                    @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
+                    @Override public void ficharDesdeTop(long pid, String nombre, String grupo) { SpoilerFreeRecs.this.ficharDesdeTop(new Player(pid, nombre, grupo), grupo); }
+                    @Override public List<String> gruposDeJugadores() { Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); for (Player x : todosJugadores) gs.add(x.grupo()); return new ArrayList<>(gs); }
+                    @Override public Set<Long> idsDeGrupo(String grupo) { Set<Long> ids = new HashSet<>(); for (Player x : todosJugadores) if (x.grupo().equalsIgnoreCase(grupo)) ids.add(x.id()); return ids; }
+                    @Override public List<String> gruposGuardados() { return new ArrayList<>(gruposConfig()); }
+                    @Override public String grupoGeneral() { return GRUPO_GENERAL; }
+                    @Override public List<String> clanesGuardados() { return SpoilerFreeRecs.this.clanesGuardados(); }
+                    @Override public boolean hayTop250() { synchronized (ahoraTop) { return !ahoraTop.isEmpty(); } }
+                    @Override public Set<Long> idsTop250() { synchronized (ahoraTop) { Set<Long> s = new HashSet<>(); for (Object[] x : ahoraTop) s.add((Long) x[0]); return s; } }
+                    @Override public boolean ultimoClicFueCtrl() { return ultimoClicCtrl; }
+                    @Override public void pedirAlias(long pid, String nombreOriginal) { SpoilerFreeRecs.this.pedirAlias(pid, nombreOriginal); }
+                    @Override public void pedirNota(long pid, String nombre) { SpoilerFreeRecs.this.pedirNota(pid, nombre); }
+                    @Override public void borrarNota(long pid, String nombre) { SpoilerFreeRecs.this.borrarNota(pid, nombre); }
+                    @Override public void mostrarVinculadas(long pid, String nombre) { SpoilerFreeRecs.this.mostrarVinculadas(pid, nombre); }
+                    @Override public void nicksAnteriores(long pid, String nombre) { SpoilerFreeRecs.this.nicksAnteriores(pid, nombre); }
+                    @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
+                    @Override public void registrarDestino(long pid, String nombre) { SpoilerFreeRecs.this.registrarDestino(new Destino("perfil", pid, nombre, null)); }
+                    @Override public JToggleButton crearBotonPestana(String texto, Icon icono) { return pestana(texto, icono); }
+                    @Override public void traerAlFrente() { toFront(); requestFocus(); }
+                    @Override public void mostrarEstadoGlobal(String texto) { status.setText(texto); }
+                    @Override public void cerrarPerfil() { mostrarDirectos(false); }
+                    @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
+                    @Override public boolean confirmarEspectar(String nombre) { return SpoilerFreeRecs.this.confirmarEspectar(nombre); }
+                    @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
+                    @Override public void cargarPartidasEnTabla(List<Match> partidas, Player sujeto) {
+                        SUJETOS.clear(); SUJETOS.add(sujeto.id());
+                        vistaDeSujetos = vistaActualId();
+                        refrescarSujetos(List.of(sujeto), false);
+                        all.clear(); all.addAll(partidas);
+                        playersList.clearSelection();
+                        refreshModeCombo();
+                        applyFilters();
+                        mostrarGuiaVacia(false);
+                        mostrarDirectos(false);
+                    }
+                    @Override public void buscarPartidasDe(long pid, String nombre) {
+                        Player p = new Player(pid, nombre, grupoDestino());
+                        objetivoForzado = p; invitado = p; vistaDelInvitado = vistaActualId();
+                        playersList.clearSelection(); aplicarFiltroGrupo(); mostrarDirectos(false); fetchMatches(fetchBtn);
+                    }
+                    @Override public void descargarSinCambiarVista(List<Match> partidas, boolean enviar, Runnable alTerminar) {
+                        descargaSinCambiarVista = true; alTerminarDescarga = alTerminar; download(partidas, enviar);
+                    }
+                },
+                ACTIVIDAD_CACHE, eloWatch, ALIASES, CANAL_DE, ELO_AYER, NOMBRES_AYER, twitchLive, dev.tirador.aoe2radar.cache.Anotaciones::notaDe,
+                PERFILES_DIR, dev.tirador.aoe2radar.cache.HistorialDisco::cargarActividad, ACT_DIAS);
+        centroCards.add(perfil.panel(), "perfil");
         center.add(centroCards, BorderLayout.CENTER);
         center.add(bottom, BorderLayout.SOUTH);
 
@@ -7395,7 +5871,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (techTreeBtn != null && techTreeBtn.isSelected()) { techTreeBtn.setSelected(false); }
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        actividadAbierta = false;
+        if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (splitPrincipal != null && ttDivisorPrevio >= 0) { SwingUtilities.invokeLater(() -> { if (norteWatchRef != null) { norteWatchRef.revalidate(); norteWatchRef.repaint(); } }); splitPrincipal.setDividerLocation(ttDivisorPrevio); splitPrincipal.setOneTouchExpandable(false); ttDivisorPrevio = -1; }
@@ -8719,7 +7195,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     /** Un jugador concreto elegido de una sugerencia: en Perfil se abre directamente; en el resto, las mismas tres opciones del buscador, sin repetir la búsqueda. */
     void jugadorElegido(long pid, String nombre) {
-        if (actividadAbierta) { abrirPerfil(pid, nombre); return; }
+        if (perfil.abierto()) { abrirPerfil(pid, nombre); return; }
         String verO = t("Ver sus partidas", "View their games"), perfO = t("Ver perfil", "View profile"), addO = t("Añadir al grupo\u2026", "Add to group\u2026"), canO = t("Cancelar", "Cancel");
         int r0 = JOptionPane.showOptionDialog(this, nombre + "  ·  " + pid, t("Resultados", "Results"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, new Object[]{ perfO, verO, addO, canO }, perfO);
         if (r0 == 0) abrirPerfil(pid, nombre);
@@ -8770,11 +7246,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     String addO = t("Añadir al grupo\u2026", "Add to group\u2026");
                     String canO = t("Cancelar", "Cancel");
                     int r0;
-                    if (actividadAbierta && res.size() == 1) r0 = 0;   // en la pestaña Perfil, el buscador de arriba abre el perfil directamente
+                    if (perfil.abierto() && res.size() == 1) r0 = 0;   // en la pestaña Perfil, el buscador de arriba abre el perfil directamente
                     else r0 = JOptionPane.showOptionDialog(SpoilerFreeRecs.this, pnl, t("Resultados", "Results"),
                             JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
-                            actividadAbierta ? new Object[]{ perfO, canO } : new Object[]{ perfO, verO, addO, canO }, perfO);
-                    if (actividadAbierta && r0 != 0) { status.setText(t("Listo.", "Ready.")); return; }
+                            perfil.abierto() ? new Object[]{ perfO, canO } : new Object[]{ perfO, verO, addO, canO }, perfO);
+                    if (perfil.abierto() && r0 != 0) { status.setText(t("Listo.", "Ready.")); return; }
                     if (r0 != 0 && r0 != 1 && r0 != 2) { status.setText(t("Listo.", "Ready.")); return; }
                     String sel = (String) cbSel.getSelectedItem();
                     final boolean verPerfil = r0 == 0, verAhora = r0 == 1;
@@ -8828,8 +7304,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             fetchWorker.cancel(true);
             return;
         }
-        if (objetivoForzado == null && invitado == null && actividadAbierta && actPid > 0 && playersList.getSelectedIndices().length == 0) {
-            objetivoForzado = new Player(actPid, actNombre, grupoDestino());   // con un perfil abierto, «Buscar partidas» busca a ese jugador
+        if (objetivoForzado == null && invitado == null && perfil.abierto() && perfil.pidAbierto() > 0 && playersList.getSelectedIndices().length == 0) {
+            objetivoForzado = new Player(perfil.pidAbierto(), perfil.nombreAbierto(), grupoDestino());   // con un perfil abierto, «Buscar partidas» busca a ese jugador
             mostrarDirectos(false);
         }
         if (playersModel.isEmpty() && invitado == null && objetivoForzado == null) {
