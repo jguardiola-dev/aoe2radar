@@ -504,7 +504,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final JComboBox<String> periodoCombo = new JComboBox<>(new String[]{ t("Todo", "All"), t("7 días", "7 days"), t("30 días", "30 days"), t("90 días", "90 days"), t("365 días", "365 days") });   // filtro de periodo
     boolean actualizandoMapas;
     final MatchesTableModel tableModel = new MatchesTableModel();
-    final JTable table;
+    JTable table;   // no final: se asigna en construirTablaPartidas(), no en el constructor (T3-A1)
     final JLabel status = new JLabel(t("Listo.", "Ready.")) {
         @Override public void setText(String texto) {   // si no cabe, el tooltip lo enseña entero
             super.setText(texto);
@@ -1952,234 +1952,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         JPanel top = construirBarraSuperior(temaInicial);
 
-        // Tabla de partidas
-        table = new JTable(tableModel) {
-            @Override public String getToolTipText(MouseEvent ev) {
-                int r = rowAtPoint(ev.getPoint());
-                if (r < 0) return null;
-                int mr = convertRowIndexToModel(r);
-                if (mr < 0 || mr >= view.size()) return null;
-                Match m = view.get(mr);
-                int mc = convertColumnIndexToModel(columnAtPoint(ev.getPoint()));
-                if (mc == 1 && notaDe(m.refId) != null) return t("Nota: ", "Note: ") + notaDe(m.refId);
-                if (mc == 5 && m.players.size() == 2)
-                    for (MatchPlayer mp : m.players)
-                        if (mp.id != m.refId && notaDe(mp.id) != null) return t("Nota: ", "Note: ") + notaDe(mp.id);
-                if (enCursoReal(m))
-                    return t("EN DIRECTO — doble clic para espectar", "LIVE — double-click to spectate");
-                String enf = enfrentamiento(m, revelada(m));
-                if (revelada(m)) {   // revelada: el enfrentamiento con resultados, y la duración
-                    String tr = tipResultado(m);
-                    if (tr != null) return "<html>" + (enf.startsWith("<html>") ? enf.substring(6, enf.length() - 7) : escapeHtml(enf))
-                            + "<br>" + escapeHtml(tr) + "</html>";
-                }
-                return enf;
-            }
-            @Override public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
-                Component c = super.prepareRenderer(renderer, row, column);
-                int mr = convertRowIndexToModel(row);
-                boolean viva = mr >= 0 && mr < view.size() && enCursoReal(view.get(mr));
-                // Los renderers son compartidos: color y fuente se fijan SIEMPRE,
-                // en ambas ramas, para que la fila viva no contamine al resto.
-                c.setFont(viva ? getFont().deriveFont(Font.BOLD) : getFont());
-                if (!isRowSelected(row))
-                    c.setForeground(viva ? colorVivoTabla() : getForeground());
-                if (c instanceof JLabel jl && convertColumnIndexToModel(column) == 1
-                        && mr >= 0 && mr < view.size())   // cuenta hermana: quién es su matriz
-                    jl.setToolTipText(tipCuentaVinculada(view.get(mr)));
-                return c;
-            }
-        };
-        table.setRowHeight(24);
-        table.setAutoCreateRowSorter(true);   // clic en cabecera para ordenar
-        table.getColumnModel().getColumn(0).setPreferredWidth(90);    // Fecha
-        table.getColumnModel().getColumn(1).setPreferredWidth(130);   // Jugador
-        table.getColumnModel().getColumn(2).setPreferredWidth(95);    // Civ
-        table.getColumnModel().getColumn(3).setPreferredWidth(110);   // Modo
-        table.getColumnModel().getColumn(4).setPreferredWidth(110);   // Mapa
-        table.getColumnModel().getColumn(5).setPreferredWidth(230);   // Rival
-        table.getColumnModel().getColumn(6).setPreferredWidth(95);    // Civ rival
-        table.getColumnModel().getColumn(7).setPreferredWidth(100);   // Rec
-        table.getColumnModel().getColumn(8).setPreferredWidth(80);    // Resultado (ojo por fila)
-        {   // anchos guardados (en orden del modelo)
-            String[] anchos = leerConfig("tabla_anchos", "").split(",");
-            if (anchos.length == table.getColumnCount()) for (int i = 0; i < anchos.length; i++) { try { int a = Integer.parseInt(anchos[i].trim()); if (a >= 20) table.getColumnModel().getColumn(i).setPreferredWidth(a); } catch (NumberFormatException ignored) { } }
-        }
-        DefaultTableCellRenderer ojoR = new DefaultTableCellRenderer() {
-            @Override public Component getTableCellRendererComponent(JTable tb, Object v, boolean sel, boolean foc, int row, int col) {
-                JLabel l = (JLabel) super.getTableCellRendererComponent(tb, v, sel, foc, row, col);
-                l.setHorizontalAlignment(SwingConstants.CENTER);
-                boolean abierto = "\u25C9".equals(String.valueOf(v));
-                l.setFont(l.getFont().deriveFont(abierto ? Font.BOLD : Font.PLAIN, 14f));
-                if (!sel) l.setForeground(abierto ? (temaOscuroActivo ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f))
-                                                  : new Color(0x8a, 0x8a, 0x8a));
-                l.setToolTipText(v == null || String.valueOf(v).isBlank() ? null
-                        : (abierto ? t("Clic: volver a tapar el resultado", "Click: hide the result again")
-                                   : t("Clic: revelar el resultado de esta partida", "Click: reveal this game's result")));
-                return l;
-            }
-        };
-        table.getColumnModel().getColumn(8).setCellRenderer(ojoR);
-        aplicarOrdenColumnas(leerConfig("tabla_orden", ORDEN_COLUMNAS_DEFECTO));
-        javax.swing.Timer guardaCols = new javax.swing.Timer(800, ev -> guardarColumnas());
-        guardaCols.setRepeats(false);
-        table.getColumnModel().addColumnModelListener(new javax.swing.event.TableColumnModelListener() {   // orden y anchos se recuerdan
-            @Override public void columnMoved(javax.swing.event.TableColumnModelEvent e) { if (e.getFromIndex() != e.getToIndex()) guardaCols.restart(); }
-            @Override public void columnMarginChanged(javax.swing.event.ChangeEvent e) { guardaCols.restart(); }
-            @Override public void columnAdded(javax.swing.event.TableColumnModelEvent e) { }
-            @Override public void columnRemoved(javax.swing.event.TableColumnModelEvent e) { }
-            @Override public void columnSelectionChanged(javax.swing.event.ListSelectionEvent e) { }
-        });
-        DefaultTableCellRenderer centrado = new DefaultTableCellRenderer();
-        centrado.setHorizontalAlignment(SwingConstants.CENTER);
-        for (int ci : new int[]{ 0, 2, 3, 4, 6 }) table.getColumnModel().getColumn(ci).setCellRenderer(centrado);   // Fecha, Civ, Modo, Mapa, Civ rival
-        table.getTableHeader().addMouseListener(new MouseAdapter() {   // doble clic en el borde de una columna = ajustar al contenido
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) return;
-                int x = 0;
-                for (int c = 0; c < table.getColumnCount(); c++) {
-                    x += table.getColumnModel().getColumn(c).getWidth();
-                    if (Math.abs(e.getX() - x) <= 4) { ajustarColumna(c); return; }
-                }
-            }
-        });
-        // Atajos: Enter en la tabla descarga la selección; Ctrl+F va al buscador; F5 refresca los directos
-        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sfrDescargar");
-        table.getActionMap().put("sfrDescargar", new AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (dlSel.isEnabled() && !selectedRows().isEmpty()) download(selectedRows());
-            }
-        });
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F, java.awt.event.InputEvent.CTRL_DOWN_MASK), "sfrBuscar");
-        getRootPane().getActionMap().put("sfrBuscar", new AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (buscaNick != null) { buscaNick.requestFocusInWindow(); buscaNick.selectAll(); }
-            }
-        });
-        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
-                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "sfrRefrescar");
-        getRootPane().getActionMap().put("sfrRefrescar", new AbstractAction() {
-            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                directos.refrescarForzado();
-                if (directosBtn != null && directosBtn.isSelected()) status.setText(t("Refrescando directos…", "Refreshing streams…"));
-            }
-        });
-        table.addMouseListener(new MouseAdapter() {
-            @Override public void mousePressed(MouseEvent e)  { maybePopupTabla(e); }
-            @Override public void mouseReleased(MouseEvent e) { maybePopupTabla(e); }
-            void maybePopupTabla(MouseEvent e) {
-                if (!e.isPopupTrigger()) return;
-                int r = table.rowAtPoint(e.getPoint());
-                if (r < 0) return;
-                if (!table.isRowSelected(r)) table.setRowSelectionInterval(r, r);
-                int mr = table.convertRowIndexToModel(r);
-                if (mr < 0 || mr >= view.size()) return;
-                Match m = view.get(mr);
-                JPopupMenu menu = new JPopupMenu();
-                if (m.gte == 0) {   // en Guess the ELO no: el perfil chivaría el ELO
-                    List<MatchPlayer> conId = new ArrayList<>();
-                    for (MatchPlayer mp : m.players) if (mp.id > 0) conId.add(mp);
-                    if (!conId.isEmpty()) {
-                        MatchPlayer titular = null; for (MatchPlayer mp : conId) if (mp.id == m.refId) titular = mp;
-                        if (conId.size() <= 2)
-                            for (MatchPlayer mp : conId) { Integer e1 = elo1v1Conocido(mp.id); if (e1 == null) e1 = mp.rating; JMenu mj = menuDeJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "")); mj.setIcon(iconoBandera(paisDe(mp.id))); menu.add(mj); }
-                        else if (titular != null) {   // equipos: aliados y rivales del titular, como en la watchlist
-                            for (MatchPlayer mp : conId) if (mp.id == titular.id) menu.add(menuDeJugador(mp.id, mp.name));
-                            JMenu al = new JMenu(t("Aliados", "Allies")), ri = new JMenu(t("Rivales", "Opponents"));
-                            for (MatchPlayer mp : conId) { if (mp.id == titular.id) continue; String pos = posicionEnEquipo(m, mp); JMenu dst = mp.team == titular.team ? al : ri; Integer e1 = elo1v1Conocido(mp.id); JMenu sub = menuDeJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "") + (pos == null ? "" : "  \u00B7 " + posicionNombre(pos))); sub.setIcon(iconoBandera(paisDe(mp.id))); dst.add(sub); }
-                            if (al.getItemCount() > 0) menu.add(al); if (ri.getItemCount() > 0) menu.add(ri);
-                        } else {
-                            JMenu js = new JMenu(t("Jugadores de la partida", "Match players"));
-                            for (MatchPlayer mp : conId) js.add(menuDeJugador(mp.id, mp.name));
-                            menu.add(js);
-                        }
-                        menu.addSeparator();
-                    }
-                }
-                if (enCursoReal(m)) {
-                    JMenuItem esp = new JMenuItem(t("Espectar en directo", "Spectate live"));
-                    esp.addActionListener(a -> espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id));
-                    menu.add(esp);
-                    if (rutaCaptureAge() != null) {
-                        JMenuItem espCa = new JMenuItem(t("Espectar con CaptureAge", "Spectate with CaptureAge"));
-                        espCa.addActionListener(a -> {
-                            lanzarCaptureAge(null);   // acción explícita: no depende de la casilla
-                            espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
-                        });
-                        menu.add(espCa);
-                    }
-                } else {
-                    if (m.enDisco) {
-                        JMenuItem env = new JMenuItem(t("Enviar al juego", "Send to game"));
-                        env.addActionListener(a -> enviarASavegame(List.of(m)));
-                        menu.add(env);
-                    } else {
-                        JMenuItem dl = new JMenuItem(t("Descargar", "Download"));
-                        dl.addActionListener(a -> download(List.of(m)));
-                        menu.add(dl);
-                    }
-                    menu.addSeparator();
-                    JMenuItem rev = new JMenuItem(t("Revelar resultado\u2026", "Reveal result\u2026"));
-                    rev.addActionListener(a -> revelarResultado());
-                    menu.add(rev);
-                    if (m.gte == 0) {   // el tech tree de cada civ de la partida, a un clic
-                        java.util.LinkedHashSet<String> civsP = new java.util.LinkedHashSet<>();
-                        for (MatchPlayer mp : m.players) if (mp.civ != null && !mp.civ.isBlank()) civsP.add(mp.civ);
-                        if (civsP.size() <= 2) {
-                            for (String cv : civsP) { JMenuItem it = new JMenuItem("Tech tree: " + cv); it.addActionListener(a -> abrirTechTree(cv)); menu.add(it); }
-                        } else {
-                            JMenu sub = new JMenu("Tech tree");
-                            for (String cv : civsP) { JMenuItem it = new JMenuItem(cv); it.addActionListener(a -> abrirTechTree(cv)); sub.add(it); }
-                            menu.add(sub);
-                        }
-                    }
-                    if (m.gte == 0) {
-                        JMenuItem ana = new JMenuItem(t("Análisis de la partida (¡spoilers!)\u2026",
-                                "Match analysis (spoilers!)\u2026"));
-                        ana.addActionListener(a -> {
-                            int ok = JOptionPane.showConfirmDialog(SpoilerFreeRecs.this,
-                                    t("Se abrirá el análisis completo en aoe2insights: resultado, estrategias y minimapa.\n¿Seguro?",
-                                      "This opens the full analysis on aoe2insights: result, strategies and minimap.\nSure?"),
-                                    t("Análisis con spoilers", "Analysis with spoilers"),
-                                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-                            if (ok == JOptionPane.YES_OPTION)
-                                abrirUrl("https://www.aoe2insights.com/match/" + m.id + "/");
-                        });
-                        menu.add(ana);
-                    }
-                }
-                menu.show(table, e.getX(), e.getY());
-            }
-            @Override public void mouseClicked(MouseEvent e) {
-                int r0 = table.rowAtPoint(e.getPoint()), c0 = table.columnAtPoint(e.getPoint());
-                if (SwingUtilities.isLeftMouseButton(e) && r0 >= 0 && c0 >= 0 && table.convertColumnIndexToModel(c0) == 8) {
-                    if (e.getClickCount() != 1) return;   // el doble clic sobre el ojo no descarga
-                    int mr0 = table.convertRowIndexToModel(r0);
-                    if (mr0 < 0 || mr0 >= view.size()) return;
-                    Match m0 = view.get(mr0);
-                    if (m0.finished == null) return;
-                    if (!reveladas.remove(m0.id)) reveladas.add(m0.id);
-                    tableModel.fireTableRowsUpdated(mr0, mr0);
-                    return;
-                }
-                if (e.getClickCount() != 2 || !dlSel.isEnabled() || e.isControlDown() || e.isShiftDown()) return;
-                int r = table.rowAtPoint(e.getPoint());
-                if (r < 0) return;
-                int mr = table.convertRowIndexToModel(r);
-                if (mr < 0 || mr >= view.size()) return;
-                Match m = view.get(mr);
-                if (enCursoReal(m)) {
-                    if (confirmarEspectar(refNombre(m))) espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
-                    return;
-                }
-                else if (m.finished == null)
-                    status.setText(t("Esa partida quedó colgada en el servidor (crash): no hay rec que bajar.",
-                            "That game hung on the server (crash): there's no rec to download."));
-                else download(List.of(m));
-            }
-        });
+        construirTablaPartidas();
 
         // Botones inferiores + savegame + firma + donación
         JButton abrir  = new JButton(t("Abrir carpeta recs descargadas", "Open downloaded recs folder"));
@@ -3464,6 +3237,240 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         top.add(fila2);
         setMinimumSize(new Dimension(1100, 640));
         return top;
+    }
+
+    // La tabla de partidas: el JTable con sus renderers (fila en vivo en negrita,
+    // el ojo de "revelar resultado"), el menu contextual por fila y los atajos de
+    // teclado (Enter descarga, Ctrl+F busca, F5 refresca Directos).
+    private void construirTablaPartidas() {
+        // Tabla de partidas
+        table = new JTable(tableModel) {
+            @Override public String getToolTipText(MouseEvent ev) {
+                int r = rowAtPoint(ev.getPoint());
+                if (r < 0) return null;
+                int mr = convertRowIndexToModel(r);
+                if (mr < 0 || mr >= view.size()) return null;
+                Match m = view.get(mr);
+                int mc = convertColumnIndexToModel(columnAtPoint(ev.getPoint()));
+                if (mc == 1 && notaDe(m.refId) != null) return t("Nota: ", "Note: ") + notaDe(m.refId);
+                if (mc == 5 && m.players.size() == 2)
+                    for (MatchPlayer mp : m.players)
+                        if (mp.id != m.refId && notaDe(mp.id) != null) return t("Nota: ", "Note: ") + notaDe(mp.id);
+                if (enCursoReal(m))
+                    return t("EN DIRECTO — doble clic para espectar", "LIVE — double-click to spectate");
+                String enf = enfrentamiento(m, revelada(m));
+                if (revelada(m)) {   // revelada: el enfrentamiento con resultados, y la duración
+                    String tr = tipResultado(m);
+                    if (tr != null) return "<html>" + (enf.startsWith("<html>") ? enf.substring(6, enf.length() - 7) : escapeHtml(enf))
+                            + "<br>" + escapeHtml(tr) + "</html>";
+                }
+                return enf;
+            }
+            @Override public Component prepareRenderer(TableCellRenderer renderer, int row, int column) {
+                Component c = super.prepareRenderer(renderer, row, column);
+                int mr = convertRowIndexToModel(row);
+                boolean viva = mr >= 0 && mr < view.size() && enCursoReal(view.get(mr));
+                // Los renderers son compartidos: color y fuente se fijan SIEMPRE,
+                // en ambas ramas, para que la fila viva no contamine al resto.
+                c.setFont(viva ? getFont().deriveFont(Font.BOLD) : getFont());
+                if (!isRowSelected(row))
+                    c.setForeground(viva ? colorVivoTabla() : getForeground());
+                if (c instanceof JLabel jl && convertColumnIndexToModel(column) == 1
+                        && mr >= 0 && mr < view.size())   // cuenta hermana: quién es su matriz
+                    jl.setToolTipText(tipCuentaVinculada(view.get(mr)));
+                return c;
+            }
+        };
+        table.setRowHeight(24);
+        table.setAutoCreateRowSorter(true);   // clic en cabecera para ordenar
+        table.getColumnModel().getColumn(0).setPreferredWidth(90);    // Fecha
+        table.getColumnModel().getColumn(1).setPreferredWidth(130);   // Jugador
+        table.getColumnModel().getColumn(2).setPreferredWidth(95);    // Civ
+        table.getColumnModel().getColumn(3).setPreferredWidth(110);   // Modo
+        table.getColumnModel().getColumn(4).setPreferredWidth(110);   // Mapa
+        table.getColumnModel().getColumn(5).setPreferredWidth(230);   // Rival
+        table.getColumnModel().getColumn(6).setPreferredWidth(95);    // Civ rival
+        table.getColumnModel().getColumn(7).setPreferredWidth(100);   // Rec
+        table.getColumnModel().getColumn(8).setPreferredWidth(80);    // Resultado (ojo por fila)
+        {   // anchos guardados (en orden del modelo)
+            String[] anchos = leerConfig("tabla_anchos", "").split(",");
+            if (anchos.length == table.getColumnCount()) for (int i = 0; i < anchos.length; i++) { try { int a = Integer.parseInt(anchos[i].trim()); if (a >= 20) table.getColumnModel().getColumn(i).setPreferredWidth(a); } catch (NumberFormatException ignored) { } }
+        }
+        DefaultTableCellRenderer ojoR = new DefaultTableCellRenderer() {
+            @Override public Component getTableCellRendererComponent(JTable tb, Object v, boolean sel, boolean foc, int row, int col) {
+                JLabel l = (JLabel) super.getTableCellRendererComponent(tb, v, sel, foc, row, col);
+                l.setHorizontalAlignment(SwingConstants.CENTER);
+                boolean abierto = "\u25C9".equals(String.valueOf(v));
+                l.setFont(l.getFont().deriveFont(abierto ? Font.BOLD : Font.PLAIN, 14f));
+                if (!sel) l.setForeground(abierto ? (temaOscuroActivo ? new Color(0xd9, 0xa5, 0x5b) : new Color(0x9a, 0x6b, 0x1f))
+                                                  : new Color(0x8a, 0x8a, 0x8a));
+                l.setToolTipText(v == null || String.valueOf(v).isBlank() ? null
+                        : (abierto ? t("Clic: volver a tapar el resultado", "Click: hide the result again")
+                                   : t("Clic: revelar el resultado de esta partida", "Click: reveal this game's result")));
+                return l;
+            }
+        };
+        table.getColumnModel().getColumn(8).setCellRenderer(ojoR);
+        aplicarOrdenColumnas(leerConfig("tabla_orden", ORDEN_COLUMNAS_DEFECTO));
+        javax.swing.Timer guardaCols = new javax.swing.Timer(800, ev -> guardarColumnas());
+        guardaCols.setRepeats(false);
+        table.getColumnModel().addColumnModelListener(new javax.swing.event.TableColumnModelListener() {   // orden y anchos se recuerdan
+            @Override public void columnMoved(javax.swing.event.TableColumnModelEvent e) { if (e.getFromIndex() != e.getToIndex()) guardaCols.restart(); }
+            @Override public void columnMarginChanged(javax.swing.event.ChangeEvent e) { guardaCols.restart(); }
+            @Override public void columnAdded(javax.swing.event.TableColumnModelEvent e) { }
+            @Override public void columnRemoved(javax.swing.event.TableColumnModelEvent e) { }
+            @Override public void columnSelectionChanged(javax.swing.event.ListSelectionEvent e) { }
+        });
+        DefaultTableCellRenderer centrado = new DefaultTableCellRenderer();
+        centrado.setHorizontalAlignment(SwingConstants.CENTER);
+        for (int ci : new int[]{ 0, 2, 3, 4, 6 }) table.getColumnModel().getColumn(ci).setCellRenderer(centrado);   // Fecha, Civ, Modo, Mapa, Civ rival
+        table.getTableHeader().addMouseListener(new MouseAdapter() {   // doble clic en el borde de una columna = ajustar al contenido
+            @Override public void mouseClicked(MouseEvent e) {
+                if (e.getClickCount() != 2 || !SwingUtilities.isLeftMouseButton(e)) return;
+                int x = 0;
+                for (int c = 0; c < table.getColumnCount(); c++) {
+                    x += table.getColumnModel().getColumn(c).getWidth();
+                    if (Math.abs(e.getX() - x) <= 4) { ajustarColumna(c); return; }
+                }
+            }
+        });
+        // Atajos: Enter en la tabla descarga la selección; Ctrl+F va al buscador; F5 refresca los directos
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sfrDescargar");
+        table.getActionMap().put("sfrDescargar", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (dlSel.isEnabled() && !selectedRows().isEmpty()) download(selectedRows());
+            }
+        });
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F, java.awt.event.InputEvent.CTRL_DOWN_MASK), "sfrBuscar");
+        getRootPane().getActionMap().put("sfrBuscar", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (buscaNick != null) { buscaNick.requestFocusInWindow(); buscaNick.selectAll(); }
+            }
+        });
+        getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)
+                .put(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "sfrRefrescar");
+        getRootPane().getActionMap().put("sfrRefrescar", new AbstractAction() {
+            @Override public void actionPerformed(java.awt.event.ActionEvent e) {
+                directos.refrescarForzado();
+                if (directosBtn != null && directosBtn.isSelected()) status.setText(t("Refrescando directos…", "Refreshing streams…"));
+            }
+        });
+        table.addMouseListener(new MouseAdapter() {
+            @Override public void mousePressed(MouseEvent e)  { maybePopupTabla(e); }
+            @Override public void mouseReleased(MouseEvent e) { maybePopupTabla(e); }
+            void maybePopupTabla(MouseEvent e) {
+                if (!e.isPopupTrigger()) return;
+                int r = table.rowAtPoint(e.getPoint());
+                if (r < 0) return;
+                if (!table.isRowSelected(r)) table.setRowSelectionInterval(r, r);
+                int mr = table.convertRowIndexToModel(r);
+                if (mr < 0 || mr >= view.size()) return;
+                Match m = view.get(mr);
+                JPopupMenu menu = new JPopupMenu();
+                if (m.gte == 0) {   // en Guess the ELO no: el perfil chivaría el ELO
+                    List<MatchPlayer> conId = new ArrayList<>();
+                    for (MatchPlayer mp : m.players) if (mp.id > 0) conId.add(mp);
+                    if (!conId.isEmpty()) {
+                        MatchPlayer titular = null; for (MatchPlayer mp : conId) if (mp.id == m.refId) titular = mp;
+                        if (conId.size() <= 2)
+                            for (MatchPlayer mp : conId) { Integer e1 = elo1v1Conocido(mp.id); if (e1 == null) e1 = mp.rating; JMenu mj = menuDeJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "")); mj.setIcon(iconoBandera(paisDe(mp.id))); menu.add(mj); }
+                        else if (titular != null) {   // equipos: aliados y rivales del titular, como en la watchlist
+                            for (MatchPlayer mp : conId) if (mp.id == titular.id) menu.add(menuDeJugador(mp.id, mp.name));
+                            JMenu al = new JMenu(t("Aliados", "Allies")), ri = new JMenu(t("Rivales", "Opponents"));
+                            for (MatchPlayer mp : conId) { if (mp.id == titular.id) continue; String pos = posicionEnEquipo(m, mp); JMenu dst = mp.team == titular.team ? al : ri; Integer e1 = elo1v1Conocido(mp.id); JMenu sub = menuDeJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "") + (pos == null ? "" : "  \u00B7 " + posicionNombre(pos))); sub.setIcon(iconoBandera(paisDe(mp.id))); dst.add(sub); }
+                            if (al.getItemCount() > 0) menu.add(al); if (ri.getItemCount() > 0) menu.add(ri);
+                        } else {
+                            JMenu js = new JMenu(t("Jugadores de la partida", "Match players"));
+                            for (MatchPlayer mp : conId) js.add(menuDeJugador(mp.id, mp.name));
+                            menu.add(js);
+                        }
+                        menu.addSeparator();
+                    }
+                }
+                if (enCursoReal(m)) {
+                    JMenuItem esp = new JMenuItem(t("Espectar en directo", "Spectate live"));
+                    esp.addActionListener(a -> espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id));
+                    menu.add(esp);
+                    if (rutaCaptureAge() != null) {
+                        JMenuItem espCa = new JMenuItem(t("Espectar con CaptureAge", "Spectate with CaptureAge"));
+                        espCa.addActionListener(a -> {
+                            lanzarCaptureAge(null);   // acción explícita: no depende de la casilla
+                            espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
+                        });
+                        menu.add(espCa);
+                    }
+                } else {
+                    if (m.enDisco) {
+                        JMenuItem env = new JMenuItem(t("Enviar al juego", "Send to game"));
+                        env.addActionListener(a -> enviarASavegame(List.of(m)));
+                        menu.add(env);
+                    } else {
+                        JMenuItem dl = new JMenuItem(t("Descargar", "Download"));
+                        dl.addActionListener(a -> download(List.of(m)));
+                        menu.add(dl);
+                    }
+                    menu.addSeparator();
+                    JMenuItem rev = new JMenuItem(t("Revelar resultado\u2026", "Reveal result\u2026"));
+                    rev.addActionListener(a -> revelarResultado());
+                    menu.add(rev);
+                    if (m.gte == 0) {   // el tech tree de cada civ de la partida, a un clic
+                        java.util.LinkedHashSet<String> civsP = new java.util.LinkedHashSet<>();
+                        for (MatchPlayer mp : m.players) if (mp.civ != null && !mp.civ.isBlank()) civsP.add(mp.civ);
+                        if (civsP.size() <= 2) {
+                            for (String cv : civsP) { JMenuItem it = new JMenuItem("Tech tree: " + cv); it.addActionListener(a -> abrirTechTree(cv)); menu.add(it); }
+                        } else {
+                            JMenu sub = new JMenu("Tech tree");
+                            for (String cv : civsP) { JMenuItem it = new JMenuItem(cv); it.addActionListener(a -> abrirTechTree(cv)); sub.add(it); }
+                            menu.add(sub);
+                        }
+                    }
+                    if (m.gte == 0) {
+                        JMenuItem ana = new JMenuItem(t("Análisis de la partida (¡spoilers!)\u2026",
+                                "Match analysis (spoilers!)\u2026"));
+                        ana.addActionListener(a -> {
+                            int ok = JOptionPane.showConfirmDialog(SpoilerFreeRecs.this,
+                                    t("Se abrirá el análisis completo en aoe2insights: resultado, estrategias y minimapa.\n¿Seguro?",
+                                      "This opens the full analysis on aoe2insights: result, strategies and minimap.\nSure?"),
+                                    t("Análisis con spoilers", "Analysis with spoilers"),
+                                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                            if (ok == JOptionPane.YES_OPTION)
+                                abrirUrl("https://www.aoe2insights.com/match/" + m.id + "/");
+                        });
+                        menu.add(ana);
+                    }
+                }
+                menu.show(table, e.getX(), e.getY());
+            }
+            @Override public void mouseClicked(MouseEvent e) {
+                int r0 = table.rowAtPoint(e.getPoint()), c0 = table.columnAtPoint(e.getPoint());
+                if (SwingUtilities.isLeftMouseButton(e) && r0 >= 0 && c0 >= 0 && table.convertColumnIndexToModel(c0) == 8) {
+                    if (e.getClickCount() != 1) return;   // el doble clic sobre el ojo no descarga
+                    int mr0 = table.convertRowIndexToModel(r0);
+                    if (mr0 < 0 || mr0 >= view.size()) return;
+                    Match m0 = view.get(mr0);
+                    if (m0.finished == null) return;
+                    if (!reveladas.remove(m0.id)) reveladas.add(m0.id);
+                    tableModel.fireTableRowsUpdated(mr0, mr0);
+                    return;
+                }
+                if (e.getClickCount() != 2 || !dlSel.isEnabled() || e.isControlDown() || e.isShiftDown()) return;
+                int r = table.rowAtPoint(e.getPoint());
+                if (r < 0) return;
+                int mr = table.convertRowIndexToModel(r);
+                if (mr < 0 || mr >= view.size()) return;
+                Match m = view.get(mr);
+                if (enCursoReal(m)) {
+                    if (confirmarEspectar(refNombre(m))) espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
+                    return;
+                }
+                else if (m.finished == null)
+                    status.setText(t("Esa partida quedó colgada en el servidor (crash): no hay rec que bajar.",
+                            "That game hung on the server (crash): there's no rec to download."));
+                else download(List.of(m));
+            }
+        });
     }
 
     // ----- Carpeta de recs ---------------------------------------------------
