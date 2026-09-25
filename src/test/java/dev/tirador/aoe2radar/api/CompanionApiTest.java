@@ -301,7 +301,7 @@ class CompanionApiTest {
         assertEquals(" 7656 ", p.steamId(), "sin recortar: recortar es de la pantalla");
 
         Perfil.Ladder l = p.ladders().get(0);
-        assertEquals("3.0", l.id(), "un id numérico llega como Double: «3.0», no «3» (como en la 1.1; ver DEUDA)");
+        assertEquals("3", l.id(), "un id numérico (Double para el parser) se normaliza a «3», el mismo texto que si llegara como \"3\"");
         assertEquals(1501, l.rating(), "ladders: redondeo");
         assertEquals(88, l.rango());
         assertEquals(1601, l.ratingMax(), "clave alternativa maxRating, redondeada (truncar daría 1600)");
@@ -327,6 +327,15 @@ class CompanionApiTest {
         assertEquals("fr", v.pais());
         assertEquals(7, v.partidas());
         assertEquals(-1, p.vinculadas().get(1).pid(), "ilegible: pid -1, que la pantalla filtra");
+    }
+
+    @Test void idsDeLadderNumericosONoEnteros() throws Exception {
+        red.cuerpo = "{\"leaderboards\":[{\"leaderboard_id\":4},{\"leaderboard_id\":2.5},{\"leaderboard_id\":\"rm_1v1\"}],"
+                + "\"ratings\":[{\"leaderboard_id\":3,\"ratings\":[]}]}";
+        Perfil p = companion.perfil(1L);
+        assertEquals(List.of("4", "2.5", "rm_1v1"), p.ladders().stream().map(Perfil.Ladder::id).toList(),
+                "entero: sin decimales; lo demás, tal cual");
+        assertEquals("3", p.series().get(0).id(), "la serie, igual que el ladder: casan con perfilLadder");
     }
 
     @Test void perfilConLasDosClavesGanaLaPrimera() throws Exception {

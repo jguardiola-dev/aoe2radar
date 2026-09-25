@@ -115,7 +115,7 @@ public final class CompanionApi {
         for (Object o : arr(val(root, "leaderboards"))) {
             Map<String, Object> l = obj(o);
             ladders.add(new Perfil.Ladder(
-                    str(val(l, "leaderboard_id", "leaderboardId")),
+                    idLadder(val(l, "leaderboard_id", "leaderboardId")),
                     val(l, "rating") instanceof Number n ? (int) Math.round(n.doubleValue()) : null,
                     val(l, "rank") instanceof Number n ? n.intValue() : null,
                     val(l, "max_rating", "maxRating") instanceof Number n ? (int) Math.round(n.doubleValue()) : null,
@@ -133,7 +133,7 @@ public final class CompanionApi {
                         val(pt, "rating") instanceof Number n ? n.intValue() : null,
                         val(pt, "rating_diff", "ratingDiff") instanceof Number n ? n.intValue() : null));
             }
-            series.add(new Perfil.Serie(str(val(lb, "leaderboard_id", "leaderboardId")), List.copyOf(puntos)));
+            series.add(new Perfil.Serie(idLadder(val(lb, "leaderboard_id", "leaderboardId")), List.copyOf(puntos)));
         }
         List<Perfil.Vinculada> vinculadas = new ArrayList<>();
         for (Object o : arr(val(root, "linked_profiles", "linkedProfiles"))) {
@@ -144,6 +144,16 @@ public final class CompanionApi {
         return new Perfil(str(val(root, "country")), str(val(root, "clan")), lng(val(root, "games")),
                 str(val(root, "social_twitch_channel", "socialTwitchChannel")), str(val(root, "steam_id", "steamId")),
                 List.copyOf(ladders), List.copyOf(series), List.copyOf(vinculadas));
+    }
+
+    /**
+     * Id de ladder como texto. Json.parse lee todo número como Double: un id numérico (3) daría «3.0» y no casaría con
+     * "3" en las pantallas. Si es un número entero, se escribe sin decimales; lo demás, como str() (null si falta).
+     */
+    static String idLadder(Object o) {
+        if (o instanceof Number n && n.doubleValue() == Math.rint(n.doubleValue()) && !Double.isInfinite(n.doubleValue()))
+            return String.valueOf(n.longValue());
+        return str(o);
     }
 
     /** GET /leaderboards/{id}?page=…&per_page=… y, si pais no es null, &country=pais (también si es ""). */
