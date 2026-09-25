@@ -44,31 +44,27 @@ public final class ApiClient {
         return transporte.get(url);
     }
 
-    /** Como texto() pero sin contar nada al freno: lo usa textoCon429, que registra a su manera (sin contar dos veces). */
-    private String textoSinRegistrar(String url) throws IOException, InterruptedException {
-        Transporte.Respuesta r = pedir(url);
-        if (r.estado() / 100 != 2) throw new IOException("HTTP " + r.estado());
-        return r.cuerpo();
-    }
+    static final int INTENTOS_429 = 3;   // la petición y dos reintentos, como httpText429 de la 1.1
 
-    /** Antes httpText429: como texto(), con hasta dos reintentos si el servidor limita (HTTP 429). */
+    /**
+     * Antes httpText429: como texto(), con hasta dos reintentos si el companion limita (HTTP 429). Igual que texto(),
+     * el 429 se detecta por el ESTADO y TODOS los del companion cuentan al freno (en la 1.1 se miraba el texto del
+     * mensaje y el tercero salía sin contar). Cada reintento pasa por pedir(), es decir, por el freno: duerme la pausa
+     * que acaba de abrir el 429 anterior. Un 429 de otro host (Steam) no toca el freno ni se reintenta: sin pausa entre
+     * medias, reintentar era insistir en ráfaga. Un fallo que no es respuesta HTTP (red, timeout) sale tal cual; uno
+     * inesperado (RuntimeException), como IOException con su causa.
+     */
     public String textoCon429(String url) throws IOException, InterruptedException {
-        boolean companion = Freno.aplicaA(url);   // solo el companion cuenta para el freno: un 429 de otro host (Steam…) no lo toca
-        try {
-            return textoSinRegistrar(url);
-        } catch (Exception ex) {
-            if (String.valueOf(ex.getMessage()).contains("429")) {
-                if (companion) registrar429();   // pausa global; el propio freno la respeta en todas las llamadas
-                try { return textoSinRegistrar(url); }
-                catch (Exception ex2) {
-                    if (!String.valueOf(ex2.getMessage()).contains("429")) throw ex2;
-                    if (companion) registrar429();
-                    return textoSinRegistrar(url);
-                }
-            }
-            if (ex instanceof IOException io) throw io;
-            if (ex instanceof InterruptedException ie) throw ie;
-            throw new IOException(causa(ex));
+        boolean companion = Freno.aplicaA(url);   // solo el companion cuenta para el freno
+        for (int intento = 1; ; intento++) {
+            Transporte.Respuesta r;
+            try { r = pedir(url); }
+            catch (IOException | InterruptedException e) { throw e; }
+            catch (Exception e) { throw new IOException(causa(e)); }
+            if (r.estado() / 100 == 2) return r.cuerpo();
+            boolean reintentable = r.estado() == 429 && companion;
+            if (reintentable) registrar429();   // pausa global; el propio freno la respeta en todas las llamadas (y en el reintento)
+            if (!reintentable || intento >= INTENTOS_429) throw new IOException("HTTP " + r.estado());
         }
     }
 
