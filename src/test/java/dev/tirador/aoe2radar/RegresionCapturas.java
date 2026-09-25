@@ -232,7 +232,7 @@ class RegresionCapturas {
     static String estadoWatch(SpoilerFreeRecs app) {
         List<Long> ids = new ArrayList<>();
         for (var p : app.todosJugadores) ids.add(p.id());
-        return "watch: vivo(1)=" + app.vivoWatch.get(1L) + " todos=" + ids + " modelo=" + app.playersModel.size()
+        return "watch: vivo(1)=" + SpoilerFreeRecs.VIVO.matchDe(1L) + " todos=" + ids + " modelo=" + app.playersModel.size()
                 + " grupo=" + app.grupoActivo() + " top=" + app.modoTop()
                 + " titulo='" + (app.tituloWatch == null ? null : app.tituloWatch.getTitle()) + "'"
                 + " resumen='" + (app.resumenWatch == null ? null : app.resumenWatch.getText()) + "'";
@@ -386,13 +386,13 @@ class RegresionCapturas {
         foto("shot_lista250.png");
         cerrarDialogos();
         // menú contextual de la watchlist sobre un jugador en partida
-        app.vivoWatch.put(1L, 555L);
+        SpoilerFreeRecs.VIVO.marcarJugando(1L, 555L);
         SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new Player(1L, "12Tirador", "General")); app.todosJugadores.add(new Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
         // La partida 555 es inventada: un refresco de la propia app la quita en ~1 s y el panel pasa a «0 jugando»
         // (registrado: vivo(1)=null en la foto en 5 de 5 pasadas). Si el refresco tardaba, la foto pillaba el estado
         // intermedio («1 jugando»). Se espera a que termine para fotografiar siempre el estado final. DEUDA.md.
         boolean[] enPartida = { true };
-        for (int i = 0; i < 40 && enPartida[0]; i++) { Thread.sleep(250); SwingUtilities.invokeAndWait(() -> enPartida[0] = app.vivoWatch.containsKey(1L)); }
+        for (int i = 0; i < 40 && enPartida[0]; i++) { Thread.sleep(250); SwingUtilities.invokeAndWait(() -> enPartida[0] = SpoilerFreeRecs.VIVO.jugando(1L)); }
         Thread.sleep(300);
         SwingUtilities.invokeAndWait(() -> { Rectangle r = app.playersList.getCellBounds(0, 0); app.menuContextualWatchlist(app.playersModel.get(0), new java.awt.event.MouseEvent(app.playersList, java.awt.event.MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, r.x + 40, r.y + 8, 1, true)); });
         Thread.sleep(700);

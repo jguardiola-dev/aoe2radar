@@ -15,7 +15,6 @@ import java.util.Map;
 
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.cache.Anotaciones.nombreVisible;
-import static dev.tirador.aoe2radar.cache.Vivos.VIVO_PARTIDA;
 import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
 
 /** Reglas del dominio sobre partidas y jugadores: coincidencia de rival, modo de ladder, posiciones, tramos y franjas. */
@@ -109,7 +108,7 @@ public final class ReglasPartida {
             for (MatchPlayer p : m.players) {
                 Instant u = ultimaPorJugador.get(p.id);
                 if (u != null && u.isAfter(m.started)) { f = true; break; }
-                Match viva = VIVO_PARTIDA.get(p.id);
+                Match viva = EstadoVivo.SISTEMA.partida(p.id);
                 if (viva != null && viva.id > 0 && viva.id != m.id && viva.started != null && viva.started.isAfter(m.started)) { f = true; break; }
             }
             m.fantasma = f;

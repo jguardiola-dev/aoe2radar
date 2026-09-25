@@ -61,6 +61,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
 import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
@@ -119,9 +120,6 @@ import static dev.tirador.aoe2radar.cache.Paises.paisDe;
 import static dev.tirador.aoe2radar.cache.RecsDisco.RECS_DIR;
 import static dev.tirador.aoe2radar.cache.RecsDisco.destino;
 import static dev.tirador.aoe2radar.cache.RecsDisco.maxGteEnDisco;
-import static dev.tirador.aoe2radar.cache.Vivos.VISTO_VIVO_MS;
-import static dev.tirador.aoe2radar.cache.Vivos.VIVO_PARTIDA;
-import static dev.tirador.aoe2radar.cache.Vivos.VIVO_RIVAL;
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
 import static dev.tirador.aoe2radar.service.Aleatorio.componerTanda;
 import static dev.tirador.aoe2radar.service.Aleatorio.cumpleAzar;
@@ -439,7 +437,8 @@ public class SpoilerFreeRecs extends JFrame {
         return formaVisible && p.x >= wL - elo - 72 && p.x <= wL - elo;
     }
     final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
-    final Map<Long, Long>    vivoWatch = new HashMap<>();   // matchId en curso por seguido
+    /** Quién está en partida ahora (ver service.EstadoVivo): un solo dueño para el socket, los barridos y la UI. */
+    static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
     boolean mostrarEloWatch = Boolean.parseBoolean(leerConfig("elo_watchlist", "true"));
     javax.swing.Timer vigilante;      // barrido periódico del «en directo» (nunca del ELO)
     boolean vigilando = false;
@@ -1049,7 +1048,6 @@ public class SpoilerFreeRecs extends JFrame {
     }
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
     volatile int fallosFetch;   // jugadores sin respuesta en la última búsqueda
-    final Map<Long, String> vivoInfo = new java.util.concurrent.ConcurrentHashMap<>();
 
     // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
     static final int MAX_COMPARADOS = 10;
@@ -3619,8 +3617,8 @@ public class SpoilerFreeRecs extends JFrame {
         if (!visible) return;
         long hastaMs = 0;
         try { if (actHastaSfr != null && actHastaSfr.length() >= 10) hastaMs = LocalDate.parse(actHastaSfr.substring(0, 10)).plusDays(1).atStartOfDay(ZoneId.of("UTC")).toInstant().toEpochMilli(); } catch (Exception ignored) { }
-        Long visto = VISTO_VIVO_MS.get(actPid);
-        boolean hayNuevas = (visto != null && visto > hastaMs) || VIVO_PARTIDA.containsKey(actPid);
+        Long visto = VIVO.vistoMs(actPid);
+        boolean hayNuevas = (visto != null && visto > hastaMs) || VIVO.partida(actPid) != null;
         actHoyBtn.setEnabled(true);
         actHoyBtn.setText(t("Actualizar hoy", "Update today"));
         actHoyBtn.setForeground(hayNuevas ? (temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)) : UIManager.getColor("Button.foreground"));
@@ -4028,7 +4026,7 @@ public class SpoilerFreeRecs extends JFrame {
         JButton verP = new JButton(t("Ver sus partidas", "View their games")); verP.setFocusable(false); verP.setMargin(new Insets(1, 8, 1, 8)); verP.putClientProperty("JButton.buttonType", "roundRect");
         verP.addActionListener(e -> { Player p = new Player(rivalPid, rivalNombre, grupoDestino()); objetivoForzado = p; invitado = p; vistaDelInvitado = vistaActualId(); playersList.clearSelection(); aplicarFiltroGrupo(); mostrarDirectos(false); fetchMatches(fetchBtn); });
         botones.add(verP);
-        Match viva = VIVO_PARTIDA.get(rivalPid);
+        Match viva = VIVO.partida(rivalPid);
         if (viva != null && enCursoReal(viva) && viva.id > 0) { JButton esp = new JButton(t("Espectar", "Spectate")); esp.setFocusable(false); esp.setMargin(new Insets(1, 8, 1, 8)); esp.putClientProperty("JButton.buttonType", "roundRect"); esp.addActionListener(e -> { if (confirmarEspectar(rivalNombre)) espectarPartida(viva.id); }); botones.add(esp); }
         cab.add(botones, BorderLayout.EAST);
         h2hCuerpo.add(cab);
@@ -5033,7 +5031,7 @@ public class SpoilerFreeRecs extends JFrame {
                     SwingUtilities.invokeLater(() -> ahoraEstado.setText(t("Consultando… ", "Checking… ") + hechos + " / " + top.size()));
                 }
                 synchronized (ahoraEnCurso) { ahoraEnCurso.clear(); ahoraEnCurso.putAll(vivos); }
-                for (Map.Entry<Long, Match> en : vivos.entrySet()) VIVO_PARTIDA.put(en.getKey(), en.getValue());
+                for (Map.Entry<Long, Match> en : vivos.entrySet()) VIVO.guardarPartida(en.getKey(), en.getValue());
                 ahoraUltimaMs = System.currentTimeMillis();
                 SwingUtilities.invokeLater(this::ahoraPintar);
             } catch (Exception ex) {
@@ -5046,12 +5044,12 @@ public class SpoilerFreeRecs extends JFrame {
     void liveEvento(long pid, Match m, boolean terminada) {
         if (liveFicha(pid) == null) return;
         if (terminada) {
-            Match viva = VIVO_PARTIDA.remove(pid);
+            Match viva = VIVO.soltarPartida(pid);
             Match fin = m != null ? m : viva;
             if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, System.currentTimeMillis() }); }
             synchronized (ahoraEnCurso) { ahoraEnCurso.remove(pid); }
         } else if (m != null) {
-            VIVO_PARTIDA.put(pid, m);
+            VIVO.guardarPartida(pid, m);
             synchronized (ahoraEnCurso) { ahoraEnCurso.put(pid, m); }
         }
         if (ahoraAbierta && ahoraPanel != null && ahoraPanel.isShowing()) SwingUtilities.invokeLater(this::ahoraPintar);
@@ -5407,7 +5405,7 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** Submenú «En partida ahora»: aliados y rivales de la partida en curso de pid, con bandera, ELO y civ; clic = su perfil. */
     JMenu menuEnPartida(long pid) {
-        Match m = VIVO_PARTIDA.get(pid);
+        Match m = VIVO.partida(pid);
         if (m == null || !enCursoReal(m)) return null;
         MatchPlayer yo = null; for (MatchPlayer p : m.players) if (p.id == pid) yo = p;
         if (yo == null) return null;
@@ -6595,7 +6593,7 @@ public class SpoilerFreeRecs extends JFrame {
                 }
             } catch (Exception ex) { log("socket: no se pudo confirmar la partida " + m.id + ": " + causa(ex)); }
             if (!viva) { log("socket: partida " + m.id + " ya terminada según la API: fantasma ignorado"); return; }
-            for (long pid : pids) { vivoWatch.put(pid, m.id); vivoInfo.put(pid, resumenVivo(m, pid)); VIVO_PARTIDA.put(pid, m); liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
+            for (long pid : pids) { String resumen = resumenVivo(m, pid); VIVO.marcarJugando(pid, m.id, resumen); VIVO.guardarPartida(pid, m); liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
             SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); table.repaint(); });
         }, "socket-confirmar").start();
     }
@@ -6606,8 +6604,7 @@ public class SpoilerFreeRecs extends JFrame {
         for (SocketVivo.Evento ev : eventos) {
             if (ev instanceof SocketVivo.Quitada q) {
                 long mid = q.matchId();
-                for (Long pid : new ArrayList<>(vivoWatch.keySet()))
-                    if (Long.valueOf(mid).equals(vivoWatch.get(pid))) { vivoWatch.remove(pid); vivoInfo.remove(pid); VIVO_RIVAL.remove(pid); liveEvento(pid, null, true); cambio = true; }
+                for (long pid : VIVO.quitarPartida(mid)) { liveEvento(pid, null, true); cambio = true; }
                 continue;
             }
             String tipo = ((SocketVivo.Partida) ev).tipo();
@@ -6618,11 +6615,11 @@ public class SpoilerFreeRecs extends JFrame {
             List<Long> candidatos = new ArrayList<>();
             for (MatchPlayer mp : m.players) {
                 if (!ids.contains(mp.id)) continue;
-                if (m.finished != null) { vivoWatch.remove(mp.id); vivoInfo.remove(mp.id); VIVO_RIVAL.remove(mp.id); liveEvento(mp.id, m, true); cambio = true; }
+                if (m.finished != null) { VIVO.marcarFuera(mp.id); liveEvento(mp.id, m, true); cambio = true; }
                 // en curso DE VERDAD: empezada (no un lobby), sin terminar y hace menos de 3 h
                 else if (m.started != null && !m.started.isAfter(Instant.now().plusSeconds(60))
                         && m.started.isAfter(Instant.now().minus(Duration.ofHours(3)))
-                        && !Long.valueOf(m.id).equals(vivoWatch.get(mp.id))) candidatos.add(mp.id);
+                        && !Long.valueOf(m.id).equals(VIVO.matchDe(mp.id))) candidatos.add(mp.id);
             }
             if (!candidatos.isEmpty()) confirmarEventoSocket(m, candidatos);   // la API tiene la última palabra (fantasmas fuera)
         }
@@ -6632,13 +6629,12 @@ public class SpoilerFreeRecs extends JFrame {
     /** Resumen compacto de la partida en curso, para la sublínea y el tooltip:
      *  1v1 → «vs Rival (CivP–CivR) · Mapa»; equipos → «TG 4v4 · Mapa». */
     static String resumenVivo(Match m, long pid) {
-        if (enCursoReal(m)) { VIVO_PARTIDA.put(pid, m); VISTO_VIVO_MS.put(pid, System.currentTimeMillis()); }   // todos los caminos que detectan a alguien en partida pasan por aquí: así el menú «En partida ahora» siempre tiene la partida
+        VIVO.registrar(m, pid);   // de paso: partida, «visto» y rival (ver EstadoVivo.registrar); todos los caminos que detectan a alguien en partida pasan por aquí
         try {
             if (m.players.size() == 2) {
                 MatchPlayer yo = null, riv = null;
                 for (MatchPlayer p : m.players) { if (p.id == pid) yo = p; else riv = p; }
                 if (riv == null) return null;
-                VIVO_RIVAL.put(pid, new Object[]{ riv.id, riv.name });   // para el contextual «Rival: X»
                 String civs = (yo != null && yo.civ != null && riv.civ != null)
                         ? " (" + yo.civ + "\u2013" + riv.civ + ")" : "";
                 return "vs " + riv.name + (riv.rating != null ? " " + riv.rating : "") + civs
@@ -6685,10 +6681,10 @@ public class SpoilerFreeRecs extends JFrame {
 
     /** Subtexto de quien está en partida, con el estilo de Live now: rival en color normal, civs en gris, mapa y reloj en ámbar. Se recorta a la anchura: primero cae el reloj, luego las civs, y al final se acorta el rival. */
     String subtextoVivo(long pid, FontMetrics fm, int px) {
-        Match m = VIVO_PARTIDA.get(pid);
+        Match m = VIVO.partida(pid);
         String amb = temaOscuroActivo ? "#ffd56a" : "#b06a00";
         if (m == null || !enCursoReal(m)) {
-            String info = vivoInfo.get(pid);
+            String info = VIVO.info(pid);
             return "<font color='#8a8a8a'>" + escapeHtml(truncarPx(info != null ? info : t("partida en curso \u2014 detalle en el próximo tick", "game in progress \u2014 details next tick"), fm, px)) + "</font>";
         }
         MatchPlayer yo = null; for (MatchPlayer mp : m.players) if (mp.id == pid) yo = mp;
@@ -7087,7 +7083,7 @@ public class SpoilerFreeRecs extends JFrame {
                 JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 if (value instanceof Player p) {
                     char marca = marcaFila.getOrDefault(p.id(), ' ');
-                    boolean vivo = vivoWatch.containsKey(p.id())
+                    boolean vivo = VIVO.jugando(p.id())
                             || (marca != 'H' && vivoFamilia.getOrDefault(p.id(), false));
                     Integer elo = eloWatch.get(p.id());
                     Integer rank = modoTop() ? rankTop.get(p.id()) : null;
@@ -7111,7 +7107,8 @@ public class SpoilerFreeRecs extends JFrame {
                     }
                     String[] st = twitchLive.get(p.id());   // solo para pintar el badge: sin tooltip del título (tapaba la tarjeta)
                     l.setToolTipText(tip);   // ni «jugando ahora» ni el título del stream: el punto, la sublínea y Directos ya lo cuentan
-                    String mapaVivo = vivo && VIVO_PARTIDA.get(p.id()) != null && VIVO_PARTIDA.get(p.id()).map != null ? VIVO_PARTIDA.get(p.id()).map : null;
+                    Match enCurso = vivo ? VIVO.partida(p.id()) : null;   // una sola lectura: el socket puede soltarla entre dos
+                    String mapaVivo = enCurso != null && enCurso.map != null ? enCurso.map : null;
                     if (mapaVivo != null) {   // el mapa cabe en lo que sobra tras el nick; si no cabe, se recorta con «…» y, si ni siquiera hay sitio, no se pinta (el ELO nunca se tapa)
                         int sitio = maxChars - nombreVis.length() - 3;
                         if (sitio < 6) mapaVivo = null;
@@ -8414,7 +8411,7 @@ public class SpoilerFreeRecs extends JFrame {
             new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
             refrescarCampanas();
             campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> refrescarCampanas()); campanasTimer.start();
-            new javax.swing.Timer(1000, ev -> { if (!vivoWatch.isEmpty() && playersList.isShowing()) playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
+            new javax.swing.Timer(1000, ev -> { if (!VIVO.nadieJugando() && playersList.isShowing()) playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
             Thread lh = new Thread(() -> ladderAsegurar(false), "ladder-precarga"); lh.setDaemon(true); lh.start();   // el volcado del ladder, en silencio
         });
         tUpd.setRepeats(false);
@@ -9501,7 +9498,7 @@ public class SpoilerFreeRecs extends JFrame {
             if (g == null || p.grupo().equalsIgnoreCase(g)) vis.add(p);
         if (soloVivosBtn != null && soloVivosBtn.isSelected()) {
             final List<Player> ambito = new ArrayList<>(vis);
-            vis.removeIf(p -> !vivoWatch.containsKey(p.id())
+            vis.removeIf(p -> !VIVO.jugando(p.id())
                     && !(p.vinculo() != 0 && familiaViva(ambito, p.vinculo())));
         }
         boolean porElo = mostrarEloWatch && "elo".equals(leerConfig("orden_watch", "elo"));
@@ -9536,7 +9533,7 @@ public class SpoilerFreeRecs extends JFrame {
             Player ppal = fam.get(0);
             cabezas.add(ppal);
             boolean algunaViva = false;
-            for (Player x : fam) if (vivoWatch.containsKey(x.id())) algunaViva = true;
+            for (Player x : fam) if (VIVO.jugando(x.id())) algunaViva = true;
             vivoFamilia.put(ppal.id(), algunaViva);
             boolean exp = vinculosExpandidos.contains(f.getKey());
             marcaFila.put(ppal.id(), exp ? 'E' : 'P');
@@ -9773,9 +9770,9 @@ public class SpoilerFreeRecs extends JFrame {
                             for (MatchPlayer mp : m.players)
                                 if (idsLote.contains(mp.id) && !resultado.containsKey(mp.id)) {
                                     resultado.put(mp.id, m.id);
-                                    vivoInfo.put(mp.id, resumenVivo(m, mp.id));
-                                    if (!vivoWatch.containsKey(mp.id)) avisarSiCampana(mp.id, m);   // nuevo en partida desde el último barrido
-                                    VIVO_PARTIDA.put(mp.id, m);
+                                    VIVO.ponerInfo(mp.id, resumenVivo(m, mp.id));
+                                    if (!VIVO.jugando(mp.id)) avisarSiCampana(mp.id, m);   // nuevo en partida desde el último barrido
+                                    VIVO.guardarPartida(mp.id, m);
                                 }
                         }
                         long minAnt = masAntigua == null ? -1 : Duration.between(masAntigua, Instant.now()).toMinutes();
@@ -9789,20 +9786,20 @@ public class SpoilerFreeRecs extends JFrame {
                 // Confirmación individual: quien estaba en partida y ya no aparece en el lote, se consulta solo
                 for (Player p : top) {
                     if (stopOperacion) break;
-                    if (!vivoWatch.containsKey(p.id()) || resultado.containsKey(p.id()) || !topVerificados.contains(p.id())) continue;
+                    if (!VIVO.jugando(p.id()) || resultado.containsKey(p.id()) || !topVerificados.contains(p.id())) continue;
                     try {
                         Iterable<Match> leidas = COMPANION.partidas(p.id(), 1, 3);
                         Match ultima = null;
                         for (Match m : leidas) { if (m != null) { ultima = m; break; } }
                         if (ultima != null && enCursoReal(ultima)) {
                             resultado.put(p.id(), ultima.id);
-                            vivoInfo.put(p.id(), resumenVivo(ultima, p.id()));
+                            VIVO.ponerInfo(p.id(), resumenVivo(ultima, p.id()));
                             log("top vivos: " + p.name() + " seguía en partida (" + ultima.id + ") aunque el lote no la traía");
                         } else {
                             log("top vivos: " + p.name() + " terminó de verdad (última " + (ultima == null ? "?" : ultima.id + ", finished=" + ultima.finished) + ")");
                         }
                     } catch (Exception ex) {
-                        resultado.put(p.id(), vivoWatch.get(p.id()));   // sin respuesta: se conserva el punto
+                        resultado.put(p.id(), VIVO.matchDe(p.id()));   // sin respuesta: se conserva el punto
                         log("top vivos: confirmación de " + p.name() + " falló, punto conservado: " + causa(ex));
                     }
                     dormir(PAUSA_MS / 3);
@@ -9820,8 +9817,8 @@ public class SpoilerFreeRecs extends JFrame {
                     for (Player p : top) {
                         if (!topVerificados.contains(p.id())) continue;   // lote fallido: ni quitar ni poner
                         Long v = vivos.get(p.id());
-                        if (v != null) vivoWatch.put(p.id(), v);
-                        else { vivoWatch.remove(p.id()); vivoInfo.remove(p.id()); VIVO_RIVAL.remove(p.id()); }   // el REST manda al quitar
+                        if (v != null) VIVO.marcarJugando(p.id(), v);
+                        else { VIVO.marcarFuera(p.id()); }   // el REST manda al quitar
                     }
                     boolean tablaTocada = false;
                     for (Match fresco : terminadasRio)
@@ -9892,8 +9889,8 @@ public class SpoilerFreeRecs extends JFrame {
         JPopupMenu menu = new JPopupMenu();
         long pid = p.id(); String nombre = nombreVisible(pid, p.name());
         // ---- 1. en partida ahora
-        if (vivoWatch.containsKey(pid)) {
-            Match m = VIVO_PARTIDA.get(pid);
+        if (VIVO.jugando(pid)) {
+            Match m = VIVO.partida(pid);
             JMenuItem cab = new JMenuItem(t("En partida ahora", "In a game now") + (m != null && m.map != null ? " · " + m.map : "") + (m != null && m.started != null ? " · " + reloj(Duration.between(m.started, Instant.now())) : ""));
             cab.setEnabled(false); cab.setFont(cab.getFont().deriveFont(Font.BOLD));
             menu.add(cab);
@@ -9915,8 +9912,8 @@ public class SpoilerFreeRecs extends JFrame {
                     JMenu rv = new JMenu(t("Rivales", "Opponents")); for (MatchPlayer mp : rivales) rv.add(submenuJugadorPartida(mp, "")); menu.add(rv);
                 }
             } else {
-                Object[] riv = VIVO_RIVAL.get(pid);
-                if (riv != null) { JMenu rivalMenu = menuDeJugador((Long) riv[0], (String) riv[1]); rivalMenu.setText(t("Rival: ", "Opponent: ") + riv[1]); menu.add(rivalMenu); }
+                EstadoVivo.Rival riv = VIVO.rival(pid);
+                if (riv != null) { JMenu rivalMenu = menuDeJugador(riv.pid(), riv.nombre()); rivalMenu.setText(t("Rival: ", "Opponent: ") + riv.nombre()); menu.add(rivalMenu); }
             }
             menu.addSeparator();
         }
@@ -10120,7 +10117,7 @@ public class SpoilerFreeRecs extends JFrame {
 
     boolean familiaViva(List<Player> vis, long vinculo) {
         for (Player x : vis)
-            if (x.vinculo() == vinculo && vivoWatch.containsKey(x.id())) return true;
+            if (x.vinculo() == vinculo && VIVO.jugando(x.id())) return true;
         return false;
     }
 
@@ -10955,9 +10952,9 @@ public class SpoilerFreeRecs extends JFrame {
                 for (Object[] c : chunks) {
                     long id = (Long) c[0];
                     if (c[1] != null) {
-                        vivoWatch.put(id, (Long) c[1]);
-                        if (c.length > 3 && c[3] != null) vivoInfo.put(id, (String) c[3]);
-                    } else { vivoWatch.remove(id); vivoInfo.remove(id); VIVO_RIVAL.remove(id); }
+                        VIVO.marcarJugando(id, (Long) c[1]);
+                        if (c.length > 3 && c[3] != null) VIVO.ponerInfo(id, (String) c[3]);
+                    } else { VIVO.marcarFuera(id); }
                     if (c[2] != null) eloWatch.put(id, (Integer) c[2]);
                 }
                 actualizarIndicadoresVivos();
@@ -11015,8 +11012,8 @@ public class SpoilerFreeRecs extends JFrame {
                     @SuppressWarnings("unchecked") Map<Long, String> infos = (Map<Long, String>) c[2];
                     for (Long id : idsLote) {
                         Long vm = vivos.get(id);
-                        if (vm != null) { vivoWatch.put(id, vm); vivoInfo.put(id, infos.get(id)); }
-                        else { vivoWatch.remove(id); vivoInfo.remove(id); VIVO_RIVAL.remove(id); }
+                        if (vm != null) { VIVO.marcarJugando(id, vm, infos.get(id)); }
+                        else { VIVO.marcarFuera(id); }
                     }
                     @SuppressWarnings("unchecked")
                     List<Match> terminadas = (List<Match>) c[3];
@@ -11039,7 +11036,7 @@ public class SpoilerFreeRecs extends JFrame {
     /** ¿Hay alguien jugando ahora en el grupo? (null = en cualquiera). */
     boolean grupoTieneVivo(String grupo) {
         for (Player p : todosJugadores)
-            if ((grupo == null || p.grupo().equalsIgnoreCase(grupo)) && vivoWatch.containsKey(p.id()))
+            if ((grupo == null || p.grupo().equalsIgnoreCase(grupo)) && VIVO.jugando(p.id()))
                 return true;
         return false;
     }
@@ -11055,11 +11052,11 @@ public class SpoilerFreeRecs extends JFrame {
         playersList.repaint();
         grupoCombo.repaint();
         int nVivos = 0;
-        for (Player p : todosJugadores) if (vivoWatch.containsKey(p.id())) nVivos++;
+        for (Player p : todosJugadores) if (VIVO.jugando(p.id())) nVivos++;
         String g = grupoActivo();
         int nAmbito = 0;
         for (Player p : (modoTop() ? topLadder : todosJugadores))
-            if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && vivoWatch.containsKey(p.id())) nAmbito++;
+            if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && VIVO.jugando(p.id())) nAmbito++;
         if (soloVivosBtn != null)
             soloVivosBtn.setText("\u25CF " + t("Jugando", "Playing") + (nAmbito > 0 ? " (" + nAmbito + ")" : ""));
             soloVivosBtn.setToolTipText(null);   // sin tooltip: el chip se explica solo
@@ -11137,8 +11134,7 @@ public class SpoilerFreeRecs extends JFrame {
                 if (Boolean.FALSE.equals(viva)) {
                     status.setText(t("Esa partida ya terminó (el companion la seguía dando por viva): el directo no existe. Dale a «Buscar partidas» para bajar la rec.",
                             "That game already ended (the companion still listed it as live): the live match is gone. Hit search to download the rec."));
-                    for (Long pid : new ArrayList<>(vivoWatch.keySet()))   // el punto fantasma se va ya
-                        if (Long.valueOf(matchId).equals(vivoWatch.get(pid))) { vivoWatch.remove(pid); vivoInfo.remove(pid); VIVO_RIVAL.remove(pid); }
+                    VIVO.quitarPartida(matchId);   // el punto fantasma se va ya
                     actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint();
                     vigilarVivos();
                     return;
@@ -11149,7 +11145,7 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void espectar(Player p) {
-        Long mid = vivoWatch.get(p.id());
+        Long mid = VIVO.matchDe(p.id());
         if (mid != null) espectarVerificando(p.id(), mid);
     }
 
@@ -11964,8 +11960,8 @@ public class SpoilerFreeRecs extends JFrame {
                             }
                     for (Player pl : tracked) {
                         Long v = vivosVistos.get(pl.id());
-                        if (v != null) { vivoWatch.put(pl.id(), v); vivoInfo.put(pl.id(), infosVistos.get(pl.id())); }
-                        else { vivoWatch.remove(pl.id()); vivoInfo.remove(pl.id()); VIVO_RIVAL.remove(pl.id()); }
+                        if (v != null) { VIVO.marcarJugando(pl.id(), v, infosVistos.get(pl.id())); }
+                        else { VIVO.marcarFuera(pl.id()); }
                     }
                     actualizarIndicadoresVivos();
                     all.clear();

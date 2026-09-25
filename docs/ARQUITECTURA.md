@@ -77,7 +77,7 @@ horizontal; sin tarjetas flotantes; «nocturno primero» (sfr-data antes que API
 «Actualizar hoy» explícito; freno 1 req/s; cortacircuitos 429; aviso de Microsoft y créditos tal como están.
 
 ## Deuda conocida al empezar
-- Mapas `vivoWatch`/`vivoInfo` escritos desde hilos de fondo y leídos en el EDT.
+- ~~Mapas `vivoWatch`/`vivoInfo` escritos desde hilos de fondo y leídos en el EDT~~ (resuelto en la fase 2: service.EstadoVivo).
 - Tres cachés distintas (perfilCardCache, ACTIVIDAD_CACHE, cachés en disco) con reglas distintas.
 - `config.properties` como único almacén de estado; sin migraciones.
 - `EtiquetaRecorte` y los anchos medidos de Live now: lógica de layout mezclada con datos.

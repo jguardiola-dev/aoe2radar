@@ -1,0 +1,310 @@
+package dev.tirador.aoe2radar.service;
+
+import dev.tirador.aoe2radar.model.Match;
+import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.util.RelojFalso;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Random;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.Collections;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * Quién está en partida ahora (service.EstadoVivo), con un reloj falso (util.RelojFalso): nunca el reloj real
+ * (EstadoVivo.SISTEMA), para que el test sea determinista. No hay red ni disco: EstadoVivo es memoria pura.
+ * Primero se fija lo que la clase hace hoy (caracterización, incluida alguna rareza heredada de la 1.1);
+ * después las reglas de negocio (freno de «en curso de verdad», fantasmas fuera de aquí en cache.Vivos).
+ */
+class EstadoVivoTest {
+
+    private static Match partidaConJugadores(Instant started, Instant finished, boolean fantasma, MatchPlayer... ps) {
+        Match m = new Match();
+        m.started = started;
+        m.finished = finished;
+        m.fantasma = fantasma;
+        m.players = new ArrayList<>(Arrays.asList(ps));
+        return m;
+    }
+
+    private static MatchPlayer jugador(long id, String name) {
+        MatchPlayer p = new MatchPlayer();
+        p.id = id;
+        p.name = name;
+        return p;
+    }
+
+    // ----- 1. marcarJugando -----
+
+    @Test void marcarJugando_sinTexto_marcaJugandoYMatchDeYQuitaNadieJugando() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        assertTrue(e.nadieJugando());
+
+        e.marcarJugando(1, 100);
+
+        assertTrue(e.jugando(1));
+        assertEquals(100L, e.matchDe(1));
+        assertFalse(e.nadieJugando());
+    }
+
+    @Test void marcarJugando_conTexto_guardaElTexto() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+
+        e.marcarJugando(1, 100, "Subiendo el ELO");
+
+        assertEquals("Subiendo el ELO", e.info(1));
+    }
+
+    @Test void marcarJugando_conTextoNull_borraElTextoAnterior() {
+        // En la 1.1 esto lanzaba NullPointerException (info.put(pid, null) con un Map que no lo admite).
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        e.marcarJugando(1, 100, "algo");
+
+        e.marcarJugando(1, 100, null);
+
+        assertNull(e.info(1));
+        assertTrue(e.jugando(1), "sigue jugando: null solo afecta al texto");
+    }
+
+    // ----- 2. ponerInfo -----
+
+    @Test void ponerInfo_conTexto_loGuarda() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+
+        e.ponerInfo(1, "algo");
+
+        assertEquals("algo", e.info(1));
+    }
+
+    @Test void ponerInfo_conNull_borraElTexto() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        e.ponerInfo(1, "algo");
+
+        e.ponerInfo(1, null);
+
+        assertNull(e.info(1));
+    }
+
+    // ----- 3. marcarFuera -----
+
+    @Test void marcarFuera_borraPuntoTextoYRival_dejaPartidaYVisto() {
+        RelojFalso r = new RelojFalso();
+        EstadoVivo e = new EstadoVivo(r);
+        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), null, false,
+                jugador(1, "Yo"), jugador(2, "Rival"));
+        e.registrar(m, 1);                       // guarda partida + visto + rival
+        e.marcarJugando(1, m.id, "jugando");
+        assertNotNull(e.rival(1), "para que la prueba sea significativa, tiene que haber rival antes");
+        Long visto = e.vistoMs(1);
+        assertNotNull(visto);
+
+        e.marcarFuera(1);
+
+        assertFalse(e.jugando(1));
+        assertNull(e.matchDe(1));
+        assertNull(e.info(1));
+        assertNull(e.rival(1));
+        assertSame(m, e.partida(1), "la partida completa se queda, como en la 1.1");
+        assertEquals(visto, e.vistoMs(1), "el 'visto' se queda, como en la 1.1");
+    }
+
+    // ----- 4. quitarPartida -----
+
+    @Test void quitarPartida_sacaSoloALosDeEsaPartidaYDevuelveSusPids() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        e.marcarJugando(1, 100);
+        e.marcarJugando(2, 100);
+        e.marcarJugando(3, 200);
+
+        List<Long> fuera = e.quitarPartida(100);
+
+        assertEquals(new HashSet<>(List.of(1L, 2L)), new HashSet<>(fuera));
+        assertEquals(2, fuera.size(), "sin duplicados ni de más");
+        assertFalse(e.jugando(1));
+        assertFalse(e.jugando(2));
+        assertTrue(e.jugando(3), "no estaba en esa partida");
+    }
+
+    @Test void quitarPartida_conMidQueNadieTiene_devuelveListaVacia() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        e.marcarJugando(3, 200);
+
+        List<Long> fuera = e.quitarPartida(999);
+
+        assertTrue(fuera.isEmpty());
+        assertTrue(e.jugando(3));
+    }
+
+    // ----- 5. guardarPartida / soltarPartida -----
+
+    @Test void soltarPartida_devuelveLaPartidaYLaQuita() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        Match m = new Match();
+        e.guardarPartida(7, m);
+
+        assertSame(m, e.soltarPartida(7));
+        assertNull(e.soltarPartida(7), "ya se soltó: la segunda vez no hay nada");
+    }
+
+    @Test void soltarPartida_sinPartidaGuardada_devuelveNull() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+
+        assertNull(e.soltarPartida(99));
+    }
+
+    // ----- 6. registrar -----
+
+    @Test void registrar_enCursoDeVerdad_guardaPartidaYSellaVisto() {
+        RelojFalso r = new RelojFalso();
+        r.ahora = 5_000_000L;
+        EstadoVivo e = new EstadoVivo(r);
+        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), null, false,
+                jugador(1, "Yo"), jugador(2, "Rival"));
+
+        e.registrar(m, 1);
+
+        assertSame(m, e.partida(1));
+        assertEquals(5_000_000L, e.vistoMs(1));
+    }
+
+    @Test void registrar_partidaTerminada_niPartidaNiVisto() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), Instant.now(), false,
+                jugador(1, "Yo"), jugador(2, "Rival"));
+
+        e.registrar(m, 1);
+
+        assertNull(e.partida(1));
+        assertNull(e.vistoMs(1));
+    }
+
+    @Test void registrar_empezadaHaceMasDeTresHoras_niPartidaNiVisto() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        Match m = partidaConJugadores(Instant.now().minus(Duration.ofHours(4)), null, false,
+                jugador(1, "Yo"), jugador(2, "Rival"));
+
+        e.registrar(m, 1);
+
+        assertNull(e.partida(1));
+        assertNull(e.vistoMs(1));
+    }
+
+    @Test void registrar_unoContraUno_guardaElRival() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        Match m = partidaConJugadores(Instant.now(), null, false, jugador(1, "Yo"), jugador(2, "Rival"));
+
+        e.registrar(m, 1);
+
+        assertEquals(new EstadoVivo.Rival(2, "Rival"), e.rival(1));
+    }
+
+    @Test void registrar_enEquipos_sinRival() {
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        Match m = partidaConJugadores(Instant.now(), null, false,
+                jugador(1, "Yo"), jugador(2, "A"), jugador(3, "B"), jugador(4, "C"));
+
+        e.registrar(m, 1);
+
+        assertNull(e.rival(1));
+    }
+
+    @Test void registrar_unoContraUnoConElMismoPidEnLosDos_sinRival() {
+        // Caracterización: datos raros (el mismo id en las dos plazas) no rompen nada, solo no hay rival.
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        Match m = partidaConJugadores(Instant.now(), null, false, jugador(1, "Yo"), jugador(1, "Yo"));
+
+        e.registrar(m, 1);
+
+        assertNull(e.rival(1));
+    }
+
+    @Test void registrar_rivalSeGuardaAunqueLaPartidaYaTermino_esRaro() {
+        // Caracterización: el guardado del rival no depende de si la partida sigue en curso, solo de que
+        // haya 2 jugadores (el código lo hace fuera del "if enCursoReal"). Si esto cambia sin querer, rojo.
+        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), Instant.now(), false,
+                jugador(1, "Yo"), jugador(2, "Rival"));
+
+        e.registrar(m, 1);
+
+        assertNull(e.partida(1), "la partida ya terminó: no se guarda");
+        assertEquals(new EstadoVivo.Rival(2, "Rival"), e.rival(1), "pero el rival sí se guarda igualmente");
+    }
+
+    // ----- 7. concurrencia -----
+
+    @Test void marcarJugandoMarcarFueraYQuitarPartidaEnParalelo_sinExcepcionesYConEstadoCoherente() throws Exception {
+        final EstadoVivo e = new EstadoVivo(new RelojFalso());
+        final int hilos = 8;
+        final int pids = 50;
+        final int matches = 5;
+        final int iteraciones = 3000;
+
+        CountDownLatch arrancar = new CountDownLatch(1);
+        CountDownLatch terminado = new CountDownLatch(hilos);
+        List<Throwable> fallos = Collections.synchronizedList(new ArrayList<>());
+        ExecutorService pool = Executors.newFixedThreadPool(hilos);
+
+        for (int h = 0; h < hilos; h++) {
+            final long semilla = h;
+            pool.submit(() -> {
+                try {
+                    arrancar.await();
+                    Random rnd = new Random(semilla);
+                    for (int i = 0; i < iteraciones; i++) {
+                        long pid = rnd.nextInt(pids);
+                        long mid = rnd.nextInt(matches);
+                        switch (rnd.nextInt(4)) {
+                            case 0 -> e.marcarJugando(pid, mid);
+                            case 1 -> e.marcarFuera(pid);
+                            case 2 -> e.quitarPartida(mid);
+                            default -> {
+                                // lecturas concurrentes: solo deben no romper nada
+                                e.jugando(pid);
+                                e.matchDe(pid);
+                                e.info(pid);
+                                e.rival(pid);
+                                e.nadieJugando();
+                            }
+                        }
+                    }
+                } catch (Throwable t) {
+                    fallos.add(t);
+                } finally {
+                    terminado.countDown();
+                }
+            });
+        }
+
+        assertTimeoutPreemptively(Duration.ofSeconds(20), () -> {
+            arrancar.countDown();               // todos a la vez
+            assertTrue(terminado.await(15, TimeUnit.SECONDS), "no debería bloquearse nunca");
+        });
+        pool.shutdownNow();
+
+        assertTrue(fallos.isEmpty(), "ninguna excepción concurrente: " + fallos);
+
+        // Con marcarJugando/marcarFuera/quitarPartida como únicas escrituras, el último en tocar un pid deja
+        // uno de dos estados posibles: "jugando" (con su punto) o "fuera del todo" (punto, texto y rival a
+        // null). Este invariante debe cumplirse pase lo que pase con el orden de los hilos.
+        for (long pid = 0; pid < pids; pid++) {
+            boolean jugando = e.jugando(pid);
+            assertEquals(jugando, e.matchDe(pid) != null, "pid " + pid);
+            if (!jugando) {
+                assertNull(e.info(pid), "pid " + pid + " no jugando debería tener info null");
+                assertNull(e.rival(pid), "pid " + pid + " no jugando debería tener rival null");
+            }
+        }
+    }
+}
