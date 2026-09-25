@@ -310,17 +310,17 @@ class RegresionCapturas {
         System.out.println("stats filas tabla: " + app.stModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.stModelo.getDataVector().get(0).toArray()) + " | tramo=" + app.filtroStats.tramo() + " mapa=" + app.filtroStats.mapa());
         // ----- Tech tree con WR
         SwingUtilities.invokeAndWait(() -> app.techTreeBtn.doClick());
-        for (int i = 0; i < 160 && (TechTreeDatos.ttData == null || app.ttCivCombo.getItemCount() == 0); i++) Thread.sleep(250);
+        for (int i = 0; i < 160 && (TechTreeDatos.ttData == null || app.techTree.ttCivCombo.getItemCount() == 0); i++) Thread.sleep(250);
         Thread.sleep(4000);
-        SwingUtilities.invokeAndWait(() -> app.ttCivCombo.setSelectedItem(TechTreeDatos.ttNombreCiv("Aztecs")));
+        SwingUtilities.invokeAndWait(() -> app.techTree.ttCivCombo.setSelectedItem(TechTreeDatos.ttNombreCiv("Aztecs")));
         Thread.sleep(5000);
         cerrarDialogos();
         foto("shot_techtree_wr.png");
-        SwingUtilities.invokeAndWait(() -> { app.ttPuestoBtn.doClick(); });
+        SwingUtilities.invokeAndWait(() -> { app.techTree.ttPuestoBtn.doClick(); });
         Thread.sleep(900);
         foto("shot_techtree_ranking.png");
         SwingUtilities.invokeAndWait(() -> { for (Window w : Window.getWindows()) if (w instanceof JWindow jw) jw.setVisible(false); javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath(); });
-        System.out.println("tt wr civs: " + app.ttWrPorCiv.size() + " | puesto: " + app.ttPuestoBtn.getText() + " | banda: " + app.ttWrLabel.getText().replaceAll("<[^>]+>", "").substring(0, 60));
+        System.out.println("tt wr civs: " + app.techTree.ttWrPorCiv.size() + " | puesto: " + app.techTree.ttPuestoBtn.getText() + " | banda: " + app.techTree.ttWrLabel.getText().replaceAll("<[^>]+>", "").substring(0, 60));
         // ----- Actividad (historial sintético en caché: la API está bloqueada aquí)
         java.util.Random rnd = new java.util.Random(3);
         java.util.List<Match> ms = new java.util.ArrayList<>();

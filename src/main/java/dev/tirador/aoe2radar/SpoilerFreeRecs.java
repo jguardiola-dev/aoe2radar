@@ -89,6 +89,7 @@ import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.RecService;
 import dev.tirador.aoe2radar.service.StatsService;
 import dev.tirador.aoe2radar.service.StatsServiceSfr;
+import dev.tirador.aoe2radar.service.TechTreeServiceDatos;
 import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
@@ -97,6 +98,8 @@ import dev.tirador.aoe2radar.ui.Listas;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.SelectorRangoElo;
+import dev.tirador.aoe2radar.ui.Tareas;
+import dev.tirador.aoe2radar.ui.TechTreeView;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Json;
@@ -207,18 +210,6 @@ import static dev.tirador.aoe2radar.sfrdata.Snapshots.ELO_HACE7;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.NOMBRES_AYER;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.cargarEloAyer;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.muestraAyer;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.TT_DIR;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttArbol;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttAsegurarDatos;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttClase;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttComprobarActualizacion;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttData;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttDescargar;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttNombre;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttNombreCiv;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttRutaIcono;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttStr;
-import static dev.tirador.aoe2radar.techtree.TechTreeDatos.ttTrees;
 import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -1964,7 +1955,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             filtroStats.tramo(stRango.rango());
         } finally { stRellenandoMapas = false; }
         statsPintar(v);
-        if (repintarTechTree && techTreePanel != null) ttActualizarWr();
+        if (repintarTechTree && techTree != null) techTree.actualizarWr();
     }
 
     void statsPintar(VentanaStats v) {
@@ -2358,298 +2349,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
     }
 
-    // ----- Tech tree × Civ Stats: banda inferior con los filtros compartidos, el winrate de la civ y su puesto -----
-    JPanel ttBanda, ttMapasPanel; JComboBox<String> ttModoCombo, ttMapaCombo, ttVentanaCombo; SelectorRangoElo ttRango, stRango, tendRango; JLabel ttWrEstado, ttWrLabel, ttEmblema; JButton ttPuestoBtn; BarrasWrTramo ttTramosPanel;
-
-    /** Winrate por tramo: barra desde la línea del 50 % (verde arriba si gana, roja abajo si pierde), el % encima y el pick rate del tramo en gris debajo. */
-    class BarrasWrTramo extends JPanel {
-        String[] etiquetas = new String[0]; int[] n = new int[0], w = new int[0]; double[] pick = new double[0];
-        BarrasWrTramo() { setOpaque(false); ToolTipManager.sharedInstance().registerComponent(this); }
-        void datos(String[] e, int[] nn, int[] ww, double[] p) { etiquetas = e; n = nn; w = ww; pick = p; repaint(); }
-        int barraEn(Point pt) {
-            if (n.length == 0) return -1;
-            int ml = 8, mr = 8; double sx = (double) (getWidth() - ml - mr) / n.length;
-            int i = (int) ((pt.x - ml) / sx);
-            return i < 0 || i >= n.length ? -1 : i;
-        }
-        @Override public String getToolTipText(MouseEvent e) {
-            int i = barraEn(e.getPoint());
-            if (i < 0) return null;
-            if (n[i] < MIN_PARTIDAS_CIV) return etiquetas[i] + ": " + n[i] + t(" partidas (pocas)", " games (few)");
-            double[] iv = stats.wilson(w[i], n[i]);
-            return etiquetas[i] + ": " + pct1(100.0 * w[i] / n[i]) + " (" + pct1(iv[0]) + "–" + pct1(iv[1]) + ") · " + miles(n[i]) + t(" partidas · pick ", " games · pick ") + pct1(pick[i]);
-        }
-        @Override protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            Color fg = UIManager.getColor("Label.foreground"); if (fg == null) fg = Color.GRAY;
-            int wd = getWidth(), h = getHeight(), ml = 8, mr = 8, mt = 42, mb = 30;
-            Font base = g2.getFont();
-            g2.setFont(base.deriveFont(Font.BOLD, 13f)); g2.setColor(fg);
-            g2.drawString(t("Winrate por tramo de ELO", "Win rate by ELO bracket"), 4, 15);
-            g2.setFont(base.deriveFont(10.5f)); g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 160 : 205));
-            g2.drawString(t("barra: % de victorias respecto al 50 · debajo: pick rate del tramo", "bar: win rate vs 50% · below: pick rate in that bracket"), 4, 28);
-            if (n.length == 0) { g2.dispose(); return; }
-            int y50 = mt + (h - mt - mb) / 2, medio = (h - mt - mb) / 2 - 12;
-            g2.setColor(new Color(128, 128, 128, 120));
-            g2.drawLine(ml, y50, wd - mr, y50);
-            double sx = (double) (wd - ml - mr) / n.length;
-            for (int i = 0; i < n.length; i++) {
-                int x = ml + (int) (i * sx), bw = Math.max(2, (int) sx - 4);
-                if (n[i] >= MIN_PARTIDAS_CIV) {
-                    double wr = 100.0 * w[i] / n[i], d = Math.max(-8, Math.min(8, wr - 50));   // ±8 puntos = barra completa
-                    int bh = (int) Math.round(Math.abs(d) / 8.0 * medio);
-                    Color c = colorWr(w[i], n[i]);
-                    g2.setColor(new Color(c.getRed(), c.getGreen(), c.getBlue(), 200));
-                    if (d >= 0) g2.fillRoundRect(x, y50 - bh, bw, Math.max(2, bh), 3, 3); else g2.fillRoundRect(x, y50, bw, Math.max(2, bh), 3, 3);
-                    g2.setColor(c);
-                    g2.setFont(base.deriveFont(Font.BOLD, 12f));
-                    String s = String.format(Locale.ROOT, "%.0f", wr) + "%";
-                    int sw = g2.getFontMetrics().stringWidth(s);
-                    g2.drawString(s, x + bw / 2 - sw / 2, d >= 0 ? y50 - bh - 4 : y50 + bh + 12);
-                } else {
-                    g2.setColor(new Color(128, 128, 128, 90));
-                    g2.fillRoundRect(x, y50 - 2, bw, 4, 3, 3);
-                }
-                g2.setFont(base.deriveFont(10.5f));
-                g2.setColor(new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), temaOscuroActivo ? 190 : 215));
-                String et = etiquetas[i];
-                g2.drawString(et, x + bw / 2 - g2.getFontMetrics().stringWidth(et) / 2, h - mb + 13);
-                String pk = pick.length > i && pick[i] > 0 ? String.format(Locale.ROOT, "%.1f", pick[i]).replace('.', "en".equals(IDIOMA) ? '.' : ',') + "%" : "";
-                g2.setColor(Color.GRAY);
-                g2.drawString(pk, x + bw / 2 - g2.getFontMetrics().stringWidth(pk) / 2, h - mb + 26);
-            }
-            g2.dispose();
-        }
-    }
-    final Map<String, CivAgg> ttWrPorCiv = new HashMap<>();   // clave del tech tree («Aztecs») → agregado con los filtros
-    boolean ttRellenandoFiltros;
-    /** Clave de civ a partir del nombre que da la API en el idioma de la app («Aztecas», «Aztecs»). */
-    String claveCivDeNombre(String nombre) {
-        if (nombre == null || nombre.isBlank()) return null;
-        String k = ttCivPorNombre.get(nombre);
-        if (k != null) return k.toLowerCase(Locale.ROOT);
-        String n = nombre.trim().toLowerCase(Locale.ROOT);
-        if (Files.exists(TT_DIR.resolve("img/Civs/" + n + ".png"))) return n;
-        // variantes de idioma y plural («Tupís», «Muiscas», «Tupi», «Aztecas»…): raíz sin acentos ni -s/-es, comparada por prefijo con la clave y los nombres conocidos
-        String raiz = raizCiv(n);
-        if (raiz.length() >= 4) {
-            for (Map.Entry<String, String> en : ttCivPorNombre.entrySet()) {
-                String kk = en.getValue().toLowerCase(Locale.ROOT), rn = raizCiv(en.getKey()), rk = raizCiv(kk);
-                if (rn.startsWith(raiz) || raiz.startsWith(rn) || rk.startsWith(raiz) || raiz.startsWith(rk)) return kk;
-            }
-            if (ttData != null) for (String kk : obj(ttData.get("civs")).keySet()) { String rk = raizCiv(kk.toLowerCase(Locale.ROOT)); if (rk.startsWith(raiz) || raiz.startsWith(rk)) return kk.toLowerCase(Locale.ROOT); }
-        }
-        return null;
-    }
-
-    JPanel construirFiltrosTechTree() {
-        ttBanda = new JPanel(new BorderLayout(8, 4));
-        ttBanda.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(128, 128, 128, 70)), BorderFactory.createEmptyBorder(4, 8, 4, 8)));
-        JPanel filtros = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 1));
-        ttModoCombo = new JComboBox<>();
-        for (String m : stats.modos()) ttModoCombo.addItem(modoNombre(m));
-        ttModoCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; filtroStats.modo(stats.modos()[Math.max(0, ttModoCombo.getSelectedIndex())]); guardarConfig("stats_modo", filtroStats.modo()); filtroStats.civSeleccionada(null); statsFiltrosCambiados(true); });
-        ttMapaCombo = new JComboBox<>();
-        ttMapaCombo.setPrototypeDisplayValue("African Clearing (99.999)   ");
-        ttMapaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; Object cl = ttMapaCombo.getClientProperty("claves"); if (cl instanceof List<?> l && ttMapaCombo.getSelectedIndex() >= 0 && ttMapaCombo.getSelectedIndex() < l.size()) { filtroStats.mapa(String.valueOf(l.get(ttMapaCombo.getSelectedIndex()))); guardarConfig("stats_mapa", filtroStats.mapa()); statsFiltrosCambiados(true); } });
-        ttRango = new SelectorRangoElo(this, NombresStats::tramoNombre);
-        ttRango.alCambiar = r -> { if (ttRellenandoFiltros) return; filtroStats.tramo(r); guardarConfig("stats_tramo", filtroStats.tramo()); statsFiltrosCambiados(true); };
-        ttVentanaCombo = new JComboBox<>();
-        for (String vv : stats.clavesVentanas()) ttVentanaCombo.addItem(ventanaNombre(vv));
-        ttVentanaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; filtroStats.ventana(stats.clavesVentanas()[Math.max(0, ttVentanaCombo.getSelectedIndex())]); guardarConfig("stats_ventana", filtroStats.ventana()); if (stVentanaCombo != null) { stRellenandoMapas = true; try { stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.clavesVentanas()).indexOf(filtroStats.ventana()))); } finally { stRellenandoMapas = false; } } ttCargarStats(); });
-        ttWrEstado = new JLabel();
-        ttWrEstado.setFont(ttWrEstado.getFont().deriveFont(Font.PLAIN, 11f));
-        ttWrEstado.setForeground(Color.GRAY);
-        JLabel cab = new JLabel(t("Estadísticas con:", "Statistics with:"));
-        cab.setFont(cab.getFont().deriveFont(Font.BOLD));
-        filtros.add(cab);
-        filtros.add(ttModoCombo); filtros.add(ttMapaCombo); filtros.add(ttRango); filtros.add(ttVentanaCombo); filtros.add(ttWrEstado);
-        filtros.setToolTipText(t("Los mismos filtros que el panel Civ Stats: cambiarlos aquí los cambia allí.", "Same filters as the Civ Stats panel: changing them here changes them there."));
-        ttBanda.add(filtros, BorderLayout.NORTH);
-        JPanel cols = new JPanel(new GridLayout(1, 3, 16, 0));   // tres columnas iguales
-        JPanel izq = new JPanel(new BorderLayout(10, 2));
-        ttEmblema = new JLabel();
-        ttEmblema.setVerticalAlignment(SwingConstants.TOP);
-        ttEmblema.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
-        izq.add(ttEmblema, BorderLayout.WEST);
-        ttWrLabel = new JLabel();
-        ttWrLabel.setVerticalAlignment(SwingConstants.TOP);
-        izq.add(ttWrLabel, BorderLayout.CENTER);
-        ttPuestoBtn = new JButton();
-        ttPuestoBtn.setFocusable(false); ttPuestoBtn.setMargin(new Insets(1, 8, 1, 8)); ttPuestoBtn.putClientProperty("JButton.buttonType", "roundRect");
-        ttPuestoBtn.setToolTipText(t("Ranking de todas las civs con estos filtros; clic en una civ para verla", "Ranking of every civ with these filters; click a civ to open it"));
-        ttPuestoBtn.addActionListener(e -> ttMostrarRanking());
-        ttPuestoBtn.setVisible(false);
-        JPanel pb = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
-        pb.add(ttPuestoBtn);
-        izq.add(pb, BorderLayout.SOUTH);
-        cols.add(izq);
-        ttTramosPanel = new BarrasWrTramo();
-        cols.add(ttTramosPanel);
-        ttMapasPanel = listaVertical();
-        cols.add(ttMapasPanel);
-        cols.setPreferredSize(new Dimension(10, 184));
-        ttBanda.add(cols, BorderLayout.CENTER);
-        return ttBanda;
-    }
-
-    /** Carga (en segundo plano) el resumen de la ventana actual y pinta el winrate en el tech tree. */
-    void ttCargarStats() {
-        if (stats.tieneVentana(filtroStats.ventana())) { ttActualizarWr(); return; }
-        ttWrEstado.setText(t("cargando…", "loading…"));
-        String ventana = filtroStats.ventana();
-        new Thread(() -> {
-            String err = stats.asegurar(ventana, false);
-            SwingUtilities.invokeLater(() -> {
-                if (err != null) { ttWrEstado.setText(t("sin datos (", "no data (") + err + ")"); return; }
-                ttWrEstado.setText("");
-                if (civStatsPanel != null) statsFiltrosCambiados(true); else ttActualizarWr();
-            });
-        }, "techtree-stats").start();
-    }
-
-    /** Recalcula el winrate por civ con los filtros compartidos, rellena los combos de la banda y repinta la línea. */
-    void ttActualizarWr() {
-        VentanaStats v = stats.ventana(filtroStats.ventana());
-        if (v == null || ttBanda == null) return;
-        ttRellenandoFiltros = true;
-        try {
-            ttModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.modos()).indexOf(filtroStats.modo())));
-            ttVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.clavesVentanas()).indexOf(filtroStats.ventana())));
-            Map<String, Integer> mapas = stats.partidasPorMapa(v, filtroStats.modo(), filtroStats.tramo());
-            List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
-            lm.sort((a, b) -> b.getValue() - a.getValue());
-            List<String> claves = new ArrayList<>(); claves.add("*");
-            ttMapaCombo.removeAllItems();
-            ttMapaCombo.addItem(t("Todos los mapas", "All maps"));
-            for (Map.Entry<String, Integer> en : lm) { if (en.getValue() < MIN_PARTIDAS_CIV) continue; claves.add(en.getKey()); ttMapaCombo.addItem(nombreMapaStats(v, en.getKey()) + " (" + miles(en.getValue()) + ")"); }
-            ttMapaCombo.putClientProperty("claves", claves);
-            ttMapaCombo.setSelectedIndex(Math.max(0, claves.indexOf(filtroStats.mapa())));
-            ttRango.tramos(v.tramos(), filtroStats.tramo());
-        } finally { ttRellenandoFiltros = false; }
-        ttWrPorCiv.clear();
-        for (CivAgg a : stats.agregarCivs(v, filtroStats.modo(), filtroStats.mapa(), filtroStats.tramo()).values()) {
-            String k = claveTechTree(a.civ());
-            if (k != null) ttWrPorCiv.put(k, a);
-        }
-        ttActualizarBanda();
-    }
-
-    /** Civs con datos suficientes, de mayor a menor winrate. */
-    List<String> ttRankingCivs() {
-        List<String> l = new ArrayList<>();
-        for (Map.Entry<String, CivAgg> en : ttWrPorCiv.entrySet()) if (en.getValue().n() >= MIN_PARTIDAS_CIV) l.add(en.getKey());
-        l.sort((a, b) -> Double.compare(ttWrPorCiv.get(b).wr(), ttWrPorCiv.get(a).wr()));
-        return l;
-    }
-
-    /** La banda de la civ elegida: winrate con intervalo, pick, partidas y puesto; barras por tramo de ELO; mejores y peores mapas. */
-    void ttActualizarBanda() {
-        if (ttWrLabel == null) return;
-        String civ = ttCivPedida;
-        VentanaStats v = stats.ventana(filtroStats.ventana());
-        ttMapasPanel.removeAll();
-        ttEmblema.setIcon(civ == null ? null : iconoCiv(civ, 40));
-        if (civ == null || v == null) {
-            ttWrLabel.setText(v == null ? "<html><span style='color:gray'>" + t("Winrate: cargando…", "Win rate: loading…") + "</span></html>" : "");
-            ttPuestoBtn.setVisible(false); ttTramosPanel.datos(new String[0], new int[0], new int[0], new double[0]);
-            ttMapasPanel.revalidate(); ttMapasPanel.repaint(); return;
-        }
-        CivAgg a = ttWrPorCiv.get(civ);
-        long totalN = 0; for (CivAgg x : ttWrPorCiv.values()) totalN += x.n();
-        if (a == null || a.n() < MIN_PARTIDAS_CIV) {
-            ttWrLabel.setText("<html><b>" + escapeHtml(ttNombreCiv(civ)) + "</b><br><span style='color:gray'>" + t("sin datos suficientes con estos filtros", "not enough data with these filters") + "</span></html>");
-            ttPuestoBtn.setVisible(false); ttTramosPanel.datos(new String[0], new int[0], new int[0], new double[0]);
-            ttMapasPanel.revalidate(); ttMapasPanel.repaint(); return;
-        }
-        Color c = colorWr(a.w(), a.n());
-        double[] iv = stats.wilson(a.w(), a.n());
-        List<String> ranking = ttRankingCivs();
-        int puesto = ranking.indexOf(civ) + 1;
-        long partidasFiltro = totalN / (filtroStats.modo().endsWith("_1v1") ? 2 : filtroStats.modo().endsWith("_2v2") ? 4 : filtroStats.modo().endsWith("_3v3") ? 6 : filtroStats.modo().endsWith("_4v4") ? 8 : 6);
-        ttWrEstado.setText(t("datos hasta el ", "data up to ") + v.hasta() + (partidasFiltro < POCAS_PARTIDAS ? "  ·  " + t("pocas partidas con estos filtros: prueba 90 o 365 días", "few games with these filters: try 90 or 365 days") : ""));
-        ttWrLabel.setText("<html><div style='font-size:13px'><b style='font-size:17px'>" + escapeHtml(ttNombreCiv(civ)) + "</b><br><span style='color:gray;font-size:12px'>" + escapeHtml(modoNombre(filtroStats.modo())) + " · " + escapeHtml(nombreMapaStats(v, filtroStats.mapa())) + " · " + escapeHtml(tramoNombre(filtroStats.tramo())) + " · " + escapeHtml(ventanaNombre(filtroStats.ventana())) + "</span><br>"
-                + "<span style='font-size:26px;color:" + colorHex(c) + "'><b>" + escapeHtml(pct1(a.wr())) + "</b></span> &nbsp;" + t("de victorias", "win rate") + " (" + escapeHtml(pct1(iv[0])) + " – " + escapeHtml(pct1(iv[1])) + ")<br>"
-                + t("Pick rate ", "Pick rate ") + "<b>" + escapeHtml(pct1(totalN == 0 ? 0 : 100.0 * a.n() / totalN)) + "</b> &nbsp;·&nbsp; <b>" + miles(a.n()) + "</b> " + t("partidas", "games") + " &nbsp;·&nbsp; " + t("duración media ", "average length ") + "<b>" + stats.duracionMedia(a.d(), a.n()) + "</b></div></html>");
-        ttPuestoBtn.setText(puesto > 0 ? t("puesto ", "rank ") + puesto + t(" de ", " of ") + ranking.size() + " \u25BE" : t("ranking \u25BE", "ranking \u25BE"));
-        ttPuestoBtn.setVisible(true);
-        // por tramo de ELO (con el filtro de mapa)
-        String[] etq = new String[v.tramos().size()]; int[] n = new int[etq.length], w = new int[etq.length]; double[] pk = new double[etq.length];
-        Map<String, int[]> porTramo = new HashMap<>();
-        Map<String, Long> totalTramo = new HashMap<>();   // todas las civs, para el pick rate
-        for (CivFila f : v.civs()) {
-            if (!f.modo().equals(filtroStats.modo())) continue;
-            if (!"*".equals(filtroStats.mapa()) && !f.mapa().equals(filtroStats.mapa())) continue;
-            totalTramo.merge(f.tramo(), (long) f.n(), Long::sum);
-            if (!f.civ().equals(a.civ())) continue;
-            int[] x = porTramo.computeIfAbsent(f.tramo(), k -> new int[2]); x[0] += f.n(); x[1] += f.w();
-        }
-        for (int i = 0; i < etq.length; i++) {
-            String tr = v.tramos().get(i);
-            etq[i] = tr.endsWith("+") ? tr : tr.startsWith("0-") ? "<" + tr.substring(2) : tr.substring(0, tr.indexOf('-'));
-            int[] x = porTramo.get(tr); n[i] = x == null ? 0 : x[0]; w[i] = x == null ? 0 : x[1];
-            long tot = totalTramo.getOrDefault(tr, 0L); pk[i] = tot == 0 ? 0 : 100.0 * n[i] / tot;
-        }
-        ttTramosPanel.datos(etq, n, w, pk);
-        // mejores y peores mapas (solo con «todos los mapas»)
-        ttMapasPanel.add(tituloSeccion(t("Mejores y peores mapas", "Best and worst maps"), t("Winrate de la civ en cada mapa del pool con el modo y el tramo elegidos (sea cual sea el mapa del filtro); mínimo 20 partidas por mapa (menos de 100: orientativo). El mapa elegido va en negrita.", "The civ's win rate on each pool map with the chosen mode and bracket (whatever the filter map); at least 20 games per map (under 100: indicative only). The chosen map is in bold.")));
-        {
-            List<CivAgg> pm = new ArrayList<>(stats.civPorMapa(v, filtroStats.modo(), filtroStats.tramo(), a.civ()).values());
-            pm.removeIf(x -> x.n() < MIN_PARTIDAS_CIV);
-            pm.sort((x, y) -> Double.compare(y.wr(), x.wr()));
-            double maxN = 1; for (CivAgg x : pm) maxN = Math.max(maxN, x.n());
-            List<CivAgg> mostrar = new ArrayList<>();
-            if (pm.size() <= 6) mostrar.addAll(pm);
-            else { mostrar.addAll(pm.subList(0, 3)); mostrar.addAll(pm.subList(pm.size() - 3, pm.size())); }
-            if (!"*".equals(filtroStats.mapa())) for (CivAgg x : pm) if (x.civ().equals(filtroStats.mapa()) && !mostrar.contains(x)) { mostrar.add(3 < mostrar.size() ? 3 : mostrar.size(), x); break; }   // el mapa del filtro, siempre presente
-            for (CivAgg x : mostrar) {
-                boolean elegido = x.civ().equals(filtroStats.mapa());
-                ttMapasPanel.add(listas.filaBarra(iconoMapa(nombreMapaStats(v, x.civ()), x.civ(), 16), (elegido ? "\u25B8 " : "") + nombreMapaStats(v, x.civ()), x.n() / maxN, pct1(x.wr()), colorWr(x.w(), x.n()), miles(x.n()) + t(" partidas", " games") + (elegido ? t(" · el mapa elegido", " · the chosen map") : ""), null));
-            }
-            if (pm.isEmpty()) { JLabel vac = new JLabel(t("Sin mapas con 20+ partidas.", "No maps with 20+ games.")); vac.setForeground(Color.GRAY); vac.setFont(vac.getFont().deriveFont(Font.PLAIN, 11f)); ttMapasPanel.add(vac); }
-        }
-        ttMapasPanel.revalidate(); ttMapasPanel.repaint();
-    }
-
-    /** Lista desplegable de todas las civs ordenadas por winrate con los filtros actuales; clic = ver esa civ. */
-    void ttMostrarRanking() {
-        List<String> ranking = ttRankingCivs();
-        if (ranking.isEmpty()) return;
-        JPopupMenu pm = new JPopupMenu();
-        DefaultListModel<String> modelo = new DefaultListModel<>();
-        for (String k : ranking) modelo.addElement(k);
-        JList<String> lista = new JList<>(modelo);
-        lista.setCellRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean sel, boolean foc) {
-                JLabel lab = (JLabel) super.getListCellRendererComponent(l, value, index, sel, foc);
-                String k = String.valueOf(value);
-                CivAgg a = ttWrPorCiv.get(k);
-                Color col = sel ? lab.getForeground() : colorWr(a.w(), a.n());
-                lab.setText("<html><span style='color:gray'>" + (index + 1) + ".</span> &nbsp;" + escapeHtml(ttNombreCiv(k)) + " &nbsp;<font color='" + colorHex(col) + "'><b>" + escapeHtml(pct1(a.wr())) + "</b></font> <span style='color:gray;font-size:9px'>" + miles(a.n()) + "</span></html>");
-                lab.setIcon(iconoCiv(k, 18));
-                lab.setIconTextGap(6);
-                lab.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 8));
-                return lab;
-            }
-        });
-        lista.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        if (ttCivPedida != null) lista.setSelectedValue(ttCivPedida, true);
-        lista.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                int i = lista.locationToIndex(e.getPoint());
-                if (i < 0) return;
-                String k = modelo.get(i);
-                pm.setVisible(false);
-                ttCivCombo.setSelectedItem(ttNombreCiv(k));
-            }
-        });
-        JScrollPane sp = new JScrollPane(lista);
-        sp.setPreferredSize(new Dimension(300, Math.min(420, 24 * ranking.size() + 6)));
-        pm.add(sp);
-        pm.show(ttPuestoBtn, ttPuestoBtn.getWidth() - sp.getPreferredSize().width - 4, -sp.getPreferredSize().height - 8);
-    }
+    // La banda de winrate del Tech tree (filtros compartidos con Civ Stats) vive en ui.TechTreeView; aquí solo lo propio de Civ Stats.
+    SelectorRangoElo stRango, tendRango;
 
     // =====================================================================================
     // PERFIL — la página de un jugador: cabecera (ELO, rango y Top % por ladder, máximo, totales,
@@ -3135,7 +2836,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             double media = (m.players.get(0).rating + m.players.get(1).rating) / 2.0;
             if (media < lo || media > hi) continue;
             if (mapaSel != null && !esCualquiera(mapaSel) && !mapaSel.equalsIgnoreCase(m.map) && !mapaSel.equalsIgnoreCase(m.mapaClave)) continue;
-            if (civSel != null && m.players.stream().noneMatch(pl -> civSel.equalsIgnoreCase(pl.civ) || civSel.equalsIgnoreCase(claveCivDeNombre(pl.civ)))) continue;
+            if (civSel != null && m.players.stream().noneMatch(pl -> civSel.equalsIgnoreCase(pl.civ) || civSel.equalsIgnoreCase(techTree.claveCivDeNombre(pl.civ)))) continue;
             if (azarEnsenadas.contains(m.id)) continue;
             cand.add(m);
         }
@@ -3718,15 +3419,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         JPanel c2 = new JPanel(); c2.setLayout(new BoxLayout(c2, BoxLayout.Y_AXIS)); c2.setOpaque(false);
         Map<String, Runnable> clicMapa = new HashMap<>(); for (String k : porMapa.keySet()) clicMapa.put(k, () -> { h2hMapaFiltro = k; h2hFijar(rivalPid, rivalNombre); });
         pintarListaAgg(c1, t("Winrate por mapa · ", "Win rate by map · ") + actNombre + t(" · clic: filtrar", " · click: filter"), porMapa, 10, k -> k, h2hMapaFiltro == null ? clicMapa : null, k -> iconoMapa(k, 18));
-        pintarListaAgg(c2, t("Civ contra civ", "Civ vs civ"), porCivs, 10, k -> k, null, k -> iconoCiv(claveCivDeNombre(k.substring(0, k.indexOf(" vs "))), 18));
+        pintarListaAgg(c2, t("Civ contra civ", "Civ vs civ"), porCivs, 10, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k.substring(0, k.indexOf(" vs "))), 18));
         columnas.add(c1); columnas.add(c2);
         h2hCuerpo.add(columnas);
         h2hCuerpo.add(Box.createVerticalStrut(8));
         JPanel columnas2 = new JPanel(new GridLayout(1, 2, 16, 0)); columnas2.setOpaque(false); columnas2.setAlignmentX(0f);
         JPanel c3 = new JPanel(); c3.setLayout(new BoxLayout(c3, BoxLayout.Y_AXIS)); c3.setOpaque(false);
         JPanel c4 = new JPanel(); c4.setLayout(new BoxLayout(c4, BoxLayout.Y_AXIS)); c4.setOpaque(false);
-        pintarListaAgg(c3, t("Mejores civs · ", "Best civs · ") + actNombre, civYo, 5, k -> k, null, k -> iconoCiv(claveCivDeNombre(k), 18));
-        pintarListaAgg(c4, t("Mejores civs · ", "Best civs · ") + rivalNombre, civEl, 5, k -> k, null, k -> iconoCiv(claveCivDeNombre(k), 18));
+        pintarListaAgg(c3, t("Mejores civs · ", "Best civs · ") + actNombre, civYo, 5, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
+        pintarListaAgg(c4, t("Mejores civs · ", "Best civs · ") + rivalNombre, civEl, 5, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
         columnas2.add(c3); columnas2.add(c4);
         h2hCuerpo.add(columnas2);
         h2hCuerpo.add(Box.createVerticalStrut(10));
@@ -3750,7 +3451,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                         JPanel par = new JPanel(new GridLayout(1, 2, 16, 0)); par.setOpaque(false); par.setAlignmentX(0f);
                         JPanel l1 = new JPanel(); l1.setLayout(new BoxLayout(l1, BoxLayout.Y_AXIS)); l1.setOpaque(false);
                         JPanel l2 = new JPanel(); l2.setLayout(new BoxLayout(l2, BoxLayout.Y_AXIS)); l2.setOpaque(false);
-                        java.util.function.Function<String, Icon> ic = "mapas".equals(sec[0]) ? k -> iconoMapa(k, 18) : "civs".equals(sec[0]) ? k -> iconoCiv(claveCivDeNombre(k), 18) : null;
+                        java.util.function.Function<String, Icon> ic = "mapas".equals(sec[0]) ? k -> iconoMapa(k, 18) : "civs".equals(sec[0]) ? k -> iconoCiv(techTree.claveCivDeNombre(k), 18) : null;
                         pintarListaAgg(l1, sec[1] + " \u00B7 " + actNombre, mio.get(sec[0]), 5, k -> k, null, ic);
                         pintarListaAgg(l2, sec[1] + " \u00B7 " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic);
                         par.add(l1); par.add(l2);
@@ -4032,10 +3733,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (int i = 0; i < mk.size(); i++) { ml[i] = String.valueOf(Integer.parseInt(mk.get(i).substring(5))); mt2[i] = mk.get(i); mv[i] = meses.get(mk.get(i))[0]; mw[i] = meses.get(mk.get(i))[1]; mn[i] = mv[i]; }
         actMeses.datos(ml, mv, mw, mn, mt2);
         Map<String, Runnable> irTechTree = new HashMap<>();
-        for (String k : civs.keySet()) { String cl = claveCivDeNombre(k); if (cl != null) irTechTree.put(k, () -> abrirTechTree(cl)); }
-        for (String k : civsRival.keySet()) { String cl = claveCivDeNombre(k); if (cl != null) irTechTree.put(k, () -> abrirTechTree(cl)); }
-        pintarListaAgg(actCivs, t("Winrate por civ propia", "Win rate by own civ"), civs, 5, k -> k, irTechTree, k -> iconoCiv(claveCivDeNombre(k), 18));
-        pintarListaAgg(actCivsRival, t("Winrate contra civ rival (1v1)", "Win rate vs opponent civ (1v1)"), civsRival, 5, k -> k, irTechTree, k -> iconoCiv(claveCivDeNombre(k), 18));
+        for (String k : civs.keySet()) { String cl = techTree.claveCivDeNombre(k); if (cl != null) irTechTree.put(k, () -> abrirTechTree(cl)); }
+        for (String k : civsRival.keySet()) { String cl = techTree.claveCivDeNombre(k); if (cl != null) irTechTree.put(k, () -> abrirTechTree(cl)); }
+        pintarListaAgg(actCivs, t("Winrate por civ propia", "Win rate by own civ"), civs, 5, k -> k, irTechTree, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
+        pintarListaAgg(actCivsRival, t("Winrate contra civ rival (1v1)", "Win rate vs opponent civ (1v1)"), civsRival, 5, k -> k, irTechTree, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
         pintarListaAgg(actMapas, t("Winrate por mapa", "Win rate by map"), mapas, 5, k -> k, null, k -> iconoMapa(k, 18));
         pintarListaJugadores(actRivales, t("Rivales más frecuentes", "Most frequent opponents"), rivales);
         pintarListaJugadores(actAliados, t("Aliados más frecuentes", "Most frequent allies"), aliados);
@@ -4057,7 +3758,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             actPosicion.add(listas.enlaceVerTodo(porMapa.size(), () -> listas.mostrarTablaCompleta(t("Pocket o flanco por mapa", "Pocket or flank by map") + " \u00B7 " + actNombre, new String[]{ t("Mapa", "Map"), t("Partidas pocket", "Pocket games"), t("WR pocket", "Pocket WR"), t("Partidas flanco", "Flank games"), t("WR flanco", "Flank WR") }, filasPos, 1)));
         }
         // últimos 30 días
-        pintarListaAgg(actUltimos30Civs, t("Últimos 30 días · civs", "Last 30 days · civs"), civs30, 5, k -> k, null, k -> iconoCiv(claveCivDeNombre(k), 18));
+        pintarListaAgg(actUltimos30Civs, t("Últimos 30 días · civs", "Last 30 days · civs"), civs30, 5, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
         pintarListaAgg(actUltimos30Mapas, t("Últimos 30 días · mapas", "Last 30 days · maps"), mapas30, 5, k -> k, null, k -> iconoMapa(k, 18));
         if (!actCargando) actEstado.setText(miles(a.partidas().size()) + t(" partidas", " games") + (a.completo() ? t(" · último año completo", " · full last year") : t(" · las más recientes", " · the most recent")));
         actMasBtn.setVisible(!a.completo() && !actCargando);
@@ -4998,7 +4699,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         elo.setFont(elo.getFont().deriveFont(Font.PLAIN, 12.5f)); elo.setForeground(Color.GRAY);
         JLabel uno = new JLabel(!grande && ficha != null && (Integer) ficha[2] > 0 ? "1v1 " + ficha[2] : "");   // en equipos: el 1v1 de los del top, en ámbar
         uno.setFont(uno.getFont().deriveFont(Font.PLAIN, 11f)); uno.setForeground(ambar);
-        String claveCiv = claveCivDeNombre(mp.civ);
+        String claveCiv = techTree.claveCivDeNombre(mp.civ);
         EtiquetaRecorte civ = new EtiquetaRecorte(); civ.setIcon(claveCiv == null ? null : iconoCiv(claveCiv, 20)); civ.texto(mp.civ == null ? "" : claveCiv != null ? nombreCivStats(claveCiv) : mp.civ);   // siempre el mismo nombre e icono, venga en el idioma que venga
         civ.setIconTextGap(5); civ.setFont(civ.getFont().deriveFont(Font.PLAIN, 13.5f)); civ.setForeground(UIManager.getColor("Label.foreground"));
         String[] tw = twitchLive.get(mp.id);
@@ -5340,429 +5041,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // =====================================================================================
-    // TECH TREE — datos de aoe2techtree (MIT, HSZemi): carpeta techtree junto al exe,
-    // actualizada sola (ETag diario), iconos precargados en paralelo
+    // TECH TREE — la vista (árbol, ficha, banda de winrate) vive en ui.TechTreeView; aquí solo el
+    // cromo compartido con el resto de pestañas: botón, CardLayout, historial y la watchlist plegada.
     // =====================================================================================
-    static final Map<String, ImageIcon> ttIconos = new java.util.concurrent.ConcurrentHashMap<>();
-    static final Set<String> ttIconosPedidos = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    static final java.util.concurrent.LinkedBlockingQueue<String> ttCola = new java.util.concurrent.LinkedBlockingQueue<>();
-    static final java.util.concurrent.atomic.AtomicInteger ttHilos = new java.util.concurrent.atomic.AtomicInteger();
-    JToggleButton techTreeBtn;
-    JPanel techTreePanel, ttArbolPanel, ttFichaCards;
-    JEditorPane ttFichaCiv, ttFichaDetalle;
-    JComboBox<String> ttCivCombo;
-    JLabel ttEstado;
-    JScrollPane ttScroll;
-    volatile boolean ttCargando, ttRellenandoCombo;
-    final Map<String, String> ttCivPorNombre = new java.util.LinkedHashMap<>();   // nombre mostrado → clave (Aztecs)
-    JTextField ttBuscaCiv;
-    volatile String ttCivPedida;
+    TechTreeView techTree;
     int ttDivisorPrevio = -1;
-
-    /** Texto largo como HTML seguro: se escapa todo y se restauran solo <br> y <b>. */
-    static String ttHtml(String s) {
-        if (s == null) return "";
-        String e = escapeHtml(s.replace("\n", "<br>"));
-        e = e.replace("&lt;br&gt;", "<br>").replace("&lt;br/&gt;", "<br>").replace("&lt;b&gt;", "<b>").replace("&lt;/b&gt;", "</b>").replace("&lt;i&gt;", "<i>").replace("&lt;/i&gt;", "</i>")
-                .replaceAll("(<br>\\s*){3,}", "<br><br>");
-        return e;
-    }
-    /** Texto de ayuda sin etiquetas (para recortes): las cursivas y negritas se quitan, los saltos se conservan como espacios. */
-    static String ttPlano(String s) { return s == null ? "" : s.replaceAll("(?i)</?[bi]>", "").replaceAll("(?i)<br\\s*/?>", " ").replace("\n", " ").replaceAll("\\s{2,}", " ").trim(); }
-
-    static String ttImgHtml(Path p, int px) {
-        return Files.exists(p) ? "<img src='" + p.toUri() + "' width='" + px + "' height='" + px + "'>" : "";
-    }
-
-    /** Icono (px) de img/<tipo>/<id>.png: memoria → disco → red (cola compartida, 4 hilos). */
-    ImageIcon ttIcono(String tipo, long id, int px) {
-        String clave = tipo + "/" + id + "@" + px;
-        ImageIcon ic = ttIconos.get(clave);
-        if (ic != null) return ic;
-        Path p = ttRutaIcono(tipo, id);
-        if (Files.exists(p)) {
-            try {
-                java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(p.toFile());
-                if (img != null) { ic = new ImageIcon(img.getScaledInstance(px, px, Image.SCALE_SMOOTH)); ttIconos.put(clave, ic); return ic; }
-            } catch (Exception ignored) { }
-        }
-        ttPedirIcono("img/" + tipo + "/" + id + ".png");
-        return null;
-    }
-
-    void ttPedirIcono(String rel) {
-        if (!ttIconosPedidos.add(rel)) return;
-        ttCola.offer(rel);
-        while (ttHilos.get() < 4 && !ttCola.isEmpty()) {
-            ttHilos.incrementAndGet();
-            Thread h = new Thread(() -> {
-                try {
-                    String job;
-                    int bajados = 0;
-                    while ((job = ttCola.poll(2, java.util.concurrent.TimeUnit.SECONDS)) != null) {
-                        try { ttDescargar(job); bajados++; }
-                        catch (Exception ex) { log("techtree " + job + ": " + causa(ex)); }
-                        finally { ttIconosPedidos.remove(job); }
-                        if (bajados % 8 == 0) SwingUtilities.invokeLater(this::ttPintarDeNuevo);
-                    }
-                } catch (InterruptedException ignored) {
-                } finally {
-                    ttHilos.decrementAndGet();
-                    SwingUtilities.invokeLater(this::ttPintarDeNuevo);
-                }
-            }, "techtree-iconos");
-            h.setDaemon(true);
-            h.start();
-        }
-    }
-
-    /** Al arrancar, en segundo plano: lo que falte del árbol de cada civ (normalmente nada: el ZIP trae la base). */
-    void ttPrecargar() {
-        precalentarPerfiles();
-        Thread h = new Thread(() -> {
-            if (ttAsegurarDatos() != null) return;
-            try {
-                for (String civ : new ArrayList<>(obj(ttData.get("civs")).keySet())) {
-                    if ("antiquity".equals(String.valueOf(obj(obj(ttData.get("civs")).get(civ)).get("era")))) continue;
-                    Map<String, Object> arbol = ttArbol(civ);
-                    for (Object o : arr(arbol.get("units_techs"))) {
-                        Map<String, Object> n = obj(o);
-                        Path p = ttRutaIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")));
-                        if (!Files.exists(p)) ttPedirIcono("img/" + n.get("use_type") + "/" + lng(n.get("picture_index")) + ".png");
-                    }
-                    for (Object o : arr(arbol.get("buildings"))) {
-                        Map<String, Object> n = obj(o);
-                        if (!Files.exists(ttRutaIcono("Building", lng(n.get("picture_index"))))) ttPedirIcono("img/Building/" + lng(n.get("picture_index")) + ".png");
-                    }
-                    if (!Files.exists(TT_DIR.resolve("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png"))) ttPedirIcono("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
-                    Thread.sleep(50);
-                }
-                for (String rr : new String[]{ "food", "wood", "gold", "stone" })
-                    if (!Files.exists(TT_DIR.resolve("img/" + rr + ".png"))) ttPedirIcono("img/" + rr + ".png");
-            } catch (Exception ex) { log("techtree precarga: " + causa(ex)); }
-        }, "techtree-precarga");
-        h.setDaemon(true);
-        h.start();
-    }
-
-    /** La descripción del juego (efecto de la tecnología, uso de la unidad…): cadena LanguageNameId + 21000,
-     *  sin la primera línea «Investigar/Crear/Construir X (coste)» que ya cuentan el título y el coste. */
-    static String ttDescripcion(Map<String, Object> d) {
-        if (d == null) return null;
-        String txt = ttStr(d.get("LanguageHelpId"));
-        if (txt == null && d.get("LanguageNameId") instanceof Number n) txt = ttStr(n.longValue() + 21000);
-        if (txt == null) return null;
-        txt = txt.replaceAll("\\(?\u2039[^\u203a]*\u203a\\)?", "");   // fuera los marcadores del juego: ‹cost›, ‹hp›, ‹DEFAULT›…
-        String[] partes = txt.split("<br>|\n", 2);
-        if (partes.length == 2 && partes[0].matches("(?i)\\s*(Investigar|Crear|Construir|Research|Create|Build|Train)\\b.*")) txt = partes[1];
-        return txt.replaceAll("(<br>\\s*|\\n\\s*)+$", "").replaceAll("^(<br>|\\s)+", "").trim();
-    }
-
-    static Map<String, Object> ttDatos(String tipo, long id) {
-        return ttData == null ? Map.of() : obj(obj(obj(ttData.get("data")).get(tipo)).get(String.valueOf(id)));
-    }
-
-    /** «45 [oro] 25 [madera]» con los iconos de recursos. */
-    static String ttCosteHtml(Map<String, Object> cost) {
-        if (cost == null || cost.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder();
-        for (String r : new String[]{ "Food", "Wood", "Gold", "Stone" }) {
-            Object v = cost.get(r);
-            if (v instanceof Number n && n.intValue() > 0) {
-                String img = ttImgHtml(TT_DIR.resolve("img/" + r.toLowerCase(Locale.ROOT) + ".png"), 14);
-                sb.append(sb.length() > 0 ? " &nbsp; " : "").append(n.intValue()).append(' ').append(img.isEmpty() ? r : img);
-            }
-        }
-        return sb.toString();
-    }
-
-    static int ttArmadura(Map<String, Object> d, int clase) {
-        for (Object a : arr(d.get("Armours"))) { Map<String, Object> m = obj(a); if (lng(m.get("Class")) == clase) return (int) lng(m.get("Amount")); }
-        return 0;
-    }
-
-    static String ttNum(Object o) {
-        if (!(o instanceof Number n)) return "";
-        double v = n.doubleValue();
-        return v == Math.rint(v) ? String.valueOf((long) v) : String.format(Locale.ROOT, "%.2f", v);
-    }
-
-    /** Tooltip: nombre, coste con iconos y lo esencial; el clic abre la ficha completa. */
-    String ttTooltip(String tipo, long id, String nombre, boolean disponible) {
-        Map<String, Object> d = ttDatos(tipo, id);
-        StringBuilder h = new StringBuilder("<html><b>").append(escapeHtml(nombre)).append("</b>");
-        if (!disponible) h.append(" <font color='#e57373'>").append(t("(no disponible)", "(not available)")).append("</font>");
-        if (!d.isEmpty()) {
-            String coste = ttCosteHtml(obj(d.get("Cost")));
-            if (!coste.isEmpty()) h.append("<br>").append(coste);
-            if ("Unit".equals(tipo)) {
-                h.append("<br>").append(t("PV ", "HP ")).append(ttNum(d.get("HP"))).append(" · ").append(t("ataque ", "attack ")).append(ttNum(d.get("Attack")))
-                 .append(" · ").append(t("armadura ", "armor ")).append(ttArmadura(d, 4)).append("/").append(ttArmadura(d, 3));
-                if (d.get("Range") instanceof Number n && n.doubleValue() > 0) h.append(" · ").append(t("alcance ", "range ")).append(ttNum(n));
-                if (d.get("Speed") instanceof Number) h.append(" · ").append(t("vel. ", "speed ")).append(ttNum(d.get("Speed")));
-            } else if ("Tech".equals(tipo)) {
-                if (d.get("ResearchTime") instanceof Number) h.append("<br>").append(t("investigación ", "research ")).append(ttNum(d.get("ResearchTime"))).append(" s");
-                String desc = ttDescripcion(d);
-                if (desc != null) { String plano = ttPlano(desc); h.append("<br><div style='width:320px'>").append(escapeHtml(plano.length() > 260 ? plano.substring(0, 258) + "\u2026" : plano)).append("</div>"); }
-            } else if (d.get("HP") instanceof Number) h.append("<br>").append(t("PV ", "HP ")).append(ttNum(d.get("HP")));
-        }
-        h.append("<br><font color='#8a8a8a'>").append(t("Clic: ficha completa", "Click: full details")).append("</font></html>");
-        return h.toString();
-    }
-
-    /** Ficha completa de un elemento (columna izquierda): como en la web, todo lo que hay. */
-    JDialog ttDetalleDialog;
-    JEditorPane ttDetallePane;
-
-    void ttMostrarDetalle(String tipo, long id, long pictureIndex, String nombre, boolean disponible) { ttMostrarDetalle(tipo, id, pictureIndex, nombre, disponible, null); }
-
-    /** Ficha completa en un panel flotante junto al icono: × o un clic en cualquier otra parte lo cierran. */
-    void ttMostrarDetalle(String tipo, long id, long pictureIndex, String nombre, boolean disponible, Component ancla) {
-        Map<String, Object> d = ttDatos(tipo, id);
-        StringBuilder h = new StringBuilder("<html><body style='font-family:sans-serif;font-size:11px'>");
-        h.append("<div>").append(ttImgHtml(ttRutaIcono(tipo, pictureIndex), 48)).append(" <span style='font-size:15px'><b>").append(escapeHtml(nombre)).append("</b></span></div>");
-        if (!disponible) h.append("<p style='color:#e57373'>").append(t("No disponible para esta civilización.", "Not available for this civilization.")).append("</p>");
-        if (!d.isEmpty()) {
-            String coste = ttCosteHtml(obj(d.get("Cost")));
-            if (!coste.isEmpty()) h.append("<p>").append(t("<b>Coste:</b> ", "<b>Cost:</b> ")).append(coste).append("</p>");
-            h.append("<table cellpadding='2' cellspacing='0'>");
-            java.util.function.BiConsumer<String, String> fila = (k, v) -> { if (v != null && !v.isEmpty()) h.append("<tr><td style='color:#8a8a8a'>").append(k).append("</td><td>").append(v).append("</td></tr>"); };
-            if ("Unit".equals(tipo) || "Building".equals(tipo)) {
-                fila.accept(t("PV", "HP"), ttNum(d.get("HP")));
-                fila.accept(t("Ataque", "Attack"), ttNum(d.get("Attack")));
-                StringBuilder bon = new StringBuilder();
-                for (Object a : arr(d.get("Attacks"))) {
-                    Map<String, Object> m = obj(a); int cl = (int) lng(m.get("Class")); long am = lng(m.get("Amount"));
-                    if (cl == 3 || cl == 4 || am == 0) continue;
-                    bon.append(bon.length() > 0 ? "<br>" : "").append("+").append(am).append(" ").append(t("vs ", "vs ")).append(escapeHtml(ttClase(cl)));
-                }
-                fila.accept(t("Bonus de ataque", "Attack bonuses"), bon.toString());
-                fila.accept(t("Armadura", "Armor"), ttArmadura(d, 4) + " / " + ttArmadura(d, 3) + " <span style='color:#8a8a8a'>(" + t("cuerpo a cuerpo / perforante", "melee / pierce") + ")</span>");
-                StringBuilder arm = new StringBuilder();
-                for (Object a : arr(d.get("Armours"))) {
-                    Map<String, Object> m = obj(a); int cl = (int) lng(m.get("Class")); long am = lng(m.get("Amount"));
-                    if (cl == 3 || cl == 4) continue;
-                    arm.append(arm.length() > 0 ? "<br>" : "").append(am >= 0 ? "+" : "").append(am).append(" ").append(escapeHtml(ttClase(cl)));
-                }
-                fila.accept(t("Clases de armadura", "Armor classes"), arm.toString());
-                if (d.get("Range") instanceof Number n && n.doubleValue() > 0) fila.accept(t("Alcance", "Range"), ttNum(n) + (d.get("MinRange") instanceof Number mn && mn.doubleValue() > 0 ? " (" + t("mín. ", "min ") + ttNum(mn) + ")" : ""));
-                fila.accept(t("Línea de visión", "Line of sight"), ttNum(d.get("LineOfSight")));
-                if ("Unit".equals(tipo)) {
-                    fila.accept(t("Velocidad", "Speed"), ttNum(d.get("Speed")));
-                    fila.accept(t("Tiempo de entrenamiento", "Train time"), d.get("TrainTime") instanceof Number ? ttNum(d.get("TrainTime")) + " s" : "");
-                    fila.accept(t("Cadencia", "Reload time"), d.get("ReloadTime") instanceof Number ? ttNum(d.get("ReloadTime")) + " s" : "");
-                    if (d.get("AccuracyPercent") instanceof Number ap && ap.intValue() > 0 && ap.intValue() < 100) fila.accept(t("Precisión", "Accuracy"), ap.intValue() + " %");
-                    if (d.get("GarrisonCapacity") instanceof Number g && g.intValue() > 0) fila.accept(t("Guarnición", "Garrison"), ttNum(g));
-                } else {
-                    if (d.get("GarrisonCapacity") instanceof Number g && g.intValue() > 0) fila.accept(t("Guarnición", "Garrison"), ttNum(g));
-                    if (d.get("TrainTime") instanceof Number) fila.accept(t("Tiempo de construcción", "Build time"), ttNum(d.get("TrainTime")) + " s");
-                }
-            } else {
-                if (d.get("ResearchTime") instanceof Number) fila.accept(t("Tiempo de investigación", "Research time"), ttNum(d.get("ResearchTime")) + " s");
-            }
-            h.append("</table>");
-            String ayuda = ttDescripcion(d);
-            if (ayuda != null) h.append("<p style='margin-top:8px'>").append(ttHtml(ayuda)).append("</p>");
-        }
-        h.append("</body></html>");
-        if (ttDetalleDialog == null) {
-            ttDetalleDialog = new JDialog(this, false);
-            ttDetalleDialog.setUndecorated(true);
-            JPanel cont = new JPanel(new BorderLayout(0, 4));
-            cont.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(new Color(0xa3, 0xb8, 0x6c), 2, true), BorderFactory.createEmptyBorder(6, 8, 8, 8)));
-            JPanel cab = new JPanel(new BorderLayout());
-            cab.setOpaque(false);
-            JLabel tit = new JLabel(t("Ficha", "Details"));
-            tit.setFont(tit.getFont().deriveFont(Font.BOLD, 11f));
-            cab.add(tit, BorderLayout.WEST);
-            JButton x = new JButton("\u00D7");
-            x.setFocusable(false); x.setMargin(new Insets(0, 6, 0, 6));
-            x.putClientProperty("JButton.buttonType", "roundRect");
-            x.addActionListener(e -> ttDetalleDialog.setVisible(false));
-            cab.add(x, BorderLayout.EAST);
-            cont.add(cab, BorderLayout.NORTH);
-            ttDetallePane = new JEditorPane("text/html", "");
-            ttDetallePane.setEditable(false);
-            ttDetallePane.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-            JScrollPane sp = new JScrollPane(ttDetallePane);
-            sp.setBorder(null);
-            sp.getVerticalScrollBar().setUnitIncrement(16);
-            cont.add(sp, BorderLayout.CENTER);
-            ttDetalleDialog.setContentPane(cont);
-            ttDetalleDialog.setSize(520, 600);
-            ttDetalleDialog.getRootPane().registerKeyboardAction(e -> ttDetalleDialog.setVisible(false),
-                    KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        }
-        ttDetallePane.setText(h.toString());
-        ttDetallePane.setCaretPosition(0);
-        ttDetallePane.setSize(new Dimension(480, Integer.MAX_VALUE));
-        int altoContenido = ttDetallePane.getPreferredSize().height + 60;
-        ttDetalleDialog.setSize(520, Math.max(220, Math.min(600, altoContenido)));
-        // junto al icono, sin salirse de la pantalla
-        Point p;
-        if (ancla != null && ancla.isShowing()) { p = ancla.getLocationOnScreen(); p.translate(ancla.getWidth() + 8, -40); }
-        else { p = getLocationOnScreen(); p.translate(getWidth() / 2 - 260, getHeight() / 2 - 300); }
-        Rectangle pantalla = getGraphicsConfiguration().getBounds();
-        p.x = Math.max(pantalla.x, Math.min(p.x, pantalla.x + pantalla.width - 530));
-        p.y = Math.max(pantalla.y, Math.min(p.y, pantalla.y + pantalla.height - 610));
-        ttDetalleDialog.setLocation(p);
-        ttDetalleDialog.setVisible(true);
-        ttDetalleDialog.toFront();
-    }
-
-    Icon ttIconoBoton() {   // un árbol tecnológico dibujado: tres nodos y sus ramas, sin assets ajenos
-        return new Icon() {
-            public int getIconWidth() { return 14; }
-            public int getIconHeight() { return 14; }
-            public void paintIcon(Component c, Graphics g, int x, int y) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(c.getForeground());
-                g2.setStroke(new BasicStroke(1.4f));
-                g2.drawLine(x + 7, y + 3, x + 7, y + 7); g2.drawLine(x + 3, y + 11, x + 7, y + 7); g2.drawLine(x + 11, y + 11, x + 7, y + 7);
-                g2.fillOval(x + 5, y + 0, 5, 5); g2.fillOval(x + 1, y + 9, 5, 5); g2.fillOval(x + 9, y + 9, 5, 5);
-                g2.dispose();
-            }
-        };
-    }
-
-    JPanel construirPanelTechTree() {
-        techTreePanel = new JPanel(new BorderLayout(8, 4));
-        techTreePanel.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 8));
-        // Barra: civ · estado · ×
-        JPanel barra = new JPanel(new BorderLayout(8, 0));
-        JPanel izq = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
-        izq.add(new JLabel(t("Civilización:", "Civilization:")));
-        ttCivCombo = new JComboBox<>();
-        ttCivCombo.setPrototypeDisplayValue("Achaemenids      ");
-        ttCivCombo.setRenderer(new DefaultListCellRenderer() {   // con el emblema de cada civ
-            @Override public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean sel, boolean foc) {
-                JLabel lab = (JLabel) super.getListCellRendererComponent(l, value, index, sel, foc);
-                String k = value == null ? null : ttCivPorNombre.get(String.valueOf(value));
-                lab.setIcon(k == null ? null : iconoCiv(k, 18));
-                lab.setIconTextGap(6);
-                return lab;
-            }
-        });
-        ttCivCombo.addActionListener(e -> { if (!ttRellenandoCombo && ttCivCombo.getSelectedItem() != null) ttMostrarCiv(ttCivPorNombre.getOrDefault((String) ttCivCombo.getSelectedItem(), (String) ttCivCombo.getSelectedItem())); });
-        izq.add(ttCivCombo);
-        ttBuscaCiv = new JTextField(12);   // escribe las primeras letras y Enter
-        ttBuscaCiv.putClientProperty("JTextField.placeholderText", t("Escribe una civ…", "Type a civ…"));
-        ttBuscaCiv.putClientProperty("JTextField.showClearButton", true);
-        ttBuscaCiv.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() {
-                String q = normalizarNick(ttBuscaCiv.getText());
-                if (q.isEmpty()) return;
-                for (int i = 0; i < ttCivCombo.getItemCount(); i++) {   // primero por prefijo, luego por contenido
-                    String it = ttCivCombo.getItemAt(i);
-                    if (normalizarNick(it).startsWith(q) || normalizarNick(ttCivPorNombre.getOrDefault(it, it)).startsWith(q)) { if (!it.equals(ttCivCombo.getSelectedItem())) ttCivCombo.setSelectedItem(it); return; }
-                }
-                for (int i = 0; i < ttCivCombo.getItemCount(); i++) {
-                    String it = ttCivCombo.getItemAt(i);
-                    if (normalizarNick(it).contains(q)) { if (!it.equals(ttCivCombo.getSelectedItem())) ttCivCombo.setSelectedItem(it); return; }
-                }
-            }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        ttBuscaCiv.addActionListener(e -> ttBuscaCiv.selectAll());
-        izq.add(ttBuscaCiv);
-        ttEstado = new JLabel();
-        ttEstado.setFont(ttEstado.getFont().deriveFont(Font.PLAIN, 11f));
-        izq.add(ttEstado);
-        barra.add(izq, BorderLayout.CENTER);
-        JButton cerrar = new JButton("\u00D7");
-        cerrar.setFocusable(false);
-        cerrar.setMargin(new Insets(0, 7, 0, 7));
-        cerrar.putClientProperty("JButton.buttonType", "roundRect");
-        cerrar.setToolTipText(t("Cerrar el tech tree", "Close the tech tree"));
-        cerrar.addActionListener(e -> cerrarTechTree());
-        barra.add(cerrar, BorderLayout.EAST);
-        techTreePanel.add(barra, BorderLayout.NORTH);
-        // Columna izquierda: ficha de civ / ficha de detalle
-        ttFichaCards = new JPanel(new CardLayout());
-        ttFichaCards.setPreferredSize(new Dimension(330, 10));
-        ttFichaCiv = new JEditorPane("text/html", "");
-        ttFichaCiv.setEditable(false);
-        ttFichaCiv.putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, Boolean.TRUE);
-        JScrollPane s1 = new JScrollPane(ttFichaCiv);
-        s1.getVerticalScrollBar().setUnitIncrement(16);
-        ttFichaCards.add(s1, "civ");
-        techTreePanel.add(ttFichaCards, BorderLayout.WEST);
-        // Árbol: horizontal con scroll; las edades, fijas al margen izquierdo
-        ttArbolPanel = new JPanel() {
-            @Override protected void paintComponent(Graphics g) {   // degradado de fondo, columnas alternas, bandas de edad con línea dorada y líneas entre edificios
-                super.paintComponent(g);
-                int celda = ttCeldaActual, cab = TT_CAB, paso = celda + TT_VGAP;
-                Graphics2D g2 = (Graphics2D) g.create();
-                Color fondo = getBackground();
-                g2.setPaint(new GradientPaint(0, 0, temaOscuroActivo ? new Color(0x26, 0x25, 0x23) : new Color(0xf7, 0xf3, 0xea), 0, getHeight(), temaOscuroActivo ? new Color(0x1c, 0x1c, 0x1b) : new Color(0xea, 0xe4, 0xd6)));
-                g2.fillRect(0, 0, getWidth(), getHeight());
-                int k = 0;
-                for (Component c : getComponents()) if (!(c instanceof JSeparator)) { if (k++ % 2 == 1) { g2.setColor(temaOscuroActivo ? new Color(255, 255, 255, 7) : new Color(0, 0, 0, 6)); g2.fillRect(c.getX(), 0, c.getWidth(), getHeight()); } }
-                for (int a = 0; a < 4; a++) {
-                    int y = cab + 2 + a * 2 * paso;
-                    int tono = temaOscuroActivo ? 4 + a * 7 : 8 + a * 8;   // Alta clara → Imperial más marcada
-                    g2.setColor(temaOscuroActivo ? new Color(255, 255, 255, tono) : new Color(0, 0, 0, tono));
-                    g2.fillRect(0, y, getWidth(), 2 * paso);
-                    g2.setColor(new Color(0xc9, 0x8a, 0x3b, temaOscuroActivo ? 70 : 90));   // línea dorada tenue entre edades
-                    g2.drawLine(0, y, getWidth(), y);
-                }
-                g2.setColor(temaOscuroActivo ? new Color(255, 255, 255, 40) : new Color(0, 0, 0, 40));
-                for (Component c : getComponents()) if (c instanceof JSeparator) g2.drawLine(c.getX(), 0, c.getX(), getHeight());
-                g2.dispose();
-            }
-        };
-        ttArbolPanel.setOpaque(true);
-        ttArbolPanel.setLayout(new BoxLayout(ttArbolPanel, BoxLayout.X_AXIS));
-        ttScroll = new JScrollPane(ttArbolPanel, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_ALWAYS);
-        ttScroll.getHorizontalScrollBar().setUnitIncrement(32);
-        ttScroll.getVerticalScrollBar().setUnitIncrement(24);
-        ttScroll.addMouseWheelListener(e -> {   // la rueda desplaza en horizontal (el árbol crece a lo ancho)
-            if (e.isShiftDown() || ttArbolPanel.getPreferredSize().height <= ttScroll.getViewport().getHeight()) {
-                JScrollBar hb = ttScroll.getHorizontalScrollBar();
-                hb.setValue(hb.getValue() + e.getWheelRotation() * 48);
-            } else {
-                JScrollBar vb = ttScroll.getVerticalScrollBar();
-                vb.setValue(vb.getValue() + e.getWheelRotation() * 24);
-            }
-        });
-        ttScroll.setWheelScrollingEnabled(false);
-        JPanel centroTT = new JPanel(new BorderLayout());
-        centroTT.add(ttScroll, BorderLayout.CENTER);
-        centroTT.add(construirFiltrosTechTree(), BorderLayout.SOUTH);   // winrate y filtros, en la banda bajo el árbol
-        techTreePanel.add(centroTT, BorderLayout.CENTER);
-        // Arrastrar con el botón derecho (o central) mueve el árbol; llega a cualquier celda gracias al oyente global
-        final Point[] arrastre = { null, null };   // {origen en pantalla, posición del visor}
-        Toolkit.getDefaultToolkit().addAWTEventListener(ev -> {
-            if (!(ev instanceof MouseEvent me) || ttScroll == null || !ttScroll.isShowing()) return;
-            Component c = me.getComponent();
-            if (me.getID() == MouseEvent.MOUSE_PRESSED) {
-                if (!(SwingUtilities.isRightMouseButton(me) || SwingUtilities.isMiddleMouseButton(me))) return;
-                if (c == null || !SwingUtilities.isDescendingFrom(c, ttScroll)) return;
-                arrastre[0] = me.getLocationOnScreen(); arrastre[1] = ttScroll.getViewport().getViewPosition();
-                ttScroll.setCursor(Cursor.getPredefinedCursor(Cursor.MOVE_CURSOR));
-            } else if (me.getID() == MouseEvent.MOUSE_DRAGGED && arrastre[0] != null) {
-                JViewport vp = ttScroll.getViewport();
-                Point p = me.getLocationOnScreen();
-                int nx = Math.max(0, Math.min(Math.max(0, vp.getViewSize().width - vp.getWidth()), arrastre[1].x - (p.x - arrastre[0].x)));
-                int ny = Math.max(0, Math.min(Math.max(0, vp.getViewSize().height - vp.getHeight()), arrastre[1].y - (p.y - arrastre[0].y)));
-                vp.setViewPosition(new Point(nx, ny));
-            } else if (me.getID() == MouseEvent.MOUSE_RELEASED && arrastre[0] != null) {
-                arrastre[0] = null; ttScroll.setCursor(Cursor.getDefaultCursor());
-            }
-        }, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
-        JLabel pie = new JLabel(t("Datos e iconos: aoe2techtree.net (HSZemi, MIT) · Age of Empires II © Microsoft. En gris, lo que la civ no tiene. Pasa el ratón para ver coste y estadísticas; clic para la ficha completa.",
-                "Data & icons: aoe2techtree.net (HSZemi, MIT) · Age of Empires II © Microsoft. Greyed out = not available for this civ. Hover for cost and stats; click for full details."));
-        pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
-        techTreePanel.add(pie, BorderLayout.SOUTH);
-        return techTreePanel;
-    }
+    JToggleButton techTreeBtn;
 
     /** Abre el panel (plegando la watchlist) y, si se pide, en una civ concreta. */
     @Override public void abrirTechTree(String civ) {
-        registrarDestino(new Destino("techtree", 0, null, civ != null ? civ : ttCivPedida));
+        registrarDestino(new Destino("techtree", 0, null, civ != null ? civ : techTree.civPedida()));
         if (techTreeBtn != null && !techTreeBtn.isSelected()) techTreeBtn.setSelected(true);
         directosBtn.setSelected(false);
         if (ladderBtn != null) ladderBtn.setSelected(false);
@@ -5778,46 +5066,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             splitPrincipal.setOneTouchExpandable(true);
             splitPrincipal.setDividerLocation(0);
         }
-        if (ttCargando) return;
-        ttCargando = true;
-        ttEstado.setText(t("Cargando datos…", "Loading data…"));
-        new Thread(() -> {
-            ttComprobarActualizacion();
-            String err = ttAsegurarDatos();
-            SwingUtilities.invokeLater(() -> {
-                ttCargando = false;
-                if (err != null) {
-                    ttEstado.setText(t("No se pudieron cargar los datos (", "Couldn't load the data (") + err + t("). Vuelve a intentarlo con conexión.", "). Try again with a connection."));
-                    return;
-                }
-                ttEstado.setText("");
-                List<String> civs = new ArrayList<>();
-                for (Map.Entry<String, Object> en : obj(ttData.get("civs")).entrySet())
-                    if (!"antiquity".equals(String.valueOf(obj(en.getValue()).get("era")))) civs.add(en.getKey());
-                civs.sort(String.CASE_INSENSITIVE_ORDER);
-                ttCivPorNombre.clear();
-                List<String> nombres = new ArrayList<>();
-                for (String c : civs) { String n = ttNombreCiv(c); ttCivPorNombre.put(n, c); nombres.add(n); }
-                nombres.sort(String.CASE_INSENSITIVE_ORDER);
-                String actualNombre = (String) ttCivCombo.getSelectedItem();
-                if (ttCivCombo.getItemCount() != nombres.size()) {
-                    ttRellenandoCombo = true;
-                    try { ttCivCombo.removeAllItems(); for (String n : nombres) ttCivCombo.addItem(n); } finally { ttRellenandoCombo = false; }
-                }
-                String actual = actualNombre == null ? null : ttCivPorNombre.get(actualNombre);
-                String pedida = civ == null ? null : civs.stream().filter(c -> c.equalsIgnoreCase(civ)).findFirst().orElse(null);
-                String elegir = pedida != null ? pedida : actual != null ? actual : civs.isEmpty() ? null : civs.get(0);
-                if (elegir != null) {
-                    String nombreElegir = ttNombreCiv(elegir);
-                    if (nombreElegir.equals(ttCivCombo.getSelectedItem())) ttMostrarCiv(elegir); else ttCivCombo.setSelectedItem(nombreElegir);
-                }
-                ttCargarStats();   // winrate junto a cada civ, con los filtros de Civ Stats
-            });
-        }, "techtree-datos").start();
+        techTree.alAbrir(civ);
     }
 
     void cerrarTechTree() {
-        if (ttDetalleDialog != null) ttDetalleDialog.setVisible(false);
+        techTree.ocultarDetalle();
         if (techTreeBtn != null) techTreeBtn.setSelected(false);
         if (splitPrincipal != null && ttDivisorPrevio >= 0) {   // la watchlist vuelve a su ancho
             splitPrincipal.setDividerLocation(ttDivisorPrevio);
@@ -5826,288 +5079,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             ttDivisorPrevio = -1;
         }
         mostrarDirectos(false);
-    }
-
-    void ttMostrarCiv(String civ) {
-        if (ttDetalleDialog != null) ttDetalleDialog.setVisible(false);
-        ttCivPedida = civ;
-        ttArbolPanel.removeAll();
-        ttEstado.setText(t("Cargando ", "Loading ") + civ + "…");
-        new Thread(() -> {
-            Map<String, Object> arbol;
-            try { arbol = ttArbol(civ); }
-            catch (Exception ex) { SwingUtilities.invokeLater(() -> ttEstado.setText(t("No se pudo cargar ", "Couldn't load ") + civ + ": " + causa(ex))); return; }
-            int px = ttCeldaPx();   // los iconos de esta civ, a memoria ANTES de pintar: el árbol sale entero de golpe
-            for (Object o : arr(arbol.get("units_techs"))) { Map<String, Object> n = obj(o); ttIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")), px - 4); }
-            for (Object o : arr(arbol.get("buildings"))) { Map<String, Object> n = obj(o); ttIcono("Building", lng(n.get("picture_index")), 26); }
-            SwingUtilities.invokeLater(() -> {
-                if (!civ.equals(ttCivPedida)) return;   // ya se pidió otra civ: esta llegó tarde
-                ttEstado.setText("");
-                ttPintarFichaCiv(civ);
-                ((CardLayout) ttFichaCards.getLayout()).show(ttFichaCards, "civ");
-                ttPintarArbol(civ, arbol);
-                ttArbolPanel.revalidate(); ttArbolPanel.repaint();
-                ttScroll.getHorizontalScrollBar().setValue(0);
-            });
-        }, "techtree-civ").start();
-    }
-
-    void ttPintarFichaCiv(String civ) {
-        Map<String, Object> civInfo = obj(obj(ttData.get("civs")).get(civ));
-        String ayuda = ttStr(civInfo.get("help_string_id"));
-        Color fg = UIManager.getColor("Label.foreground");
-        String col = fg == null ? "#cccccc" : String.format("#%02x%02x%02x", fg.getRed(), fg.getGreen(), fg.getBlue());
-        StringBuilder h = new StringBuilder("<html><body style='font-family:sans-serif;font-size:11px;color:" + col + "'>");
-        Path ic = TT_DIR.resolve("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
-        if (!Files.exists(ic)) ttPedirIcono("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
-        h.append("<div>").append(ttImgHtml(ic, 56)).append(" <span style='font-size:17px'><b>").append(escapeHtml(ttNombreCiv(civ))).append("</b></span></div>");
-        ttActualizarBanda();
-        if (ayuda != null) h.append("<p>").append(ttHtml(ayuda)).append("</p>");
-        h.append("</body></html>");
-        ttFichaCiv.setText(h.toString());
-        ttFichaCiv.setCaretPosition(0);
-    }
-
-    void ttPintarDeNuevo() {
-        String civ = ttCivCombo == null || ttCivCombo.getSelectedItem() == null ? null : ttCivPorNombre.getOrDefault((String) ttCivCombo.getSelectedItem(), (String) ttCivCombo.getSelectedItem());
-        if (civ == null || !ttTrees.containsKey(civ) || !techTreePanel.isShowing()) return;
-        int h = ttScroll.getHorizontalScrollBar().getValue();
-        ttArbolPanel.removeAll();
-        ttPintarArbol(civ, ttTrees.get(civ));
-        ttArbolPanel.revalidate(); ttArbolPanel.repaint();
-        ttScroll.getHorizontalScrollBar().setValue(h);
-    }
-
-    static final String[] TT_EDADES_ES = { "Alta Edad Media", "Edad Feudal", "Edad de los Castillos", "Edad Imperial" };
-    static final String[] TT_EDADES_EN = { "Dark Age", "Feudal Age", "Castle Age", "Imperial Age" };
-    static final int TT_VGAP = 12;  // hueco vertical entre filas: por él corren las líneas de mejora (milicia → hombre de armas…)
-    static final int TT_CAB = 66;   // la tarjeta del edificio (icono grande y nombre); el edificio en sí va además en su fila de edad, como en la web
-    int ttCeldaActual = 40;
-    /** Placa de edad: degradado oscuro y borde dorado fino, como la tarjeta de cada edificio. */
-    static class PlacaTT extends JPanel {
-        final int edad;
-        PlacaTT(int edad) { this.edad = edad; setOpaque(false); setBorder(BorderFactory.createEmptyBorder(3, 2, 3, 4)); }
-        @Override protected void paintComponent(Graphics g) {
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            int w = getWidth() - 6, h = getHeight() - 6;
-            g2.setPaint(new GradientPaint(0, 3, temaOscuroActivo ? new Color(0x33, 0x2f, 0x27) : new Color(0xf6, 0xef, 0xdd), 0, 3 + h, temaOscuroActivo ? new Color(0x24, 0x22, 0x1e) : new Color(0xe8, 0xdd, 0xc2)));
-            g2.fillRoundRect(2, 3, w, h, 10, 10);
-            g2.setColor(new Color(0xc9, 0x8a, 0x3b, temaOscuroActivo ? 120 : 150));
-            g2.drawRoundRect(2, 3, w, h, 10, 10);
-            g2.dispose();
-            super.paintComponent(g);
-        }
-    }
-    /** Borde-placa para la cabecera de edificio: degradado oscuro, borde dorado fino y esquinas redondeadas. */
-    static class PlacaBorde extends javax.swing.border.AbstractBorder {
-        @Override public void paintBorder(Component c, Graphics g, int x, int y, int w, int h) {   // solo el contorno: el fondo lo pinta el propio componente, debajo de su contenido
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.setColor(new Color(0xc9, 0x8a, 0x3b, temaOscuroActivo ? 150 : 170));
-            g2.drawRoundRect(x + 1, y + 1, w - 3, h - 3, 12, 12);
-            g2.dispose();
-        }
-        @Override public Insets getBorderInsets(Component c) { return new Insets(4, 6, 4, 6); }
-        @Override public boolean isBorderOpaque() { return false; }
-    }
-    /** La rejilla de un edificio: GridLayout con hueco vertical y, por debajo de los iconos, las líneas que unen cada unidad con su mejora (misma columna, fila siguiente con contenido, a como mucho una edad). */
-    static class RejillaTT extends JPanel {
-        final int filas, cols;
-        RejillaTT(int filas, int cols) { super(new GridLayout(filas, cols, 2, TT_VGAP)); this.filas = filas; this.cols = cols; setOpaque(false); }
-        @Override protected void paintComponent(Graphics g) {
-            super.paintComponent(g);
-            Component[] cs = getComponents();
-            if (cs.length < filas * cols) return;
-            Graphics2D g2 = (Graphics2D) g.create();
-            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            g2.setStroke(new BasicStroke(2f));
-            // de la placa del edificio a su icono: una línea dorada por la columna 0 hasta la fila del edificio
-            for (int r = 0; r < filas; r++) {
-                Component b0 = cs[r * cols];
-                if (b0 instanceof JLabel lb0 && lb0.getIcon() != null) {
-                    g2.setColor(new Color(0xc9, 0x8a, 0x3b, temaOscuroActivo ? 110 : 130));
-                    int x = b0.getX() + b0.getWidth() / 2;
-                    if (b0.getY() > 2) g2.drawLine(x, 0, x, b0.getY() + 1);
-                    break;
-                }
-            }
-            for (int c = 1; c < cols; c++) {   // la columna 0 es el propio edificio
-                int prev = -1;
-                for (int r = 0; r < filas; r++) {
-                    Component celda = cs[r * cols + c];
-                    boolean lleno = celda instanceof JLabel l && (l.getIcon() != null || (l.getText() != null && !l.getText().isEmpty()));
-                    if (!lleno) continue;
-                    if (prev >= 0 && r - prev <= 2) {
-                        Component arriba = cs[prev * cols + c];
-                        boolean disp = celda.getForeground() == null || !(celda instanceof JLabel lb && "\u00D7".equals(lb.getText()));
-                        Color marcoAbajo = celda instanceof JComponent jc && jc.getBorder() instanceof javax.swing.border.LineBorder lbrd ? lbrd.getLineColor() : Color.GRAY;
-                        boolean noDisp = marcoAbajo.getAlpha() < 255;   // las no disponibles llevan marco rojo translúcido
-                        g2.setColor(noDisp ? new Color(0xe5, 0x73, 0x73, 60) : (temaOscuroActivo ? new Color(0xc9, 0x8a, 0x3b, 120) : new Color(0x8a, 0x5e, 0x1e, 140)));
-                        int x = arriba.getX() + arriba.getWidth() / 2;
-                        g2.drawLine(x, arriba.getY() + arriba.getHeight() - 1, x, celda.getY() + 1);
-                    }
-                    prev = r;
-                }
-            }
-            g2.dispose();
-        }
-    }
-    /** Versión apagada de un icono (gris y translúcida) para lo que la civ no tiene. */
-    static Image imagenApagada(Image img) {
-        Image gris = GrayFilter.createDisabledImage(img);
-        int w = img.getWidth(null), h = img.getHeight(null);
-        if (w <= 0 || h <= 0) return gris;
-        BufferedImage out = new BufferedImage(w, h, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2 = out.createGraphics();
-        g2.setComposite(AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.55f));
-        g2.drawImage(gris, 0, 0, null);
-        g2.dispose();
-        return out;
-    }
-
-    int ttCeldaPx() {   // ocho filas + cabecera en el alto disponible: iconos grandes cuando hay sitio
-        int alto = ttScroll == null || ttScroll.getViewport().getHeight() < 200 ? 560 : ttScroll.getViewport().getHeight();
-        return Math.max(32, Math.min(58, (alto - TT_CAB - 24) / 8 - TT_VGAP));
-    }
-
-    /** El árbol como la web: una columna por edificio, ocho filas (dos por edad) alineadas en todas las columnas. */
-    void ttPintarArbol(String civ, Map<String, Object> arbol) {
-        final int TT_CELDA = ttCeldaPx();
-        ttCeldaActual = TT_CELDA;
-        Map<String, Map<String, Object>> nodos = new HashMap<>();
-        for (Object o : arr(arbol.get("units_techs"))) { Map<String, Object> n = obj(o); nodos.put(String.valueOf(n.get("id")), n); }
-        for (Object o : arr(arbol.get("buildings"))) { Map<String, Object> n = obj(o); nodos.put(String.valueOf(n.get("id")), n); }
-        Color gris = temaOscuroActivo ? new Color(0x8a, 0x8a, 0x8a) : new Color(0x77, 0x77, 0x77);
-        Color banda = temaOscuroActivo ? new Color(0xff, 0xff, 0xff, 14) : new Color(0, 0, 0, 12);
-        // Margen fijo con las edades (rowHeader del scroll: no se mueve con el desplazamiento horizontal)
-        JPanel edades = new JPanel();
-        edades.setLayout(new BoxLayout(edades, BoxLayout.Y_AXIS));
-        edades.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 6));
-        JLabel vacio = new JLabel(); vacio.setPreferredSize(new Dimension(104, TT_CAB + 2)); vacio.setMaximumSize(new Dimension(104, TT_CAB + 2)); edades.add(vacio);
-        edades.setOpaque(true); edades.setBackground(temaOscuroActivo ? new Color(0x22, 0x21, 0x1f) : new Color(0xf1, 0xec, 0xe1));
-        String[] nombres = "es".equals(IDIOMA) ? TT_EDADES_ES : TT_EDADES_EN;
-        String[] edadImg = { "base_dark_age", "base_feudal_age", "base_castle_age", "base_imperial_age" };
-        List<Object> ageIds = arr(obj(ttData.get("age_names")).get("base"));
-        for (int a = 0; a < 4; a++) {   // una etiqueta por edad, del alto de sus dos filas
-            String nombreEdad = a < ageIds.size() && ttStr(ageIds.get(a)) != null ? ttNombre(ageIds.get(a)) : nombres[a];
-            JLabel e = new JLabel("<html><div style='text-align:center'><b>" + escapeHtml(nombreEdad).replace(" de los ", "<br>de los ").replace("Alta Edad Media", "Alta<br>Edad Media") + "</b></div></html>");
-            Path pe = TT_DIR.resolve("img/Ages/" + edadImg[a] + ".png");
-            if (!Files.exists(pe)) ttPedirIcono("img/Ages/" + edadImg[a] + ".png");
-            else try { int px = Math.min(64, 2 * (TT_CELDA + TT_VGAP) - 40); e.setIcon(new ImageIcon(javax.imageio.ImageIO.read(pe.toFile()).getScaledInstance(px, px, Image.SCALE_SMOOTH))); } catch (Exception ignored) { }
-            e.setVerticalTextPosition(SwingConstants.BOTTOM); e.setHorizontalTextPosition(SwingConstants.CENTER);
-            e.setHorizontalAlignment(SwingConstants.CENTER); e.setVerticalAlignment(SwingConstants.CENTER);
-            e.setForeground(gris);
-            e.setFont(e.getFont().deriveFont(Font.BOLD, 10.5f));
-            int alto = 2 * (TT_CELDA + TT_VGAP);
-            e.setPreferredSize(new Dimension(104, alto)); e.setMaximumSize(new Dimension(104, alto)); e.setMinimumSize(new Dimension(104, alto));
-            e.setOpaque(false);
-            e.setForeground(temaOscuroActivo ? new Color(0xd8, 0xc2, 0x8a) : new Color(0x6b, 0x4c, 0x16));   // nombre de edad en dorado apagado
-            JPanel placa = new PlacaTT(a);
-            placa.setLayout(new BorderLayout()); placa.add(e, BorderLayout.CENTER);
-            placa.setPreferredSize(new Dimension(104, alto)); placa.setMaximumSize(new Dimension(104, alto)); placa.setMinimumSize(new Dimension(104, alto));
-            edades.add(placa);
-        }
-        ttScroll.setRowHeaderView(edades);
-        List<Map<String, Object>> edificios = new ArrayList<>();
-        for (Object o : arr(arbol.get("buildings"))) edificios.add(obj(o));
-        for (Map<String, Object> b : edificios) {
-            List<Object> grid = arr(b.get("grid"));
-            int cols = 0, conContenido = 0;
-            for (Object f : grid) { cols = Math.max(cols, arr(f).size()); for (Object c : arr(f)) if (c != null && nodos.containsKey(String.valueOf(c))) conContenido++; }
-            if (cols == 0 || conContenido == 0) continue;   // torres, muros, puertas, puestos…: sin nada que enseñar, fuera
-            boolean bDisp = !"NotAvailable".equals(String.valueOf(b.get("node_status")));
-            String bNombre = ttNombre(b.get("name_string_id"));
-            long bPic = lng(b.get("picture_index")), bId = lng(b.get("building_id"));
-            int colsTot = cols + 1;   // la primera columna es la del propio edificio, en su fila de edad
-            int anchoCol = colsTot * (TT_CELDA + 2);
-            JPanel columna = new JPanel(new BorderLayout(0, 2));
-            columna.setOpaque(false);
-            columna.setBorder(BorderFactory.createEmptyBorder(0, 6, 0, 6));
-            columna.setMaximumSize(new Dimension(anchoCol + 12, TT_CAB + 2 + 8 * (TT_CELDA + TT_VGAP)));
-            columna.setAlignmentY(Component.TOP_ALIGNMENT);   // todas las columnas arrancan arriba: filas alineadas con las edades
-            // cabecera del edificio: icono + nombre a todo el ancho de la columna
-            ImageIcon bic = ttIcono("Building", bPic, TT_CELDA - 6);
-            ImageIcon bicCab = ttIcono("Building", bPic, 34);
-            JLabel cab = new JLabel() {
-                @Override protected void paintComponent(Graphics g) {   // fondo de placa debajo del icono y el nombre
-                    Graphics2D g2 = (Graphics2D) g.create();
-                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                    int w = getWidth(), h = getHeight();
-                    g2.setPaint(new GradientPaint(0, 0, temaOscuroActivo ? new Color(0x36, 0x31, 0x28) : new Color(0xf8, 0xf1, 0xdf), 0, h, temaOscuroActivo ? new Color(0x25, 0x23, 0x1f) : new Color(0xe9, 0xde, 0xc3)));
-                    g2.fillRoundRect(1, 1, w - 3, h - 3, 12, 12);
-                    g2.dispose();
-                    super.paintComponent(g);
-                }
-            };
-            cab.setPreferredSize(new Dimension(anchoCol, TT_CAB));
-            cab.setMinimumSize(new Dimension(anchoCol, TT_CAB));
-            cab.setMaximumSize(new Dimension(anchoCol, TT_CAB));
-            if (bicCab != null) cab.setIcon(bDisp ? bicCab : new ImageIcon(GrayFilter.createDisabledImage(bicCab.getImage())));
-            cab.setText("<html><div style='text-align:center'><b><span style='font-size:10.5px'>" + escapeHtml(bNombre).toUpperCase(Locale.ROOT).replace(" ", "&nbsp;") + "</span></b></div></html>");
-            cab.setIconTextGap(2);
-            cab.setHorizontalAlignment(SwingConstants.CENTER);   // icono arriba, nombre en versalitas debajo: una placa por edificio
-            cab.setHorizontalTextPosition(SwingConstants.CENTER);
-            cab.setVerticalTextPosition(SwingConstants.BOTTOM);
-            cab.setVerticalAlignment(SwingConstants.CENTER);
-            cab.setOpaque(false);
-            cab.setBorder(new PlacaBorde());
-            cab.setForeground(bDisp ? (temaOscuroActivo ? new Color(0xe6, 0xd3, 0xa3) : new Color(0x5a, 0x40, 0x10)) : gris);
-            int filaEdificio = (int) Math.max(0, Math.min(3, lng(b.get("age_id")) - 1)) * 2;   // su edad: primera fila de la banda
-            cab.setToolTipText(ttTooltip("Building", bId, bNombre, bDisp));
-            cab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            final boolean fDisp = bDisp;
-            cab.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ttMostrarDetalle("Building", bId, bPic, bNombre, fDisp, cab); } });
-            columna.add(cab, BorderLayout.NORTH);
-            JPanel rejilla = new RejillaTT(8, colsTot);
-            rejilla.setPreferredSize(new Dimension(anchoCol, 8 * (TT_CELDA + TT_VGAP)));
-            columna.add(rejilla, BorderLayout.CENTER);
-            for (int r = 0; r < 8; r++) {
-                List<Object> filaG = r < grid.size() ? arr(grid.get(r)) : List.of();
-                for (int c = -1; c < cols; c++) {
-                    if (c == -1) {   // columna del edificio
-                        JLabel be = new JLabel();
-                        be.setPreferredSize(new Dimension(TT_CELDA, TT_CELDA));
-                        be.setHorizontalAlignment(SwingConstants.CENTER);
-                        if (r == filaEdificio) {
-                            if (bic != null) be.setIcon(bDisp ? bic : new ImageIcon(GrayFilter.createDisabledImage(bic.getImage())));
-                            be.setToolTipText(ttTooltip("Building", bId, bNombre, bDisp));
-                            be.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                            be.setBorder(BorderFactory.createLineBorder(bDisp ? new Color(0xc9, 0x8a, 0x3b) : new Color(0xe5, 0x73, 0x73, 110), 2, true));
-                            be.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ttMostrarDetalle("Building", bId, bPic, bNombre, fDisp, be); } });
-                        }
-                        rejilla.add(be);
-                        continue;
-                    }
-                    Object celda = c < filaG.size() ? filaG.get(c) : null;
-                    JLabel l = new JLabel();
-                    l.setPreferredSize(new Dimension(TT_CELDA, TT_CELDA));
-                    l.setHorizontalAlignment(SwingConstants.CENTER);
-                    if (celda != null && nodos.containsKey(String.valueOf(celda))) {
-                        Map<String, Object> n = nodos.get(String.valueOf(celda));
-                        String tipo = String.valueOf(n.get("use_type"));
-                        long nid = lng(n.get("node_id")), pic = lng(n.get("picture_index"));
-                        boolean disp = !"NotAvailable".equals(String.valueOf(n.get("node_status")));
-                        String nombre = ttNombre(n.get("name_string_id"));
-                        ImageIcon ic = ttIcono(tipo, pic, TT_CELDA - 6);
-                        if (ic != null) l.setIcon(disp ? ic : new ImageIcon(imagenApagada(ic.getImage())));
-                        else if (!disp) { l.setText("\u00D7"); l.setForeground(gris); }
-                        l.setToolTipText(ttTooltip(tipo, nid, nombre, disp));
-                        l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                        Color marco = !disp ? new Color(0xe5, 0x73, 0x73, 70)
-                                : "Unit".equals(tipo) ? new Color(0x3b, 0x82, 0xc4) : "Tech".equals(tipo) ? new Color(0x5c, 0xa8, 0x4a) : new Color(0xc9, 0x8a, 0x3b);
-                        l.setBorder(BorderFactory.createLineBorder(marco, 2, true));   // marco por tipo, como la web
-                        l.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ttMostrarDetalle(tipo, nid, pic, nombre, disp, l); } });
-                    }
-                    rejilla.add(l);
-                }
-            }
-            ttArbolPanel.add(columna);
-            JSeparator sep = new JSeparator(SwingConstants.VERTICAL);
-            sep.setMaximumSize(new Dimension(1, TT_CAB + 2 + 8 * (TT_CELDA + TT_VGAP)));
-            sep.setAlignmentY(Component.TOP_ALIGNMENT);
-            ttArbolPanel.add(sep);
-        }
     }
 
     // ----- Partidas en curso en tiempo real: websocket «ongoing-matches» del companion -----------------
@@ -7294,7 +6265,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 "Win rate and pick rate by civilization, map and ELO bracket; matchups and trends (aoe2companion daily dumps)"));
         civStatsBtn.addActionListener(e -> { if (!civStatsBtn.isSelected()) { civStatsBtn.setSelected(true); return; } abrirCivStats(); });
         filaVistas.add(civStatsBtn);
-        techTreeBtn = pestana("Tech tree", ttIconoBoton());
+        techTreeBtn = pestana("Tech tree", TechTreeView.iconoBoton());
         techTreeBtn.setIconTextGap(6);
         techTreeBtn.setToolTipText(t("Árbol tecnológico de cada civilización (datos de aoe2techtree, se actualizan solos)",
                 "Every civilization's tech tree (data from aoe2techtree, updates itself)"));
@@ -7882,7 +6853,23 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         mostrarGuiaVacia(true);   // sin partidas todavía: la guía (la vista inicial sigue siendo Directos)
         centroCards.add(construirPanelDirectos(), "directos");
         centroCards.add(construirPanelAhora(), "ahora");
-        centroCards.add(construirPanelTechTree(), "techtree");
+        techTree = new TechTreeView(this, TechTreeServiceDatos.SISTEMA, stats, filtroStats, listas, this, Tareas.SWING,
+                new TechTreeView.Anfitrion() {
+                    @Override public void precalentarPerfiles() { SpoilerFreeRecs.this.precalentarPerfiles(); }
+                    @Override public void cerrar() { cerrarTechTree(); }
+                },
+                new TechTreeView.EnlaceCivStats() {
+                    @Override public boolean construida() { return civStatsPanel != null; }
+                    @Override public void filtrosCambiados(boolean repintarTechTree) { statsFiltrosCambiados(repintarTechTree); }
+                    @Override public void sincronizarVentana(String ventana) {
+                        if (stVentanaCombo != null) {
+                            stRellenandoMapas = true;
+                            try { stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(stats.clavesVentanas()).indexOf(ventana))); }
+                            finally { stRellenandoMapas = false; }
+                        }
+                    }
+                });
+        centroCards.add(techTree.panel(), "techtree");
         ToolTipManager.sharedInstance().setInitialDelay(350);
         ToolTipManager.sharedInstance().setDismissDelay(90_000);   // el tooltip aguanta mientras el ratón esté quieto
         centroCards.add(construirPanelLadder(), "ladder");
@@ -7915,7 +6902,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             if (c == null) return;
             Window w = c instanceof Window win ? win : SwingUtilities.getWindowAncestor(c);
             if (w != SpoilerFreeRecs.this) return;   // solo la ventana principal (la hover-card y los diálogos, no)
-            if (ttDetalleDialog != null && ttDetalleDialog.isVisible()) ttDetalleDialog.setVisible(false);   // la ficha flotante se cierra al clicar fuera
+            techTree.ocultarDetalle();   // la ficha flotante se cierra al clicar fuera
             // Un fondo sin listeners no recibe el clic (sube hasta la ventana): miramos qué hay REALMENTE bajo el ratón
             Point p = SwingUtilities.convertPoint(c, me.getPoint(), getLayeredPane());
             Component bajo = SwingUtilities.getDeepestComponentAt(getLayeredPane(), p.x, p.y);
@@ -7947,7 +6934,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
         socketVivo.iniciarPing();
         javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
-            comprobarActualizacion(false); ttPrecargar();
+            comprobarActualizacion(false); techTree.precargar();
             cargarPaises(); instalarAutoScroll();
             new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
             refrescarCampanas();
