@@ -89,6 +89,7 @@ import dev.tirador.aoe2radar.service.StatsServiceSfr;
 import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
+import dev.tirador.aoe2radar.ui.FiltroStats;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
@@ -1604,12 +1605,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // =====================================================================================
     /** Asegura las ventanas de Civ Stats y hace sus cálculos (ver service.StatsService). */
     final StatsService stats = new StatsServiceSfr(SfrDataClient.SISTEMA);
-    String statsModo = leerConfig("stats_modo", "rm_1v1"), statsVentana = leerConfig("stats_ventana", "30"), statsMapa = leerConfig("stats_mapa", "*"), statsTramo = leerConfig("stats_tramo", "*");
+    /** Filtros de Civ Stats (y de la banda del Tech tree, que los comparte): ver ui.FiltroStats. */
+    final FiltroStats filtroStats = new FiltroStats(leerConfig("stats_modo", "rm_1v1"), leerConfig("stats_ventana", "30"), leerConfig("stats_mapa", "*"), leerConfig("stats_tramo", "*"));
     JToggleButton civStatsBtn;
     JPanel civStatsPanel; JComboBox<String> stModoCombo, stVentanaCombo, stMapaCombo, stTramoCombo; JLabel stEstado;
     JPanel stTarjetas, stMasJugadas, stMejorPorMapa, stPool; JTable stTabla; DefaultTableModel stModelo; TableRowSorter<DefaultTableModel> stSorter;
     TendenciasPanel stTendencias; MatrizPanel stMatriz; JLabel stTituloTabla, stTituloMatriz;
-    String stCivSeleccionada;
     final List<String> stCivsSeleccionadas = new ArrayList<>();
     JCheckBox stMasJugadasCheck; JComboBox<String> stTendVentana, stTendMapa, stTendTramo; JToggleButton stTendPick, stTendWr; boolean stRellenandoTend; String tendMapa = "*", tendTramo = "*";
     JPanel stFilaMedio, stFilaTend;
@@ -1762,20 +1763,20 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         JPanel norte = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
         stModoCombo = new JComboBox<>();
         for (String m : MODOS_STATS) stModoCombo.addItem(modoNombre(m));
-        stModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(MODOS_STATS).indexOf(statsModo)));
-        stModoCombo.addActionListener(e -> { statsModo = MODOS_STATS[Math.max(0, stModoCombo.getSelectedIndex())]; guardarConfig("stats_modo", statsModo); stCivSeleccionada = null; statsFiltrosCambiados(true); });
+        stModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(MODOS_STATS).indexOf(filtroStats.modo())));
+        stModoCombo.addActionListener(e -> { filtroStats.modo(MODOS_STATS[Math.max(0, stModoCombo.getSelectedIndex())]); guardarConfig("stats_modo", filtroStats.modo()); filtroStats.civSeleccionada(null); statsFiltrosCambiados(true); });
         norte.add(stModoCombo);
         stVentanaCombo = new JComboBox<>();
         for (String v : VENTANAS_STATS_KEYS) stVentanaCombo.addItem(ventanaNombre(v));
-        stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(statsVentana)));
-        stVentanaCombo.addActionListener(e -> { if (stRellenandoMapas) return; statsVentana = VENTANAS_STATS_KEYS[Math.max(0, stVentanaCombo.getSelectedIndex())]; guardarConfig("stats_ventana", statsVentana); abrirCivStats(); });
+        stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(filtroStats.ventana())));
+        stVentanaCombo.addActionListener(e -> { if (stRellenandoMapas) return; filtroStats.ventana(VENTANAS_STATS_KEYS[Math.max(0, stVentanaCombo.getSelectedIndex())]); guardarConfig("stats_ventana", filtroStats.ventana()); abrirCivStats(); });
         norte.add(stVentanaCombo);
         stMapaCombo = new JComboBox<>();
         stMapaCombo.setPrototypeDisplayValue("African Clearing (99.999)   ");
-        stMapaCombo.addActionListener(e -> { if (stRellenandoMapas) return; Object id = stMapaCombo.getClientProperty("claves"); if (id instanceof List<?> l && stMapaCombo.getSelectedIndex() >= 0 && stMapaCombo.getSelectedIndex() < l.size()) { statsMapa = String.valueOf(l.get(stMapaCombo.getSelectedIndex())); guardarConfig("stats_mapa", statsMapa); statsFiltrosCambiados(true); } });
+        stMapaCombo.addActionListener(e -> { if (stRellenandoMapas) return; Object id = stMapaCombo.getClientProperty("claves"); if (id instanceof List<?> l && stMapaCombo.getSelectedIndex() >= 0 && stMapaCombo.getSelectedIndex() < l.size()) { filtroStats.mapa(String.valueOf(l.get(stMapaCombo.getSelectedIndex()))); guardarConfig("stats_mapa", filtroStats.mapa()); statsFiltrosCambiados(true); } });
         norte.add(stMapaCombo);
         stRango = new SelectorRangoElo();
-        stRango.alCambiar = r -> { if (stRellenandoMapas) return; statsTramo = r; guardarConfig("stats_tramo", statsTramo); statsFiltrosCambiados(true); };
+        stRango.alCambiar = r -> { if (stRellenandoMapas) return; filtroStats.tramo(r); guardarConfig("stats_tramo", filtroStats.tramo()); statsFiltrosCambiados(true); };
         norte.add(stRango);
         stEstado = new JLabel();
         stEstado.setFont(stEstado.getFont().deriveFont(Font.PLAIN, 11f));
@@ -1831,7 +1832,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         stTabla.getSelectionModel().addListSelectionListener(e -> {
             if (e.getValueIsAdjusting()) return;
             int r = stTabla.getSelectedRow();
-            stCivSeleccionada = r < 0 ? null : (String) stTabla.getClientProperty("civ" + stTabla.convertRowIndexToModel(r));
+            filtroStats.civSeleccionada(r < 0 ? null : (String) stTabla.getClientProperty("civ" + stTabla.convertRowIndexToModel(r)));
             stCivsSeleccionadas.clear();
             for (int vr : stTabla.getSelectedRows()) { Object k = stTabla.getClientProperty("civ" + stTabla.convertRowIndexToModel(vr)); if (k != null) stCivsSeleccionadas.add(String.valueOf(k)); }
             if (!stCivsSeleccionadas.isEmpty() && stMasJugadasCheck != null && stMasJugadasCheck.isSelected()) stMasJugadasCheck.setSelected(false);   // seleccionas → solo las tuyas
@@ -2101,7 +2102,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
         if (stCargando) return;
         stCargando = true;
-        String ventana = statsVentana;
+        String ventana = filtroStats.ventana();
         stEstado.setText(t("Descargando el resumen de ", "Downloading the summary for ") + ventanaNombre(ventana).toLowerCase(Locale.ROOT) + "…");
         new Thread(() -> {
             String err = stats.asegurar(ventana, true);
@@ -2115,11 +2116,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Rellena mapas y tramos disponibles para el modo actual y repinta todo el cuadro de mando. */
     void statsFiltrosCambiados(boolean repintarTechTree) {
-        VentanaStats v = VENTANAS_STATS.get(statsVentana);
+        VentanaStats v = VENTANAS_STATS.get(filtroStats.ventana());
         if (v == null || civStatsPanel == null) return;
         stRellenandoMapas = true;
         try {
-            Map<String, Integer> mapas = stats.partidasPorMapa(v, statsModo, statsTramo);   // el contador es el del tramo elegido
+            Map<String, Integer> mapas = stats.partidasPorMapa(v, filtroStats.modo(), filtroStats.tramo());   // el contador es el del tramo elegido
             List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
             lm.sort((a, b) -> b.getValue() - a.getValue());
             List<String> claves = new ArrayList<>(); claves.add("*");
@@ -2127,13 +2128,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             stMapaCombo.addItem(t("Todos los mapas", "All maps"));
             for (Map.Entry<String, Integer> en : lm) { if (en.getValue() < MIN_PARTIDAS_CIV) continue; claves.add(en.getKey()); stMapaCombo.addItem(nombreMapaStats(v, en.getKey()) + " (" + miles(en.getValue()) + ")"); }
             stMapaCombo.putClientProperty("claves", claves);
-            if (!claves.contains(statsMapa)) { statsMapa = "*"; guardarConfig("stats_mapa", "*"); }
+            if (!claves.contains(filtroStats.mapa())) { filtroStats.mapa("*"); guardarConfig("stats_mapa", "*"); }
             if (stTendMapa != null) {   // la fila de tendencias tiene sus propios mapa y ELO
                 stRellenandoTend = true;
                 try {
                     List<String> clTM = new ArrayList<>(); clTM.add("*");
                     stTendMapa.removeAllItems(); stTendMapa.addItem(t("Todos", "All"));
-                    List<Map.Entry<String, Integer>> lmT = new ArrayList<>(v.mapasPorModo().getOrDefault(statsModo, Map.of()).entrySet());
+                    List<Map.Entry<String, Integer>> lmT = new ArrayList<>(v.mapasPorModo().getOrDefault(filtroStats.modo(), Map.of()).entrySet());
                     lmT.sort((a, b) -> b.getValue() - a.getValue());
                     for (Map.Entry<String, Integer> en : lmT.subList(0, Math.min(12, lmT.size()))) { clTM.add(en.getKey()); stTendMapa.addItem(nombreMapaStats(v, en.getKey())); }
                     stTendMapa.putClientProperty("claves", clTM);
@@ -2144,24 +2145,24 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     totalesTendencia.clear();
                 } finally { stRellenandoTend = false; }
             }
-            stMapaCombo.setSelectedIndex(claves.indexOf(statsMapa));
-            stRango.tramos(v.tramos(), statsTramo);
-            statsTramo = stRango.rango();
+            stMapaCombo.setSelectedIndex(claves.indexOf(filtroStats.mapa()));
+            stRango.tramos(v.tramos(), filtroStats.tramo());
+            filtroStats.tramo(stRango.rango());
         } finally { stRellenandoMapas = false; }
         statsPintar(v);
         if (repintarTechTree && techTreePanel != null) ttActualizarWr();
     }
 
     void statsPintar(VentanaStats v) {
-        Map<String, CivAgg> agg = stats.agregarCivs(v, statsModo, statsMapa, statsTramo);
+        Map<String, CivAgg> agg = stats.agregarCivs(v, filtroStats.modo(), filtroStats.mapa(), filtroStats.tramo());
         long totalN = 0, totalD = 0; int totalW = 0;
         for (CivAgg a : agg.values()) { totalN += a.n(); totalD += a.d(); totalW += a.w(); }
-        Map<String, Integer> modo = v.modos().getOrDefault(statsModo, Map.of());
-        int jugadoresPorPartida = statsModo.endsWith("_1v1") ? 2 : statsModo.endsWith("_2v2") ? 4 : statsModo.endsWith("_3v3") ? 6 : statsModo.endsWith("_4v4") ? 8 : 6;
-        long partidas = "*".equals(statsMapa) && ("*".equals(statsTramo) || "*|*".equals(statsTramo)) ? modo.getOrDefault("partidas", 0) : totalN / jugadoresPorPartida;
+        Map<String, Integer> modo = v.modos().getOrDefault(filtroStats.modo(), Map.of());
+        int jugadoresPorPartida = filtroStats.modo().endsWith("_1v1") ? 2 : filtroStats.modo().endsWith("_2v2") ? 4 : filtroStats.modo().endsWith("_3v3") ? 6 : filtroStats.modo().endsWith("_4v4") ? 8 : 6;
+        long partidas = "*".equals(filtroStats.mapa()) && ("*".equals(filtroStats.tramo()) || "*|*".equals(filtroStats.tramo())) ? modo.getOrDefault("partidas", 0) : totalN / jugadoresPorPartida;
         int abandonos = modo.getOrDefault("abandonos", 0), espejos = modo.getOrDefault("espejos", 0), sinRes = modo.getOrDefault("sin_resultado", 0);
         int brutas = modo.getOrDefault("partidas", 0) + abandonos + espejos + sinRes;
-        String ambito = ventanaNombre(statsVentana) + " · " + v.desde() + " → " + v.hasta() + (v.parche().isEmpty() ? "" : " · " + t("parche ", "patch ") + v.parche());
+        String ambito = ventanaNombre(filtroStats.ventana()) + " · " + v.desde() + " → " + v.hasta() + (v.parche().isEmpty() ? "" : " · " + t("parche ", "patch ") + v.parche());
         stTarjetas.removeAll();
         stTarjetas.add(tarjeta(t("Partidas", "Games"), miles(partidas), ambito));
         stTarjetas.add(tarjeta(t("Duración media", "Avg. length"), stats.duracionMedia(totalD, (int) Math.min(Integer.MAX_VALUE, totalN)), t("tiempo de juego, sin abandonos", "in-game time, dodges excluded")));
@@ -2179,9 +2180,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             stTabla.putClientProperty("civ" + i, a.civ());
             i++;
         }
-        stTituloTabla.setText(t("Winrate por civilización", "Win rate by civilization") + "  ·  " + modoNombre(statsModo) + " · " + nombreMapaStats(v, statsMapa) + " · " + tramoNombre(statsTramo));
-        if (stCivSeleccionada != null) {
-            for (int r = 0; r < stModelo.getRowCount(); r++) if (stCivSeleccionada.equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); break; }
+        stTituloTabla.setText(t("Winrate por civilización", "Win rate by civilization") + "  ·  " + modoNombre(filtroStats.modo()) + " · " + nombreMapaStats(v, filtroStats.mapa()) + " · " + tramoNombre(filtroStats.tramo()));
+        if (filtroStats.civSeleccionada() != null) {
+            for (int r = 0; r < stModelo.getRowCount(); r++) if (filtroStats.civSeleccionada().equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); break; }
         }
         Color barra = temaOscuroActivo ? new Color(0x5a, 0x8f, 0xc7) : new Color(0x3b, 0x6e, 0xa8);
         stMasJugadas.removeAll();
@@ -2193,11 +2194,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (porPick.size() > 8) { long totalNF = totalN; stMasJugadas.add(enlaceVerTodo(porPick.size(), () -> {
             List<Object[]> filas = new ArrayList<>();
             for (CivAgg a : porPick) filas.add(new Object[]{ new Celda(iconoCiv(a.civ(), 18), nombreCivStats(a.civ()), () -> abrirTechTree(a.civ())), new Pct(totalNF == 0 ? 0 : 100.0 * a.n() / totalNF, 0, 0, false), (long) a.n(), new Pct(a.wr(), a.w(), a.n(), true) });
-            mostrarTablaCompleta(t("Más jugadas", "Most played") + " · " + modoNombre(statsModo), new String[]{ t("Civ", "Civ"), "Pick", t("Partidas", "Games"), "WR" }, filas, 1);
+            mostrarTablaCompleta(t("Más jugadas", "Most played") + " · " + modoNombre(filtroStats.modo()), new String[]{ t("Civ", "Civ"), "Pick", t("Partidas", "Games"), "WR" }, filas, 1);
         })); }
         stMejorPorMapa.removeAll();
         stMejorPorMapa.add(tituloSeccion(t("Mejor civ por mapa", "Best civ per map"), t("En cada mapa del pool, la civ con mejor winrate con el modo y el tramo elegidos: mínimo 20 partidas de esa civ en ese mapa, y gana la que tiene mejor límite inferior del intervalo de confianza (no la muestra pequeña con suerte). El número gris son sus partidas: por debajo de 100, orientativo. Responde a «qué me cojo en este mapa».", "For each map in the pool, the civ with the best win rate with the chosen mode and bracket: at least 20 games of that civ on that map, and the winner is the best lower bound of the confidence interval (not a lucky small sample). The grey number is its games: under 100, indicative only. Answers \u201Cwhat should I pick on this map\u201D.")));
-        Map<String, Integer> mapas = stats.partidasPorMapa(v, statsModo, statsTramo);   // con tramo elegido, solo las partidas de ese tramo
+        Map<String, Integer> mapas = stats.partidasPorMapa(v, filtroStats.modo(), filtroStats.tramo());   // con tramo elegido, solo las partidas de ese tramo
         List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
         lm.sort((a, b) -> b.getValue() - a.getValue());
         int filasMejor = 0;
@@ -2205,7 +2206,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (Map.Entry<String, Integer> en : lm) {
             if (en.getValue() < MIN_PARTIDAS_CIV) break;
             CivAgg mejor = null; double mejorLb = -1;
-            for (CivAgg a : stats.agregarCivs(v, statsModo, en.getKey(), statsTramo).values()) {   // 20+ partidas; gana el límite inferior de Wilson (no la muestra pequeña con suerte)
+            for (CivAgg a : stats.agregarCivs(v, filtroStats.modo(), en.getKey(), filtroStats.tramo()).values()) {   // 20+ partidas; gana el límite inferior de Wilson (no la muestra pequeña con suerte)
                 if (a.n() < MIN_PARTIDAS_CIV) continue;
                 double lb = stats.wilson(a.w(), a.n())[0];
                 if (lb > mejorLb) { mejorLb = lb; mejor = a; }
@@ -2217,7 +2218,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (todasMejor.size() > 12) stMejorPorMapa.add(enlaceVerTodo(todasMejor.size(), () -> {
             List<Object[]> filas = new ArrayList<>();
             for (Object[] x : todasMejor) { CivAgg mejor = (CivAgg) x[1]; filas.add(new Object[]{ new Celda(iconoMapa(nombreMapaStats(v, (String) x[0]), (String) x[0], 18), nombreMapaStats(v, (String) x[0]), null), new Celda(iconoCiv(mejor.civ(), 18), nombreCivStats(mejor.civ()), () -> abrirTechTree(mejor.civ())), (long) mejor.n(), new Pct(mejor.wr(), mejor.w(), mejor.n(), true), (long) (Integer) x[2] }); }
-            mostrarTablaCompleta(t("Mejor civ por mapa", "Best civ per map") + " · " + modoNombre(statsModo) + " · " + tramoNombre(statsTramo), new String[]{ t("Mapa", "Map"), t("Mejor civ", "Best civ"), t("Partidas civ", "Civ games"), "WR", t("Partidas mapa", "Map games") }, filas, 4);
+            mostrarTablaCompleta(t("Mejor civ por mapa", "Best civ per map") + " · " + modoNombre(filtroStats.modo()) + " · " + tramoNombre(filtroStats.tramo()), new String[]{ t("Mapa", "Map"), t("Mejor civ", "Best civ"), t("Partidas civ", "Civ games"), "WR", t("Partidas mapa", "Map games") }, filas, 4);
         }));
         if (filasMejor == 0) { JLabel vac = new JLabel(t("Sin mapas con 20+ partidas por civ.", "No maps with 20+ games per civ.")); vac.setForeground(Color.GRAY); vac.setFont(vac.getFont().deriveFont(Font.PLAIN, 11f)); stMejorPorMapa.add(vac); }
         stPool.removeAll();
@@ -2236,13 +2237,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             stPool.add(enlaceVerTodo(lm.size(), () -> {
                 List<Object[]> filas = new ArrayList<>();
                 for (Map.Entry<String, Integer> en : lm) filas.add(new Object[]{ new Celda(iconoMapa(nombreMapaStats(v, en.getKey()), en.getKey(), 18), nombreMapaStats(v, en.getKey()), null), (long) en.getValue(), new Pct(totalMapasF == 0 ? 0 : 100.0 * en.getValue() / totalMapasF, 0, 0, false) });
-                mostrarTablaCompleta(t("Pool de mapas", "Map pool") + " · " + modoNombre(statsModo) + " · " + tramoNombre(statsTramo), new String[]{ t("Mapa", "Map"), t("Partidas", "Games"), "%" }, filas, 1);
+                mostrarTablaCompleta(t("Pool de mapas", "Map pool") + " · " + modoNombre(filtroStats.modo()) + " · " + tramoNombre(filtroStats.tramo()), new String[]{ t("Mapa", "Map"), t("Partidas", "Games"), "%" }, filas, 1);
             }));
         }
         for (JPanel p : new JPanel[]{ stMasJugadas, stMejorPorMapa, stPool }) { p.revalidate(); p.repaint(); }
         ajustarFilasCivStats();
         stTendencias.datos(porPick.subList(0, Math.min(5, porPick.size())));
-        boolean unoContraUno = statsModo.endsWith("_1v1");
+        boolean unoContraUno = filtroStats.modo().endsWith("_1v1");
         stTituloMatriz.setVisible(unoContraUno); stMatriz.setVisible(unoContraUno);
         if (unoContraUno) stMatriz.datos(v, lista);
         stEstado.setText(t("Resumen del ", "Summary of ") + v.hasta() + (partidas < POCAS_PARTIDAS ? "  ·  " + t("pocas partidas con estos filtros: prueba 90 o 365 días", "few games with these filters: try 90 or 365 days") : ""));
@@ -2252,7 +2253,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** La matriz de matchups en una ventana a pantalla completa, con celdas grandes y scroll. */
     void mostrarMatrizGrande() {
         if (stMatriz == null || stMatriz.civs.isEmpty()) return;
-        JDialog d = new JDialog(this, t("Matchups · ", "Matchups · ") + modoNombre(statsModo) + " · " + tramoNombre(statsTramo) + " · " + ventanaNombre(statsVentana), false);
+        JDialog d = new JDialog(this, t("Matchups · ", "Matchups · ") + modoNombre(filtroStats.modo()) + " · " + tramoNombre(filtroStats.tramo()) + " · " + ventanaNombre(filtroStats.ventana()), false);
         MatrizPanel grande = new MatrizPanel();
         grande.copiarDe(stMatriz);
         Rectangle pantalla = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
@@ -2270,10 +2271,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     List<String> prefijosTendencia(String fuente, List<String> tramosRango) {
         List<String> out = new ArrayList<>();
         switch (fuente) {
-            case "mt" -> { for (String tr : tramosRango) out.add(statsModo + "|" + tendMapa + "|" + tr + "|"); }
-            case "tramo" -> { for (String tr : tramosRango) out.add(statsModo + "|" + tr + "|"); }
-            case "mapa" -> out.add(statsModo + "|" + tendMapa + "|");
-            default -> out.add(statsModo + "|");
+            case "mt" -> { for (String tr : tramosRango) out.add(filtroStats.modo() + "|" + tendMapa + "|" + tr + "|"); }
+            case "tramo" -> { for (String tr : tramosRango) out.add(filtroStats.modo() + "|" + tr + "|"); }
+            case "mapa" -> out.add(filtroStats.modo() + "|" + tendMapa + "|");
+            default -> out.add(filtroStats.modo() + "|");
         }
         return out;
     }
@@ -2293,10 +2294,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** Total de «slots» de civ en un mes con el filtro de la tendencia (para el pick rate): suma de n de todas las civs (y de los tramos del rango). */
     final Map<String, Long> totalesTendencia = new HashMap<>();
     long totalTendencia(Tendencias tn, String fuente, String mes) {
-        String clave = fuente + "|" + statsModo + "|" + tendMapa + "|" + tendTramo + "|" + mes;
+        String clave = fuente + "|" + filtroStats.modo() + "|" + tendMapa + "|" + tendTramo + "|" + mes;
         Long c = totalesTendencia.get(clave);
         if (c != null) return c;
-        VentanaStats vTr = VENTANAS_STATS.get(statsVentana);
+        VentanaStats vTr = VENTANAS_STATS.get(filtroStats.ventana());
         List<String> tramosRango = new ArrayList<>();
         if (vTr != null) for (String tr : vTr.tramos()) if (stats.tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
         Map<String, Map<String, int[]>> tabla = switch (fuente) { case "mt" -> tn.filasMT(); case "mapa" -> tn.filasMapa(); case "tramo" -> tn.filasTramo(); default -> tn.filas(); };
@@ -2328,17 +2329,17 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             boolean pick = stTendPick != null && stTendPick.isSelected();
             boolean conMapa = !"*".equals(tendMapa), conTramo = !"*".equals(tendTramo);
             String fuente = conMapa && conTramo ? "mt" : conMapa ? "mapa" : conTramo ? "tramo" : "todo";
-            VentanaStats vTr = VENTANAS_STATS.get(statsVentana);
+            VentanaStats vTr = VENTANAS_STATS.get(filtroStats.ventana());
             List<String> tramosRango = new ArrayList<>();
             if (vTr != null) for (String tr : vTr.tramos()) if (stats.tramoEnRango(tr, vTr.tramos(), tendTramo)) tramosRango.add(tr);
             boolean hayFuente = tn != null && switch (fuente) {
-                case "mt" -> tn.filasMT() != null && tramosRango.stream().anyMatch(tr -> tn.filasMT().keySet().stream().anyMatch(k -> k.startsWith(statsModo + "|" + tendMapa + "|" + tr + "|")));
-                case "mapa" -> tn.filasMapa() != null && tn.filasMapa().keySet().stream().anyMatch(k -> k.startsWith(statsModo + "|" + tendMapa + "|"));
-                case "tramo" -> tn.filasTramo() != null && tramosRango.stream().anyMatch(tr -> tn.filasTramo().keySet().stream().anyMatch(k -> k.startsWith(statsModo + "|" + tr + "|")));
+                case "mt" -> tn.filasMT() != null && tramosRango.stream().anyMatch(tr -> tn.filasMT().keySet().stream().anyMatch(k -> k.startsWith(filtroStats.modo() + "|" + tendMapa + "|" + tr + "|")));
+                case "mapa" -> tn.filasMapa() != null && tn.filasMapa().keySet().stream().anyMatch(k -> k.startsWith(filtroStats.modo() + "|" + tendMapa + "|"));
+                case "tramo" -> tn.filasTramo() != null && tramosRango.stream().anyMatch(tr -> tn.filasTramo().keySet().stream().anyMatch(k -> k.startsWith(filtroStats.modo() + "|" + tr + "|")));
                 default -> true;
             };
-            VentanaStats vTit = VENTANAS_STATS.get(statsVentana);
-            String titulo = (pick ? t("Tendencia del pick rate por mes", "Monthly pick rate trend") : t("Tendencia del winrate por mes", "Monthly win rate trend")) + "  ·  " + modoNombre(statsModo)
+            VentanaStats vTit = VENTANAS_STATS.get(filtroStats.ventana());
+            String titulo = (pick ? t("Tendencia del pick rate por mes", "Monthly pick rate trend") : t("Tendencia del winrate por mes", "Monthly win rate trend")) + "  ·  " + modoNombre(filtroStats.modo())
                     + " · " + (conMapa ? nombreMapaStats(vTit, tendMapa) : t("todos los mapas", "all maps")) + " · " + (conTramo ? tramoNombre(tendTramo) : t("todos los ELO", "all ELO"));
             g2.drawString(titulo, 4, 16);
             if (tn != null && !hayFuente) {
@@ -2440,8 +2441,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     int f = (e.getY() - margenSup) / celda;
                     if (e.getX() < margenIzq && f >= 0 && f < civs.size() && e.getClickCount() == 2) { abrirTechTree(civs.get(f)); return; }   // doble clic en el nombre → tech tree
                     if (e.getX() < margenIzq && f >= 0 && f < civs.size()) {
-                        stCivSeleccionada = civs.get(f);
-                        for (int r = 0; r < stModelo.getRowCount(); r++) if (stCivSeleccionada.equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); stTabla.scrollRectToVisible(stTabla.getCellRect(vr, 0, true)); break; }
+                        filtroStats.civSeleccionada(civs.get(f));
+                        for (int r = 0; r < stModelo.getRowCount(); r++) if (filtroStats.civSeleccionada().equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); stTabla.scrollRectToVisible(stTabla.getCellRect(vr, 0, true)); break; }
                         repaint();
                     }
                 }
@@ -2461,8 +2462,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             for (CivAgg a : orden) cs.add(a.civ());
             Map<String, int[]> m = new HashMap<>();
             for (Matchup mu : v.matchups()) {
-                if (!mu.modo().equals(statsModo)) continue;
-                if (!stats.tramoEnRango(mu.tramo(), v.tramos(), statsTramo)) continue;
+                if (!mu.modo().equals(filtroStats.modo())) continue;
+                if (!stats.tramoEnRango(mu.tramo(), v.tramos(), filtroStats.tramo())) continue;
                 int[] ab = m.computeIfAbsent(mu.ca() + "|" + mu.cb(), k -> new int[2]); ab[0] += mu.n(); ab[1] += mu.wa();
                 int[] ba = m.computeIfAbsent(mu.cb() + "|" + mu.ca(), k -> new int[2]); ba[0] += mu.n(); ba[1] += mu.n() - mu.wa();
             }
@@ -2496,7 +2497,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             FontMetrics fm = g2.getFontMetrics();
             int n = civs.size();
             for (int f = 0; f < n; f++) {
-                boolean sel = civs.get(f).equals(stCivSeleccionada);
+                boolean sel = civs.get(f).equals(filtroStats.civSeleccionada());
                 g2.setColor(sel ? fg : new Color(fg.getRed(), fg.getGreen(), fg.getBlue(), 200));
                 String nombre = nombreCivStats(civs.get(f));
                 g2.setFont(sel ? peq.deriveFont(Font.BOLD) : peq);
@@ -2531,8 +2532,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     g2.fillRect(x, y, celda - 1, celda - 1);
                 }
             }
-            if (stCivSeleccionada != null) {
-                int f = civs.indexOf(stCivSeleccionada);
+            if (filtroStats.civSeleccionada() != null) {
+                int f = civs.indexOf(filtroStats.civSeleccionada());
                 if (f >= 0) { g2.setColor(fg); g2.setStroke(new BasicStroke(1.5f)); g2.drawRect(margenIzq - 1, margenSup + f * celda - 1, celda * n + 1, celda + 1); }
             }
             g2.dispose();
@@ -2691,15 +2692,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         JPanel filtros = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 1));
         ttModoCombo = new JComboBox<>();
         for (String m : MODOS_STATS) ttModoCombo.addItem(modoNombre(m));
-        ttModoCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; statsModo = MODOS_STATS[Math.max(0, ttModoCombo.getSelectedIndex())]; guardarConfig("stats_modo", statsModo); stCivSeleccionada = null; statsFiltrosCambiados(true); });
+        ttModoCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; filtroStats.modo(MODOS_STATS[Math.max(0, ttModoCombo.getSelectedIndex())]); guardarConfig("stats_modo", filtroStats.modo()); filtroStats.civSeleccionada(null); statsFiltrosCambiados(true); });
         ttMapaCombo = new JComboBox<>();
         ttMapaCombo.setPrototypeDisplayValue("African Clearing (99.999)   ");
-        ttMapaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; Object cl = ttMapaCombo.getClientProperty("claves"); if (cl instanceof List<?> l && ttMapaCombo.getSelectedIndex() >= 0 && ttMapaCombo.getSelectedIndex() < l.size()) { statsMapa = String.valueOf(l.get(ttMapaCombo.getSelectedIndex())); guardarConfig("stats_mapa", statsMapa); statsFiltrosCambiados(true); } });
+        ttMapaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; Object cl = ttMapaCombo.getClientProperty("claves"); if (cl instanceof List<?> l && ttMapaCombo.getSelectedIndex() >= 0 && ttMapaCombo.getSelectedIndex() < l.size()) { filtroStats.mapa(String.valueOf(l.get(ttMapaCombo.getSelectedIndex()))); guardarConfig("stats_mapa", filtroStats.mapa()); statsFiltrosCambiados(true); } });
         ttRango = new SelectorRangoElo();
-        ttRango.alCambiar = r -> { if (ttRellenandoFiltros) return; statsTramo = r; guardarConfig("stats_tramo", statsTramo); statsFiltrosCambiados(true); };
+        ttRango.alCambiar = r -> { if (ttRellenandoFiltros) return; filtroStats.tramo(r); guardarConfig("stats_tramo", filtroStats.tramo()); statsFiltrosCambiados(true); };
         ttVentanaCombo = new JComboBox<>();
         for (String vv : VENTANAS_STATS_KEYS) ttVentanaCombo.addItem(ventanaNombre(vv));
-        ttVentanaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; statsVentana = VENTANAS_STATS_KEYS[Math.max(0, ttVentanaCombo.getSelectedIndex())]; guardarConfig("stats_ventana", statsVentana); if (stVentanaCombo != null) { stRellenandoMapas = true; try { stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(statsVentana))); } finally { stRellenandoMapas = false; } } ttCargarStats(); });
+        ttVentanaCombo.addActionListener(e -> { if (ttRellenandoFiltros) return; filtroStats.ventana(VENTANAS_STATS_KEYS[Math.max(0, ttVentanaCombo.getSelectedIndex())]); guardarConfig("stats_ventana", filtroStats.ventana()); if (stVentanaCombo != null) { stRellenandoMapas = true; try { stVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(filtroStats.ventana()))); } finally { stRellenandoMapas = false; } } ttCargarStats(); });
         ttWrEstado = new JLabel();
         ttWrEstado.setFont(ttWrEstado.getFont().deriveFont(Font.PLAIN, 11f));
         ttWrEstado.setForeground(Color.GRAY);
@@ -2738,9 +2739,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Carga (en segundo plano) el resumen de la ventana actual y pinta el winrate en el tech tree. */
     void ttCargarStats() {
-        if (VENTANAS_STATS.containsKey(statsVentana)) { ttActualizarWr(); return; }
+        if (VENTANAS_STATS.containsKey(filtroStats.ventana())) { ttActualizarWr(); return; }
         ttWrEstado.setText(t("cargando…", "loading…"));
-        String ventana = statsVentana;
+        String ventana = filtroStats.ventana();
         new Thread(() -> {
             String err = stats.asegurar(ventana, false);
             SwingUtilities.invokeLater(() -> {
@@ -2753,13 +2754,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Recalcula el winrate por civ con los filtros compartidos, rellena los combos de la banda y repinta la línea. */
     void ttActualizarWr() {
-        VentanaStats v = VENTANAS_STATS.get(statsVentana);
+        VentanaStats v = VENTANAS_STATS.get(filtroStats.ventana());
         if (v == null || ttBanda == null) return;
         ttRellenandoFiltros = true;
         try {
-            ttModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(MODOS_STATS).indexOf(statsModo)));
-            ttVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(statsVentana)));
-            Map<String, Integer> mapas = stats.partidasPorMapa(v, statsModo, statsTramo);
+            ttModoCombo.setSelectedIndex(Math.max(0, Arrays.asList(MODOS_STATS).indexOf(filtroStats.modo())));
+            ttVentanaCombo.setSelectedIndex(Math.max(0, Arrays.asList(VENTANAS_STATS_KEYS).indexOf(filtroStats.ventana())));
+            Map<String, Integer> mapas = stats.partidasPorMapa(v, filtroStats.modo(), filtroStats.tramo());
             List<Map.Entry<String, Integer>> lm = new ArrayList<>(mapas.entrySet());
             lm.sort((a, b) -> b.getValue() - a.getValue());
             List<String> claves = new ArrayList<>(); claves.add("*");
@@ -2767,11 +2768,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             ttMapaCombo.addItem(t("Todos los mapas", "All maps"));
             for (Map.Entry<String, Integer> en : lm) { if (en.getValue() < MIN_PARTIDAS_CIV) continue; claves.add(en.getKey()); ttMapaCombo.addItem(nombreMapaStats(v, en.getKey()) + " (" + miles(en.getValue()) + ")"); }
             ttMapaCombo.putClientProperty("claves", claves);
-            ttMapaCombo.setSelectedIndex(Math.max(0, claves.indexOf(statsMapa)));
-            ttRango.tramos(v.tramos(), statsTramo);
+            ttMapaCombo.setSelectedIndex(Math.max(0, claves.indexOf(filtroStats.mapa())));
+            ttRango.tramos(v.tramos(), filtroStats.tramo());
         } finally { ttRellenandoFiltros = false; }
         ttWrPorCiv.clear();
-        for (CivAgg a : stats.agregarCivs(v, statsModo, statsMapa, statsTramo).values()) {
+        for (CivAgg a : stats.agregarCivs(v, filtroStats.modo(), filtroStats.mapa(), filtroStats.tramo()).values()) {
             String k = claveTechTree(a.civ());
             if (k != null) ttWrPorCiv.put(k, a);
         }
@@ -2790,7 +2791,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     void ttActualizarBanda() {
         if (ttWrLabel == null) return;
         String civ = ttCivPedida;
-        VentanaStats v = VENTANAS_STATS.get(statsVentana);
+        VentanaStats v = VENTANAS_STATS.get(filtroStats.ventana());
         ttMapasPanel.removeAll();
         ttEmblema.setIcon(civ == null ? null : iconoCiv(civ, 40));
         if (civ == null || v == null) {
@@ -2809,9 +2810,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         double[] iv = stats.wilson(a.w(), a.n());
         List<String> ranking = ttRankingCivs();
         int puesto = ranking.indexOf(civ) + 1;
-        long partidasFiltro = totalN / (statsModo.endsWith("_1v1") ? 2 : statsModo.endsWith("_2v2") ? 4 : statsModo.endsWith("_3v3") ? 6 : statsModo.endsWith("_4v4") ? 8 : 6);
+        long partidasFiltro = totalN / (filtroStats.modo().endsWith("_1v1") ? 2 : filtroStats.modo().endsWith("_2v2") ? 4 : filtroStats.modo().endsWith("_3v3") ? 6 : filtroStats.modo().endsWith("_4v4") ? 8 : 6);
         ttWrEstado.setText(t("datos hasta el ", "data up to ") + v.hasta() + (partidasFiltro < POCAS_PARTIDAS ? "  ·  " + t("pocas partidas con estos filtros: prueba 90 o 365 días", "few games with these filters: try 90 or 365 days") : ""));
-        ttWrLabel.setText("<html><div style='font-size:13px'><b style='font-size:17px'>" + escapeHtml(ttNombreCiv(civ)) + "</b><br><span style='color:gray;font-size:12px'>" + escapeHtml(modoNombre(statsModo)) + " · " + escapeHtml(nombreMapaStats(v, statsMapa)) + " · " + escapeHtml(tramoNombre(statsTramo)) + " · " + escapeHtml(ventanaNombre(statsVentana)) + "</span><br>"
+        ttWrLabel.setText("<html><div style='font-size:13px'><b style='font-size:17px'>" + escapeHtml(ttNombreCiv(civ)) + "</b><br><span style='color:gray;font-size:12px'>" + escapeHtml(modoNombre(filtroStats.modo())) + " · " + escapeHtml(nombreMapaStats(v, filtroStats.mapa())) + " · " + escapeHtml(tramoNombre(filtroStats.tramo())) + " · " + escapeHtml(ventanaNombre(filtroStats.ventana())) + "</span><br>"
                 + "<span style='font-size:26px;color:" + colorHex(c) + "'><b>" + escapeHtml(pct1(a.wr())) + "</b></span> &nbsp;" + t("de victorias", "win rate") + " (" + escapeHtml(pct1(iv[0])) + " – " + escapeHtml(pct1(iv[1])) + ")<br>"
                 + t("Pick rate ", "Pick rate ") + "<b>" + escapeHtml(pct1(totalN == 0 ? 0 : 100.0 * a.n() / totalN)) + "</b> &nbsp;·&nbsp; <b>" + miles(a.n()) + "</b> " + t("partidas", "games") + " &nbsp;·&nbsp; " + t("duración media ", "average length ") + "<b>" + stats.duracionMedia(a.d(), a.n()) + "</b></div></html>");
         ttPuestoBtn.setText(puesto > 0 ? t("puesto ", "rank ") + puesto + t(" de ", " of ") + ranking.size() + " \u25BE" : t("ranking \u25BE", "ranking \u25BE"));
@@ -2821,8 +2822,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         Map<String, int[]> porTramo = new HashMap<>();
         Map<String, Long> totalTramo = new HashMap<>();   // todas las civs, para el pick rate
         for (CivFila f : v.civs()) {
-            if (!f.modo().equals(statsModo)) continue;
-            if (!"*".equals(statsMapa) && !f.mapa().equals(statsMapa)) continue;
+            if (!f.modo().equals(filtroStats.modo())) continue;
+            if (!"*".equals(filtroStats.mapa()) && !f.mapa().equals(filtroStats.mapa())) continue;
             totalTramo.merge(f.tramo(), (long) f.n(), Long::sum);
             if (!f.civ().equals(a.civ())) continue;
             int[] x = porTramo.computeIfAbsent(f.tramo(), k -> new int[2]); x[0] += f.n(); x[1] += f.w();
@@ -2837,16 +2838,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         // mejores y peores mapas (solo con «todos los mapas»)
         ttMapasPanel.add(tituloSeccion(t("Mejores y peores mapas", "Best and worst maps"), t("Winrate de la civ en cada mapa del pool con el modo y el tramo elegidos (sea cual sea el mapa del filtro); mínimo 20 partidas por mapa (menos de 100: orientativo). El mapa elegido va en negrita.", "The civ's win rate on each pool map with the chosen mode and bracket (whatever the filter map); at least 20 games per map (under 100: indicative only). The chosen map is in bold.")));
         {
-            List<CivAgg> pm = new ArrayList<>(stats.civPorMapa(v, statsModo, statsTramo, a.civ()).values());
+            List<CivAgg> pm = new ArrayList<>(stats.civPorMapa(v, filtroStats.modo(), filtroStats.tramo(), a.civ()).values());
             pm.removeIf(x -> x.n() < MIN_PARTIDAS_CIV);
             pm.sort((x, y) -> Double.compare(y.wr(), x.wr()));
             double maxN = 1; for (CivAgg x : pm) maxN = Math.max(maxN, x.n());
             List<CivAgg> mostrar = new ArrayList<>();
             if (pm.size() <= 6) mostrar.addAll(pm);
             else { mostrar.addAll(pm.subList(0, 3)); mostrar.addAll(pm.subList(pm.size() - 3, pm.size())); }
-            if (!"*".equals(statsMapa)) for (CivAgg x : pm) if (x.civ().equals(statsMapa) && !mostrar.contains(x)) { mostrar.add(3 < mostrar.size() ? 3 : mostrar.size(), x); break; }   // el mapa del filtro, siempre presente
+            if (!"*".equals(filtroStats.mapa())) for (CivAgg x : pm) if (x.civ().equals(filtroStats.mapa()) && !mostrar.contains(x)) { mostrar.add(3 < mostrar.size() ? 3 : mostrar.size(), x); break; }   // el mapa del filtro, siempre presente
             for (CivAgg x : mostrar) {
-                boolean elegido = x.civ().equals(statsMapa);
+                boolean elegido = x.civ().equals(filtroStats.mapa());
                 ttMapasPanel.add(filaBarra(iconoMapa(nombreMapaStats(v, x.civ()), x.civ(), 16), (elegido ? "\u25B8 " : "") + nombreMapaStats(v, x.civ()), x.n() / maxN, pct1(x.wr()), colorWr(x.w(), x.n()), miles(x.n()) + t(" partidas", " games") + (elegido ? t(" · el mapa elegido", " · the chosen map") : ""), null));
             }
             if (pm.isEmpty()) { JLabel vac = new JLabel(t("Sin mapas con 20+ partidas.", "No maps with 20+ games.")); vac.setForeground(Color.GRAY); vac.setFont(vac.getFont().deriveFont(Font.PLAIN, 11f)); ttMapasPanel.add(vac); }
