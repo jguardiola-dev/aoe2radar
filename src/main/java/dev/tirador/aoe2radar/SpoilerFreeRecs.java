@@ -243,6 +243,7 @@ import static dev.tirador.aoe2radar.util.Texto.recorta;
 import static dev.tirador.aoe2radar.util.Texto.sinTildes;
 import static dev.tirador.aoe2radar.util.Texto.variantesNick;
 import static dev.tirador.aoe2radar.util.Texto.versionMayor;
+import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 
 import javax.swing.*;
 import javax.swing.border.TitledBorder;
@@ -263,7 +264,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 import java.util.List;
 
-public class SpoilerFreeRecs extends JFrame {
+public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.Navegacion {
 
     // ----- Configuración -----------------------------------------------------
     static final Path   PLAYERS_FILE = Path.of("players.txt");
@@ -1562,7 +1563,7 @@ public class SpoilerFreeRecs extends JFrame {
                 : t("Resumen del ", "Summary of ") + ladderGenerado.replace("T", " ").substring(0, Math.min(16, ladderGenerado.length())) + " UTC");
     }
 
-    void abrirLadder() {
+    @Override public void abrirLadder() {
         registrarDestino(new Destino("ladder", 0, null, null));
         if (ladderBtn != null && !ladderBtn.isSelected()) ladderBtn.setSelected(true);
         directosBtn.setSelected(false);
@@ -2085,7 +2086,7 @@ public class SpoilerFreeRecs extends JFrame {
         @Override protected void setValue(Object v) { setText(v instanceof Integer i ? miles(i) : ""); }
     }
 
-    void abrirCivStats() {
+    @Override public void abrirCivStats() {
         registrarDestino(new Destino("civstats", 0, null, null));
         if (civStatsBtn != null && !civStatsBtn.isSelected()) civStatsBtn.setSelected(true);
         directosBtn.setSelected(false);
@@ -6128,7 +6129,7 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     /** Abre el panel (plegando la watchlist) y, si se pide, en una civ concreta. */
-    void abrirTechTree(String civ) {
+    @Override public void abrirTechTree(String civ) {
         registrarDestino(new Destino("techtree", 0, null, civ != null ? civ : ttCivPedida));
         if (techTreeBtn != null && !techTreeBtn.isSelected()) techTreeBtn.setSelected(true);
         directosBtn.setSelected(false);
@@ -6919,7 +6920,6 @@ public class SpoilerFreeRecs extends JFrame {
     JLabel watchPista1, watchPista2, watchPista3;   // explicación visible de la Watchlist
     boolean actualizandoCombos = false;
     static boolean flatLafDisponible;         // hay jar de FlatLaf en el classpath
-    static boolean temaOscuroActivo;          // último tema aplicado
 
     public static void main(String[] args) {
         if (args.length > 0 && args[0].equals("--make-ico")) {
