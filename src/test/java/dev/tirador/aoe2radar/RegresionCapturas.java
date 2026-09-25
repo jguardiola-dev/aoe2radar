@@ -299,15 +299,15 @@ class RegresionCapturas {
         Thread.sleep(2500);
         cerrarDialogos();
         foto("shot_civstats_arriba.png");
-        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.stTendencias); sc.getVerticalScrollBar().setValue(560); });
+        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.civStats.stTendencias); sc.getVerticalScrollBar().setValue(560); });
         Thread.sleep(700);
         foto("shot_civstats_tendencias.png");
-        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.stTendencias); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
+        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.civStats.stTendencias); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
         Thread.sleep(700);
         foto("shot_civstats_matriz.png");
-        SwingUtilities.invokeAndWait(() -> { app.stRango.rango("*"); app.stRango.alCambiar.accept("*"); app.stMapaCombo.setSelectedIndex(0); });
+        SwingUtilities.invokeAndWait(() -> { app.civStats.stRango.rango("*"); app.civStats.stRango.alCambiar.accept("*"); app.civStats.stMapaCombo.setSelectedIndex(0); });
         Thread.sleep(1200);
-        System.out.println("stats filas tabla: " + app.stModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.stModelo.getDataVector().get(0).toArray()) + " | tramo=" + app.filtroStats.tramo() + " mapa=" + app.filtroStats.mapa());
+        System.out.println("stats filas tabla: " + app.civStats.stModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.civStats.stModelo.getDataVector().get(0).toArray()) + " | tramo=" + app.filtroStats.tramo() + " mapa=" + app.filtroStats.mapa());
         // ----- Tech tree con WR
         SwingUtilities.invokeAndWait(() -> app.techTreeBtn.doClick());
         for (int i = 0; i < 160 && (TechTreeDatos.ttData == null || app.ttCivCombo.getItemCount() == 0); i++) Thread.sleep(250);
@@ -413,14 +413,14 @@ class RegresionCapturas {
         System.out.println("actividad estado: " + app.actEstado.getText() + " | título: " + app.getTitle());
         System.out.println("tabla filas: " + app.ladderModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.ladderModelo.getDataVector().get(0).toArray()));
         System.out.println("pct rango 12Tirador todos rm_1v1: " + ConsultasLadder.percentilRango("rm_1v1", 260) + " | por rating activos: " + ConsultasLadder.percentilRating("rm_1v1", true, 1905) + " | novato: " + ConsultasLadder.percentilRating("rm_1v1", true, 760));
-        SwingUtilities.invokeAndWait(() -> { app.stRango.rango("1600-1800|*"); app.stRango.alCambiar.accept("1600-1800|*"); app.stMapaCombo.setSelectedIndex(3); });
+        SwingUtilities.invokeAndWait(() -> { app.civStats.stRango.rango("1600-1800|*"); app.civStats.stRango.alCambiar.accept("1600-1800|*"); app.civStats.stMapaCombo.setSelectedIndex(3); });
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());
         Thread.sleep(1500);
         foto("shot_civstats_2000_mapa.png");
-        SwingUtilities.invokeAndWait(() -> { app.stRango.rango("*"); app.stRango.alCambiar.accept("*"); app.stMapaCombo.setSelectedIndex(0); });
+        SwingUtilities.invokeAndWait(() -> { app.civStats.stRango.rango("*"); app.civStats.stRango.alCambiar.accept("*"); app.civStats.stMapaCombo.setSelectedIndex(0); });
         Thread.sleep(1200);
-        SwingUtilities.invokeAndWait(app::mostrarMatrizGrande);
+        SwingUtilities.invokeAndWait(app.civStats::mostrarMatrizGrande);
         Thread.sleep(1500);
         foto("shot_matriz_grande.png");
         cerrarDialogos();
@@ -428,6 +428,6 @@ class RegresionCapturas {
         Thread.sleep(800);
         foto("shot_lista_completa.png");
         cerrarDialogos();
-        System.out.println("civstats 2000+ mapa: filas " + app.stModelo.getRowCount() + " | estado: " + app.stEstado.getText() + " | mapa=" + app.filtroStats.mapa() + " tramo=" + app.filtroStats.tramo());
+        System.out.println("civstats 2000+ mapa: filas " + app.civStats.stModelo.getRowCount() + " | estado: " + app.civStats.stEstado.getText() + " | mapa=" + app.filtroStats.mapa() + " tramo=" + app.filtroStats.tramo());
     }
 }
