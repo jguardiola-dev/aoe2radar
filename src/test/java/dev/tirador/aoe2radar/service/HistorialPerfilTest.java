@@ -318,18 +318,25 @@ class HistorialPerfilTest {
     // ===================== 9. bug conservado de la 1.1: parcial null y una página con partidas =====================
 
     /**
-     * BUG CONSERVADO A PROPÓSITO (ver docs/DEUDA.md, «historial "Cargar 50 más"»): el botón «Cargar 50 más» de la 1.1
-     * llama al historial con parcial = null; en cuanto una página trae alguna partida, parcial.accept(...) revienta con
-     * NullPointerException, y como el guardado en memoria/disco vive DESPUÉS del bucle, la página ya descargada se
-     * pierde entera: ni memoria ni disco. Cuando se arregle (pasar a -> {} en la llamada), este test debe cambiar
-     * a propósito: dejará de lanzar y empezará a guardar.
+     * Antes era el bug de «Cargar 50 más» (parcial null: NPE a mitad y la página descargada se perdía). Arreglado el
+     * 2026-09-25: el botón pasa a -> { } y el servicio rechaza null ANTES de ir a la red, sin gastar una llamada.
      */
-    @Test void bug_conParcialNullYUnaPaginaConPartidas_lanzaNpeYNoGuardaNadaNiEnMemoriaNiEnDisco() {
+    @Test void parcialNullSeRechazaAntesDeIrALaRed() {
         pagina(1, partida(1, diasMs(1)));
         HistorialPerfil h = nuevo();
         assertThrows(NullPointerException.class, () -> h.descargar(10L, "Jorge", null, false, 5, null, NUNCA_CANCELAR));
-        assertTrue(memoria.isEmpty(), "el bug pierde la página ya descargada: no llega a guardarse en memoria");
-        assertTrue(disco.isEmpty(), "tampoco en disco");
+        assertTrue(red.pedidas.isEmpty(), "falla antes de pedir nada: ni una llamada gastada");
+        assertTrue(memoria.isEmpty() && disco.isEmpty());
+    }
+
+    @Test void cargar50Mas_esLaPaginaSiguienteALasQueHay() throws Exception {
+        Actividad base = baseCon(10L, "Jorge", false, 3, 100L);   // ya se tenían 3 páginas
+        pagina(4, partida(7, diasMs(40)), partida(8, diasMs(41)), partida(9, diasMs(42)));
+        Actividad a = nuevo().descargar(10L, "Jorge", base, true, 1, x -> { }, NUNCA_CANCELAR);   // la llamada del botón
+        assertEquals(List.of(4), red.pedidas, "una sola llamada, la página 4: las siguientes 50, no las recientes");
+        assertEquals(List.of(100L, 7L, 8L, 9L), ids(a), "las más antiguas van detrás de las que había");
+        assertEquals(4, a.paginas());
+        assertSame(a, memoria.get(10L), "y se guardan");
     }
 
     // ===================== 10. actividad(pid): memoria, si no disco (y sube), null si ninguno =====================

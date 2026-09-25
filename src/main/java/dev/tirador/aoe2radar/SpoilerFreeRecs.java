@@ -3596,7 +3596,7 @@ public class SpoilerFreeRecs extends JFrame {
         modo.addActionListener(e -> { histModo = modo.getSelectedIndex() == 0 ? "*" : String.valueOf(modo.getSelectedItem()); histPagina = 0; pintar.run(); });
         ant.addActionListener(e -> { histPagina--; pintar.run(); });
         sig.addActionListener(e -> { histPagina++; pintar.run(); });
-        mas.addActionListener(e -> { mas.setEnabled(false); new Thread(() -> { try { Actividad base = ACTIVIDAD_CACHE.get(pid); Actividad a2 = SERVICIO_PERFIL.historial(pid, nombre, base, false, (base == null ? 0 : base.paginas()) + 1, null, () -> false); /* parcial null: ver DEUDA (NPE) */ ACTIVIDAD_CACHE.put(pid, a2); } catch (Exception ex) { log("historial: " + causa(ex)); } SwingUtilities.invokeLater(() -> { mas.setEnabled(true); pintar.run(); }); }, "historial-mas").start(); });
+        mas.addActionListener(e -> { mas.setEnabled(false); new Thread(() -> { try { Actividad base = ACTIVIDAD_CACHE.get(pid); Actividad a2 = SERVICIO_PERFIL.historial(pid, nombre, base, true, 1, a -> { }, () -> false);   /* 50 más: la página siguiente a las que hay */ ACTIVIDAD_CACHE.put(pid, a2); } catch (Exception ex) { log("historial: " + causa(ex)); } SwingUtilities.invokeLater(() -> { mas.setEnabled(true); pintar.run(); }); }, "historial-mas").start(); });
         JPanel sur = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         JButton desc = new JButton(t("Descargar rec", "Download rec")), env = new JButton(t("Enviar al juego", "Send to game"));
         for (JButton b : new JButton[]{ desc, env }) { b.setFocusable(false); b.setMargin(new Insets(2, 10, 2, 10)); b.putClientProperty("JButton.buttonType", "roundRect"); }

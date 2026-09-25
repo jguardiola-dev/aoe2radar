@@ -13,6 +13,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -58,6 +59,7 @@ public final class HistorialPerfil {
      */
     public Actividad descargar(long pid, String nombre, Actividad base, boolean mas, int maxPaginas,
                                Consumer<Actividad> parcial, BooleanSupplier cancelar) throws IOException, InterruptedException {
+        Objects.requireNonNull(parcial, "parcial: si no hace falta avisar, a -> { }");   // antes de gastar una llamada
         Instant limite = Instant.ofEpochMilli(reloj.ahoraMs()).minus(Duration.ofDays(ACT_DIAS));
         Set<Long> conocidos = new HashSet<>();
         List<Match> previas = new ArrayList<>();

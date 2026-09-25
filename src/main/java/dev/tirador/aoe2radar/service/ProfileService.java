@@ -78,7 +78,8 @@ public interface ProfileService {
     /**
      * El historial por la API, página a página (ver HistorialPerfil.descargar): base null, desde la página 1; base con
      * partidas y mas false, solo lo nuevo hasta una partida conocida; mas true, sigue tras la última página de base.
-     * parcial recibe el estado tras cada página (en el hilo de la descarga); cancelar se mira antes de cada llamada.
+     * parcial (no null: a -> { } si no hace falta) recibe el estado tras cada página, en el hilo de la descarga;
+     * cancelar se mira antes de cada llamada.
      * El resultado queda en memoria y en disco. Va a la red, con pausa entre páginas.
      */
     Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas,
