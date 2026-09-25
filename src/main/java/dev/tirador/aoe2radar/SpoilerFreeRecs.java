@@ -64,6 +64,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.Campanas;
 import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.DescargaRecs;
 import dev.tirador.aoe2radar.service.EloSesion;
@@ -84,6 +85,7 @@ import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
+import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Json;
 import dev.tirador.aoe2radar.util.Reloj;
 
@@ -4912,35 +4914,9 @@ public class SpoilerFreeRecs extends JFrame {
         ahoraRefrescar(true);
     }
 
-    /** La lista de jugadores de la fuente elegida: {pid, nombre, rating, rango, país}. */
+    /** La lista de jugadores de la fuente elegida: {pid, nombre, rating, rango, país} (ver service.Campanas). */
     List<Object[]> cargarFuenteLive() throws Exception {
-        List<Object[]> top = new ArrayList<>();
-        switch (liveFuenteTipo) {
-            case "pais" -> {
-                for (FilaClasificacion f : COMPANION.clasificacion("rm_1v1", 1, 100, liveFuenteValor).filas()) {
-                    long pid = f.pid(); if (pid <= 0) continue;
-                    int rating = f.rating() != null ? f.rating() : 0;
-                    int rango = f.rango() != null ? f.rango() : 0;
-                    aprenderPais(pid, f.pais()); aprenderCanal(pid, f.canal());
-                    top.add(new Object[]{ pid, String.valueOf(f.nombre()), rating, rango, paisDe(pid) });
-                }
-            }
-            case "clan" -> { if (ladderAsegurar(false) == null) for (LadderRow r : miembrosClan(liveFuenteValor)) { aprenderPais(r.pid(), r.country()); top.add(new Object[]{ r.pid(), r.name(), r.rating(), r.rank(), paisDe(r.pid()) }); } if (top.isEmpty()) log("live: clan «" + liveFuenteValor + "» sin miembros en el ladder 1v1"); }
-            case "grupo" -> { for (Player pl : todosJugadores) if (pl.grupo().equalsIgnoreCase(liveFuenteValor)) { Integer elo = eloWatch.get(pl.id()); top.add(new Object[]{ pl.id(), pl.name(), elo == null ? 0 : elo, 0, paisDe(pl.id()) }); } }
-            default -> {
-                for (int pag = 1; pag <= 3 && top.size() < AHORA_TOP; pag++) {
-                    for (FilaClasificacion f : COMPANION.clasificacion("rm_1v1", pag, 100, null).filas()) {
-                        long pid = f.pid(); if (pid <= 0) continue;
-                        int rating = f.rating() != null ? f.rating() : 0;
-                        int rango = f.rango() != null ? f.rango() : top.size() + 1;
-                        aprenderPais(pid, f.pais()); aprenderCanal(pid, f.canal());
-                        top.add(new Object[]{ pid, String.valueOf(f.nombre()), rating, rango, paisDe(pid) });
-                        if (top.size() >= AHORA_TOP) break;
-                    }
-                }
-            }
-        }
-        return top;
+        return campanas.cargarFuenteLive(liveFuenteTipo, liveFuenteValor, AHORA_TOP, todosJugadores, eloWatch::get);
     }
 
     /** Carga la fuente (si tiene más de 30 min), comprueba por lotes quién está en partida y suscribe esos ids al socket. */
@@ -5401,10 +5377,12 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     // ----- Campanas: aviso cuando alguien de una vista marcada entra en partida -----
+    // La red, la config y la deduplicacion de avisos viven en service.Campanas; aqui solo queda
+    // Swing (boton, toast) y el estado compartido (campanaIds, socketExtra). Cableado junto al
+    // propio Campanas, no al lado de COMPANION/LIVE/SERVICIO_PERFIL.
+    final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig);
     JToggleButton campanaBtn;
     final Map<String, Set<Long>> campanaIds = new java.util.concurrent.ConcurrentHashMap<>();   // id de vista → jugadores vigilados
-    final Set<Long> avisados = java.util.concurrent.ConcurrentHashMap.newKeySet();               // pid|matchId ya avisados (en un long compuesto no cabe: usamos texto)
-    final Set<String> avisadosClave = java.util.concurrent.ConcurrentHashMap.newKeySet();
     javax.swing.Timer campanasTimer; JPanel toast; javax.swing.Timer toastTimer;
 
     String idVistaCampana() {
@@ -5413,13 +5391,11 @@ public class SpoilerFreeRecs extends JFrame {
         if (modoTop()) return "\u2605ladder";
         return "grupo|" + String.valueOf(grupoCombo.getSelectedItem());
     }
-    Set<String> campanas() { Set<String> s = new LinkedHashSet<>(); for (String x : leerConfig("campanas", "").split("\\u0001")) if (!x.isBlank()) s.add(x); return s; }
-    void guardarCampanas(Set<String> s) { guardarConfig("campanas", String.join("\\u0001", s)); }
-    boolean campanaContiene(long pid) { for (Set<Long> ids : campanaIds.values()) if (ids.contains(pid)) return true; return false; }
+    boolean campanaContiene(long pid) { return campanas.campanaContiene(pid, campanaIds); }
 
     void refrescarCampanaBtn() {
         if (campanaBtn == null) return;
-        boolean on = campanas().contains(idVistaCampana());
+        boolean on = campanas.campanas().contains(idVistaCampana());
         campanaBtn.setSelected(on);
         campanaBtn.setForeground(on ? (temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)) : UIManager.getColor("Button.foreground"));
         campanaBtn.setToolTipText(on ? t("Avisos activados para esta lista: te avisa cuando alguien de aquí entre en partida (clic para apagar)", "Alerts on for this list: you get a notice when someone here starts a game (click to turn off)")
@@ -5427,32 +5403,20 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void alternarCampana() {
-        Set<String> s = campanas();
         String id = idVistaCampana();
-        if (!s.remove(id)) s.add(id);
-        guardarCampanas(s);
+        boolean activo = campanas.alternar(id);
         refrescarCampanaBtn();
         refrescarCampanas();
-        status.setText(s.contains(id) ? t("Avisos activados para «", "Alerts on for \u201C") + id.replace("\u2605", "\u2605 ").replace("|", " ") + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
+        status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + id.replace("\u2605", "\u2605 ").replace("|", " ") + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
     }
 
-    /** Recalcula (en segundo plano) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, país y clan. */
+    /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, pais y clan. */
     void refrescarCampanas() {
-        Set<String> s = campanas();
+        Set<String> s = campanas.campanas();
         if (s.isEmpty()) { campanaIds.clear(); SwingUtilities.invokeLater(this::sincronizarSocket); return; }
         new Thread(() -> {
-            Map<String, Set<Long>> nuevo = new HashMap<>();
-            for (String id : s) {
-                Set<Long> ids = new HashSet<>();
-                try {
-                    if (id.startsWith("grupo|")) { String g = id.substring(6); for (Player p : todosJugadores) if (g.equalsIgnoreCase(t("Todos", "All")) || p.grupo().equalsIgnoreCase(g)) ids.add(p.id()); }
-                    else if (id.equals("\u2605ladder")) { for (long pid : idsLeaderboard(null, Integer.parseInt(leerConfig("top_n", "50")))) ids.add(pid); }
-                    else if (id.startsWith("\u2605pais|")) { for (long pid : idsLeaderboard(id.substring(6), Integer.parseInt(leerConfig("top_n", "50")))) ids.add(pid); }
-                    else if (id.startsWith("\u2605clan|")) { if (ladderAsegurar(false) == null) for (LadderRow r : miembrosClan(id.substring(6))) ids.add(r.pid()); }
-                } catch (Exception ex) { log("campanas " + id + ": " + causa(ex)); }
-                nuevo.put(id, ids);
-            }
-            campanaIds.clear(); campanaIds.putAll(nuevo);
+            Map<String, Set<Long>> nuevo = campanas.calcularCampanaIds(s, todosJugadores);
+            campanaIds.clear(); campanaIds.putAll(nuevo);   // no atomico entre el clear y el putAll: ver DEUDA
             Set<Long> todos = new HashSet<>(); for (Set<Long> x : nuevo.values()) todos.addAll(x);
             synchronized (ahoraTop) { for (Object[] f : ahoraTop) todos.add((Long) f[0]); }
             socketExtra.retainAll(todos); socketExtra.addAll(todos);
@@ -5460,18 +5424,9 @@ public class SpoilerFreeRecs extends JFrame {
         }, "campanas").start();
     }
 
-    /** Ids del top del ladder 1v1 (global o de un país), sin tocar la vista. */
-    List<Long> idsLeaderboard(String pais, int n) throws Exception {
-        List<Long> out = new ArrayList<>();
-        for (FilaClasificacion f : COMPANION.clasificacion("rm_1v1", 1, Math.min(100, Math.max(25, n)), pais).filas()) { long pid = f.pid(); if (pid > 0) out.add(pid); if (out.size() >= n) break; }
-        return out;
-    }
-
     /** «Mi partida»: si el que entra en partida soy yo (mi_pid), aviso con el rival (bandera, ELO, civ) y accesos a su perfil y al cara a cara. */
     void avisarMiPartida(long pid, Match m) {
-        String mi = leerConfig("mi_pid", "");
-        if (mi.isBlank() || pid != Long.parseLong(mi) || m == null) return;
-        if (!avisadosClave.add("mi|" + m.id)) return;
+        if (!campanas.tocaAvisarMiPartida(pid, m)) return;
         log("mi partida: el socket dice que mi partida " + m.id + " ha empezado (" + m.map + ", " + m.mode + ")");
         MatchPlayer yo0 = null; for (MatchPlayer p : m.players) if (p.id == pid) yo0 = p;
         if (yo0 == null) return;
@@ -5495,9 +5450,7 @@ public class SpoilerFreeRecs extends JFrame {
     }
     /** Alguien vigilado entra en partida: si está en una lista con campana, aviso (toast dentro de la app; Windows si está minimizada). */
     void avisarSiCampana(long pid, Match m) {
-        if (m == null || !campanaContiene(pid)) return;
-        String clave = pid + "|" + m.id;
-        if (!avisadosClave.add(clave)) return;
+        if (!campanas.tocaAvisar(pid, m, campanaIds)) return;
         String nombre = nombreVisible(pid, ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : ahoraNombre(pid));
         String resumen = resumenVivo(m, pid);
         String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " · " + resumen : "");
