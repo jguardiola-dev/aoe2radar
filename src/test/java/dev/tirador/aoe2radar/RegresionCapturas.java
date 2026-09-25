@@ -266,31 +266,31 @@ class RegresionCapturas {
         // Carrera de la app (DEUDA.md): al abrir el ladder programa «tabla de 230 px» solo si el divisor ya tiene alto.
         // Casi siempre aún no lo tiene y la tabla queda plegada (el estado de las referencias); a veces sí, y cambian
         // las 7 capturas del ladder. Se fija el reparto por defecto para que no dependa de ese orden.
-        SwingUtilities.invokeAndWait(() -> app.ladderDivisor.resetToPreferredSizes());
+        SwingUtilities.invokeAndWait(() -> app.ratings.ladderDivisor.resetToPreferredSizes());
         Thread.sleep(300);
         foto("shot_ladder_vacio.png");
         SwingUtilities.invokeAndWait(() -> {
-            app.ladderComparados.add(new Comparado(1L, "12Tirador", Map.of("rm_1v1", new int[]{ 1905, 260 }, "rm_team", new int[]{ 2110, 800 }, "ew_1v1", new int[]{ 1400, 300 }), "es", true));
-            app.ladderComparados.add(new Comparado(2L, "Turpiacho", Map.of("rm_1v1", new int[]{ 1610, 2800 }, "rm_team", new int[]{ 1750, 9000 }), "es", true));
-            app.ladderComparados.add(new Comparado(3L, "pume", Map.of("rm_1v1", new int[]{ 1980, 120 }, "rm_team", new int[]{ 1900, 4000 }), "es", false));
-            app.ladderComparados.add(new Comparado(4L, "novato", Map.of("rm_1v1", new int[]{ 760, 200000 }, "rm_team", new int[]{ 900, 250000 }), "de", false));
-            app.ladderRefrescar();
+            app.ratings.ladderComparados.add(new Comparado(1L, "12Tirador", Map.of("rm_1v1", new int[]{ 1905, 260 }, "rm_team", new int[]{ 2110, 800 }, "ew_1v1", new int[]{ 1400, 300 }), "es", true));
+            app.ratings.ladderComparados.add(new Comparado(2L, "Turpiacho", Map.of("rm_1v1", new int[]{ 1610, 2800 }, "rm_team", new int[]{ 1750, 9000 }), "es", true));
+            app.ratings.ladderComparados.add(new Comparado(3L, "pume", Map.of("rm_1v1", new int[]{ 1980, 120 }, "rm_team", new int[]{ 1900, 4000 }), "es", false));
+            app.ratings.ladderComparados.add(new Comparado(4L, "novato", Map.of("rm_1v1", new int[]{ 760, 200000 }, "rm_team", new int[]{ 900, 250000 }), "de", false));
+            app.ratings.ladderRefrescar();
         });
         Thread.sleep(1200);
         cerrarDialogos();
         SwingUtilities.invokeAndWait(app::repaint);
         Thread.sleep(800);
         foto("shot_ladder_activos.png");
-        SwingUtilities.invokeAndWait(() -> { app.activosCheck.setSelected(false); app.soloActivos = false; app.ladderRefrescar(); });
+        SwingUtilities.invokeAndWait(() -> { app.ratings.activosCheck.setSelected(false); app.ratings.soloActivos = false; app.ratings.ladderRefrescar(); });
         Thread.sleep(800);
         foto("shot_ladder_todos.png");
-        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.dispersion); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
+        SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.ratings.dispersion); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
         Thread.sleep(600);
         foto("shot_ladder_dispersion.png");
-        SwingUtilities.invokeAndWait(() -> { app.escalarRatings(0.5); });
+        SwingUtilities.invokeAndWait(() -> { app.ratings.escalarRatings(0.5); });
         Thread.sleep(800);
         foto("shot_ratings_zoom.png");
-        SwingUtilities.invokeAndWait(() -> { app.escalarRatingsReset(); app.familiaCombo.setSelectedIndex(1); });
+        SwingUtilities.invokeAndWait(() -> { app.ratings.escalarRatingsReset(); app.ratings.familiaCombo.setSelectedIndex(1); });
         Thread.sleep(800);
         foto("shot_ladder_ew.png");
         // ----- Civ Stats
@@ -411,7 +411,7 @@ class RegresionCapturas {
         Thread.sleep(700);
         foto("shot_actividad_abajo.png");
         System.out.println("actividad estado: " + app.actEstado.getText() + " | título: " + app.getTitle());
-        System.out.println("tabla filas: " + app.ladderModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.ladderModelo.getDataVector().get(0).toArray()));
+        System.out.println("tabla filas: " + app.ratings.ladderModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.ratings.ladderModelo.getDataVector().get(0).toArray()));
         System.out.println("pct rango 12Tirador todos rm_1v1: " + ConsultasLadder.percentilRango("rm_1v1", 260) + " | por rating activos: " + ConsultasLadder.percentilRating("rm_1v1", true, 1905) + " | novato: " + ConsultasLadder.percentilRating("rm_1v1", true, 760));
         SwingUtilities.invokeAndWait(() -> { app.stRango.rango("1600-1800|*"); app.stRango.alCambiar.accept("1600-1800|*"); app.stMapaCombo.setSelectedIndex(3); });
         Thread.sleep(1500);
