@@ -7,25 +7,29 @@ import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.service.BusquedaPerfiles;
+import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.RatingsService;
+import dev.tirador.aoe2radar.sfrdata.Ladder;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static dev.tirador.aoe2radar.util.I18n.t;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * RatingsPresenter con Tareas.EN_LINEA (sin hilos) y dobles de los tres servicios y de la Pantalla: comprueba la
- * carga de los resúmenes, las sugerencias del buscador (con y sin cambio de query) y el comparador (añadir, tope
- * de {@link RatingsPresenter#MAX_COMPARADOS}, y la sincronización con la selección de la watchlist). No usa Swing.
+ * carga de los resúmenes (incluido el orden al terminar), las sugerencias del buscador (con y sin cambio de
+ * query) y el comparador (añadir, tope de {@link RatingsPresenter#MAX_COMPARADOS}, y la sincronización con la
+ * selección de la watchlist). No usa Swing.
  */
 class RatingsPresenterTest {
 
     /** Un RatingsService de mentira: solo lo que usa el presentador (asegurar/cargando/progreso). */
-    static final class ServicioFalso implements RatingsService {
+    static class ServicioFalso implements RatingsService {
         boolean cargando;
         String progreso = "";
         String error;      // lo que devuelve asegurar()
@@ -71,12 +75,21 @@ class RatingsPresenterTest {
         @Override public int traerHoy(long pid) { return 0; }
     }
 
+    /** Un Tareas que encola el trabajo de fondo en vez de ejecutarlo: para intercalar acciones entre «se manda a
+     *  consultar la ficha» y «vuelve la respuesta», como pasaría de verdad con dos hilos. enUi sigue en el acto. */
+    static final class TareasAplazadas implements Tareas {
+        final List<Runnable> pendientesFondo = new ArrayList<>();
+        @Override public void enFondo(String nombre, Runnable trabajo) { pendientesFondo.add(trabajo); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { trabajo.run(); }
+    }
+
     /** La Pantalla de mentira: guarda lo que el presentador le pide, como haría RatingsView. */
-    static final class PantallaFalsa implements RatingsPresenter.Pantalla {
+    static class PantallaFalsa implements RatingsPresenter.Pantalla {
         final List<Comparado> comparados = new ArrayList<>();
         final java.util.Set<Long> seleccionEnWatchlist = new java.util.HashSet<>();
         String estado = "";
-        int cargaIniciadaVeces, ocultarVeces;
+        int cargaIniciadaVeces, pararProgresoVeces, ocultarVeces;
         String errorCarga = "sin-llamar";
         boolean cargaTerminadaLlamada;
         List<String[]> sugerenciasMostradas;
@@ -88,6 +101,7 @@ class RatingsPresenterTest {
         @Override public boolean seleccionado(long pid) { return seleccionEnWatchlist.contains(pid); }
         @Override public String nombreVisible(long pid, String nombre) { return nombre; }
         @Override public void cargaIniciada() { cargaIniciadaVeces++; }
+        @Override public void pararProgreso() { pararProgresoVeces++; }
         @Override public void cargaTerminada(String error) { cargaTerminadaLlamada = true; errorCarga = error; }
         @Override public void mostrarSugerencias(List<String[]> resultados) { sugerenciasMostradas = resultados; }
         @Override public void ocultarSugerencias() { ocultarVeces++; }
@@ -121,6 +135,22 @@ class RatingsPresenterTest {
         presenter.cargar();
         assertEquals(0, servicio.asegurarLlamadas);
         assertEquals(0, pantalla.cargaIniciadaVeces);
+    }
+
+    @Test void al_terminar_para_el_progreso_antes_de_marcar_cargando_false_y_avisar_a_la_pantalla() {
+        // mismo orden que la 1.1 en abrirLadder: tick.stop(); ladderCargando = false; … (error o refrescar).
+        List<String> orden = new ArrayList<>();
+        RatingsService servicioOrdenado = new ServicioFalso() {
+            @Override public void cargando(boolean v) { orden.add("cargando(" + v + ")"); super.cargando(v); }
+        };
+        RatingsPresenter.Pantalla pantallaOrdenada = new PantallaFalsa() {
+            @Override public void cargaIniciada() { orden.add("cargaIniciada"); super.cargaIniciada(); }
+            @Override public void pararProgreso() { orden.add("pararProgreso"); super.pararProgreso(); }
+            @Override public void cargaTerminada(String error) { orden.add("cargaTerminada"); super.cargaTerminada(error); }
+        };
+        RatingsPresenter p = new RatingsPresenter(servicioOrdenado, busqueda, perfiles, Tareas.EN_LINEA, pantallaOrdenada);
+        p.cargar();
+        assertEquals(List.of("cargando(true)", "cargaIniciada", "pararProgreso", "cargando(false)", "cargaTerminada"), orden);
     }
 
     // ----- sugerencias -------------------------------------------------------------
@@ -162,6 +192,33 @@ class RatingsPresenterTest {
         assertTrue(pantalla.comparados.isEmpty());
     }
 
+    @Test void anadir_perfil_nulo_avisa_con_el_texto_exacto() {
+        // perfiles.fichas no tiene entrada para 1L: ficha(1L) devuelve null (fallo de red)
+        presenter.anadir(1L, "Fulano", false);
+        assertTrue(pantalla.comparados.isEmpty());
+        assertEquals(t("No se pudo consultar a ", "Couldn't look up ") + "Fulano.", pantalla.estado);
+    }
+
+    @Test void anadir_sin_ladders_avisa_con_el_texto_exacto() {
+        perfiles.fichas.put(1L, new FichaPerfil(Map.of(), "es", "", 0));   // sin rating en ningún ladder
+        presenter.anadir(1L, "Fulano", false);
+        assertTrue(pantalla.comparados.isEmpty());
+        assertEquals("Fulano" + t(" no tiene rating en ningún ladder.", " has no rating on any ladder."), pantalla.estado);
+    }
+
+    @Test void anadir_ya_presente_al_volver_del_hilo_no_duplica() {
+        TareasAplazadas tareas = new TareasAplazadas();
+        RatingsPresenter p = new RatingsPresenter(servicio, busqueda, perfiles, tareas, pantalla);
+        perfiles.fichas.put(1L, new FichaPerfil(Map.of("rm_1v1", new int[]{ 1500, 1 }), "es", "", 1));
+        p.anadir(1L, "Fulano", false);   // encola la consulta de la ficha, no la ejecuta todavía
+        assertEquals(1, tareas.pendientesFondo.size());
+        // mientras «viaja» la consulta, otro camino ya lo añadió (p. ej. una sugerencia distinta lo dejó puesto)
+        pantalla.comparados.add(new Comparado(1L, "Fulano", Map.of("rm_1v1", new int[]{ 1500, 1 }), "es", false));
+        tareas.pendientesFondo.get(0).run();   // ahora vuelve el hilo de fondo
+        assertEquals(1, pantalla.comparados.size());
+        assertEquals(1, perfiles.fichaLlamadas);
+    }
+
     @Test void limite_de_comparados_rechaza_uno_nuevo_buscado_a_mano_si_esta_lleno_de_seleccionados() {
         for (long i = 1; i <= RatingsPresenter.MAX_COMPARADOS; i++)
             pantalla.comparados.add(new Comparado(i, "J" + i, Map.of("rm_1v1", new int[]{ 1000, 1 }), "es", true));
@@ -182,6 +239,19 @@ class RatingsPresenterTest {
         assertTrue(pantalla.comparados.stream().anyMatch(c -> c.pid() == 99L));
     }
 
+    @Test void limite_de_comparados_rechaza_seleccionado_de_watchlist_aunque_haya_uno_evictable() {
+        // el nuevo viene deSeleccion=true: NUNCA desaloja a nadie, aunque el manual (1L) podría cederle el sitio
+        pantalla.comparados.add(new Comparado(1L, "Manual", Map.of("rm_1v1", new int[]{ 1000, 1 }), "es", false));
+        for (long i = 2; i <= RatingsPresenter.MAX_COMPARADOS; i++)
+            pantalla.comparados.add(new Comparado(i, "J" + i, Map.of("rm_1v1", new int[]{ 1000, 1 }), "es", true));
+        perfiles.fichas.put(99L, new FichaPerfil(Map.of("rm_1v1", new int[]{ 1500, 100 }), "es", "", 200));
+        pantalla.seleccionEnWatchlist.add(99L);
+        presenter.anadir(99L, "Nuevo", true);
+        assertEquals(RatingsPresenter.MAX_COMPARADOS, pantalla.comparados.size());
+        assertTrue(pantalla.comparados.stream().anyMatch(c -> c.pid() == 1L));   // el manual sigue ahí
+        assertTrue(pantalla.comparados.stream().noneMatch(c -> c.pid() == 99L));   // el nuevo, rechazado
+    }
+
     // ----- sincronización con la watchlist -------------------------------------------
 
     @Test void sincronizarSeleccion_anade_los_nuevos_seleccionados() {
@@ -199,9 +269,41 @@ class RatingsPresenterTest {
         assertEquals(1, pantalla.refrescarVeces);
     }
 
-    @Test void topDe_usa_percentil_por_rango_solo_si_no_es_solo_activos() {
-        Comparado c = new Comparado(1L, "Uno", Map.of("rm_1v1", new int[]{ 1500, 0 }), "es", false);
-        // rank 0 -> percentilRango no aplica; cae al percentil por rating, que sin datos de hist es null
-        assertNull(presenter.topDe(c, "rm_1v1", false));
+    @Test void sincronizarSeleccion_avisa_quedan_fuera_con_el_texto_exacto() {
+        List<Player> sel = new ArrayList<>();
+        for (long i = 1; i <= RatingsPresenter.MAX_COMPARADOS; i++) {
+            pantalla.comparados.add(new Comparado(i, "J" + i, Map.of(), "es", true));
+            sel.add(new Player(i, "J" + i, ""));
+        }
+        sel.add(new Player(99L, "Nuevo", ""));   // no cabe: hueco = 0, así que ni siquiera se llega a consultar su ficha
+        presenter.sincronizarSeleccion(sel);
+        assertEquals(t("Máximo ", "Max ") + RatingsPresenter.MAX_COMPARADOS + t(" jugadores en la comparación: quedan fuera ", " players compared; left out: ") + 1 + ".", pantalla.estado);
+        assertEquals(0, perfiles.fichaLlamadas);
+    }
+
+    // ----- topDe: delega en ConsultasLadder según haya rango o no, y según soloActivos -----
+
+    @Test void topDe_usa_percentil_por_rango_si_hay_rango_y_no_es_solo_activos() {
+        Map<String, LadderHist> histsOriginal = Ladder.ladderHists;
+        try {
+            Ladder.ladderHists = Map.of("rm_1v1", new LadderHist(1000, 0, new int[]{ 100, 100, 100, 100 }, 1200, Map.of()));
+            Comparado c = new Comparado(1L, "Uno", Map.of("rm_1v1", new int[]{ 1500, 100 }), "es", false);   // rank 100 > 0
+            assertEquals(ConsultasLadder.percentilRango("rm_1v1", 100), presenter.topDe(c, "rm_1v1", false));
+            assertNotNull(presenter.topDe(c, "rm_1v1", false));
+        } finally { Ladder.ladderHists = histsOriginal; }
+    }
+
+    @Test void topDe_cae_a_percentil_por_rating_si_solo_activos_o_sin_rango() {
+        Map<String, LadderHist> histsOriginal = Ladder.ladderHists, histsActivosOriginal = Ladder.ladderHistsActivos;
+        try {
+            LadderHist h = new LadderHist(1000, 0, new int[]{ 100, 100, 100, 100 }, 1200, Map.of());
+            Ladder.ladderHists = Map.of("rm_1v1", h);
+            Ladder.ladderHistsActivos = Map.of("rm_1v1", h);
+            Comparado conRango = new Comparado(1L, "Uno", Map.of("rm_1v1", new int[]{ 1500, 100 }), "es", false);
+            // con soloActivos=true, aunque haya rango > 0, NUNCA se usa percentilRango
+            assertEquals(ConsultasLadder.percentilRating("rm_1v1", true, 1500), presenter.topDe(conRango, "rm_1v1", true));
+            Comparado sinRango = new Comparado(2L, "Dos", Map.of("rm_1v1", new int[]{ 1500, 0 }), "es", false);   // rank 0
+            assertEquals(ConsultasLadder.percentilRating("rm_1v1", false, 1500), presenter.topDe(sinRango, "rm_1v1", false));
+        } finally { Ladder.ladderHists = histsOriginal; Ladder.ladderHistsActivos = histsActivosOriginal; }
     }
 }

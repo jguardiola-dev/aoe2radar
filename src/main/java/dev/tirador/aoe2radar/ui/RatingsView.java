@@ -114,7 +114,11 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
     private JButton ladderQuitarTodos;
     private JTable ladderTabla;
     public DefaultTableModel ladderModelo;   // visible para RegresionCapturas
-    private javax.swing.Timer ladderDebounce, ladderTick;
+    private javax.swing.Timer ladderDebounce;
+    /** El parpadeo de progreso mientras carga: es un campo (no una variable local) porque solo hay una carga a la
+     *  vez (lo garantiza RatingsService.cargando()); lo arranca cargaIniciada() y lo para pararProgreso(), ambos
+     *  llamados desde RatingsPresenter.cargar(). */
+    private javax.swing.Timer ladderTick;
     private String familia = "ew".equals(leerConfig("ladder_familia", "rm")) ? "ew" : "rm";
     public boolean soloActivos = Boolean.parseBoolean(leerConfig("ladder_activos", "true"));   // visible para RegresionCapturas
     private double ratingsEscala = Math.max(0.6, Math.min(1.6, Double.parseDouble(leerConfig("ratings_escala", "1"))));   // tamaño de los tres gráficos (zoom de conjunto)
@@ -147,8 +151,9 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         ladderTick.start();
     }
 
+    @Override public void pararProgreso() { if (ladderTick != null) ladderTick.stop(); }
+
     @Override public void cargaTerminada(String error) {
-        if (ladderTick != null) ladderTick.stop();
         if (error != null) { ladderEstado.setText(t("No se pudieron cargar los ratings: ", "Couldn't load the ratings: ") + error); return; }
         ladderRefrescar();
         sincronizarSeleccion();
@@ -206,7 +211,7 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         norte.add(activosCheck);
         JPanel zoom = new JPanel(new FlowLayout(FlowLayout.RIGHT, 2, 0));
         JLabel zl = new JLabel(t("Zoom:", "Zoom:")); zl.setFont(zl.getFont().deriveFont(11f)); zoom.add(zl);
-        for (String[] z : new String[][]{ { "−", "out" }, { "+", "in" }, { "⟲", "reset" } }) {
+        for (String[] z : new String[][]{ { "\u2212", "out" }, { "+", "in" }, { "\u27F2", "reset" } }) {
             JButton zb = new JButton(z[0]);
             zb.setFocusable(false); zb.setMargin(new Insets(0, 6, 0, 6)); zb.putClientProperty("JButton.buttonType", "roundRect");
             zb.setToolTipText(t("Tamaño de los tres gráficos a la vez: aleja para verlos todos con la tabla, acerca para leer detalle. También Ctrl + rueda sobre un gráfico; doble clic para volver.", "Size of the three charts at once: zoom out to see them all with the table, zoom in for detail. Also Ctrl + wheel over a chart; double-click to reset."));
@@ -250,7 +255,7 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         arriba.add(ladderPista, BorderLayout.NORTH);
         ladderChips = new JPanel(new WrapLayout(FlowLayout.LEFT, 6, 2));
         arriba.add(ladderChips, BorderLayout.CENTER);
-        ladderQuitarTodos = new JButton(t("× Quitar todos", "× Remove all"));
+        ladderQuitarTodos = new JButton(t("\u00D7 Quitar todos", "\u00D7 Remove all"));
         ladderQuitarTodos.setFocusable(false); ladderQuitarTodos.setMargin(new Insets(1, 6, 1, 6)); ladderQuitarTodos.putClientProperty("JButton.buttonType", "roundRect");
         ladderQuitarTodos.setVisible(false);
         ladderQuitarTodos.addActionListener(e -> { anfitrion.limpiarSeleccion(); ladderComparados.clear(); ladderRefrescarComparados(); });
@@ -296,7 +301,7 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         centro.add(ladderDivisor, BorderLayout.CENTER);
         ladderPanel.add(centro, BorderLayout.CENTER);
         JLabel pie = new JLabel(t("Distribución de ELO por ladder (resumen diario de sfr-data sobre los volcados de aoe2companion). «Solo activos»: jugadores con partidas recientes; el Top % se calcula sobre la campana elegida. Pasa el ratón por una barra para ver cuántos jugadores hay en ese tramo. Los seleccionados en la watchlist se dibujan mientras Ratings esté abierto.",
-                "ELO distribution per ladder (sfr-data daily summary of the aoe2companion dumps). “Active only”: players with recent games; the top % is computed on the chosen curve. Hover a bar to see how many players sit in that bracket. Watchlist selections are drawn while Ratings is open."));
+                "ELO distribution per ladder (sfr-data daily summary of the aoe2companion dumps). \u201CActive only\u201D: players with recent games; the top % is computed on the chosen curve. Hover a bar to see how many players sit in that bracket. Watchlist selections are drawn while Ratings is open."));
         pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
         ladderPanel.add(pie, BorderLayout.SOUTH);
         return ladderPanel;
@@ -316,7 +321,7 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         for (Comparado c : ladderComparados) {
             Color col = PALETA_LADDER[k % PALETA_LADDER.length];
             k++;
-            JButton chip = new JButton("<html><font color='" + colorHex(col) + "'>■</font> " + escapeHtml(c.name()) + "  ×</html>");
+            JButton chip = new JButton("<html><font color='" + colorHex(col) + "'>\u25A0</font> " + escapeHtml(c.name()) + "  \u00D7</html>");
             chip.setFocusable(false); chip.setMargin(new Insets(1, 6, 1, 6)); chip.putClientProperty("JButton.buttonType", "roundRect");
             chip.setToolTipText(c.deSeleccion() ? t("Seleccionado en la watchlist: deselecciónalo (o pulsa ×) para quitarlo", "Selected in the watchlist: deselect it (or press ×) to remove it")
                     : t("Buscado a mano: × para quitarlo", "Searched by hand: × to remove it"));

@@ -6098,7 +6098,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
         playersList.setVisibleRowCount(12);
         playersList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) { applyFilters(); ratings.sincronizarSeleccion(); perfilSincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
+            if (!e.getValueIsAdjusting()) { applyFilters(); if (ratings != null) ratings.sincronizarSeleccion(); perfilSincronizarSeleccion(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
         });
         delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
 

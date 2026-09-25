@@ -45,7 +45,9 @@ public final class RatingsPresenter {
         String nombreVisible(long pid, String nombre);
         /** Arranca el aviso de carga (texto + parpadeo de progreso). */
         void cargaIniciada();
-        /** Termina el aviso de carga; error null si fue bien. */
+        /** Para el parpadeo de progreso: SIEMPRE antes de marcar cargando(false) (mismo orden que la 1.1: tick.stop(); ladderCargando = false;). */
+        void pararProgreso();
+        /** Ya puede pintar el resultado de la carga; error null si fue bien. */
         void cargaTerminada(String error);
         /** Sustituye las sugerencias del buscador por estas (vacío las oculta). */
         void mostrarSugerencias(List<String[]> resultados);
@@ -84,6 +86,7 @@ public final class RatingsPresenter {
         tareas.enFondo("ladder-datos", () -> {
             String err = servicio.asegurar(false);
             tareas.enUi(() -> {
+                pantalla.pararProgreso();   // primero para el tick, igual que la 1.1 (tick.stop(); ladderCargando = false; …)
                 servicio.cargando(false);
                 pantalla.cargaTerminada(err);
             });
