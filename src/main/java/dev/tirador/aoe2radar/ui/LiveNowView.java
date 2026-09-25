@@ -217,9 +217,12 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
 
     // ===== Ciclo de vida (llamado desde abrirAhora, en el mismo orden que la 1.1) =========
 
+    /** Marca la pestaña como abierta ANTES del CardLayout.show: el hilo del socket (puedeRepintar) puede leer
+     *  esta bandera en cuanto se decide abrir, igual que la 1.1 (`ahoraAbierta = true;` antes del show). */
+    public void marcarAbierta() { ahoraAbierta = true; }
+
     /** La parte de vista de abrirAhora que va justo tras mostrar la tarjeta "ahora" del CardLayout. */
     public void alAbrirAntes() {
-        ahoraAbierta = true;
         subirArriba(ahoraPanel);
     }
 
@@ -296,7 +299,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         liveValor = new JComboBox<>(); liveValor.setMaximumRowCount(14);
         liveValor.addActionListener(e -> { if (liveRellenandoFuente) return; aplicarFuenteLive(); });
         liveValorCaja = new JPanel(new FlowLayout(FlowLayout.LEFT, 2, 0)); liveValorCaja.setOpaque(false); liveValorCaja.add(liveValor);
-        JButton irFuente = new JButton("→"); irFuente.setFocusable(false); irFuente.setMargin(new Insets(1, 6, 1, 6)); irFuente.putClientProperty("JButton.buttonType", "roundRect");
+        JButton irFuente = new JButton("\u2192"); irFuente.setFocusable(false); irFuente.setMargin(new Insets(1, 6, 1, 6)); irFuente.putClientProperty("JButton.buttonType", "roundRect");
         irFuente.setToolTipText(t("Cargar esta fuente (también con Enter)", "Load this source (Enter works too)"));
         irFuente.addActionListener(e -> aplicarFuenteLive());
         liveValorCaja.add(irFuente);
@@ -336,7 +339,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         sp.setBorder(null);
         ahoraPanel.add(sp, BorderLayout.CENTER);
         JLabel pie = new JLabel(t("Barrido al abrir y cada 10 min; el socket del companion trae las novedades al instante. Doble clic en un nick: perfil · botón central: pestaña nueva · clic derecho: más. «Buscando partida» no lo publica ninguna API: solo se ven partidas ya empezadas.",
-                "Sweep on open and every 10 min; the companion's socket brings updates instantly. Double-click a nick: profile · middle button: new tab · right-click: more. “In queue” is not published by any API: only started games are shown."));
+                "Sweep on open and every 10 min; the companion's socket brings updates instantly. Double-click a nick: profile · middle button: new tab · right-click: more. \u201CIn queue\u201D is not published by any API: only started games are shown."));
         pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
         ahoraPanel.add(pie, BorderLayout.SOUTH);
         liveReloj = new javax.swing.Timer(1000, e -> { if (!ahoraAbierta) { liveReloj.stop(); return; } for (JLabel l : liveRelojes) { Object m = l.getClientProperty("match"); if (m instanceof Match mm && mm.started != null) l.setText(reloj(Duration.between(mm.started, Instant.now()))); } });
@@ -376,7 +379,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
                 JLabel lab = (JLabel) super.getTableCellRendererComponent(tb, value, sel, foc, row, col);
                 boolean hay = value != null && !String.valueOf(value).isEmpty();
                 lab.setHorizontalAlignment(SwingConstants.CENTER);
-                lab.setText(hay ? "▶ " + t("Espectar", "Spectate") : "");
+                lab.setText(hay ? "\u25B6 " + t("Espectar", "Spectate") : "");
                 lab.setForeground(hay ? (temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)) : lab.getForeground());
                 lab.setFont(lab.getFont().deriveFont(Font.BOLD));
                 return lab;
@@ -386,7 +389,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         List<Object[]> filas = new ArrayList<>();   // {pid, nombre, matchId}
         for (Object[] f : top) {
             Match m = vivos.get((Long) f[0]);
-            String ahora = m == null ? "" : ("● " + (m.map == null ? "" : m.map) + (m.started != null ? " · " + reloj(Duration.between(m.started, Instant.now())) : ""));
+            String ahora = m == null ? "" : ("\u25CF " + (m.map == null ? "" : m.map) + (m.started != null ? " · " + reloj(Duration.between(m.started, Instant.now())) : ""));
             modelo.addRow(new Object[]{ f[3], anfitrion.nombreVisible((Long) f[0], (String) f[1]), f[2], f[4] == null ? "" : String.valueOf(f[4]).toUpperCase(Locale.ROOT), m == null ? "" : modoCorto(m), ahora, m == null || m.id <= 0 ? "" : String.valueOf(m.id) });
             filas.add(new Object[]{ f[0], anfitrion.nombreVisible((Long) f[0], (String) f[1]), m == null ? 0L : m.id });
         }
@@ -450,7 +453,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         });
         JPanel arriba = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 4));
         arriba.add(new JLabel(t("País:", "Country:"))); arriba.add(paisCb); arriba.add(busca); arriba.add(soloVivos);
-        JLabel pie = new JLabel(t("Doble clic: perfil · botón central: pestaña nueva · «▶ Espectar» en quien está jugando · ordena clicando las cabeceras", "Double-click: profile · middle button: new tab · “▶ Spectate” on whoever is playing · click headers to sort")); pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f)); pie.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        JLabel pie = new JLabel(t("Doble clic: perfil · botón central: pestaña nueva · «▶ Espectar» en quien está jugando · ordena clicando las cabeceras", "Double-click: profile · middle button: new tab · \u201C\u25B6 Spectate\u201D on whoever is playing · click headers to sort")); pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f)); pie.setBorder(BorderFactory.createEmptyBorder(4, 8, 4, 8));
         d.add(arriba, BorderLayout.NORTH); d.add(new JScrollPane(tabla), BorderLayout.CENTER); d.add(pie, BorderLayout.SOUTH);
         d.getRootPane().registerKeyboardAction(e -> d.dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
         d.setSize(860, 660); d.setLocationRelativeTo(ventana); d.setVisible(true);
@@ -560,13 +563,13 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
     private void actualizarSubtituloLive() {
         if (liveSub == null) return;
         String quien = switch (liveFuenteTipo) {
-            case "pais" -> t("los 100 mejores de ", "the top 100 of ") + etiquetaFuenteLive().replaceFirst("^Top 100 · ", "");
+            case "pais" -> t("los 100 mejores de ", "the top 100 of ") + etiquetaFuenteLive().replaceFirst("^Top 100 \u00B7 ", "");
             case "clan" -> t("los jugadores del clan ", "the players of clan ") + liveFuenteValor;
-            case "grupo" -> t("los jugadores de tu grupo «", "the players of your group “") + liveFuenteValor + (("es".equals(IDIOMA)) ? "»" : "”");
+            case "grupo" -> t("los jugadores de tu grupo «", "the players of your group \u201C") + liveFuenteValor + (("es".equals(IDIOMA)) ? "»" : "\u201D");
             default -> t("los 250 mejores del mundo (ladder 1v1)", "the world's top 250 (1v1 ladder)");
         };
         liveSub.setText(t("Qué están jugando ahora mismo ", "What ") + quien + t(", en tiempo real; y sus partidas terminadas en las últimas dos horas, sin resultado.", " are playing right now, in real time; and their games finished in the last two hours, no result shown."));
-        if (liveTitulo != null) liveTitulo.setText("Live now · " + etiquetaFuenteLive());
+        if (liveTitulo != null) liveTitulo.setText("Live now \u00B7 " + etiquetaFuenteLive());
     }
 
     private void cambiarFuenteLive() {
@@ -608,7 +611,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         liveAnchoPintado = liveScroll == null ? 0 : liveScroll.getViewport().getWidth();
         ajustarAnchosLive(liveAnchoPintado - 12);   // el reparto se calcula para el ancho real: todo cabe siempre
         boolean plegCurso = Boolean.parseBoolean(leerConfig("live_plegado_curso", "false")), plegFin = Boolean.parseBoolean(leerConfig("live_plegado_fin", "false"));
-        ahoraCuerpo.add(tituloPlegable((plegCurso ? "▸ " : "▾ ") + t("En partida ahora", "In a game now") + "  ·  " + lista.size() + (lista.size() == 1 ? t(" partida", " game") : t(" partidas", " games")), "live_plegado_curso"));
+        ahoraCuerpo.add(tituloPlegable((plegCurso ? "\u25B8 " : "\u25BE ") + t("En partida ahora", "In a game now") + "  ·  " + lista.size() + (lista.size() == 1 ? t(" partida", " game") : t(" partidas", " games")), "live_plegado_curso"));
         if (!plegCurso) {
             RejillaLive rej = new RejillaLive();
             cabeceraLive(rej);
@@ -622,7 +625,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         if (liveOrden.getSelectedIndex() == 0) terminadas.sort((a, b) -> eloMax.applyAsInt((Match) b[0]) - eloMax.applyAsInt((Match) a[0]));   // por el jugador de mayor ELO de la partida
         else terminadas.sort((a, b) -> Long.compare((Long) b[1], (Long) a[1]));
         ahoraCuerpo.add(Box.createVerticalStrut(10));
-        ahoraCuerpo.add(tituloPlegable((plegFin ? "▸ " : "▾ ") + t("Terminadas en las últimas 2 horas", "Finished in the last 2 hours") + "  ·  " + terminadas.size() + "   " + t("(sin resultado: la rec, a un clic)", "(no result shown: the rec, one click away)"), "live_plegado_fin"));
+        ahoraCuerpo.add(tituloPlegable((plegFin ? "\u25B8 " : "\u25BE ") + t("Terminadas en las últimas 2 horas", "Finished in the last 2 hours") + "  ·  " + terminadas.size() + "   " + t("(sin resultado: la rec, a un clic)", "(no result shown: the rec, one click away)"), "live_plegado_fin"));
         if (!plegFin) {
             RejillaLive rej = new RejillaLive();
             cabeceraLive(rej);
@@ -775,10 +778,10 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         botones.setPreferredSize(new Dimension(liveBotonesW, 44)); botones.setMinimumSize(new Dimension(liveBotonesW, 44));
         if (terminada) {
             if (m.enJuego) {
-                JLabel ok = new JLabel("✓ " + t("Enviada al juego", "Sent to the game")); ok.setForeground(colorWr(60, 100)); ok.setFont(ok.getFont().deriveFont(Font.BOLD, 12.5f)); ok.setAlignmentX(1f);
+                JLabel ok = new JLabel("\u2713 " + t("Enviada al juego", "Sent to the game")); ok.setForeground(colorWr(60, 100)); ok.setFont(ok.getFont().deriveFont(Font.BOLD, 12.5f)); ok.setAlignmentX(1f);
                 botones.add(Box.createVerticalGlue()); botones.add(ok); botones.add(Box.createVerticalGlue());
             } else if (m.enDisco) {
-                JLabel ok = new JLabel("✓ " + t("Descargada", "Downloaded")); ok.setForeground(colorWr(60, 100)); ok.setFont(ok.getFont().deriveFont(Font.BOLD, 12.5f)); ok.setAlignmentX(1f);
+                JLabel ok = new JLabel("\u2713 " + t("Descargada", "Downloaded")); ok.setForeground(colorWr(60, 100)); ok.setFont(ok.getFont().deriveFont(Font.BOLD, 12.5f)); ok.setAlignmentX(1f);
                 botones.add(ok);
                 JButton env = new JButton(t("Enviar al juego", "Send to game"));
                 env.setFocusable(false); env.setMargin(new Insets(1, 8, 1, 8)); env.putClientProperty("JButton.buttonType", "roundRect"); env.setAlignmentX(1f);

@@ -812,7 +812,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     JToggleButton recsBtn;                    // pestaña «Partidas»
     void actualizarControlesTabla() {
-        boolean tablaVisible = recsCards != null && recsCards.isShowing() && !(directosBtn != null && directosBtn.isSelected()) && !(techTreeBtn != null && techTreeBtn.isSelected()) && !(ladderBtn != null && ladderBtn.isSelected()) && !(civStatsBtn != null && civStatsBtn.isSelected()) && !actividadAbierta && !(ahora != null && ahora.ahoraAbierta);
+        boolean tablaVisible = recsCards != null && recsCards.isShowing() && !(directosBtn != null && directosBtn.isSelected()) && !(techTreeBtn != null && techTreeBtn.isSelected()) && !(ladderBtn != null && ladderBtn.isSelected()) && !(civStatsBtn != null && civStatsBtn.isSelected()) && !actividadAbierta && !(liveNow != null && liveNow.ahoraAbierta);
         boolean hay = tablaVisible && !all.isEmpty();
         if (filaNota != null) filaNota.setVisible(tablaVisible);
         if (filaBotonesInferiores != null) filaBotonesInferiores.setVisible(tablaVisible);
@@ -1095,7 +1095,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         actividadAbierta = false;
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (ahora != null) ahora.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ladder");
         ratings.alAbrirAntes();
@@ -1124,7 +1124,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (ladderBtn != null) ladderBtn.setSelected(false);
         actividadAbierta = false;
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (ahora != null) ahora.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "civstats");
         civStats.subirArriba();
@@ -1236,7 +1236,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); for (Player x : todosJugadores) gs.add(x.grupo());
             for (String g : gs) { actH2hSet.addItem(t("Grupo ", "Group ") + g); claves.add(new String[]{ "grupo", g }); }
             for (String tag : clanesGuardados()) { actH2hSet.addItem(t("Clan ", "Clan ") + tag); claves.add(new String[]{ "clan", tag }); }
-            if (ahora != null && !ahora.topSnapshot().isEmpty()) { actH2hSet.addItem(t("Top 250 mundial", "World top 250")); claves.add(new String[]{ "top", "" }); }
+            if (liveNow != null && !liveNow.topSnapshot().isEmpty()) { actH2hSet.addItem(t("Top 250 mundial", "World top 250")); claves.add(new String[]{ "top", "" }); }
             actH2hSet.putClientProperty("claves", claves);
         } finally { actRellenandoModos = false; }
     }
@@ -1250,7 +1250,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         switch (f[0]) {
             case "grupo" -> { for (Player x : todosJugadores) if (x.grupo().equalsIgnoreCase(f[1])) ids.add(x.id()); }
             case "clan" -> { new Thread(() -> { if (ladderAsegurar(false) == null) for (LadderRow r : miembrosClan(f[1])) ids.add(r.pid()); SwingUtilities.invokeLater(() -> { h2hIds = ids; h2hNombre = nombre; actRellenandoModos = true; actH2hBusca.setText(""); actRellenandoModos = false; actPintar(); }); }, "h2h-clan").start(); return; }
-            case "top" -> { if (ahora != null) for (Object[] x : ahora.topSnapshot()) ids.add((Long) x[0]); }
+            case "top" -> { if (liveNow != null) for (Object[] x : liveNow.topSnapshot()) ids.add((Long) x[0]); }
             default -> { }
         }
         h2hIds = ids; h2hNombre = nombre;
@@ -1751,7 +1751,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
-        if (ahora != null) ahora.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         actividadAbierta = true;
         ((CardLayout) centroCards.getLayout()).show(centroCards, "perfil");
         subirArriba(actividadPanel);
@@ -2735,7 +2735,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // =====================================================================================
     JToggleButton ahoraBtn;
     /** La pestaña Live now: ver ui.LiveNowView. */
-    LiveNowView ahora;
+    LiveNowView liveNow;
 
     @Override public void abrirAhora() {
         registrarDestino(new Destino("ahora", 0, null, null));
@@ -2746,11 +2746,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         actividadAbierta = false;
         if (perfilBtn != null) perfilBtn.setSelected(false);
+        liveNow.marcarAbierta();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ahora");
-        ahora.alAbrirAntes();
+        liveNow.alAbrirAntes();
         taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        ahora.alAbrirDespues();
+        liveNow.alAbrirDespues();
     }
 
     /** Menú contextual de un jugador fuera de la watchlist (Live now, listas): perfil, pestaña nueva y, si está en partida, aliados y rivales. */
@@ -2785,7 +2786,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     static final EloSesion ELO_1V1 = new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA);   // pid → ELO 1v1 RM (sesión; caduca al terminar una partida)
     Integer elo1v1Conocido(long pid) {
         Integer e = ELO_1V1.conocido(pid); if (e != null) return e > 0 ? e : null;
-        Object[] f = ahora != null ? ahora.liveFicha(pid) : null; if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
+        Object[] f = liveNow != null ? liveNow.liveFicha(pid) : null; if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
         e = SERVICIO_PERFIL.eloVinculada(pid); if (e != null && e > 0) return e;
         FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(pid); if (perfil != null && perfil.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
         return null;
@@ -2845,7 +2846,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             Map<String, Set<Long>> nuevo = campanas.calcularCampanaIds(s, todosJugadores);
             campanaIds.clear(); campanaIds.putAll(nuevo);   // no atomico entre el clear y el putAll: ver DEUDA
             Set<Long> todos = new HashSet<>(); for (Set<Long> x : nuevo.values()) todos.addAll(x);
-            if (ahora != null) { for (Object[] f : ahora.topSnapshot()) todos.add((Long) f[0]); ahora.socketExtra.retainAll(todos); ahora.socketExtra.addAll(todos); }
+            if (liveNow != null) { for (Object[] f : liveNow.topSnapshot()) todos.add((Long) f[0]); liveNow.socketExtra.retainAll(todos); liveNow.socketExtra.addAll(todos); }
             SwingUtilities.invokeLater(this::sincronizarSocket);
         }, "campanas").start();
     }
@@ -2877,8 +2878,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** Alguien vigilado entra en partida: si está en una lista con campana, aviso (toast dentro de la app; Windows si está minimizada). */
     void avisarSiCampana(long pid, Match m) {
         if (!campanas.tocaAvisar(pid, m, campanaIds)) return;
-        String an = ahora != null ? ahora.ahoraNombre(pid) : String.valueOf(pid);
-        String nombre = nombreVisible(pid, an.equals(String.valueOf(pid)) ? nombreDe(pid) : an);
+        String nombre = nombreVisible(pid, liveNow.ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : liveNow.ahoraNombre(pid));
         String resumen = resumenVivo(m, pid);
         String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " · " + resumen : "");
         SwingUtilities.invokeLater(() -> mostrarToast(texto, m.id));   // solo dentro de la app: nada de notificaciones de Windows
@@ -3093,7 +3093,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         actividadAbierta = false;
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (ahora != null) ahora.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         ((CardLayout) centroCards.getLayout()).show(centroCards, "techtree");
         taparResultados(); apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
@@ -3123,7 +3123,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // mientras el socket esté sano).
     /** El protocolo del socket (ver api.SocketVivo); aquí se decide qué significa cada evento. */
     final SocketVivo socketVivo = new SocketVivo(SocketVivo.HTTP, new SocketVivo.Oyente() {
-        @Override public void conectado(boolean trasCaida) { if (trasCaida && ahora != null && ahora.ahoraAbierta) SwingUtilities.invokeLater(() -> ahora.refrescar(true)); }   // tras una caída, un barrido para reparar el estado
+        @Override public void conectado(boolean trasCaida) { if (trasCaida && liveNow != null && liveNow.ahoraAbierta) SwingUtilities.invokeLater(() -> liveNow.refrescar(true)); }   // tras una caída, un barrido para reparar el estado
         @Override public void eventos(List<SocketVivo.Evento> eventos, Set<Long> ids) { procesarEventosSocket(eventos, ids); }
     }, Reloj.SISTEMA, SocketVivo.planificadorSistema());
     long ultimoResyncMs;
@@ -3134,7 +3134,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (int i = 0; i < playersModel.size(); i++) ids.add(playersModel.get(i).id());
         for (Player p : todosJugadores) ids.add(p.id());      // todos los grupos, no solo la vista actual: así cambiar de pestaña no reconecta el socket (y no se pierden eventos en el hueco)
         synchronized (topLadder) { for (Player p : topLadder) ids.add(p.id()); }
-        if (ahora != null) ids.addAll(ahora.socketExtra);   // Live now abierto y vistas con campana: también se vigilan aunque no estén a la vista
+        if (liveNow != null) ids.addAll(liveNow.socketExtra);   // Live now abierto y vistas con campana: también se vigilan aunque no estén a la vista
         try { String mi = leerConfig("mi_pid", ""); if (!mi.isBlank()) ids.add(Long.parseLong(mi)); } catch (Exception ignored) { }   // «Mi partida»: mi propio id siempre vigilado
         socketVivo.sincronizar(ids);
     }
@@ -3147,7 +3147,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             if (c.error() != null) log("socket: no se pudo confirmar la partida " + m.id + ": " + causa(c.error()));
             boolean viva = c.veredicto() != LiveService.Veredicto.TERMINADA;   // sin datos: el beneficio de la duda
             if (!viva) { log("socket: partida " + m.id + " ya terminada según la API: fantasma ignorado"); return; }
-            for (long pid : pids) { if (VIVO.terminada(m.id)) continue; String resumen = resumenVivo(m, pid); if (!VIVO.marcarJugando(pid, m.id, resumen)) continue;   /* terminada entretanto: ni Live now ni avisos */ VIVO.guardarPartida(pid, m); if (ahora != null) ahora.liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
+            for (long pid : pids) { if (VIVO.terminada(m.id)) continue; String resumen = resumenVivo(m, pid); if (!VIVO.marcarJugando(pid, m.id, resumen)) continue;   /* terminada entretanto: ni Live now ni avisos */ VIVO.guardarPartida(pid, m); if (liveNow != null) liveNow.liveEvento(pid, m, false); avisarSiCampana(pid, m); avisarMiPartida(pid, m); }
             SwingUtilities.invokeLater(() -> { actualizarIndicadoresVivos(); refrescarAlturasWatch(); playersList.repaint(); table.repaint(); });
         }, "socket-confirmar").start();
     }
@@ -3158,7 +3158,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (SocketVivo.Evento ev : eventos) {
             if (ev instanceof SocketVivo.Quitada q) {
                 long mid = q.matchId();
-                for (long pid : VIVO.quitarPartida(mid)) { if (ahora != null) ahora.liveEvento(pid, null, true); cambio = true; }
+                for (long pid : VIVO.quitarPartida(mid)) { if (liveNow != null) liveNow.liveEvento(pid, null, true); cambio = true; }
                 continue;
             }
             String tipo = ((SocketVivo.Partida) ev).tipo();
@@ -3169,7 +3169,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             List<Long> candidatos = new ArrayList<>();
             for (MatchPlayer mp : m.players) {
                 if (!ids.contains(mp.id)) continue;
-                if (m.finished != null) { VIVO.apuntarTerminada(m.id); VIVO.marcarFuera(mp.id); if (ahora != null) ahora.liveEvento(mp.id, m, true); cambio = true; }
+                if (m.finished != null) { VIVO.apuntarTerminada(m.id); VIVO.marcarFuera(mp.id); if (liveNow != null) liveNow.liveEvento(mp.id, m, true); cambio = true; }
                 // en curso DE VERDAD: empezada (no un lobby), sin terminar y hace menos de 3 h
                 else if (candidatoSocket(m, Instant.now()) && !VIVO.terminada(m.id) && !Long.valueOf(m.id).equals(VIVO.matchDe(mp.id))) candidatos.add(mp.id);
             }
@@ -4877,7 +4877,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         centroCards.add(recsCards, "recs");
         mostrarGuiaVacia(true);   // sin partidas todavía: la guía (la vista inicial sigue siendo Directos)
         centroCards.add(construirPanelDirectos(), "directos");
-        ahora = new LiveNowView(campanas, LIVE, List.of(PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
+        liveNow = new LiveNowView(campanas, LIVE, List.of(PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
             @Override public List<String> clanesGuardados() { return SpoilerFreeRecs.this.clanesGuardados(); }
             @Override public String paisSel() { return SpoilerFreeRecs.this.paisSel(); }
             @Override public String clanBuscado() { return clanField == null ? "" : clanField.getText().trim(); }
@@ -4893,7 +4893,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public void descargar(List<Match> partidas, boolean enviarAlJuego, Runnable alTerminar) { descargaSinCambiarVista = true; alTerminarDescarga = alTerminar; download(partidas, enviarAlJuego); }
             @Override public void estadoGlobal(String texto) { status.setText(texto); }
         });
-        centroCards.add(ahora.panel(), "ahora");
+        centroCards.add(liveNow.panel(), "ahora");
         techTree = new TechTreeView(this, TechTreeServiceDatos.SISTEMA, stats, filtroStats, listas, this, Tareas.SWING,
                 new TechTreeView.Anfitrion() {
                     @Override public void precalentarPerfiles() { SpoilerFreeRecs.this.precalentarPerfiles(); }
@@ -6673,7 +6673,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         actividadAbierta = false;
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (ahora != null) ahora.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (splitPrincipal != null && ttDivisorPrevio >= 0) { SwingUtilities.invokeLater(() -> { if (norteWatchRef != null) { norteWatchRef.revalidate(); norteWatchRef.repaint(); } }); splitPrincipal.setDividerLocation(ttDivisorPrevio); splitPrincipal.setOneTouchExpandable(false); ttDivisorPrevio = -1; }
         if (directos) { taparResultados(); apagarForma(); }   // cambiar de pantalla apaga el modo consulta y la forma
         ((CardLayout) centroCards.getLayout()).show(centroCards, directos ? "directos" : "recs");
