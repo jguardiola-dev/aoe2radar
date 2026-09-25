@@ -75,13 +75,13 @@ class StatsServiceTest {
     StatsService stats;
 
     @BeforeEach void preparar() {
+        limpiarCivStats();
         reloj.ahora = System.currentTimeMillis();
         sfr = new SfrDataClient(dir, red, new SfrDataClient.Etags() {
             @Override public String leer(String n) { return ""; }
             @Override public void guardar(String n, String e) { }
         }, new CacheService(reloj), () -> BASE);
         stats = new StatsServiceSfr(sfr);
-        limpiarCivStats();
         red.archivos.put("civstats/ventanas/v30.json.gz", gz(VENTANA_30));
         red.archivos.put("civstats/tendencias.json.gz", gz(TENDENCIAS));
     }
@@ -164,5 +164,19 @@ class StatsServiceTest {
         Map<String, CivAgg> esperado = CalculoStats.civPorMapa(v, "rm_1v1", "0-1000", "aztecs");
         assertEquals(esperado, stats.civPorMapa(v, "rm_1v1", "0-1000", "aztecs"));
         assertEquals(10, esperado.get("arabia").n());
+    }
+
+    @Test void tieneVentanaDiceSiYaEstaCargadaSinPedirNadaALaRed() {
+        assertFalse(stats.tieneVentana("30"), "aún no se ha pedido");
+        assertNull(stats.asegurar("30", false));
+        assertTrue(stats.tieneVentana("30"));
+        assertFalse(stats.tieneVentana("90"), "esta no se ha pedido nunca");
+    }
+
+    @Test void modosYClavesVentanasSonLasDeCivStatsEnElMismoOrden() {
+        assertArrayEquals(CivStats.MODOS_STATS, stats.modos());
+        assertArrayEquals(CivStats.VENTANAS_STATS_KEYS, stats.clavesVentanas());
+        assertSame(CivStats.MODOS_STATS, stats.modos(), "mismo array, no una copia");
+        assertSame(CivStats.VENTANAS_STATS_KEYS, stats.clavesVentanas(), "mismo array, no una copia");
     }
 }
