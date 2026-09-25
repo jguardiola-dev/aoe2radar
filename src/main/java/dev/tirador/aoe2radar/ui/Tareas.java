@@ -15,6 +15,11 @@ public interface Tareas {
     /** Igual, en un hilo demonio: no impide cerrar la app (precargas que nadie espera). */
     void enFondoDemonio(String nombre, Runnable trabajo);
 
+    /** Igual que enFondoDemonio, pero a prioridad mínima: precargas de fondo que no deben competir con la UI
+     *  ni con el trabajo que el usuario sí pidió (p. ej. «perfiles-precarga», que va calentando perfiles
+     *  guardados en disco mientras nadie mira). */
+    void enFondoDemonioMinima(String nombre, Runnable trabajo);
+
     /** Devuelve al EDT (SwingUtilities.invokeLater). */
     void enUi(Runnable trabajo);
 
@@ -24,6 +29,9 @@ public interface Tareas {
         @Override public void enFondoDemonio(String nombre, Runnable trabajo) {
             Thread h = new Thread(trabajo, nombre); h.setDaemon(true); h.start();
         }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) {
+            Thread h = new Thread(trabajo, nombre); h.setDaemon(true); h.setPriority(Thread.MIN_PRIORITY); h.start();
+        }
         @Override public void enUi(Runnable trabajo) { SwingUtilities.invokeLater(trabajo); }
     };
 
@@ -31,6 +39,7 @@ public interface Tareas {
     Tareas EN_LINEA = new Tareas() {
         @Override public void enFondo(String nombre, Runnable trabajo) { trabajo.run(); }
         @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
         @Override public void enUi(Runnable trabajo) { trabajo.run(); }
     };
 }

@@ -59,6 +59,7 @@ class CivStatsPresenterTest {
         final List<Runnable> pendientes = new ArrayList<>();
         @Override public void enFondo(String nombre, Runnable trabajo) { pendientes.add(trabajo); }
         @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
         @Override public void enUi(Runnable trabajo) { trabajo.run(); }
     }
 
@@ -122,6 +123,7 @@ class CivStatsPresenterTest {
         Tareas tareas = new Tareas() {
             @Override public void enFondo(String nombre, Runnable trabajo) { nombres.add(nombre); trabajo.run(); }
             @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+            @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
             @Override public void enUi(Runnable trabajo) { trabajo.run(); }
         };
         new CivStatsPresenter(stats, tareas, pantalla).cargar("30");

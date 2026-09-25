@@ -214,6 +214,7 @@ class TechTreePresenterTest {
         Tareas cuentaHilos = new Tareas() {
             @Override public void enFondo(String nombre, Runnable trabajo) { trabajo.run(); }
             @Override public void enFondoDemonio(String nombre, Runnable trabajo) { hilosLanzados.incrementAndGet(); }   // no lo ejecuta: solo cuenta cuántos hilos pediría
+            @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
             @Override public void enUi(Runnable trabajo) { trabajo.run(); }
         };
         TechTreePresenter p = crear(cuentaHilos);
@@ -228,6 +229,7 @@ class TechTreePresenterTest {
         Tareas cuentaHilos = new Tareas() {
             @Override public void enFondo(String nombre, Runnable trabajo) { trabajo.run(); }
             @Override public void enFondoDemonio(String nombre, Runnable trabajo) { hilosLanzados.incrementAndGet(); }
+            @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
             @Override public void enUi(Runnable trabajo) { trabajo.run(); }
         };
         TechTreePresenter p = crear(cuentaHilos);
@@ -244,6 +246,7 @@ class TechTreePresenterTest {
         Tareas tareas = new Tareas() {
             @Override public void enFondo(String nombre, Runnable trabajo) { trabajo.run(); }
             @Override public void enFondoDemonio(String nombre, Runnable trabajo) { orden.add("demonio:" + nombre); trabajo.run(); }
+            @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { orden.add("demoniominima:" + nombre); trabajo.run(); }
             @Override public void enUi(Runnable trabajo) { trabajo.run(); }
         };
         tt.errorAsegurar = "sin datos";   // corta pronto: no hace falta simular el catálogo entero

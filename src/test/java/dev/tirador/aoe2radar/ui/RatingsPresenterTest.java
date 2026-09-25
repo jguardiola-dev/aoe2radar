@@ -81,6 +81,7 @@ class RatingsPresenterTest {
         final List<Runnable> pendientesFondo = new ArrayList<>();
         @Override public void enFondo(String nombre, Runnable trabajo) { pendientesFondo.add(trabajo); }
         @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
         @Override public void enUi(Runnable trabajo) { trabajo.run(); }
     }
 
