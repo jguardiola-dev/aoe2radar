@@ -259,7 +259,7 @@ class RegresionCapturas {
         // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar.
         // Se ignora la fila de cabecera entera (padre de directosContador), no solo sus etiquetas: el ancho de
         // «N espectadores · Actualizado hh:mm:ss» desplaza el desplegable Idioma y el botón Refrescar.
-        foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.tablaDirectos), (JComponent) app.directosContador.getParent() });
+        foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.directos.tablaDirectos), (JComponent) app.directos.directosContador.getParent() });
         SwingUtilities.invokeAndWait(() -> app.ladderBtn.doClick());
         for (int i = 0; i < 80 && (Ladder.ladderHists.isEmpty()); i++) Thread.sleep(250);
         Thread.sleep(1500);

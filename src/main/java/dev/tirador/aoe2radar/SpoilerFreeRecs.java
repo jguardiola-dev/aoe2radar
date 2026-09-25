@@ -90,9 +90,12 @@ import dev.tirador.aoe2radar.service.StatsService;
 import dev.tirador.aoe2radar.service.StatsServiceSfr;
 import dev.tirador.aoe2radar.service.TechTreeServiceDatos;
 import dev.tirador.aoe2radar.service.TopLadderService;
+import dev.tirador.aoe2radar.service.TwitchService;
+import dev.tirador.aoe2radar.service.TwitchServiceCompanion;
 import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.CivStatsView;
+import dev.tirador.aoe2radar.ui.DirectosView;
 import dev.tirador.aoe2radar.ui.FiltroStats;
 import dev.tirador.aoe2radar.ui.Listas;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
@@ -755,8 +758,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     String topFirma = "";
     final Map<Long, Integer> rankTop = new HashMap<>();
-    final Map<Long, String[]> twitchLive = new HashMap<>();   // pid -> { canal, título, viewers }
-    final List<String[]> directosAoE2 = new ArrayList<>();    // { login, display, título, idioma, viewers }
+    final Map<Long, String[]> twitchLive = new HashMap<>();   // pid -> { canal, título, viewers }; escribe ui.DirectosView, leen Live now/Perfil
     JToggleButton directosBtn, resultadosBtn;
     volatile boolean topeAlcanzado;   // la búsqueda tocó el tope de páginas/partidas: se avisa en el status
     JTextField rivalField;            // filtro por rival (sobre las partidas cargadas, sin llamadas)
@@ -1069,7 +1071,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             SwingUtilities.invokeLater(() -> {
                 if (res.error() != null) { status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
                 topLadder.clear();
-                ultimoTopMs = 0; ultimoTwitchMs = 0;
+                ultimoTopMs = 0; directos.reiniciarThrottle();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
                 lastTop.clear(); rankTop.clear();
                 for (TopLadderService.FilaClan f : res.miembros()) {
                     topLadder.add(new Player(f.pid(), f.nombre(), TOP_CLAN));
@@ -4102,72 +4104,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
     }
     JSplitPane splitPrincipal;
-    JPanel panelDirectos, centroCards;
-    JLabel directosContador, directosHora;
-    final List<String[]> filasDir = new ArrayList<>();   // { login, nick visible, título visible }
-    static final int MINI_W = 96, MINI_H = 54, MINI_OFFSET = MINI_W + 10;
-    final Map<String, ImageIcon> minis = new java.util.concurrent.ConcurrentHashMap<>();   // login → miniatura en vivo
-    final Map<String, Long> minisTs = new java.util.concurrent.ConcurrentHashMap<>();
-    JTable tablaDirectos;
-    ImageIcon miniPlaceholder;
-
-    ImageIcon miniPlaceholder() {
-        if (miniPlaceholder == null) {
-            java.awt.image.BufferedImage img = new java.awt.image.BufferedImage(MINI_W, MINI_H, java.awt.image.BufferedImage.TYPE_INT_ARGB);
-            Graphics2D g = img.createGraphics();
-            g.setColor(temaOscuroActivo ? new Color(0x3a, 0x3a, 0x3a) : new Color(0xdd, 0xdd, 0xdd));
-            g.fillRoundRect(0, 0, MINI_W, MINI_H, 8, 8);
-            g.dispose();
-            miniPlaceholder = new ImageIcon(img);
-        }
-        return miniPlaceholder;
-    }
-
-    /** Descarga en segundo plano las miniaturas en vivo de Twitch (URL pública, sin claves) de
-     *  los canales listados; se renuevan cada 5 min. */
-    void cargarMiniaturas() {
-        List<String> logins = new ArrayList<>();
-        long ahora = System.currentTimeMillis();
-        for (String[] d : filasDir)
-            if (!minis.containsKey(d[0]) || ahora - minisTs.getOrDefault(d[0], 0L) > 300_000) logins.add(d[0]);
-        if (logins.isEmpty()) return;
-        new Thread(() -> {
-            for (String login : logins) {
-                try {
-                    HttpRequest rq = HttpRequest.newBuilder(URI.create(
-                            "https://static-cdn.jtvnw.net/previews-ttv/live_user_" + login.toLowerCase() + "-" + MINI_W + "x" + MINI_H + ".jpg"))
-                            .timeout(Duration.ofSeconds(10)).header("User-Agent", UA).GET().build();
-                    HttpResponse<byte[]> r = HTTP.send(rq, HttpResponse.BodyHandlers.ofByteArray());
-                    if (r.statusCode() / 100 == 2) {
-                        java.awt.image.BufferedImage img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(r.body()));
-                        if (img != null) {
-                            Image esc = img.getScaledInstance(MINI_W, MINI_H, Image.SCALE_SMOOTH);
-                            minis.put(login, new ImageIcon(esc));
-                            minisTs.put(login, System.currentTimeMillis());
-                            SwingUtilities.invokeLater(() -> { if (tablaDirectos != null) tablaDirectos.repaint(); });
-                        }
-                    }
-                } catch (Exception ex) {
-                    log("miniatura " + login + ": " + causa(ex));
-                }
-            }
-        }, "miniaturas-twitch").start();
-    }
-    final List<String> codigosIdiomaDir = new ArrayList<>();
-
-    String nombreIdioma(String code) {
-        try {
-            String n = java.util.Locale.forLanguageTag(code)
-                    .getDisplayLanguage(java.util.Locale.forLanguageTag(IDIOMA));
-            if (n == null || n.isBlank()) return code.toUpperCase();
-            return n.substring(0, 1).toUpperCase() + n.substring(1);
-        } catch (Exception e) { return code.toUpperCase(); }
-    }
-    javax.swing.table.DefaultTableModel modeloDirectos;
-    JComboBox<String> idiomaDirCombo;
-    volatile boolean rearmandoIdiomas;
-    volatile boolean vigilandoTwitch;
-    String twitchHost;                                        // host que respondió (api/data)
+    JPanel centroCards;
+    /** La pestaña Directos (card "directos", Twitch): ver ui.DirectosView. */
+    DirectosView directos;
     final Set<Long> vinculosExpandidos = new HashSet<>();
     final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
     final Map<Long, Boolean> vivoFamilia = new HashMap<>();   // principal -> alguna cuenta viva
@@ -5374,8 +5313,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 .put(KeyStroke.getKeyStroke(KeyEvent.VK_F5, 0), "sfrRefrescar");
         getRootPane().getActionMap().put("sfrRefrescar", new AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                ultimoTwitchMs = 0;
-                vigilarTwitch();
+                directos.refrescarForzado();
                 if (directosBtn != null && directosBtn.isSelected()) status.setText(t("Refrescando directos…", "Refreshing streams…"));
             }
         });
@@ -5616,7 +5554,18 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         recsCards.add(guia, "guia");
         centroCards.add(recsCards, "recs");
         mostrarGuiaVacia(true);   // sin partidas todavía: la guía (la vista inicial sigue siendo Directos)
-        centroCards.add(construirPanelDirectos(), "directos");
+        directos = new DirectosView(TWITCH_SERVICE, twitchLive, Tareas.SWING, new DirectosView.Anfitrion() {
+            @Override public List<Player> visibles() {
+                List<Player> out = new ArrayList<>();
+                for (int i = 0; i < playersModel.size(); i++) out.add(playersModel.get(i));
+                return out;
+            }
+            @Override public void repintarLista() { playersList.repaint(); }
+            @Override public void estado(String texto) { status.setText(texto); }
+            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
+            @Override public boolean seleccionada() { return directosBtn != null && directosBtn.isSelected(); }
+        });
+        centroCards.add(directos.panel(), "directos");
         centroCards.add(construirPanelAhora(), "ahora");
         techTree = new TechTreeView(this, TechTreeServiceDatos.SISTEMA, stats, filtroStats, listas, this, Tareas.SWING,
                 new TechTreeView.Anfitrion() {
@@ -5720,7 +5669,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             boolean tocaSondear = ctrlOn("sondeo") && (!socketVivo.conectado() || ahora - ultimoResyncMs >= resync);
             if (tocaSondear) ultimoResyncMs = ahora;
             if (tocaSondear) vigilarVivos();
-            if (!modoTop()) vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
+            if (!modoTop()) directos.vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
             if (modoTop() && !modoClan()) {
                 // recuperación automática: si el top no pudo cargarse (o solo hay caché), reintenta
                 if (topLadder.isEmpty() || ahora - topCargado > 15 * 60_000L)
@@ -6847,7 +6796,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                         return;
                     }
                     topLadder.clear();
-        ultimoTopMs = 0; ultimoTwitchMs = 0;   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
+        ultimoTopMs = 0; directos.reiniciarThrottle();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
                     lastTop.clear();
                     rankTop.clear();
                     for (TopLadderService.FilaTop f : res.filas()) {
@@ -6885,7 +6834,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         TopLadderService.TopCache cache = TOP_LADDER_SERVICE.cargarCache(TOP_CACHE, firma);
         if (cache == null) return false;
         topLadder.clear();
-        ultimoTopMs = 0; ultimoTwitchMs = 0;   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
+        ultimoTopMs = 0; directos.reiniciarThrottle();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
         lastTop.clear();
         rankTop.clear();
         for (TopLadderService.FilaCache f : cache.filas()) {
@@ -6920,7 +6869,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             }
             @Override protected void done() {
                 vigilandoTop = false;
-                vigilarTwitch();   // el río acaba de enseñar canales: ahora sí, el cruce
+                directos.vigilarTwitch();   // el río acaba de enseñar canales: ahora sí, el cruce
                 try {
                     TopLadderService.ResultadoVigilancia r = get();
                     topVerificados.clear();
@@ -7214,42 +7163,18 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (cabLabel != null && SwingUtilities.isDescendingFrom(c, cabLabel)) return false;          // ordenar no suelta
         if (sujetosPanel != null && SwingUtilities.isDescendingFrom(c, sujetosPanel)) return false;  // «Partidas de:» es clicable
         if (table != null && SwingUtilities.isDescendingFrom(c, table)) return false;
-        if (tablaDirectos != null && SwingUtilities.isDescendingFrom(c, tablaDirectos)) return false;
+        if (directos != null && directos.tablaDirectos != null && SwingUtilities.isDescendingFrom(c, directos.tablaDirectos)) return false;
         if (ratings != null && SwingUtilities.isDescendingFrom(c, ratings.panel())) return false;   // mirar las campanas no suelta la selección (sus puntos desaparecerían)
         // los visores de las tablas (hueco bajo sus filas) tampoco: seleccionar partidas no debe cambiar el filtro de la lista
         for (Component p = c; p != null; p = p.getParent())
             if (p instanceof JScrollPane sp && sp.getViewport() != null
-                    && (sp.getViewport().getView() == table || sp.getViewport().getView() == tablaDirectos)) return false;
+                    && (sp.getViewport().getView() == table || (directos != null && sp.getViewport().getView() == directos.tablaDirectos))) return false;
         return c instanceof JPanel || c instanceof JViewport || c instanceof JLabel || c instanceof JRootPane
                 || c instanceof JLayeredPane || c instanceof JFrame;
     }
 
     boolean containsPlayerId(long id) {
         return listaSeguidos.contiene(todosJugadores, id);
-    }
-
-    /** ¿El punto cae sobre el TEXTO del nick o del título (no el blanco)?
-     *  El ancho se mide con la fuente real de cada línea. */
-    boolean sobreNombreCanal(JTable tabla, Point p) {
-        int fila = tabla.rowAtPoint(p), col = tabla.columnAtPoint(p);
-        if (fila < 0 || col < 0 || tabla.convertColumnIndexToModel(col) != 0) return false;
-        int i = tabla.convertRowIndexToModel(fila);
-        if (i >= filasDir.size()) return false;
-        String[] d = filasDir.get(i);
-        Rectangle celda = tabla.getCellRect(fila, col, true);
-        boolean lineaNick = p.y - celda.y <= tabla.getRowHeight() * 0.55;
-        Font base = tabla.getFont();
-        Font f = lineaNick ? base.deriveFont(Font.BOLD, 13f) : base;
-        int ancho = tabla.getFontMetrics(f).stringWidth(lineaNick ? d[1] : d[2]) + 10;
-        int dx = p.x - celda.x;
-        return dx <= MINI_OFFSET + ancho;   // la miniatura y el texto son clicables; el hueco a la derecha, no
-    }
-
-    void abrirCanalEn(JTable tabla, Point p) {
-        int fila = tabla.rowAtPoint(p);
-        if (fila < 0) return;
-        int i = tabla.convertRowIndexToModel(fila);
-        if (i < filasDir.size()) abrirUrl("https://twitch.tv/" + filasDir.get(i)[0]);
     }
 
     /** El endpoint de Steam (api.SteamApi), aparte del companion. Campo de instancia, no static: así no importa el
@@ -7390,8 +7315,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     /** La zona central alterna entre la tabla de recs y los directos. */
-    void mostrarDirectos(boolean directos) {
-        directosBtn.setSelected(directos);
+    void mostrarDirectos(boolean mostrar) {
+        directosBtn.setSelected(mostrar);
         if (techTreeBtn != null && techTreeBtn.isSelected()) { techTreeBtn.setSelected(false); }
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
@@ -7399,244 +7324,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (perfilBtn != null) perfilBtn.setSelected(false);
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (splitPrincipal != null && ttDivisorPrevio >= 0) { SwingUtilities.invokeLater(() -> { if (norteWatchRef != null) { norteWatchRef.revalidate(); norteWatchRef.repaint(); } }); splitPrincipal.setDividerLocation(ttDivisorPrevio); splitPrincipal.setOneTouchExpandable(false); ttDivisorPrevio = -1; }
-        if (directos) { taparResultados(); apagarForma(); }   // cambiar de pantalla apaga el modo consulta y la forma
-        ((CardLayout) centroCards.getLayout()).show(centroCards, directos ? "directos" : "recs");
-        if (!directos && all.isEmpty() && fetchWorker == null) mostrarGuiaVacia(true);   // sin partidas: la guía con su botón, no una tabla vacía
-        registrarDestino(new Destino(directos ? "directos" : "recs", 0, null, null));
+        if (mostrar) { taparResultados(); apagarForma(); }   // cambiar de pantalla apaga el modo consulta y la forma
+        ((CardLayout) centroCards.getLayout()).show(centroCards, mostrar ? "directos" : "recs");
+        if (!mostrar && all.isEmpty() && fetchWorker == null) mostrarGuiaVacia(true);   // sin partidas: la guía con su botón, no una tabla vacía
+        registrarDestino(new Destino(mostrar ? "directos" : "recs", 0, null, null));
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        if (directos) {
-            poblarDirectos();
-            vigilarTwitch();   // refresco de cortesía al abrir
-        }
+        if (mostrar) directos.alAbrir();
     }
 
-    JPanel construirPanelDirectos() {
-        {
-            JPanel cont = new JPanel(new BorderLayout(0, 8));
-            cont.setBorder(BorderFactory.createEmptyBorder(10, 12, 10, 12));
-            JPanel arriba = new JPanel(new WrapLayout(FlowLayout.LEFT, 8, 2));
-            directosContador = new JLabel(t("Buscando canales\u2026", "Finding channels\u2026"));
-            directosContador.setFont(directosContador.getFont().deriveFont(Font.BOLD));
-            arriba.add(directosContador);
-            directosHora = new JLabel();
-            directosHora.setEnabled(false);
-            arriba.add(directosHora);
-            arriba.add(new JLabel(t("Idioma:", "Language:")));
-            idiomaDirCombo = new JComboBox<>();
-            idiomaDirCombo.addActionListener(e -> {
-                if (rearmandoIdiomas) return;
-                int i = idiomaDirCombo.getSelectedIndex();
-                guardarConfig("twitch_idioma",
-                        i <= 0 || i - 1 >= codigosIdiomaDir.size() ? "" : codigosIdiomaDir.get(i - 1));
-                poblarDirectos();
-            });
-            arriba.add(idiomaDirCombo);
-            JButton refrescarDir = new JButton(t("Refrescar", "Refresh"));
-            refrescarDir.addActionListener(e -> vigilarTwitch());
-            arriba.add(refrescarDir);
-            JLabel ayudaDir = new JLabel(t("Clic en el nombre de un canal = abrir su directo en Twitch.",
-                    "Click a channel name to open its Twitch stream."));
-            ayudaDir.setEnabled(false);
-            JPanel norte = new JPanel(new BorderLayout());
-            norte.add(arriba, BorderLayout.NORTH);
-            norte.add(ayudaDir, BorderLayout.SOUTH);
-            cont.add(norte, BorderLayout.NORTH);
-            modeloDirectos = new javax.swing.table.DefaultTableModel(
-                    new Object[]{ t("Canal", "Channel"), t("Idioma", "Language"),
-                            t("Espectadores", "Viewers") }, 0) {
-                @Override public boolean isCellEditable(int r, int c) { return false; }
-                @Override public Class<?> getColumnClass(int c) {
-                    return c == 2 ? Integer.class : String.class;
-                }
-            };
-            JTable tabla = new JTable(modeloDirectos) {
-                @Override public String getToolTipText(MouseEvent e) {
-                    int fila = rowAtPoint(e.getPoint());
-                    if (fila < 0) return null;
-                    int i = convertRowIndexToModel(fila);
-                    return i < filasDir.size() ? "twitch.tv/" + filasDir.get(i)[0] : null;
-                }
-            };
-            tabla.setAutoCreateRowSorter(true);
-            tablaDirectos = tabla;
-            // Dos líneas (nick 13px + título) caben con cualquier tamaño de letra; la miniatura fija el mínimo
-            tabla.setRowHeight(Math.max((int) (tabla.getFont().getSize2D() * 2f) + 22, MINI_H + 8));
-            tabla.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
-                @Override public Component getTableCellRendererComponent(JTable tb, Object value, boolean sel, boolean foc, int row, int column) {
-                    JLabel l = (JLabel) super.getTableCellRendererComponent(tb, value, sel, foc, row, column);
-                    int mr = tb.convertRowIndexToModel(row);
-                    ImageIcon ic = mr >= 0 && mr < filasDir.size() ? minis.get(filasDir.get(mr)[0]) : null;
-                    l.setIcon(ic != null ? ic : miniPlaceholder());
-                    l.setIconTextGap(10);
-                    return l;
-                }
-            });
-            tabla.addMouseMotionListener(new MouseMotionAdapter() {
-                @Override public void mouseMoved(MouseEvent e) {
-                    tabla.setCursor(Cursor.getPredefinedCursor(sobreNombreCanal(tabla, e.getPoint())
-                            ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
-                }
-            });
-            tabla.getColumnModel().getColumn(0).setPreferredWidth(430);
-            tabla.getColumnModel().getColumn(1).setPreferredWidth(120);
-            tabla.getColumnModel().getColumn(2).setPreferredWidth(100);
-            javax.swing.table.DefaultTableCellRenderer centro = new javax.swing.table.DefaultTableCellRenderer();
-            centro.setHorizontalAlignment(javax.swing.SwingConstants.CENTER);
-            tabla.getColumnModel().getColumn(1).setCellRenderer(centro);
-            javax.swing.table.DefaultTableCellRenderer miles = new javax.swing.table.DefaultTableCellRenderer() {
-                @Override protected void setValue(Object v) {
-                    setHorizontalAlignment(CENTER);
-                    setText(v instanceof Integer n
-                            ? String.format(java.util.Locale.forLanguageTag(IDIOMA), "%,d", n)
-                            : String.valueOf(v));
-                }
-            };
-            tabla.getColumnModel().getColumn(2).setCellRenderer(miles);
-            tabla.addMouseListener(new MouseAdapter() {
-                @Override public void mouseClicked(MouseEvent e) {
-                    // Un clic sobre el nombre del canal; doble clic, en cualquier parte
-                    boolean sobre = sobreNombreCanal(tabla, e.getPoint());
-                    if ((e.getClickCount() == 1 && sobre) || (e.getClickCount() == 2 && !sobre))
-                        abrirCanalEn(tabla, e.getPoint());
-                }
-            });
-            cont.add(new JScrollPane(tabla), BorderLayout.CENTER);
-            panelDirectos = cont;
-            return cont;
-        }
-    }
-
-    void poblarDirectos() {
-        if (modeloDirectos == null) return;
-        String idiomaSel = leerConfig("twitch_idioma", "");
-        Set<String> idiomas = new TreeSet<>();
-        for (String[] d : directosAoE2) idiomas.add(d[3]);
-        rearmandoIdiomas = true;
-        idiomaDirCombo.removeAllItems();
-        codigosIdiomaDir.clear();
-        idiomaDirCombo.addItem(t("Todos", "All"));
-        for (String c : idiomas) { codigosIdiomaDir.add(c); idiomaDirCombo.addItem(nombreIdioma(c)); }
-        int sel = codigosIdiomaDir.indexOf(idiomaSel);
-        if (sel >= 0) idiomaDirCombo.setSelectedIndex(sel + 1);
-        rearmandoIdiomas = false;
-        modeloDirectos.setRowCount(0);
-        filasDir.clear();
-        List<String[]> filas = new ArrayList<>(directosAoE2);
-        filas.sort((a, b) -> Integer.parseInt(b[4]) - Integer.parseInt(a[4]));
-        String grisTit = temaOscuroActivo ? "#9a9a9a" : "#666666";
-        for (String[] d : filas) {
-            if (!idiomaSel.isBlank() && !d[3].equalsIgnoreCase(idiomaSel)) continue;
-            String titulo = d[2].length() > 90 ? d[2].substring(0, 89) + "\u2026" : d[2];
-            String celda = "<html><b style='font-size:13px'>" + escapeHtml(d[1]) + "</b><br>"
-                    + "<span style='color:" + grisTit + "'>" + escapeHtml(titulo) + "</span></html>";
-            modeloDirectos.addRow(new Object[]{ celda, nombreIdioma(d[3]), Integer.parseInt(d[4]) });
-            filasDir.add(new String[]{ d[0], d[1], titulo });
-        }
-        cargarMiniaturas();
-        long audiencia = 0;
-        for (int i = 0; i < modeloDirectos.getRowCount(); i++)
-            audiencia += ((Integer) modeloDirectos.getValueAt(i, 2));
-        directosContador.setText(t("Top ", "Top ") + modeloDirectos.getRowCount() + t(" canales", " channels")
-                + " \u00B7 " + String.format(t("es", "en").equals("es") ? java.util.Locale.of("es") : java.util.Locale.US, "%,d", audiencia)
-                + " " + t("espectadores", "viewers"));
-        directosHora.setText(t("Actualizado: ", "Updated: ")
-                + java.time.LocalTime.now().format(java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss")));
-    }
-
-    /** Cruza los canales conocidos con la lista de directos de AoE2 del
-     *  companion (una llamada global). Para el top sin canal vinculado,
-     *  respaldo por coincidencia exacta de nick. */
-    long ultimoTwitchMs, ultimoTopMs;
-    volatile boolean twitchFallo;   // el último barrido de Twitch no obtuvo respuesta
-
-    void vigilarTwitch() {
-        if (vigilandoTwitch) return;
-        if (System.currentTimeMillis() - ultimoTwitchMs < (long) (170_000 * ctrlMult("twitch_mult"))) return;   // cada 3 min (× mando a distancia): con eso basta para un badge
-        ultimoTwitchMs = System.currentTimeMillis();
-        vigilandoTwitch = true;
-        twitchFallo = false;
-        List<Player> visibles = new ArrayList<>();
-        for (int i = 0; i < playersModel.size(); i++) visibles.add(playersModel.get(i));
-        new SwingWorker<Map<Long, String[]>, Void>() {
-            final List<String[]> completos = new ArrayList<>();
-            @Override protected Map<Long, String[]> doInBackground() {
-                Map<String, String[]> envivo = new HashMap<>();   // clave lower -> {canal, título, viewers}
-                String h = CompanionApi.TWITCH_LIVE + "?game=13389";   // solo para el log: la URL real la construye COMPANION.twitchDirectos()
-                try {
-                    for (Directo s : COMPANION.twitchDirectos()) {
-                        String canal = String.valueOf(s.login());
-                        if ("null".equals(canal) || canal.isBlank()) continue;
-                        String titulo = String.valueOf(firstNonNull(s.titulo(), ""));
-                        long viewers = s.viewers();
-                        String[] datos = { canal, titulo, String.valueOf(Math.max(0, viewers)) };
-                        envivo.put(canal.toLowerCase(), datos);
-                        String un = String.valueOf(s.nombre());
-                        if (!"null".equals(un) && !un.isBlank()) envivo.putIfAbsent(un.toLowerCase(), datos);
-                        String idioma = String.valueOf(firstNonNull(s.idioma(), "?"));
-                        completos.add(new String[]{ canal, "null".equals(un) || un.isBlank() ? canal : un,
-                                titulo, idioma.toLowerCase(), String.valueOf(Math.max(0, viewers)) });
-                    }
-                } catch (Exception ex) {
-                    log("twitch: fallo con " + h + ": " + causa(ex));
-                    twitchFallo = true;
-                }
-                Map<Long, String[]> res = new HashMap<>();
-                List<Player> sinCruce = new ArrayList<>();
-                for (Player p : visibles) {
-                    String canal = CANAL_DE.get(p.id());
-                    String[] st = canal != null ? envivo.get(canal.toLowerCase()) : null;
-                    if (st == null)
-                        for (String v : variantesNick(p.name())) {
-                            st = envivo.get(v);
-                            if (st != null) { aprenderCanal(p.id(), st[0]); break; }
-                        }
-                    if (st != null) res.put(p.id(), st);
-                    else if (canal != null && !twitchFallo) sinCruce.add(p);
-                }
-                // El proxy solo lista los 20 canales más vistos: los canales conocidos de tu lista que no
-                // estén ahí se comprueban uno a uno (pocas llamadas, y el TW deja de depender de la audiencia)
-                int consultas = 0;
-                for (Player p : sinCruce) {
-                    if (consultas++ >= 12) break;
-                    String canal = CANAL_DE.get(p.id());
-                    try {
-                        Directo s = COMPANION.twitchCanal(canal);
-                        if (s != null) {
-                            String login = String.valueOf(s.login());
-                            if (!"null".equals(login) && !login.isBlank() && "live".equals(String.valueOf(s.tipo()))) {
-                                String titulo = String.valueOf(firstNonNull(s.titulo(), ""));
-                                long viewers = s.viewers();
-                                res.put(p.id(), new String[]{ login, titulo, String.valueOf(Math.max(0, viewers)) });
-                            }
-                        }
-                    } catch (Exception ex) {
-                        log("twitch canal " + canal + ": " + causa(ex));
-                    }
-                    dormir(150);
-                }
-                log("twitch: " + envivo.size() / 2 + "+ directos AoE2; " + res.size()
-                        + " de tu lista visible retransmitiendo");
-                return res;
-            }
-            @Override protected void done() {
-                vigilandoTwitch = false;
-                try {
-                    Map<Long, String[]> res = get();
-                    if (!twitchFallo) { twitchLive.clear(); twitchLive.putAll(res); }   // con fallo, los TW se conservan
-                    if (twitchFallo) {
-                        // sin respuesta (502…): se conserva la última lista buena
-                        status.setText(t("Twitch sin respuesta ahora mismo — mostrando la última lista buena.",
-                                "Twitch not responding right now — showing the last good list."));
-                    } else {
-                        directosAoE2.clear();
-                        directosAoE2.addAll(completos);
-                    }
-                    playersList.repaint();
-                    if (directosBtn != null && directosBtn.isSelected()) poblarDirectos();
-                } catch (Exception ignored) { }
-            }
-        }.execute();
-    }
+    /** El «río» de Top ladder usa este throttle propio (independiente del de Twitch, ver ui.DirectosPresenter). */
+    long ultimoTopMs;
 
     /** Tras fichar a alguien: si tiene cuentas vinculadas, ofrecer añadirlas
      *  todas al mismo grupo de una vez. */
@@ -9200,6 +8897,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** Búsqueda de perfiles por nick (service.BusquedaPerfiles), la usan los cinco buscadores de la interfaz. Va
      *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
     static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
+    /** El barrido de Twitch y sus miniaturas (ver service.TwitchService); usa dormir() entre las llamadas una a una. */
+    static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms));
 
     static void dormir(long ms) {
         long fin = System.currentTimeMillis() + ms;
