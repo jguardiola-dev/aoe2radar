@@ -25,7 +25,7 @@ public interface MiPartidaService {
     /**
      * Una lectura del log del juego: lee lo nuevo desde la última posición (o los últimos 4000 bytes, si es una
      * sesión nueva) y dice si ESTA vez toca avisar de la fase de preparación (frases «PlayerReadyRequest» o
-     * «MS_Setup» en el trozo leído, y más de 120s desde el último aviso de esta sesión: el mismo throttle que
+     * «MS_Setup» en el trozo leído, y más de 120s desde el último aviso: el mismo throttle que
      * logJuegoUltimoAvisoMs en la 1.1). Mantiene la posición y el throttle como estado interno.
      */
     boolean leerLogJuego();

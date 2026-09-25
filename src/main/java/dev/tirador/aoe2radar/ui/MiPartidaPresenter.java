@@ -61,7 +61,7 @@ public final class MiPartidaPresenter {
         tareas.enFondo("log-juego", () -> {
             if (!servicio.leerLogJuego()) return;
             tareas.enUi(() -> pantalla.mostrarSuperposicion(
-                    "● " + t("Partida encontrada · preparando…", "Match found · getting ready…"), null, 25_000));
+                    "\u25CF " + t("Partida encontrada · preparando…", "Match found · getting ready…"), null, 25_000));
             tareas.enFondo("lobby-oficial", () -> {
                 MiPartidaService.ResultadoLobby r = servicio.sondearLobbyOficial();
                 if (r.avisar()) tareas.enUi(() -> pantalla.mostrarSuperposicion(r.texto(), r.fichas(), 60_000));

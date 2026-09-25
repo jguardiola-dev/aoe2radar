@@ -155,7 +155,7 @@ public final class MiPartidaServiceJuego implements MiPartidaService {
             log("lobby oficial: " + (encontrado ? "mi lobby encontrado con " + companeros.size() + " jugadores más" : "mi lobby no aparece") + " (respuesta de " + texto.length() + " caracteres)");
             if (!encontrado || companeros.isEmpty()) return new ResultadoLobby(false, "", List.of());
             cargarEloAyer();
-            StringBuilder sb = new StringBuilder("● " + t("Partida encontrada · con ", "Match found · with "));
+            StringBuilder sb = new StringBuilder("\u25CF " + t("Partida encontrada · con ", "Match found · with "));
             List<Object[]> fichas = new ArrayList<>();
             for (long pid : companeros) {
                 String[] nn = NOMBRES_AYER.get(pid);

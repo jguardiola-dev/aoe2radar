@@ -41,7 +41,6 @@ import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
 import dev.tirador.aoe2radar.cache.RecsDisco;
-import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
