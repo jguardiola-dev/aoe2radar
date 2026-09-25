@@ -58,6 +58,10 @@ public final class Componentes {
 
     public static JPanel listaVertical() { JPanel p = new JPanel(); p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS)); p.setAlignmentX(0f); return p; }
 
+    /** Estilo de una cabecera de columna en una tabla pintada a mano (gris secundario, negrita 11 px): lo
+     *  comparten Live now y el «Cara a cara» de la watchlist. */
+    public static void estiloCab(JLabel l) { l.setFont(l.getFont().deriveFont(Font.BOLD, 11f)); l.setForeground(colorSecundario()); }
+
     /** Todos los scroll de un panel, arriba del todo (al abrir una vista). */
     public static void subirArriba(Container c) {
         if (c == null) return;

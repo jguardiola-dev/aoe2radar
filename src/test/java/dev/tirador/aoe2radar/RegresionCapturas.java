@@ -371,11 +371,11 @@ class RegresionCapturas {
         MatchPlayer a1 = new MatchPlayer(); a1.id = 1; a1.name = "12Tirador"; a1.civ = "Aztecas"; a1.team = 1; a1.rating = 1905;
         MatchPlayer a2 = new MatchPlayer(); a2.id = 3; a2.name = "pume"; a2.civ = "Francos"; a2.team = 2; a2.rating = 1980;
         mv.players.add(a1); mv.players.add(a2);
-        synchronized (app.ahoraTop) { app.ahoraTop.add(new Object[]{ 1L, "12Tirador", 1905, 260, "es" }); app.ahoraTop.add(new Object[]{ 3L, "pume", 1980, 120, "ar" }); app.ahoraTop.add(new Object[]{ 2L, "Turpiacho", 1610, 2800, "es" }); }
-        app.ahoraTopMs = System.currentTimeMillis();
-        synchronized (app.ahoraEnCurso) { app.ahoraEnCurso.put(1L, mv); app.ahoraEnCurso.put(3L, mv); }
-        app.ahoraUltimaMs = System.currentTimeMillis();
-        synchronized (app.liveTerminadas) { Match mt = new Match(); mt.id = 556; mt.started = java.time.Instant.now().minusSeconds(3000); mt.finished = java.time.Instant.now().minusSeconds(600); mt.map = "Arena"; mt.mode = "1v1 Random Map"; mt.players.add(a1); mt.players.add(a2); app.liveTerminadas.put(556L, new Object[]{ mt, System.currentTimeMillis() - 600_000 }); }
+        app.ahora.conTop(top -> { top.add(new Object[]{ 1L, "12Tirador", 1905, 260, "es" }); top.add(new Object[]{ 3L, "pume", 1980, 120, "ar" }); top.add(new Object[]{ 2L, "Turpiacho", 1610, 2800, "es" }); });
+        app.ahora.fijarTopMs(System.currentTimeMillis());
+        app.ahora.conEnCurso(enCurso -> { enCurso.put(1L, mv); enCurso.put(3L, mv); });
+        app.ahora.fijarUltimaMs(System.currentTimeMillis());
+        app.ahora.conTerminadas(terminadas -> { Match mt = new Match(); mt.id = 556; mt.started = java.time.Instant.now().minusSeconds(3000); mt.finished = java.time.Instant.now().minusSeconds(600); mt.map = "Arena"; mt.mode = "1v1 Random Map"; mt.players.add(a1); mt.players.add(a2); terminadas.put(556L, new Object[]{ mt, System.currentTimeMillis() - 600_000 }); });
         SwingUtilities.invokeAndWait(() -> { app.ahoraBtn.doClick(); });
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(() -> app.mostrarToast("\u25CF Hera ha empezado una partida \u00B7 vs Viper 2732 (Mongoles\u2013Francos) \u00B7 Arabia", 555));
@@ -384,8 +384,8 @@ class RegresionCapturas {
         // el aviso existe para shot_ahora; su temporizador (10 s) lo cerraría en mitad de las capturas siguientes y cuáles
         // lo muestran dependería del tiempo transcurrido. Se cierra ya, con el método que usa el propio temporizador.
         SwingUtilities.invokeAndWait(() -> { if (app.toastTimer != null) app.toastTimer.stop(); app.ocultarToast(); });
-        System.out.println("live tarjetas: " + app.ahoraCuerpo.getComponentCount() + " | estado: " + app.ahoraEstado.getText());
-        SwingUtilities.invokeAndWait(app::mostrarLista250);
+        System.out.println("live tarjetas: " + app.ahora.ahoraCuerpoPanel().getComponentCount() + " | estado: " + app.ahora.ahoraEstadoLabel().getText());
+        SwingUtilities.invokeAndWait(app.ahora::mostrarLista250);
         Thread.sleep(800);
         foto("shot_lista250.png");
         cerrarDialogos();
@@ -393,7 +393,7 @@ class RegresionCapturas {
         // reparación contra la red real que disparaba un fallo del socket (el cierre pedido por la app contaba como caída y
         // reconectaba; arreglado en LiveService C2). Sin él, la 555 seguía «en partida» con un cronómetro en marcha. El
         // harness deja él mismo el estado que fotografía: sin depender de la red ni de aquel fallo.
-        SwingUtilities.invokeAndWait(() -> { synchronized (app.ahoraEnCurso) { app.ahoraEnCurso.clear(); } app.ahoraPintar(); });
+        SwingUtilities.invokeAndWait(() -> { app.ahora.conEnCurso(Map::clear); app.ahora.pintar(); });
         // menú contextual de la watchlist sobre un jugador en partida
         SpoilerFreeRecs.VIVO.marcarJugando(1L, 555L);
         SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new Player(1L, "12Tirador", "General")); app.todosJugadores.add(new Player(3L, "pume", "General")); app.rebuildGrupos(); app.grupoCombo.setSelectedItem("Todos"); app.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });

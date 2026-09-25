@@ -105,6 +105,23 @@ public final class LiveNowPresenter {
         }
     }
 
+    // ----- acceso directo con el MISMO candado, para RegresionCapturas (inyecta datos sin pasar por la red) -----
+
+    /** Toca la fuente actual bajo su candado (el mismo que usa el barrido): visible para RegresionCapturas. */
+    public void conTop(java.util.function.Consumer<List<Object[]>> accion) { synchronized (ahoraTop) { accion.accept(ahoraTop); } }
+
+    /** Toca las partidas en curso bajo su candado: visible para RegresionCapturas. */
+    public void conEnCurso(java.util.function.Consumer<Map<Long, Match>> accion) { synchronized (ahoraEnCurso) { accion.accept(ahoraEnCurso); } }
+
+    /** Toca las terminadas bajo su candado: visible para RegresionCapturas. */
+    public void conTerminadas(java.util.function.Consumer<Map<Long, Object[]>> accion) { synchronized (liveTerminadas) { accion.accept(liveTerminadas); } }
+
+    /** Fuerza el instante del último barrido de la fuente (sin red): visible para RegresionCapturas. */
+    public void fijarTopMs(long ms) { ahoraTopMs = ms; }
+
+    /** Fuerza el instante del último barrido completo (sin red): visible para RegresionCapturas. */
+    public void fijarUltimaMs(long ms) { ahoraUltimaMs = ms; }
+
     /** Al cambiar de fuente (top/país/clan/grupo, cambiarFuenteLive de la 1.1): se olvida todo lo cargado, para
      *  que el próximo {@link #refrescar} pida la lista entera y el barrido completo. */
     public void reiniciarFuente() {

@@ -66,6 +66,7 @@ import static dev.tirador.aoe2radar.service.NombresStats.nombreCivStats;
 import static dev.tirador.aoe2radar.service.ReglasPartida.modoCorto;
 import static dev.tirador.aoe2radar.ui.Componentes.colorSecundario;
 import static dev.tirador.aoe2radar.ui.Componentes.colorWr;
+import static dev.tirador.aoe2radar.ui.Componentes.estiloCab;
 import static dev.tirador.aoe2radar.ui.Componentes.subirArriba;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoCiv;
@@ -236,6 +237,10 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
      *  de llamar desde CUALQUIER hilo, ver la javadoc de {@link LiveNowPresenter#liveEvento}. */
     public void liveEvento(long pid, Match m, boolean terminada) { presenter.liveEvento(pid, m, terminada); }
 
+    /** El barrido manual (botón «Actualizar», el timer y, tras una caída del socket, la reconexión): lo llama
+     *  la ventana desde el bloque del socket. */
+    public void refrescar(boolean forzar) { presenter.refrescar(forzar); }
+
     /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null: la usa elo1v1Conocido
      *  (que se queda en la ventana) con la guarda {@code ahora != null}. */
     public Object[] liveFicha(long pid) { return presenter.ficha(pid); }
@@ -246,6 +251,18 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         Object[] f = presenter.ficha(pid);
         return f != null ? anfitrion.nombreVisible(pid, (String) f[1]) : String.valueOf(pid);
     }
+
+    /** Copia de la fuente actual {pid, nombre, rating, rango, país}: la usa el «Cara a cara» de la watchlist
+     *  (conjunto «Top 250 mundial»), que se queda en la ventana. */
+    public List<Object[]> topSnapshot() { return presenter.topSnapshot(); }
+
+    // ----- visible para RegresionCapturas: inyecta datos de Live now sin pasar por la red -----
+
+    public void conTop(java.util.function.Consumer<List<Object[]>> accion) { presenter.conTop(accion); }
+    public void conEnCurso(java.util.function.Consumer<Map<Long, Match>> accion) { presenter.conEnCurso(accion); }
+    public void conTerminadas(java.util.function.Consumer<Map<Long, Object[]>> accion) { presenter.conTerminadas(accion); }
+    public void fijarTopMs(long ms) { presenter.fijarTopMs(ms); }
+    public void fijarUltimaMs(long ms) { presenter.fijarUltimaMs(ms); }
 
     // ===== Construcción del panel ===========================================================
 
@@ -335,8 +352,9 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         return l;
     }
 
-    /** Ventana con la lista completa de la fuente: puesto, bandera, nick, ELO, país, en partida; filtros por país (desplegable con escritura) y por nick; espectar desde dentro; doble clic = perfil. */
-    private void mostrarLista250() {
+    /** Ventana con la lista completa de la fuente: puesto, bandera, nick, ELO, país, en partida; filtros por país (desplegable con escritura) y por nick; espectar desde dentro; doble clic = perfil.
+     *  Pública: la usa el botón «Ver la lista» y RegresionCapturas. */
+    public void mostrarLista250() {
         List<Object[]> top = presenter.topSnapshot();
         if (top.isEmpty()) { anfitrion.estadoGlobal(t("Todavía no se ha cargado la lista: abre Live now un momento.", "The list isn't loaded yet: open Live now for a moment.")); return; }
         JDialog d = new JDialog(ventana, "Live now · " + etiquetaFuenteLive(), JDialog.ModalityType.MODELESS);
@@ -628,8 +646,6 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
             default -> true;
         };
     }
-
-    private static void estiloCab(JLabel l) { l.setFont(l.getFont().deriveFont(Font.BOLD, 11f)); l.setForeground(colorSecundario()); }
 
     /** Cabecera de un bando, con las mismas celdas que filaJugadorLive. */
     private JPanel cabeceraBando() {
