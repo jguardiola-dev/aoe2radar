@@ -65,6 +65,7 @@ class RegresionCapturas {
     @BeforeAll static void prepararDirectorio() throws IOException {
         if (!HARNESS.endsWith(Path.of("target", "harness")))
             throw new IllegalStateException("el harness debe correr en target/harness (workingDirectory de surefire), no en " + HARNESS);
+        AvisoHarness.empezar(BASE);   // pitido y cartel rojo: a partir de aquí la pantalla es del harness
         try (Stream<Path> s = Files.list(HARNESS)) { for (Path p : s.toList()) borrar(p); }
         copiar(RECURSOS.resolve("banderas"), HARNESS.resolve("banderas"));
         copiar(RECURSOS.resolve("techtree"), HARNESS.resolve("techtree"));
@@ -90,10 +91,14 @@ class RegresionCapturas {
     }
 
     @AfterAll static void cerrar() throws Exception {
-        SwingUtilities.invokeAndWait(() -> { for (Window w : Window.getWindows()) w.dispose(); });   // dispose, no System.exit: mataría el JVM de surefire
-        // los hilos de la app (socket, descargas) siguen vivos: si uno escribe en sfrdata/ justo ahora, la fixture
-        // podría salir a medias. Solo afecta a la grabación; si una captura falla tras grabar, se borra y se regraba.
-        if (grabarFixture) grabarFixture();
+        try {
+            SwingUtilities.invokeAndWait(() -> { for (Window w : Window.getWindows()) w.dispose(); });   // dispose, no System.exit: mataría el JVM de surefire
+            // los hilos de la app (socket, descargas) siguen vivos: si uno escribe en sfrdata/ justo ahora, la fixture
+            // podría salir a medias. Solo afecta a la grabación; si una captura falla tras grabar, se borra y se regraba.
+            if (grabarFixture) grabarFixture();
+        } finally {
+            AvisoHarness.terminar(BASE);   // dos pitidos y cartel verde, también si algo falló
+        }
     }
 
     /**

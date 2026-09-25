@@ -26,27 +26,12 @@ if (Get-Command python -ErrorAction SilentlyContinue) {
 $argumentos = @('test')
 if ($Rapido) { $argumentos += '-Dtest=!RegresionCapturas' }
 
-# Con el harness: pitido grave al empezar y ventanita roja (fuera de la zona fotografiada, sin robar el foco);
-# al terminar, dos pitidos que suben y ventanita verde unos segundos. Se puede mover el ratón en los otros
-# monitores, pero sin hacer clic (cambiaría el foco).
-$pwsh = (Get-Process -Id $PID).Path
-$aviso = Join-Path $PSScriptRoot 'tools\aviso.ps1'
-$ventana = $null
-if (-not $Rapido) {
-    Write-Host "== Tests con harness: NO toques el ratón en el monitor principal (~1 min)" -ForegroundColor Cyan
-    [console]::Beep(440, 180)
-    $ventana = Start-Process $pwsh -ArgumentList '-NoProfile', '-File', "`"$aviso`"", '-Texto', '"NO TOQUES EL RATÓN · harness en marcha"', '-Color', 'rojo' -WindowStyle Hidden -PassThru
-}
-try {
-    $salida = mvn @argumentos 2>&1
-    $codigo = $LASTEXITCODE
-} finally {
-    if ($ventana) {
-        Stop-Process -Id $ventana.Id -ErrorAction SilentlyContinue
-        [console]::Beep(523, 120); [console]::Beep(784, 160)
-        Start-Process $pwsh -ArgumentList '-NoProfile', '-File', "`"$aviso`"", '-Texto', '"YA PUEDES USAR EL RATÓN"', '-Color', 'verde', '-Segundos', '6' -WindowStyle Hidden
-    }
-}
+# Con el harness: el propio RegresionCapturas avisa (AvisoHarness: pitido grave y ventanita roja al empezar; dos
+# pitidos y ventanita verde al acabar), así avisa también si se lanza con mvn a mano o desde un subagente. Se puede
+# mover el ratón en los otros monitores, pero sin hacer clic (cambiaría el foco).
+if (-not $Rapido) { Write-Host "== Tests con harness: NO toques el ratón en el monitor principal (~1 min)" -ForegroundColor Cyan }
+$salida = mvn @argumentos 2>&1
+$codigo = $LASTEXITCODE
 
 # Resumen: capturas que fallan, avisos de reintento y el total de tests
 $salida | Select-String -Pattern 'intento \d .*FALLA' | ForEach-Object { ($_.Line -replace ' \? C:.*', '' -replace ' . watch:.*', '') }

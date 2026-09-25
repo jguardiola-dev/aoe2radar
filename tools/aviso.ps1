@@ -1,5 +1,6 @@
 # aviso.ps1 — ventanita de aviso para el harness. No roba el foco (WS_EX_NOACTIVATE) y va fuera de la zona que se
-# fotografía (la app ocupa 0..1500 x 0..950 del monitor principal). La lanza verificar.ps1; no hace falta usarla a mano.
+# fotografía (la app ocupa 0..1500 x 0..950 del monitor principal). No hace falta usarla a mano.
+# (la lanza AvisoHarness, dentro de RegresionCapturas)
 # Uso: aviso.ps1 -Texto "..." -Color rojo|verde [-Segundos 6]   (sin -Segundos se queda hasta que la cierren)
 param([string]$Texto = "Harness en marcha", [ValidateSet('rojo', 'verde')][string]$Color = 'rojo', [int]$Segundos = 0)
 
