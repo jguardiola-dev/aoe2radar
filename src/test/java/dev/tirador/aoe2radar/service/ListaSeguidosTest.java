@@ -126,29 +126,81 @@ class ListaSeguidosTest {
         assertEquals(List.of("1;Ana;General", "2;Bob;Amigos;5"), lineas);
     }
 
+    @Test void cargar_idNoNumerico_conservaLoYaLeido() throws IOException {
+        Files.write(playersFile, List.of(
+                "1;Ana;Amigos",
+                "no-es-un-id;Bob;Otro"
+        ), StandardCharsets.UTF_8);
+        List<Player> destino = new ArrayList<>();
+
+        String error = svc.cargar(destino);
+
+        assertNotNull(error);
+        assertTrue(error.startsWith("No se pudo leer players.txt: "), error);
+        // Como en la 1.1: la excepción corta el bucle, pero lo ya añadido (líneas previas a la mala) se queda.
+        assertEquals(List.of(new Player(1L, "Ana", "Amigos", 0L)), destino);
+    }
+
+    @Test void cargar_vinculoNoNumerico_seToleraComoCero() throws IOException {
+        Files.write(playersFile, List.of("1;Ana;Amigos;no-es-un-vinculo"), StandardCharsets.UTF_8);
+        List<Player> destino = new ArrayList<>();
+
+        String error = svc.cargar(destino);
+
+        assertNull(error);
+        assertEquals(List.of(new Player(1L, "Ana", "Amigos", 0L)), destino);
+    }
+
+    @Test void guardar_errorDeEscritura_devuelveMensaje() throws IOException {
+        Path comoDirectorio = tempDir.resolve("no-se-puede-escribir");
+        Files.createDirectory(comoDirectorio);
+        ListaSeguidos svcRoto = new ListaSeguidos(comoDirectorio, GENERAL, (k, def) -> cfg.getOrDefault(k, def), cfg::put);
+
+        String error = svcRoto.guardar(List.of(new Player(1L, "Ana", GENERAL, 0L)));
+
+        assertNotNull(error);
+        assertTrue(error.startsWith("No se pudo guardar players.txt: "), error);
+    }
+
     // ----- Grupos --------------------------------------------------------------
+
+    @Test void calcularGrupos_ordenaCaseInsensibleYPersisteSinGeneral() {
+        cfg.put("grupos", "torneo,Amigos");
+        List<Player> jugadores = List.of(
+                new Player(1L, "Ana", "Amigos", 0L),
+                new Player(2L, "Bob", GENERAL, 0L),
+                new Player(3L, "Cid", "zeta", 0L)
+        );
+
+        Set<String> grupos = svc.calcularGrupos(jugadores);
+
+        assertEquals(List.of("Amigos", "General", "torneo", "zeta"), new ArrayList<>(grupos));
+        assertEquals("Amigos,torneo,zeta", cfg.get("grupos"));
+    }
 
     @Test void registrarGrupo_loAnadeALaConfig() {
         cfg.put("grupos", "Amigos");
 
         svc.registrarGrupo("Torneo");
 
-        assertEquals(Set.of("Amigos", "Torneo"), svc.gruposConfig());
+        assertEquals("Amigos,Torneo", cfg.get("grupos"));
     }
 
     @Test void renombrarGrupo_cambiaJugadoresYConfig() {
-        cfg.put("grupos", "Amigos");
+        cfg.put("grupos", "Amigos,Otro");
         cfg.put("grupo_activo", "Amigos");
         List<Player> jugadores = new ArrayList<>(List.of(
                 new Player(1L, "Ana", "Amigos", 0L),
-                new Player(2L, "Bob", GENERAL, 0L)
+                new Player(2L, "Bob", GENERAL, 0L),
+                new Player(3L, "Cid", "Otro", 0L)
         ));
 
         svc.renombrarGrupo(jugadores, "Amigos", "Colegas");
 
         assertEquals(new Player(1L, "Ana", "Colegas", 0L), jugadores.get(0));
         assertEquals(new Player(2L, "Bob", GENERAL, 0L), jugadores.get(1));
-        assertEquals(Set.of("Colegas"), svc.gruposConfig());
+        assertEquals(new Player(3L, "Cid", "Otro", 0L), jugadores.get(2));
+        assertEquals("Colegas,Otro", cfg.get("grupos"));
         assertEquals("Colegas", cfg.get("grupo_activo"));
     }
 
@@ -164,7 +216,7 @@ class ListaSeguidosTest {
 
         assertEquals(new Player(1L, "Ana", GENERAL, 0L), jugadores.get(0));
         assertEquals(new Player(2L, "Bob", "Otro", 0L), jugadores.get(1));
-        assertEquals(Set.of("Otro"), svc.gruposConfig());
+        assertEquals("Otro", cfg.get("grupos"));
         assertEquals("Todos", cfg.get("grupo_activo"));
     }
 

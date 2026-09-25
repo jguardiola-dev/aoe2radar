@@ -9199,10 +9199,11 @@ public class SpoilerFreeRecs extends JFrame {
     /**
      * Ficha a varios de golpe; pregunta UNA vez si buscar sus cuentas vinculadas y lo hace en segundo plano.
      * BUG corregido (fase 2, service.ListaSeguidos): la 1.1 mutaba todosJugadores y llamaba a marcarVinculo
-     * desde doInBackground (hilo de fondo) mientras el EDT recorre esa misma lista. Ahora doInBackground solo
-     * hace la llamada de red (SERVICIO_PERFIL.vinculadas) y publica el resultado; el alta en la lista y
-     * marcarVinculo se hacen en process(), que Swing ejecuta en el EDT. El orden de efectos visible no cambia:
-     * por cada jugador, primero el texto de estado («Vinculadas de…») y luego el alta de sus cuentas.
+     * desde doInBackground (hilo de fondo) mientras el EDT recorre esa misma lista. Ahora, en el mismo punto
+     * donde la 1.1 mutaba, se aplica con SwingUtilities.invokeAndWait: la mutación ocurre en el EDT y
+     * doInBackground espera a que termine antes de seguir con el siguiente jugador; así, al acabar el
+     * bucle, ya está todo aplicado (done() no puede adelantarse al último hallazgo). Los textos de
+     * estado siguen yendo por publish/process, como antes.
      */
     void ficharVarios(List<Player> lista, String g) {
         List<Player> nuevos = listaSeguidos.ficharVarios(todosJugadores, lista, g);
@@ -9220,34 +9221,31 @@ public class SpoilerFreeRecs extends JFrame {
         trabajando(true);
         final long miSerial = opSerial;
         final int[] anadidas = { 0 };
-        record Hallazgo(Player origen, List<Perfil.Vinculada> vinculadas) { }
-        new SwingWorker<Void, Object>() {
+        new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
                 hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 for (Player p : nuevos) {
                     if (stopOperacion) break;
-                    publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "…");
+                    publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "\u2026");
                     try {
                         List<Perfil.Vinculada> vinc = SERVICIO_PERFIL.vinculadas(p.id());
-                        publish(new Hallazgo(p, vinc));
+                        SwingUtilities.invokeAndWait(() -> {
+                            try {
+                                Set<Long> familia = new HashSet<>(); familia.add(p.id());
+                                for (Perfil.Vinculada v : vinc) {
+                                    long vid = v.pid();
+                                    if (listaSeguidos.ficharSiNuevo(todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
+                                    familia.add(vid);
+                                }
+                                if (familia.size() > 1) marcarVinculo(familia);
+                            } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
+                        });
                     } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
                     dormir(PAUSA_MS / 2);
                 }
                 return null;
             }
-            @Override protected void process(List<Object> ch) {   // EDT: aquí, y solo aquí, se toca todosJugadores
-                for (Object o : ch) {
-                    if (o instanceof String s) { status.setText(s); continue; }
-                    Hallazgo h = (Hallazgo) o;
-                    Set<Long> familia = new HashSet<>(); familia.add(h.origen().id());
-                    for (Perfil.Vinculada v : h.vinculadas()) {
-                        long vid = v.pid();
-                        if (listaSeguidos.ficharSiNuevo(todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
-                        familia.add(vid);
-                    }
-                    if (familia.size() > 1) marcarVinculo(familia);
-                }
-            }
+            @Override protected void process(List<String> ch) { status.setText(ch.get(ch.size() - 1)); }
             @Override protected void done() {
                 if (miSerial != opSerial) return;
                 trabajando(false);
