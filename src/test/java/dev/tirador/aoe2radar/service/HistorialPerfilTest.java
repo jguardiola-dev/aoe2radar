@@ -50,8 +50,10 @@ class HistorialPerfilTest {
     static final class TransporteFalso implements Transporte {
         final Map<Integer, String> paginas = new HashMap<>();
         final List<Integer> pedidas = new ArrayList<>();
+        final List<String> urls = new ArrayList<>();
         int estado = 200;
         @Override public Respuesta get(String url) {
+            urls.add(url);
             Matcher m = Pattern.compile("page=(\\d+)").matcher(url);
             if (!m.find()) throw new AssertionError("URL sin page=: " + url);
             int pag = Integer.parseInt(m.group(1));
@@ -69,6 +71,10 @@ class HistorialPerfilTest {
     final TransporteFalso red = new TransporteFalso();
     final CompanionApi api = new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false));
     final RelojFalso reloj = new RelojFalso();
+    {   // una hora realista (nov. 2023, en ms): Json.when lee como SEGUNDOS los números < 1e11, así que con el reloj en
+        // 1e9 las partidas del JSON caerían en otra época que las de matchAt. Así las dos hablan en milisegundos.
+        reloj.ahora = 1_700_000_000_000L;
+    }
     final Map<Long, Actividad> memoria = new HashMap<>();
     final Map<Long, Actividad> disco = new HashMap<>();               // el "disco" falso: lo que guardar() escribió
     final List<Long> cargarPedido = new ArrayList<>();                 // qué pids se pidieron a cargar (disco)
@@ -156,6 +162,16 @@ class HistorialPerfilTest {
         pagina(1, partida(1, diasMs(1)), partidaSinStarted(2), partida(3, diasMs(1)));
         Actividad a = nuevo().descargar(10L, "Jorge", null, false, 5, x -> { }, NUNCA_CANCELAR);
         assertEquals(List.of(1L, 3L), ids(a), "la de started null (id 2) no entra");
+    }
+
+    @Test void unaPartidaDeHace300DiasEntraYNoPara() throws Exception {
+        // guarda de unidades: con el reloj en 1e9 ms, Json.when leía estas fechas como segundos y esta partida caía en
+        // la Edad Media (fuera del año). Con el reloj realista entra, como en la app.
+        pagina(1, partida(1, diasMs(300)), partida(2, diasMs(300)), partida(3, diasMs(300)));
+        pagina(2);
+        Actividad a = nuevo().descargar(10L, "Jorge", null, false, 5, x -> { }, NUNCA_CANCELAR);
+        assertEquals(List.of(1L, 2L, 3L), ids(a), "300 días está dentro del año");
+        assertEquals(List.of(1, 2), red.pedidas, "no para por antigüedad en la página 1");
     }
 
     @Test void unaPartidaDeHaceMasDeUnAnio_completoYParaAlAcabarEsaPagina() throws Exception {
@@ -336,5 +352,54 @@ class HistorialPerfilTest {
     @Test void actividad_nullSiNiMemoriaNiDiscoYNoPoneNada() {
         assertNull(nuevo().actividad(999L));
         assertFalse(memoria.containsKey(999L), "un miss no escribe nada en memoria");
+    }
+
+    // ===================== 11. traerHoy («Actualizar hoy»): 50 recientes, solo las terminadas nuevas, en memoria =====================
+
+    /** Una partida terminada: started hace `haceMs`, finished un minuto después. */
+    String terminada(long id, long haceMs) {
+        long ini = reloj.ahoraMs() - haceMs;
+        return "{\"match_id\":" + id + ",\"started\":" + ini + ",\"finished\":" + (ini + 60_000) + "}";
+    }
+
+    @Test void traerHoy_fundeSoloLasTerminadasNuevasYOrdenaPorFecha() throws Exception {
+        long hora = Duration.ofHours(1).toMillis();
+        Actividad base = new Actividad(10L, "Jorge", List.of(matchAt(100L, hora), matchAt(101L, diasMs(3))), false, 4, 0L);
+        memoria.put(10L, base);
+        pagina(1, terminada(1, diasMs(2)), terminada(100, hora), partida(2, hora));   // 1 nueva; 100 ya conocida; 2 sin terminar
+        reloj.ahora += 1_000;   // el ms del resultado es el de ahora, no el de la base
+        int nuevas = nuevo().traerHoy(10L);
+        assertEquals(1, nuevas, "solo cuenta la nueva terminada: ni la conocida ni la que sigue en juego");
+        Actividad a = memoria.get(10L);
+        assertEquals(List.of(100L, 1L, 101L), ids(a), "fundidas y ordenadas de más reciente a más antigua, no solo puestas delante");
+        assertTrue(a.completo(), "tras «Actualizar hoy» el año queda completo, como en la 1.1");
+        assertEquals(4, a.paginas(), "conserva las páginas de la base");
+        assertEquals(reloj.ahora, a.ms(), "ms del reloj");
+        assertEquals(10L, a.partidas().get(1).refId, "la nueva queda referida al jugador");
+        assertTrue(disco.isEmpty(), "solo en memoria, no en disco (como la 1.1)");
+        assertEquals(List.of(1), red.pedidas, "una sola llamada: la página 1");
+        assertTrue(red.urls.get(0).contains("per_page=50"), "las 50 más recientes, no el tamaño de página del historial");
+    }
+
+    @Test void traerHoy_lasPartidasSinFechaQuedanAlFinal() throws Exception {
+        Match sinFecha = new Match(); sinFecha.id = 102L;   // started null: el orden la trata como 1970
+        memoria.put(10L, new Actividad(10L, "Jorge", List.of(sinFecha, matchAt(100L, diasMs(5))), false, 1, 0L));
+        pagina(1, terminada(1, diasMs(1)));
+        nuevo().traerHoy(10L);
+        assertEquals(List.of(1L, 100L, 102L), ids(memoria.get(10L)), "sin fecha, al final (como EPOCH)");
+    }
+
+    @Test void traerHoy_sinActividadEnMemoriaCuentaLasNuevasPeroNoGuardaNada() throws Exception {
+        pagina(1, terminada(1, diasMs(1)), terminada(2, diasMs(1)));
+        assertEquals(2, nuevo().traerHoy(10L));
+        assertTrue(memoria.isEmpty(), "sin base no hay con qué fundir: no se inventa una actividad");
+    }
+
+    @Test void traerHoy_sinNuevasNoTocaLaMemoria() throws Exception {
+        Actividad base = baseCon(10L, "Jorge", false, 2, 100L);
+        memoria.put(10L, base);
+        pagina(1, terminada(100, diasMs(1)));
+        assertEquals(0, nuevo().traerHoy(10L));
+        assertSame(base, memoria.get(10L), "nada nuevo: la misma actividad, sin marcarla completa");
     }
 }

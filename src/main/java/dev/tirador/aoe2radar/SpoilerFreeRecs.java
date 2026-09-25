@@ -3535,17 +3535,7 @@ public class SpoilerFreeRecs extends JFrame {
             try {
                 FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
                 vinculadasPedidas.add(pid);
-                Actividad base = ACTIVIDAD_CACHE.get(pid);
-                Set<Long> vistos = new HashSet<>(); if (base != null) for (Match x : base.partidas()) vistos.add(x.id);
-                List<Match> extra = new ArrayList<>();
-                Iterable<Match> leidas = COMPANION.partidas(pid, 1, 50);
-                for (Match x : leidas) { if (x != null && x.finished != null && !vistos.contains(x.id)) { x.refId = pid; extra.add(x); } }
-                nuevas = extra.size();
-                if (base != null && !extra.isEmpty()) {
-                    List<Match> todas = new ArrayList<>(extra); todas.addAll(base.partidas());
-                    todas.sort((a, b) -> { Instant x = a.started == null ? Instant.EPOCH : a.started, y = b.started == null ? Instant.EPOCH : b.started; return y.compareTo(x); });
-                    ACTIVIDAD_CACHE.put(pid, new Actividad(pid, base.nombre(), todas, true, base.paginas(), System.currentTimeMillis()));
-                }
+                nuevas = SERVICIO_PERFIL.traerHoy(pid);
                 final int n = nuevas;
                 SwingUtilities.invokeLater(() -> {
                     if (actPid != pid) return;

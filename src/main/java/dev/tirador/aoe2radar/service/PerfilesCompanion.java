@@ -153,4 +153,9 @@ public final class PerfilesCompanion implements ProfileService {
         avisarSiUi("ProfileService.historial");
         return historial.descargar(pid, nombre, base, mas, maxPaginas, parcial, cancelar);
     }
+
+    @Override public int traerHoy(long pid) throws IOException, InterruptedException {
+        avisarSiUi("ProfileService.traerHoy");
+        return historial.traerHoy(pid);
+    }
 }

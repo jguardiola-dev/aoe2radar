@@ -83,4 +83,11 @@ public interface ProfileService {
      */
     Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas,
                         Consumer<Actividad> parcial, BooleanSupplier cancelar) throws IOException, InterruptedException;
+
+    /**
+     * «Actualizar hoy» (sin la ficha, que se pide con ficha): las 50 partidas más recientes (una llamada) y las nuevas
+     * terminadas, fundidas con la actividad en memoria (ver HistorialPerfil.traerHoy). Devuelve cuántas nuevas hubo.
+     * Va a la red.
+     */
+    int traerHoy(long pid) throws IOException, InterruptedException;
 }

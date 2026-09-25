@@ -99,4 +99,24 @@ public final class HistorialPerfil {
         guardar.accept(a);
         return a;
     }
+
+    /**
+     * «Actualizar hoy»: las 50 partidas más recientes del companion (una llamada); las terminadas que no se
+     * conocían se funden con la actividad en memoria (de más reciente a más antigua) y la dejan completa. Solo en
+     * memoria, no en disco, como la 1.1. Si no había actividad, no guarda nada. Devuelve cuántas son nuevas.
+     */
+    public int traerHoy(long pid) throws IOException, InterruptedException {
+        Actividad base = actividades.get(pid);
+        Set<Long> vistos = new HashSet<>(); if (base != null) for (Match x : base.partidas()) vistos.add(x.id);
+        List<Match> extra = new ArrayList<>();
+        Iterable<Match> leidas = api.partidas(pid, 1, 50);
+        for (Match x : leidas) { if (x != null && x.finished != null && !vistos.contains(x.id)) { x.refId = pid; extra.add(x); } }
+        int nuevas = extra.size();
+        if (base != null && !extra.isEmpty()) {
+            List<Match> todas = new ArrayList<>(extra); todas.addAll(base.partidas());
+            todas.sort((a, b) -> { Instant x = a.started == null ? Instant.EPOCH : a.started, y = b.started == null ? Instant.EPOCH : b.started; return y.compareTo(x); });
+            actividades.put(pid, new Actividad(pid, base.nombre(), todas, true, base.paginas(), reloj.ahoraMs()));
+        }
+        return nuevas;
+    }
 }
