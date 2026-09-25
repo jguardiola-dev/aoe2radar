@@ -79,6 +79,7 @@ import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.RecService;
 import dev.tirador.aoe2radar.service.StatsService;
 import dev.tirador.aoe2radar.service.StatsServiceSfr;
+import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
@@ -1062,23 +1063,22 @@ public class SpoilerFreeRecs extends JFrame {
         if (tag.isEmpty()) { status.setText(t("Escribe el tag del clan (p. ej. R1).", "Type the clan tag (e.g. R1).")); return; }
         status.setText(clanes.isEmpty() ? t("Descargando la lista de clanes…", "Downloading the clan list…") : t("Cargando el clan…", "Loading the clan…"));
         new Thread(() -> {
-            String err = ladderAsegurar(false);
-            List<LadderRow> mi = err == null ? miembrosClan(tag) : List.of();
+            TopLadderService.ResultadoClan res = TOP_LADDER_SERVICE.topClan(tag);
             SwingUtilities.invokeLater(() -> {
-                if (err != null) { status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + err); return; }
+                if (res.error() != null) { status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
                 topLadder.clear();
                 ultimoTopMs = 0; ultimoTwitchMs = 0;
                 lastTop.clear(); rankTop.clear();
-                for (LadderRow r : mi) {
-                    topLadder.add(new Player(r.pid(), r.name(), TOP_CLAN));
-                    eloWatch.put(r.pid(), r.rating());
-                    rankTop.put(r.pid(), topLadder.size());
+                for (TopLadderService.FilaClan f : res.miembros()) {
+                    topLadder.add(new Player(f.pid(), f.nombre(), TOP_CLAN));
+                    eloWatch.put(f.pid(), f.rating());
+                    rankTop.put(f.pid(), topLadder.size());
                 }
                 guardarConfig("clan_tag", tag);
                 aplicarFiltroGrupo();
                 actualizarIndicadoresVivos();
-                status.setText(mi.isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
-                        : t("Clan ", "Clan ") + tag + ": " + mi.size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
+                status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
+                        : t("Clan ", "Clan ") + tag + ": " + res.miembros().size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
             });
         }, "top-clan").start();
     }
@@ -9510,10 +9510,9 @@ public class SpoilerFreeRecs extends JFrame {
      *  players.txt, con caché de 10 min, y dispara un barrido de vivos. */
     void cargarTopLadder(boolean forzar) {
         if (cargandoTop) return;
-        long ahora = System.currentTimeMillis();
         String pais = modoPais() ? paisSel() : null;
         String firma = pais == null ? "global" : pais;
-        if (!forzar && firma.equals(topFirma) && !topLadder.isEmpty() && ahora - topCargado < 10 * 60_000L) {
+        if (TOP_LADDER_SERVICE.topFresco(forzar, firma, topFirma, !topLadder.isEmpty(), topCargado)) {
             aplicarFiltroGrupo();
             actualizarIndicadoresVivos();
             vigilarTop();
@@ -9526,39 +9525,18 @@ public class SpoilerFreeRecs extends JFrame {
         final String nombrePaisF = nombrePais;
         status.setText(t("Cargando el top ", "Loading the top ") + topN
                 + (nombrePais != null ? t(" de ", " of ") + nombrePais : t(" del ladder…", " of the ladder…")));
-        new SwingWorker<List<Object[]>, Void>() {
-            @Override protected List<Object[]> doInBackground() throws Exception {
-                List<Object[]> out = new ArrayList<>();
-                for (String id : new String[]{ "rm_1v1", "3" }) {
-                    try {
-                        for (FilaClasificacion f : COMPANION.clasificacion(id, 1, 100, pais).filas()) {
-                            long pid = f.pid();
-                            int rating = f.rating() != null ? f.rating() : -1;
-                            String name = String.valueOf(f.nombre());
-                            aprenderCanal(pid, f.canal());
-                            aprenderPais(pid, f.pais());
-                            Instant lm = f.ultimaPartida();
-                            if (f.racha() != null) TOP_STREAK.put(pid, f.racha());
-                            if (f.jugadas10() > 0) TOP_LAST10.put(pid, new int[]{ f.ganadas10(), f.jugadas10() - f.ganadas10() });
-                            if (pid > 0 && rating > 0 && !"null".equals(name)) {
-                                out.add(new Object[]{ pid, name, rating, lm == null ? 0L : lm.toEpochMilli() });
-                                if (f.partidas() != null) gamesWatch.put(pid, f.partidas());
-                            }
-                            if (out.size() >= topN) break;
-                        }
-                        if (!out.isEmpty()) break;
-                    } catch (Exception ex) {
-                        log("top ladder: fallo con id " + id + ": " + causa(ex));
-                    }
-                }
-                return out;
+        new SwingWorker<TopLadderService.ResultadoTop, Void>() {
+            @Override protected TopLadderService.ResultadoTop doInBackground() {
+                return TOP_LADDER_SERVICE.cargarTop(pais, topN);
             }
             @Override protected void done() {
                 cargandoTop = false;
                 if (modoClan() || !modoTop()) return;   // mientras cargaba, el usuario cambió de vista: no pintar encima
                 try {
-                    List<Object[]> res = get();
-                    if (res.isEmpty()) {
+                    TopLadderService.ResultadoTop res = get();
+                    TOP_STREAK.putAll(res.racha());
+                    TOP_LAST10.putAll(res.ultimas10());
+                    if (res.filas().isEmpty()) {
                         if (cargarTopCache(firma)) {
                             topFirma = firma;
                             aplicarFiltroGrupo();
@@ -9585,13 +9563,13 @@ public class SpoilerFreeRecs extends JFrame {
         ultimoTopMs = 0; ultimoTwitchMs = 0;   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
                     lastTop.clear();
                     rankTop.clear();
-                    for (Object[] j : res) {
-                        long pid = (Long) j[0];
-                        topLadder.add(new Player(pid, (String) j[1], TOP_LADDER));
-                        eloWatch.put(pid, (Integer) j[2]);
-                        lastTop.put(pid, (Long) j[3]);
-                        rankTop.put(pid, topLadder.size());
+                    for (TopLadderService.FilaTop f : res.filas()) {
+                        topLadder.add(new Player(f.pid(), f.nombre(), TOP_LADDER));
+                        eloWatch.put(f.pid(), f.rating());
+                        lastTop.put(f.pid(), f.ultimaPartidaMs());
+                        rankTop.put(f.pid(), topLadder.size());
                     }
+                    gamesWatch.putAll(res.partidas());
                     topCargado = System.currentTimeMillis();
                     topFirma = firma;
                     guardarTopCache(firma);
@@ -9610,46 +9588,28 @@ public class SpoilerFreeRecs extends JFrame {
     }
 
     void guardarTopCache(String firma) {
-        try {
-            List<String> lines = new ArrayList<>();
-            lines.add(firma + "|" + topCargado);
-            for (Player p : topLadder)
-                lines.add(p.id() + ";" + p.name() + ";" + eloWatch.getOrDefault(p.id(), 0)
-                        + ";" + lastTop.getOrDefault(p.id(), 0L));
-            Files.write(TOP_CACHE, lines, StandardCharsets.UTF_8);
-        } catch (Exception ex) {
-            log("top cache: no se pudo guardar: " + causa(ex));
-        }
+        List<TopLadderService.FilaCache> filas = new ArrayList<>();
+        for (Player p : topLadder)
+            filas.add(new TopLadderService.FilaCache(p.id(), p.name(), eloWatch.getOrDefault(p.id(), 0), lastTop.getOrDefault(p.id(), 0L)));
+        TOP_LADDER_SERVICE.guardarCache(TOP_CACHE, firma, topCargado, filas);
     }
 
     /** Restaura el último top guardado si es de la misma vista. Devuelve éxito. */
     boolean cargarTopCache(String firma) {
-        try {
-            if (!Files.exists(TOP_CACHE)) return false;
-            List<String> lines = Files.readAllLines(TOP_CACHE, StandardCharsets.UTF_8);
-            if (lines.size() < 2) return false;
-            String[] cab = lines.get(0).split("\\|", 2);
-            if (!cab[0].equals(firma)) return false;
-            topLadder.clear();
+        TopLadderService.TopCache cache = TOP_LADDER_SERVICE.cargarCache(TOP_CACHE, firma);
+        if (cache == null) return false;
+        topLadder.clear();
         ultimoTopMs = 0; ultimoTwitchMs = 0;   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
-            lastTop.clear();
-            rankTop.clear();
-            for (int i = 1; i < lines.size(); i++) {
-                String[] c = lines.get(i).split(";", 4);
-                if (c.length < 4) continue;
-                long pid = Long.parseLong(c[0]);
-                topLadder.add(new Player(pid, c[1], TOP_LADDER));
-                int elo = Integer.parseInt(c[2]);
-                if (elo > 0) eloWatch.put(pid, elo);
-                lastTop.put(pid, Long.parseLong(c[3]));
-                rankTop.put(pid, topLadder.size());
-            }
-            topCargado = Long.parseLong(cab[1]);
-            return !topLadder.isEmpty();
-        } catch (Exception ex) {
-            log("top cache: no se pudo leer: " + causa(ex));
-            return false;
+        lastTop.clear();
+        rankTop.clear();
+        for (TopLadderService.FilaCache f : cache.filas()) {
+            topLadder.add(new Player(f.pid(), f.nombre(), TOP_LADDER));
+            if (f.elo() > 0) eloWatch.put(f.pid(), f.elo());
+            lastTop.put(f.pid(), f.ultimaPartidaMs());
+            rankTop.put(f.pid(), topLadder.size());
         }
+        topCargado = cache.cargadoMs();
+        return !topLadder.isEmpty();
     }
 
     /** Vivos del top: el río global de partidas en curso como motor (1-2
@@ -9661,79 +9621,25 @@ public class SpoilerFreeRecs extends JFrame {
         ultimoTopMs = System.currentTimeMillis();
         vigilandoTop = true;
         List<Player> top = new ArrayList<>(topLadder);
-        new SwingWorker<Map<Long, Long>, Void>() {
+        new SwingWorker<TopLadderService.ResultadoVigilancia, Void>() {
             final List<Match> terminadasRio = new ArrayList<>();
-            @Override protected Map<Long, Long> doInBackground() {
-                Map<Long, Long> resultado = new HashMap<>();
-                topVerificados.clear();
-                // Lotes pequeños y ventana ancha: en un top país los más activos encadenan TG cortas y
-                // llenan la ventana con partidas terminadas, dejando fuera las que están en curso
-                final int LOTE = 15;
-                for (int d = 0; d < top.size(); d += LOTE) {
-                    List<Player> lote = top.subList(d, Math.min(d + LOTE, top.size()));
-                    Set<Long> idsLote = new HashSet<>();
-                    StringBuilder csv = new StringBuilder();
-                    for (Player p : lote) {
-                        idsLote.add(p.id());
-                        if (csv.length() > 0) csv.append(',');
-                        csv.append(p.id());
-                    }
-                    try {
-                        Iterable<Match> leidas = COMPANION.partidas(csv.toString(), 1, 100);
-                        int nPart = 0, nCurso = 0; Instant masAntigua = null;
-                        for (Match m : leidas) {
-                            if (m == null) continue;
-                            nPart++;
-                            if (m.started != null && (masAntigua == null || m.started.isBefore(masAntigua))) masAntigua = m.started;
-                            if (!enCursoReal(m)) continue;
-                            nCurso++;
-                            for (MatchPlayer mp : m.players)
-                                if (idsLote.contains(mp.id) && !resultado.containsKey(mp.id)) {
-                                    resultado.put(mp.id, m.id);
-                                    VIVO.ponerInfo(mp.id, resumenVivo(m, mp.id));
-                                    if (!VIVO.jugando(mp.id)) avisarSiCampana(mp.id, m);   // nuevo en partida desde el último barrido
-                                    VIVO.guardarPartida(mp.id, m);
-                                }
-                        }
-                        long minAnt = masAntigua == null ? -1 : Duration.between(masAntigua, Instant.now()).toMinutes();
-                        log("top vivos: lote " + (d / LOTE + 1) + " → " + nPart + " partidas, " + nCurso + " en curso, la más antigua hace " + minAnt + " min");
-                        topVerificados.addAll(idsLote);   // solo lo verificado se actualiza
-                    } catch (Exception ex) {
-                        log("top vivos: fallo con el lote " + (d / LOTE + 1) + " (se conserva el estado anterior): " + causa(ex));
-                    }
-                    dormir(PAUSA_MS / 2);
-                }
-                // Confirmación individual: quien estaba en partida y ya no aparece en el lote, se consulta solo
-                for (Player p : top) {
-                    if (stopOperacion) break;
-                    if (!VIVO.jugando(p.id()) || resultado.containsKey(p.id()) || !topVerificados.contains(p.id())) continue;
-                    try {
-                        Iterable<Match> leidas = COMPANION.partidas(p.id(), 1, 3);
-                        Match ultima = null;
-                        for (Match m : leidas) { if (m != null) { ultima = m; break; } }
-                        if (ultima != null && enCursoReal(ultima)) {
-                            resultado.put(p.id(), ultima.id);
-                            VIVO.ponerInfo(p.id(), resumenVivo(ultima, p.id()));
-                            log("top vivos: " + p.name() + " seguía en partida (" + ultima.id + ") aunque el lote no la traía");
-                        } else {
-                            log("top vivos: " + p.name() + " terminó de verdad (última " + (ultima == null ? "?" : ultima.id + ", finished=" + ultima.finished) + ")");
-                        }
-                    } catch (Exception ex) {
-                        resultado.put(p.id(), VIVO.matchDe(p.id()));   // sin respuesta: se conserva el punto
-                        log("top vivos: confirmación de " + p.name() + " falló, punto conservado: " + causa(ex));
-                    }
-                    dormir(PAUSA_MS / 3);
-                }
-                int sinVerificar = top.size() - topVerificados.size();
-                log("top vivos (lote): " + resultado.size() + " en partida de " + topVerificados.size() + " verificados"
-                        + (sinVerificar > 0 ? " · " + sinVerificar + " sin verificar (lote fallido), estado conservado" : ""));
-                return resultado;
+            @Override protected TopLadderService.ResultadoVigilancia doInBackground() {
+                return TOP_LADDER_SERVICE.vigilarTop(top, VIVO::jugando, VIVO::matchDe,
+                        (pid, m) -> {   // el lote: alguien aparece en curso (ver DEUDA: avisarSiCampana sigue en el hilo de fondo, como en la 1.1)
+                            VIVO.ponerInfo(pid, resumenVivo(m, pid));
+                            if (!VIVO.jugando(pid)) avisarSiCampana(pid, m);   // nuevo en partida desde el último barrido
+                            VIVO.guardarPartida(pid, m);
+                        },
+                        (pid, m) -> VIVO.ponerInfo(pid, resumenVivo(m, pid)));   // la confirmación individual
             }
             @Override protected void done() {
                 vigilandoTop = false;
                 vigilarTwitch();   // el río acaba de enseñar canales: ahora sí, el cruce
                 try {
-                    Map<Long, Long> vivos = get();
+                    TopLadderService.ResultadoVigilancia r = get();
+                    topVerificados.clear();
+                    topVerificados.addAll(r.verificados());
+                    Map<Long, Long> vivos = r.resultado();
                     for (Player p : top) {
                         if (!topVerificados.contains(p.id())) continue;   // lote fallido: ni quitar ni poner
                         Long v = vivos.get(p.id());
@@ -12129,6 +12035,8 @@ public class SpoilerFreeRecs extends JFrame {
     static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
     /** Las reglas del directo que necesitan la API (ver service.LiveService). */
     static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);
+    /** Los tops de la watchlist: red, decisión y disco de cargarTopLadder/cargarTopClan/vigilarTop (ver service.TopLadderService). */
+    static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
     static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
             new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
