@@ -240,6 +240,16 @@ import static dev.tirador.aoe2radar.util.Texto.recorta;
 import static dev.tirador.aoe2radar.util.Texto.sinTildes;
 import static dev.tirador.aoe2radar.util.Texto.variantesNick;
 import static dev.tirador.aoe2radar.util.Texto.versionMayor;
+import static dev.tirador.aoe2radar.ui.Componentes.PALETA_LADDER;
+import static dev.tirador.aoe2radar.ui.Componentes.colorHex;
+import static dev.tirador.aoe2radar.ui.Componentes.colorSecundario;
+import static dev.tirador.aoe2radar.ui.Componentes.colorSecundarioHex;
+import static dev.tirador.aoe2radar.ui.Componentes.colorWr;
+import static dev.tirador.aoe2radar.ui.Componentes.etiquetaK;
+import static dev.tirador.aoe2radar.ui.Componentes.listaVertical;
+import static dev.tirador.aoe2radar.ui.Componentes.pasoBonito;
+import static dev.tirador.aoe2radar.ui.Componentes.subirArriba;
+import static dev.tirador.aoe2radar.ui.Componentes.tituloSeccion;
 import static dev.tirador.aoe2radar.ui.Iconos.banderaHtml;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoCiv;
@@ -1060,8 +1070,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     javax.swing.Timer ladderDebounce;
     String familia = "ew".equals(leerConfig("ladder_familia", "rm")) ? "ew" : "rm";
     boolean soloActivos = Boolean.parseBoolean(leerConfig("ladder_activos", "true"));
-    static final Color[] PALETA_LADDER = { new Color(0xe5, 0x73, 0x73), new Color(0x81, 0xc7, 0x84), new Color(0xff, 0xb7, 0x4d), new Color(0xba, 0x68, 0xc8), new Color(0x4d, 0xd0, 0xe1),
-            new Color(0xff, 0xf1, 0x76), new Color(0xf0, 0x62, 0x92), new Color(0xa1, 0x88, 0x7f), new Color(0x90, 0xa4, 0xae), new Color(0x7c, 0xb3, 0x42) };
 
     /** El «Top %» que se muestra: con todos y rango conocido, el exacto por rango; si no, por rating sobre la campana elegida. */
     String topDe(Comparado c, String lb) {
@@ -1216,13 +1224,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
     }
 
-    static double pasoBonito(double bruto) {
-        if (bruto <= 0) return 1;
-        double p = Math.pow(10, Math.floor(Math.log10(bruto)));
-        double f = bruto / p;
-        return (f < 1.5 ? 1 : f < 3.5 ? 2 : f < 7.5 ? 5 : 10) * p;
-    }
-    static String etiquetaK(double v) { return v >= 1000 ? (v % 1000 == 0 ? (long) (v / 1000) + "k" : String.format(Locale.ROOT, "%.1fk", v / 1000)) : String.valueOf((long) v); }
 
     /** Zoom de conjunto: los tres gráficos crecen o encogen a la vez (entre la mitad y el doble); se recuerda. */
     void escalarRatings(double factor) {
@@ -1518,8 +1519,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         for (Player p : nuevos) ladderAnadir(p.id(), nombreVisible(p.id(), p.name()), true);
     }
 
-    static String colorHex(Color c) { return String.format("#%02x%02x%02x", c.getRed(), c.getGreen(), c.getBlue()); }
-
     void ladderRefrescarComparados() {
         ladderChips.removeAll();
         ladderModelo.setRowCount(0);
@@ -1746,16 +1745,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return n;
     }
 
-    /** Color del winrate: verde si el intervalo queda por encima de 50, rojo si por debajo, gris si no se sabe. */
-    /** Color de un winrate, igual en toda la app: verde de 52 % en adelante, rojo de 48 % para abajo, el resto en el color del texto. */
-    static Color colorWr(int w, int n) {
-        if (n <= 0) return Color.GRAY;
-        double wr = 100.0 * w / n;
-        if (wr >= 52) return temaOscuroActivo ? new Color(0x7c, 0xc9, 0x7f) : new Color(0x2e, 0x7d, 0x32);
-        if (wr <= 48) return temaOscuroActivo ? new Color(0xe5, 0x73, 0x73) : new Color(0xc6, 0x28, 0x28);
-        Color fg = UIManager.getColor("Label.foreground");
-        return fg == null ? Color.GRAY : fg;
-    }
     // ----- Panel «Civ Stats» -----
     JPanel construirPanelCivStats() {
         civStatsPanel = new JPanel(new BorderLayout(8, 6));
@@ -1957,19 +1946,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
         civStatsPanel.add(pie, BorderLayout.SOUTH);
         return civStatsPanel;
-    }
-
-    static JLabel tituloSeccion(String texto) { return tituloSeccion(texto, null); }
-    /** Gris «secundario» legible en los dos temas: claro en oscuro, oscuro en claro (títulos de recuadro, leyendas, subtítulos). */
-    static Color colorSecundario() { return temaOscuroActivo ? new Color(0x9a, 0x9a, 0x9a) : new Color(0x5a, 0x5a, 0x5a); }
-    static String colorSecundarioHex() { return colorHex(colorSecundario()); }
-    static JLabel tituloSeccion(String texto, String tooltip) {
-        JLabel l = new JLabel(tooltip == null ? texto : texto + "  \u24D8");
-        l.setAlignmentX(0f);
-        if (tooltip != null) l.setToolTipText("<html><div style='width:320px'>" + escapeHtml(tooltip) + "</div></html>");
-        l.setFont(l.getFont().deriveFont(Font.BOLD, 13f));
-        l.setBorder(BorderFactory.createEmptyBorder(2, 2, 2, 2));
-        return l;
     }
 
     JPanel tarjeta(String titulo, String valor, String pie) {
@@ -3229,7 +3205,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return actividadPanel;
     }
 
-    static JPanel listaVertical() { JPanel p = new JPanel(); p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS)); p.setAlignmentX(0f); return p; }
 
     /** Enlace «ver los N…» al pie de una lista recortada. */
     JButton enlaceVerTodo(int total, Runnable abrir) {
@@ -5606,15 +5581,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (autoPanel != null) autoPanel.setCursor(Cursor.getDefaultCursor());
         autoAncla = null; autoPanel = null;
         if (autoTimer != null) autoTimer.stop();
-    }
-
-    /** Todos los scroll de un panel, arriba del todo (al abrir una vista). */
-    static void subirArriba(Container c) {
-        if (c == null) return;
-        for (Component x : c.getComponents()) {
-            if (x instanceof JScrollPane sp) { sp.getVerticalScrollBar().setValue(0); sp.getHorizontalScrollBar().setValue(0); }
-            if (x instanceof Container cc) subirArriba(cc);
-        }
     }
 
     // =====================================================================================
