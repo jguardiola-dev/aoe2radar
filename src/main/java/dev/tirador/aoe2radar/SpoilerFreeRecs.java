@@ -71,6 +71,7 @@ import dev.tirador.aoe2radar.service.DescargaRecs;
 import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.Familias;
+import dev.tirador.aoe2radar.service.FiltroLista;
 import dev.tirador.aoe2radar.service.FormaCompanion;
 import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
@@ -6844,6 +6845,7 @@ public class SpoilerFreeRecs extends JFrame {
     final Set<Long> vinculosExpandidos = new HashSet<>();
     final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
     final Map<Long, Boolean> vivoFamilia = new HashMap<>();   // principal -> alguna cuenta viva
+    final FiltroLista filtroLista = new FiltroLista(VIVO);   // qué fila se ve y en qué orden (sin Swing)
     final List<Player> topLadder = new ArrayList<>();
     final Map<Long, Long> lastTop = new HashMap<>();   // pid -> última partida (ms), del leaderboard
     long topCargado;
@@ -9415,62 +9417,19 @@ public class SpoilerFreeRecs extends JFrame {
     /** Reconstruye la lista visible con el grupo activo («Todos» = todos). */
     void aplicarFiltroGrupo() {
         String g = grupoActivo();
-        List<Player> vis = new ArrayList<>();
-        if (modoTop()) vis.addAll(topLadder);
-        else for (Player p : todosJugadores)
-            if (g == null || p.grupo().equalsIgnoreCase(g)) vis.add(p);
-        if (soloVivosBtn != null && soloVivosBtn.isSelected()) {
-            final List<Player> ambito = new ArrayList<>(vis);
-            vis.removeIf(p -> !VIVO.jugando(p.id())
-                    && !(p.vinculo() != 0 && familiaViva(ambito, p.vinculo())));
-        }
+        boolean soloVivos = soloVivosBtn != null && soloVivosBtn.isSelected();
         boolean porElo = mostrarEloWatch && "elo".equals(leerConfig("orden_watch", "elo"));
         String ordenCfg = leerConfig("orden_watch", "elo");
         boolean porForma = formaVisible && ordenCfg.startsWith("forma");
         boolean formaAsc = "forma_asc".equals(ordenCfg);   // ascendente = los que más bajan, arriba
         final Map<Long, Forma> fa = formaActiva();
-        Comparator<Player> orden = porForma
-                ? Comparator.<Player, Integer>comparing(p -> fa.containsKey(p.id()) && fa.get(p.id()).partidas() > 0 ? fa.get(p.id()).diff() : null,
-                        Comparator.nullsLast(formaAsc ? Comparator.<Integer>naturalOrder() : Comparator.<Integer>reverseOrder()))
-                        .thenComparing(p -> p.name().toLowerCase())
-                : porElo
-                ? Comparator.<Player, Integer>comparing(p -> eloWatch.get(p.id()),
-                        Comparator.nullsLast(Comparator.reverseOrder()))
-                        .thenComparing(p -> p.name().toLowerCase())
-                : Comparator.comparing(p -> p.name().toLowerCase());
-        // Familias: la cuenta con más ELO encabeza; las demás cuelgan si está expandida
+        FiltroLista.Resultado res = filtroLista.filtrar(todosJugadores, topLadder, modoTop(), g, soloVivos,
+                porForma, formaAsc, porElo, fa, eloWatch, vinculosExpandidos);
         marcaFila.clear();
+        marcaFila.putAll(res.marcaFila());
         vivoFamilia.clear();
-        Map<Long, List<Player>> familias = new LinkedHashMap<>();
-        List<Player> cabezas = new ArrayList<>();
-        for (Player p : vis) {
-            if (!modoTop() && p.vinculo() != 0) familias.computeIfAbsent(p.vinculo(), k -> new ArrayList<>()).add(p);
-            else cabezas.add(p);
-        }
-        for (Map.Entry<Long, List<Player>> f : familias.entrySet()) {
-            List<Player> fam = f.getValue();
-            if (fam.size() == 1) { cabezas.add(fam.get(0)); continue; }
-            fam.sort(Comparator.comparing((Player p) -> eloWatch.get(p.id()),
-                            Comparator.nullsLast(Comparator.<Integer>reverseOrder()))
-                    .thenComparing(p -> p.name().toLowerCase()));
-            Player ppal = fam.get(0);
-            cabezas.add(ppal);
-            boolean algunaViva = false;
-            for (Player x : fam) if (VIVO.jugando(x.id())) algunaViva = true;
-            vivoFamilia.put(ppal.id(), algunaViva);
-            boolean exp = vinculosExpandidos.contains(f.getKey());
-            marcaFila.put(ppal.id(), exp ? 'E' : 'P');
-            if (exp) for (int i = 1; i < fam.size(); i++) marcaFila.put(fam.get(i).id(), 'H');
-        }
-        cabezas.sort(orden);
-        vis = new ArrayList<>();
-        for (Player c : cabezas) {
-            vis.add(c);
-            if (marcaFila.getOrDefault(c.id(), ' ') == 'E') {
-                List<Player> fam = familias.get(c.vinculo());
-                for (int i = 1; i < fam.size(); i++) vis.add(fam.get(i));
-            }
-        }
+        vivoFamilia.putAll(res.vivoFamilia());
+        List<Player> vis = res.filas();
         if (invitado != null && containsPlayerId(invitado.id()))
             invitado = null;   // fichado por cualquier vía: deja de flotar
         if (invitado != null && !vistaActualId().equals(vistaDelInvitado))
@@ -10001,12 +9960,6 @@ public class SpoilerFreeRecs extends JFrame {
                 return null;
             }
         return null;
-    }
-
-    boolean familiaViva(List<Player> vis, long vinculo) {
-        for (Player x : vis)
-            if (x.vinculo() == vinculo && VIVO.jugando(x.id())) return true;
-        return false;
     }
 
     void quitarDeWatchlist(long id) {
