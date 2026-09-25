@@ -81,6 +81,7 @@ import dev.tirador.aoe2radar.service.Juego;
 import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.LiveService;
 import dev.tirador.aoe2radar.service.NombresJuego;
+import dev.tirador.aoe2radar.service.NombresStats;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.RecService;
@@ -167,6 +168,13 @@ import static dev.tirador.aoe2radar.service.Juego.carpetaLogsJuego;
 import static dev.tirador.aoe2radar.service.Juego.copiarASavegame;
 import static dev.tirador.aoe2radar.service.Juego.detectarSavegames;
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
+import static dev.tirador.aoe2radar.service.NombresStats.claveTechTree;
+import static dev.tirador.aoe2radar.service.NombresStats.modoNombre;
+import static dev.tirador.aoe2radar.service.NombresStats.nombreCivStats;
+import static dev.tirador.aoe2radar.service.NombresStats.nombreMapaStats;
+import static dev.tirador.aoe2radar.service.NombresStats.raizCiv;
+import static dev.tirador.aoe2radar.service.NombresStats.tramoNombre;
+import static dev.tirador.aoe2radar.service.NombresStats.ventanaNombre;
 import static dev.tirador.aoe2radar.service.ProfileService.ACT_MAS_PAGINAS;
 import static dev.tirador.aoe2radar.service.ProfileService.ACT_MAX_PAGINAS;
 import static dev.tirador.aoe2radar.service.ProfileService.ACT_MIN;
@@ -1627,35 +1635,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     boolean stCargando, stRellenandoMapas;
 
-    static String modoNombre(String m) {
-        return switch (m) {
-            case "rm_1v1" -> "1v1 Random Map"; case "rm_2v2" -> "2v2 Random Map"; case "rm_3v3" -> "3v3 Random Map"; case "rm_4v4" -> "4v4 Random Map";
-            case "ew_1v1" -> "1v1 Empire Wars"; case "ew_team" -> t("Equipos Empire Wars", "Team Empire Wars");
-            case "dm_1v1" -> "1v1 Deathmatch"; case "dm_team" -> t("Equipos Deathmatch", "Team Deathmatch");
-            default -> m;
-        };
-    }
-    static String ventanaNombre(String v) {
-        return switch (v) {
-            case "7" -> t("7 días", "7 days"); case "30" -> t("30 días", "30 days"); case "90" -> t("90 días", "90 days"); case "365" -> t("365 días", "365 days");
-            case "parche" -> t("Parche actual", "Current patch"); default -> v;
-        };
-    }
-    static String tramoNombre(String tr) {
-        if (tr == null || "*".equals(tr) || "*|*".equals(tr)) return t("Todos los ELO", "All ELO");
-        if ("?".equals(tr)) return t("Sin rating", "Unrated");
-        if (tr.contains("|")) {   // rango «desde|hasta» (cada extremo: clave de tramo o * = sin límite)
-            String[] p = tr.split("\\|", -1);
-            String lo = "*".equals(p[0]) ? null : p[0].contains("-") ? p[0].substring(0, p[0].indexOf('-')) : p[0].replace("+", "");
-            String hi = "*".equals(p[1]) ? null : p[1].endsWith("+") ? null : p[1].contains("-") ? p[1].substring(p[1].indexOf('-') + 1) : p[1];
-            if (lo != null && lo.equals("0")) lo = null;
-            if (lo == null && hi == null) return t("Todos los ELO", "All ELO");
-            if (lo == null) return "<" + hi;
-            if (hi == null) return lo + "+";
-            return lo + "\u2013" + hi;
-        }
-        return tr.endsWith("+") ? tr : tr.replace("-", "\u2013");
-    }
     /** Selector de ELO: presets (Todos, <800, 800–1000, …, 2000+) y «Personalizado…», que pregunta el rango «de … a …» en un diálogo y lo deja como opción activa. El valor es «*», un tramo o «desde|hasta». */
     class SelectorRangoElo extends JPanel {
         final JComboBox<String> preset = new JComboBox<>();
@@ -1722,27 +1701,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 preset.setSelectedIndex(preset.getItemCount() - 2);
             } finally { rellenando = antes; }
         }
-    }
-
-    /** Nombre de civ a partir de la clave del companion («burmese»): el del tech tree si está cargado, si no capitalizado. */
-    static String nombreCivStats(String clave) {
-        if (ttData != null) {
-            for (String k : obj(ttData.get("civs")).keySet()) if (k.equalsIgnoreCase(clave)) return ttNombreCiv(k);
-        }
-        return clave.isEmpty() ? clave : Character.toUpperCase(clave.charAt(0)) + clave.substring(1);
-    }
-    /** Clave del tech tree («Burmese») para una clave del companion («burmese»), o null. */
-    static String claveTechTree(String claveStats) {
-        if (ttData == null) return null;
-        for (String k : obj(ttData.get("civs")).keySet()) if (k.equalsIgnoreCase(claveStats)) return k;
-        return null;
-    }
-    static String nombreMapaStats(VentanaStats v, String clave) {
-        if ("*".equals(clave)) return t("Todos los mapas", "All maps");
-        String n = v == null ? null : v.nombresMapas().get(clave);
-        if (n == null) { n = clave; for (String p : new String[]{ "rm_", "cm_", "ew_", "dm_" }) if (n.startsWith(p)) n = n.substring(p.length()); n = n.replace('_', ' ').replace('-', ' '); }
-        if (n.startsWith("Cm ")) n = n.substring(3);
-        return n;
     }
 
     /** Color del winrate: verde si el intervalo queda por encima de 50, rojo si por debajo, gris si no se sabe. */
@@ -2678,11 +2636,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             if (ttData != null) for (String kk : obj(ttData.get("civs")).keySet()) { String rk = raizCiv(kk.toLowerCase(Locale.ROOT)); if (rk.startsWith(raiz) || raiz.startsWith(rk)) return kk.toLowerCase(Locale.ROOT); }
         }
         return null;
-    }
-    static String raizCiv(String s) {
-        String x = java.text.Normalizer.normalize(s.toLowerCase(Locale.ROOT), java.text.Normalizer.Form.NFD).replaceAll("\\p{M}", "").trim();
-        if (x.endsWith("es") && x.length() > 5) x = x.substring(0, x.length() - 2); else if (x.endsWith("s") && x.length() > 4) x = x.substring(0, x.length() - 1);
-        return x;
     }
 
     JPanel construirFiltrosTechTree() {
@@ -4360,7 +4313,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         pintarListaJugadores(actAliados, t("Aliados más frecuentes", "Most frequent allies"), aliados);
         Map<String, int[]> trOrd = new LinkedHashMap<>();
         if (franjas != null) for (String tr : franjas) if (tramos.containsKey(tr)) trOrd.put(tr, tramos.get(tr));
-        pintarListaAgg(actTramos, t("Winrate por ELO del rival", "Win rate by opponent ELO") + (eloActualJugador > 0 ? " \u00B7 " + t("franjas centradas en ", "brackets centred on ") + eloActualJugador : ""), trOrd, 9, SpoilerFreeRecs::tramoNombre, null);
+        pintarListaAgg(actTramos, t("Winrate por ELO del rival", "Win rate by opponent ELO") + (eloActualJugador > 0 ? " \u00B7 " + t("franjas centradas en ", "brackets centred on ") + eloActualJugador : ""), trOrd, 9, NombresStats::tramoNombre, null);
         // duración
         actDuracionFila.removeAll();
         for (int i = 0; i < 5; i++) actDuracionFila.add(tarjeta(DURACION_TRAMOS[i], durN[i] == 0 ? "\u2013" : pct1(100.0 * durW[i] / durN[i]), durN[i] == 0 ? t("sin partidas", "no games") : miles(durN[i]) + t(" partidas, ", " games, ") + miles(durW[i]) + t(" victorias", " wins")));
