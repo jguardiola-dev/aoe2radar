@@ -41,6 +41,7 @@ import dev.tirador.aoe2radar.model.CivFila;
 import dev.tirador.aoe2radar.model.Clasificacion;
 import dev.tirador.aoe2radar.model.Comparado;
 import dev.tirador.aoe2radar.model.Directo;
+import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.LadderHist;
@@ -57,6 +58,8 @@ import dev.tirador.aoe2radar.model.Rejilla;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
+import dev.tirador.aoe2radar.service.PerfilesCompanion;
+import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.ui.PanelScrollable;
 import dev.tirador.aoe2radar.ui.PctRenderer;
 import dev.tirador.aoe2radar.ui.WrapLayout;
@@ -149,6 +152,7 @@ import static dev.tirador.aoe2radar.service.Juego.detectarSavegames;
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
 import static dev.tirador.aoe2radar.service.ReglasPartida.DURACION_TRAMOS;
 import static dev.tirador.aoe2radar.service.ReglasPartida.LADDERS_IDX;
+import static dev.tirador.aoe2radar.service.ReglasPartida.LADDER_IDS;
 import static dev.tirador.aoe2radar.service.ReglasPartida.franjaDe;
 import static dev.tirador.aoe2radar.service.ReglasPartida.franjasCentradas;
 import static dev.tirador.aoe2radar.service.ReglasPartida.marcarFantasmas;
@@ -1045,7 +1049,6 @@ public class SpoilerFreeRecs extends JFrame {
 
     // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
     static final int MAX_COMPARADOS = 10;
-    static final String[] LADDER_IDS = { "rm_1v1", "rm_team", "ew_1v1", "ew_team" };
     static final String[] FAMILIAS = { "rm", "ew" };
     static String ladderNombre(String id) {
         return switch (id) {
@@ -1091,38 +1094,6 @@ public class SpoilerFreeRecs extends JFrame {
         return p != null ? p : percentilRating(lb, soloActivos, c.rating(lb));
     }
 
-    /** Perfil del jugador (una llamada), con caché de 30 min: {ms, Map ladder→{rating, rango, máximo, victorias, derrotas}, país, clan, partidas totales}. */
-    static Object[] perfilLadders(long pid) {
-        Object[] c = PERFIL_CACHE.vigente(pid);
-        if (c != null) return c;
-        Map<String, int[]> m = new HashMap<>();
-        String pais = "", clan = "";
-        long games = 0;
-        try {
-            Perfil pf = COMPANION.perfil(pid);
-            aprenderCanal(pid, pf.canal());
-            aprenderPais(pid, pf.pais());
-            pais = String.valueOf(firstNonNull(pf.pais(), "")).trim();
-            if ("null".equals(pais)) pais = "";
-            clan = String.valueOf(firstNonNull(pf.clan(), "")).trim();
-            if ("null".equals(clan)) clan = "";
-            games = pf.partidas();
-            for (Perfil.Ladder l : pf.ladders()) {
-                String lid = String.valueOf(l.id());
-                String lb = switch (lid) { case "3" -> "rm_1v1"; case "4" -> "rm_team"; case "13" -> "ew_1v1"; case "14" -> "ew_team"; default -> lid; };
-                if (!Arrays.asList(LADDER_IDS).contains(lb)) continue;
-                int rating = l.rating() != null ? l.rating() : 0;
-                int rank = l.rango() != null ? l.rango() : 0;
-                int maxR = l.ratingMax() != null ? l.ratingMax() : 0;
-                int wins = l.ganadas() != null ? l.ganadas() : 0;
-                int losses = l.perdidas() != null ? l.perdidas() : 0;
-                m.put(lb, new int[]{ rating, rank, maxR, wins, losses });
-            }
-        } catch (Exception ex) { log("ladder: perfil " + pid + ": " + causa(ex)); return null; }
-        c = new Object[]{ System.currentTimeMillis(), m, pais, clan, games };
-        PERFIL_CACHE.poner(pid, c);
-        return c;
-    }
     // ----- «★ Top clan»: una vista más de la watchlist -----
     void cargarTopClan() {
         String tag = clanField == null ? "" : clanField.getText().trim();
@@ -1525,13 +1496,13 @@ public class SpoilerFreeRecs extends JFrame {
         for (Comparado x : ladderComparados) if (x.pid() == pid) return;
         ladderEstado.setText(t("Consultando a ", "Looking up ") + nombre + "…");
         new Thread(() -> {
-            Object[] perfil = perfilLadders(pid);
+            FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
             SwingUtilities.invokeLater(() -> {
                 ladderEstado.setText("");
                 if (perfil == null) { ladderEstado.setText(t("No se pudo consultar a ", "Couldn't look up ") + nombre + "."); return; }
                 for (Comparado x : ladderComparados) if (x.pid() == pid) return;
                 if (deSeleccion && !estaSeleccionado(pid)) return;   // se deseleccionó mientras se consultaba
-                @SuppressWarnings("unchecked") Map<String, int[]> m = (Map<String, int[]>) perfil[1];
+                Map<String, int[]> m = perfil.ladders();
                 if (m.isEmpty()) { ladderEstado.setText(nombre + t(" no tiene rating en ningún ladder.", " has no rating on any ladder.")); return; }
                 if (ladderComparados.size() >= MAX_COMPARADOS) {
                     int i = -1;
@@ -1539,7 +1510,7 @@ public class SpoilerFreeRecs extends JFrame {
                     if (deSeleccion || i < 0) { ladderEstado.setText(t("Máximo ", "Max ") + MAX_COMPARADOS + t(" jugadores en la comparación: quita alguno (×).", " players compared: remove one (×).")); return; }
                     ladderComparados.remove(i);   // cae el buscado a mano más antiguo
                 }
-                ladderComparados.add(new Comparado(pid, nombre, m, String.valueOf(perfil[2]), deSeleccion));
+                ladderComparados.add(new Comparado(pid, nombre, m, String.valueOf(perfil.pais()), deSeleccion));
                 ladderRefrescarComparados();
             });
         }, "ladder-perfil").start();
@@ -3651,7 +3622,7 @@ public class SpoilerFreeRecs extends JFrame {
         return new Actividad(pid, nombre.isBlank() ? actNombre : nombre, partidas, true, ACT_MAX_PAGINAS, System.currentTimeMillis());
     }
     /** Ficha de cabecera sin llamada: el ELO más reciente que conocemos (watchlist, o el de su última partida por ladder). */
-    Object[] perfilSintetico(long pid, Actividad a, String pais) {
+    FichaPerfil perfilSintetico(long pid, Actividad a, String pais) {
         Map<String, int[]> m = new HashMap<>();
         for (Match x : a.partidas()) {
             String lb = x.mode == null ? null : x.mode.contains("Empire") ? (x.mode.contains("1v1") ? "ew_1v1" : "ew_team") : x.mode.contains("Death") ? (x.mode.contains("1v1") ? "dm_1v1" : "dm_team") : x.mode.contains("1v1") ? "rm_1v1" : "rm_team";
@@ -3660,7 +3631,7 @@ public class SpoilerFreeRecs extends JFrame {
         }
         Integer eloW = eloWatch.get(pid);
         if (eloW != null && eloW > 0) { int[] v = m.computeIfAbsent("rm_1v1", k -> new int[5]); v[0] = eloW; }
-        return new Object[]{ System.currentTimeMillis(), m, pais == null ? "" : pais, "", (long) a.partidas().size() };
+        return new FichaPerfil(m, pais == null ? "" : pais, "", (long) a.partidas().size());
     }
     /** «Actualizar hoy»: dos llamadas (ficha del jugador y sus partidas recientes) y se funden con el año del paquete. */
     void perfilActualizarHoy() {
@@ -3670,7 +3641,7 @@ public class SpoilerFreeRecs extends JFrame {
         new Thread(() -> {
             int nuevas = 0; String error = null;
             try {
-                Object[] perfil = perfilLadders(pid);
+                FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
                 vinculadasPedidas.add(pid);
                 Actividad base = ACTIVIDAD_CACHE.get(pid);
                 Set<Long> vistos = new HashSet<>(); if (base != null) for (Match x : base.partidas()) vistos.add(x.id);
@@ -3801,7 +3772,7 @@ public class SpoilerFreeRecs extends JFrame {
         boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
         if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
         else { actMostrarCuerpo(false); actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in.")); }
-        Object[] perfilCache = PERFIL_CACHE.ultimo(pid);
+        FichaPerfil perfilCache = SERVICIO_PERFIL.fichaConocida(pid);
         if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
         if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
         actCargando = true;
@@ -3823,8 +3794,8 @@ public class SpoilerFreeRecs extends JFrame {
                 if (desdeSfr != null) {
                     Actividad a = desdeSfr; String hastaF = hastaSfr; String paisF = paisSfr;
                     ACTIVIDAD_CACHE.put(pid, a);
-                    Object[] perfilConocido = PERFIL_CACHE.ultimo(pid);
-                    Object[] perfil = perfilConocido != null ? perfilConocido : perfilSintetico(pid, a, paisF);
+                    FichaPerfil perfilConocido = SERVICIO_PERFIL.fichaConocida(pid);
+                    FichaPerfil perfil = perfilConocido != null ? perfilConocido : perfilSintetico(pid, a, paisF);
                     SwingUtilities.invokeLater(() -> {
                         actCargando = false;
                         if (actPid != pid) return;
@@ -3838,7 +3809,7 @@ public class SpoilerFreeRecs extends JFrame {
                     return;
                 }
                 // 2) fuera del alcance de sfr-data: la API, con lo mínimo
-                Object[] perfil = perfilLadders(pid);
+                FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
                 SwingUtilities.invokeLater(() -> { if (actPid == pid) actPintarCabecera(perfil); });
                 int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // nuevo: primero 250 partidas; el resto solo si te quedas
                 Actividad a = (fresco && baseF.completo()) ? baseF : descargarActividad(pid, nombre, baseF, false, max, parcialA -> SwingUtilities.invokeLater(() -> {
@@ -4304,22 +4275,22 @@ public class SpoilerFreeRecs extends JFrame {
         f.add(l, BorderLayout.WEST);
         JLabel datos = new JLabel();
         datos.setFont(datos.getFont().deriveFont(Font.PLAIN, 12f));
-        Object[] perfil = PERFIL_CACHE.ultimo(pid);
+        FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(pid);
         if (perfil == null && ELO_AYER.get(pid) != null) {   // del snapshot nocturno: sin llamada
             int[] sn = ELO_AYER.get(pid); Map<String, int[]> mm = new HashMap<>();
             if (sn[0] > 0) mm.put("rm_1v1", new int[]{ sn[0], 0, 0, 0, 0 }); if (sn[2] > 0) mm.put("rm_team", new int[]{ sn[2], 0, 0, 0, 0 });
-            perfil = new Object[]{ System.currentTimeMillis(), mm, NOMBRES_AYER.getOrDefault(pid, new String[]{ "", "" })[1], "", 0L };
+            perfil = new FichaPerfil(mm, NOMBRES_AYER.getOrDefault(pid, new String[]{ "", "" })[1], "", 0L);
         }
         if (perfil == null) {
             datos.setText(t("cargando…", "loading…")); datos.setForeground(Color.GRAY);
-            new Thread(() -> { Object[] p2 = perfilLadders(pid); SwingUtilities.invokeLater(() -> pintarDatosFicha(datos, p2)); }, "h2h-ficha").start();
+            new Thread(() -> { FichaPerfil p2 = SERVICIO_PERFIL.ficha(pid); SwingUtilities.invokeLater(() -> pintarDatosFicha(datos, p2)); }, "h2h-ficha").start();
         } else pintarDatosFicha(datos, perfil);
         f.add(datos, BorderLayout.CENTER);
         return f;
     }
-    void pintarDatosFicha(JLabel datos, Object[] perfil) {
+    void pintarDatosFicha(JLabel datos, FichaPerfil perfil) {
         if (perfil == null) { datos.setText(""); return; }
-        @SuppressWarnings("unchecked") Map<String, int[]> m = (Map<String, int[]>) perfil[1];
+        Map<String, int[]> m = perfil.ladders();
         StringBuilder h = new StringBuilder("<html>");
         for (String lb : new String[]{ "rm_1v1", "rm_team" }) { int[] v = m.get(lb); if (v == null || v[0] <= 0) continue; if (h.length() > 6) h.append("&nbsp;&nbsp;·&nbsp;&nbsp;"); h.append("<span style='color:gray'>").append(escapeHtml(ladderNombre(lb))).append("</span> <b>").append(v[0]).append("</b>").append(v[1] > 0 ? " <span style='color:gray'>#" + miles(v[1]) + "</span>" : ""); }
         datos.setText(h.append("</html>").toString()); datos.setForeground(UIManager.getColor("Label.foreground"));
@@ -4382,22 +4353,21 @@ public class SpoilerFreeRecs extends JFrame {
         } else { JMenuItem ya = new JMenuItem(t("(ya está en tu watchlist)", "(already in your watchlist)")); ya.setEnabled(false); menu.add(ya); }
         JMenuItem vinc = new JMenuItem(t("Cuentas vinculadas…", "Linked accounts…")); vinc.addActionListener(a -> mostrarVinculadas(pid, nombre)); menu.add(vinc);
         menu.addSeparator();
-        JMenuItem alias = new JMenuItem(t("Mostrar como…", "Show as…")); alias.addActionListener(a -> { pedirAlias(pid, nombre); actPintarCabecera(PERFIL_CACHE.ultimo(pid)); }); menu.add(alias);
-        JMenuItem nota = new JMenuItem(t("Nota…", "Note…")); nota.addActionListener(a -> { pedirNota(pid, nombre); actPintarCabecera(PERFIL_CACHE.ultimo(pid)); }); menu.add(nota);
-        if (notaDe(pid) != null) { JMenuItem bn = new JMenuItem(t("Borrar nota", "Delete note")); bn.addActionListener(a -> { borrarNota(pid, nombre); actPintarCabecera(PERFIL_CACHE.ultimo(pid)); }); menu.add(bn); }
+        JMenuItem alias = new JMenuItem(t("Mostrar como…", "Show as…")); alias.addActionListener(a -> { pedirAlias(pid, nombre); actPintarCabecera(SERVICIO_PERFIL.fichaConocida(pid)); }); menu.add(alias);
+        JMenuItem nota = new JMenuItem(t("Nota…", "Note…")); nota.addActionListener(a -> { pedirNota(pid, nombre); actPintarCabecera(SERVICIO_PERFIL.fichaConocida(pid)); }); menu.add(nota);
+        if (notaDe(pid) != null) { JMenuItem bn = new JMenuItem(t("Borrar nota", "Delete note")); bn.addActionListener(a -> { borrarNota(pid, nombre); actPintarCabecera(SERVICIO_PERFIL.fichaConocida(pid)); }); menu.add(bn); }
         JMenuItem nicks = new JMenuItem(t("Nicks anteriores…", "Previous names…")); nicks.addActionListener(a -> nicksAnteriores(pid, nombre)); menu.add(nicks);
         menu.show(sobre, e.getX(), e.getY());
     }
 
     /** Cabecera: país y clan, un chip por ladder con ELO · rango · Top %, máximo y totales, y la forma reciente. */
-    @SuppressWarnings("unchecked")
-    void actPintarCabecera(Object[] perfil) {
+    void actPintarCabecera(FichaPerfil perfil) {
         actChips.removeAll();
         actPintarVinculadas();
         actNotaLinea.setText(notaDe(actPid) != null ? "\u270E " + notaDe(actPid) : (ALIASES.get(actPid) != null && !ALIASES.get(actPid).isBlank() ? t("Mostrado como ", "Shown as ") + ALIASES.get(actPid) + t(" · nick real ", " · real nick ") + actNombreReal : ""));
         actNotaLinea.setVisible(!actNotaLinea.getText().isEmpty());
-        String pais = perfil == null ? "" : String.valueOf(perfil[2]), clan = perfil == null || perfil.length < 4 ? "" : String.valueOf(perfil[3]);
-        long games = perfil == null || perfil.length < 5 ? 0 : (long) perfil[4];
+        String pais = perfil == null ? "" : String.valueOf(perfil.pais()), clan = perfil == null ? "" : String.valueOf(perfil.clan());
+        long games = perfil == null ? 0 : perfil.partidas();
         StringBuilder sub = new StringBuilder();
         if (!pais.isBlank()) sub.append(pais.toUpperCase(Locale.ROOT));
         if (!clan.isBlank()) sub.append(sub.length() > 0 ? "  ·  " : "").append(t("clan ", "clan ")).append(clan);
@@ -4407,7 +4377,7 @@ public class SpoilerFreeRecs extends JFrame {
         actSubtitulo.setText(sub.length() == 0 ? t("Sin datos de perfil", "No profile data") : sub.toString());
         actSubtitulo.setIcon(iconoBandera(pais)); actSubtitulo.setIconTextGap(6);
         if (perfil != null) {
-            Map<String, int[]> m = (Map<String, int[]>) perfil[1];
+            Map<String, int[]> m = perfil.ladders();
             for (String lb : LADDER_IDS) {
                 int[] v = m.get(lb);
                 if (v == null || v[0] <= 0) continue;
@@ -4445,7 +4415,7 @@ public class SpoilerFreeRecs extends JFrame {
         Map<String, int[]> civs30 = new HashMap<>(), mapas30 = new HashMap<>();          // últimos 30 días
         Instant hace30 = Instant.now().minus(Duration.ofDays(30));
         int eloActualJugador = 0;
-        { Object[] pf = PERFIL_CACHE.ultimo(actPid); if (pf != null && pf[1] instanceof Map<?, ?> pm && pm.get("rm_1v1") instanceof int[] v && v[0] > 0) eloActualJugador = v[0]; if (eloActualJugador == 0) { Integer e = eloWatch.get(actPid); if (e != null && e > 0) eloActualJugador = e; } }
+        { FichaPerfil pf = SERVICIO_PERFIL.fichaConocida(actPid); if (pf != null && pf.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) eloActualJugador = v[0]; if (eloActualJugador == 0) { Integer e = eloWatch.get(actPid); if (e != null && e > 0) eloActualJugador = e; } }
         String[] franjas = null;
         Map<Long, Object[]> rivales = new HashMap<>(), aliados = new HashMap<>();   // pid → {nombre, n, w}
         String modoGrafica = "*".equals(actModo) ? modoPrincipal(a) : actModo;   // la gráfica de ELO va siempre por ladder
@@ -4579,8 +4549,8 @@ public class SpoilerFreeRecs extends JFrame {
     /** ELO actual del ladder que corresponde a un modo (de la ficha del perfil); si no hay ficha, el de la partida más reciente más su diferencia. */
     long eloActualLadder(String modo, long[] masReciente) {
         String lb = modo == null ? null : (modo.toLowerCase(Locale.ROOT).contains("empire") || modo.toLowerCase(Locale.ROOT).startsWith("ew")) ? (modo.contains("1v1") ? "ew_1v1" : "ew_team") : modo.contains("1v1") ? "rm_1v1" : "rm_team";
-        Object[] perfil = PERFIL_CACHE.ultimo(actPid);
-        if (perfil != null && lb != null && perfil[1] instanceof Map<?, ?> mp && mp.get(lb) instanceof int[] v && v[0] > 0) return v[0];
+        FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(actPid);
+        if (perfil != null && lb != null && perfil.ladders().get(lb) instanceof int[] v && v[0] > 0) return v[0];
         return masReciente[1] + masReciente[2];
     }
 
@@ -5581,7 +5551,7 @@ public class SpoilerFreeRecs extends JFrame {
         Integer e = ELO_1V1.get(pid); if (e != null) return e > 0 ? e : null;
         Object[] f = liveFicha(pid); if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
         e = ELO_VINC.get(pid); if (e != null && e > 0) return e;
-        Object[] perfil = PERFIL_CACHE.ultimo(pid); if (perfil != null && perfil[1] instanceof Map<?, ?> mp && mp.get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
+        FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(pid); if (perfil != null && perfil.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
         return null;
     }
     JMenuItem itemJugadorPartida(MatchPlayer p) {
@@ -12518,6 +12488,8 @@ public class SpoilerFreeRecs extends JFrame {
     static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
     static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
+    /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
+    static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c));
 
     static String httpText(String url) throws IOException, InterruptedException { return API_CLIENTE.texto(url); }
 

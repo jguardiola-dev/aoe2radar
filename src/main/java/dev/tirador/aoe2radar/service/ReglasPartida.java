@@ -38,6 +38,8 @@ public final class ReglasPartida {
     public static String modoDeLadder(String lb) {
         return switch (lb) { case "rm_1v1" -> "1v1 Random Map"; case "rm_team" -> "Team Random Map"; case "ew_1v1" -> "1v1 Empire Wars"; case "ew_team" -> "Team Empire Wars"; case "dm_1v1" -> "1v1 Death Match"; case "dm_team" -> "Team Death Match"; default -> lb; };
     }
+    /** Los ladders de la ficha de perfil y de sus chips, en el orden en que se pintan. */
+    public static final String[] LADDER_IDS = { "rm_1v1", "rm_team", "ew_1v1", "ew_team" };
     public static final String[] LADDERS_IDX = { "rm_1v1", "rm_team", "ew_1v1", "ew_team", "dm_1v1", "dm_team" };
     public static final String[] MAPAS_SIN_POSICION_DEF = { "nomad", "pilgrims", "african_clearing", "african clearing", "claro africano", "coastal_forest", "coastal forest", "land_nomad", "nómada", "nomada" };
     /** ¿Mapa con inicio nómada o posiciones aleatorias? Lista por defecto ampliable desde control.json («mapas_sin_posicion»). */
