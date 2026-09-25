@@ -28,6 +28,11 @@ import static org.junit.jupiter.api.Assertions.*;
  * después las reglas de negocio (freno de «en curso de verdad», fantasmas fuera de aquí en cache.Vivos).
  */
 class EstadoVivoTest {
+    /** Una hora fija (nov. 2023): el reloj falso la marca y las fechas de las partidas se cuentan desde ella. */
+    static final long HORA = 1_700_000_000_000L;
+    static RelojFalso reloj() { RelojFalso r = new RelojFalso(); r.ahora = HORA; return r; }
+    static Instant ahora() { return Instant.ofEpochMilli(HORA); }
+
 
     private static Match partidaConJugadores(Instant started, Instant finished, boolean fantasma, MatchPlayer... ps) {
         Match m = new Match();
@@ -48,7 +53,7 @@ class EstadoVivoTest {
     // ----- 1. marcarJugando -----
 
     @Test void marcarJugando_sinTexto_marcaJugandoYMatchDeYQuitaNadieJugando() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
         assertTrue(e.nadieJugando());
 
         e.marcarJugando(1, 100);
@@ -59,7 +64,7 @@ class EstadoVivoTest {
     }
 
     @Test void marcarJugando_conTexto_guardaElTexto() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
 
         e.marcarJugando(1, 100, "Subiendo el ELO");
 
@@ -68,7 +73,7 @@ class EstadoVivoTest {
 
     @Test void marcarJugando_conTextoNull_borraElTextoAnterior() {
         // En la 1.1 esto lanzaba NullPointerException (info.put(pid, null) con un Map que no lo admite).
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
         e.marcarJugando(1, 100, "algo");
 
         e.marcarJugando(1, 100, null);
@@ -80,7 +85,7 @@ class EstadoVivoTest {
     // ----- 2. ponerInfo -----
 
     @Test void ponerInfo_conTexto_loGuarda() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
 
         e.ponerInfo(1, "algo");
 
@@ -88,7 +93,7 @@ class EstadoVivoTest {
     }
 
     @Test void ponerInfo_conNull_borraElTexto() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
         e.ponerInfo(1, "algo");
 
         e.ponerInfo(1, null);
@@ -99,9 +104,9 @@ class EstadoVivoTest {
     // ----- 3. marcarFuera -----
 
     @Test void marcarFuera_borraPuntoTextoYRival_dejaPartidaYVisto() {
-        RelojFalso r = new RelojFalso();
+        RelojFalso r = reloj();
         EstadoVivo e = new EstadoVivo(r);
-        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), null, false,
+        Match m = partidaConJugadores(ahora().minus(Duration.ofMinutes(5)), null, false,
                 jugador(1, "Yo"), jugador(2, "Rival"));
         e.registrar(m, 1);                       // guarda partida + visto + rival
         e.marcarJugando(1, m.id, "jugando");
@@ -122,7 +127,7 @@ class EstadoVivoTest {
     // ----- 4. quitarPartida -----
 
     @Test void quitarPartida_sacaSoloALosDeEsaPartidaYDevuelveSusPids() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
         e.marcarJugando(1, 100);
         e.marcarJugando(2, 100);
         e.marcarJugando(3, 200);
@@ -137,7 +142,7 @@ class EstadoVivoTest {
     }
 
     @Test void quitarPartida_conMidQueNadieTiene_devuelveListaVacia() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
         e.marcarJugando(3, 200);
 
         List<Long> fuera = e.quitarPartida(999);
@@ -149,7 +154,7 @@ class EstadoVivoTest {
     // ----- 5. guardarPartida / soltarPartida -----
 
     @Test void soltarPartida_devuelveLaPartidaYLaQuita() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
         Match m = new Match();
         e.guardarPartida(7, m);
 
@@ -158,29 +163,42 @@ class EstadoVivoTest {
     }
 
     @Test void soltarPartida_sinPartidaGuardada_devuelveNull() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
+        EstadoVivo e = new EstadoVivo(reloj());
 
         assertNull(e.soltarPartida(99));
     }
 
     // ----- 6. registrar -----
 
-    @Test void registrar_enCursoDeVerdad_guardaPartidaYSellaVisto() {
-        RelojFalso r = new RelojFalso();
-        r.ahora = 5_000_000L;
+    @Test void registrar_decideEnCursoConSuRelojNoConElReal() {
+        RelojFalso r = reloj();
         EstadoVivo e = new EstadoVivo(r);
-        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), null, false,
+        Match m = partidaConJugadores(ahora().minus(Duration.ofMinutes(5)), null, false, jugador(1, "Yo"), jugador(2, "Rival"));
+        r.ahora = HORA + Duration.ofHours(3).toMillis();   // para SU reloj ya han pasado más de 3 h desde el inicio
+        e.registrar(m, 1);
+        assertNull(e.partida(1), "con la hora real (2026) tampoco contaría, pero así se ve que manda el reloj inyectado");
+        assertNull(e.vistoMs(1));
+        r.ahora = HORA;
+        e.registrar(m, 2);
+        assertSame(m, e.partida(2), "con su reloj en la hora de la partida, sí");
+    }
+
+    @Test void registrar_enCursoDeVerdad_guardaPartidaYSellaVisto() {
+        RelojFalso r = reloj();
+        r.ahora = HORA + 1_000;   // el reloj avanza: el sello es el del reloj, no el de la partida
+        EstadoVivo e = new EstadoVivo(r);
+        Match m = partidaConJugadores(ahora().minus(Duration.ofMinutes(5)), null, false,
                 jugador(1, "Yo"), jugador(2, "Rival"));
 
         e.registrar(m, 1);
 
         assertSame(m, e.partida(1));
-        assertEquals(5_000_000L, e.vistoMs(1));
+        assertEquals(HORA + 1_000, e.vistoMs(1));
     }
 
     @Test void registrar_partidaTerminada_niPartidaNiVisto() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
-        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), Instant.now(), false,
+        EstadoVivo e = new EstadoVivo(reloj());
+        Match m = partidaConJugadores(ahora().minus(Duration.ofMinutes(5)), ahora(), false,
                 jugador(1, "Yo"), jugador(2, "Rival"));
 
         e.registrar(m, 1);
@@ -190,8 +208,8 @@ class EstadoVivoTest {
     }
 
     @Test void registrar_empezadaHaceMasDeTresHoras_niPartidaNiVisto() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
-        Match m = partidaConJugadores(Instant.now().minus(Duration.ofHours(4)), null, false,
+        EstadoVivo e = new EstadoVivo(reloj());
+        Match m = partidaConJugadores(ahora().minus(Duration.ofHours(4)), null, false,
                 jugador(1, "Yo"), jugador(2, "Rival"));
 
         e.registrar(m, 1);
@@ -201,8 +219,8 @@ class EstadoVivoTest {
     }
 
     @Test void registrar_unoContraUno_guardaElRival() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
-        Match m = partidaConJugadores(Instant.now(), null, false, jugador(1, "Yo"), jugador(2, "Rival"));
+        EstadoVivo e = new EstadoVivo(reloj());
+        Match m = partidaConJugadores(ahora(), null, false, jugador(1, "Yo"), jugador(2, "Rival"));
 
         e.registrar(m, 1);
 
@@ -210,8 +228,8 @@ class EstadoVivoTest {
     }
 
     @Test void registrar_enEquipos_sinRival() {
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
-        Match m = partidaConJugadores(Instant.now(), null, false,
+        EstadoVivo e = new EstadoVivo(reloj());
+        Match m = partidaConJugadores(ahora(), null, false,
                 jugador(1, "Yo"), jugador(2, "A"), jugador(3, "B"), jugador(4, "C"));
 
         e.registrar(m, 1);
@@ -221,8 +239,8 @@ class EstadoVivoTest {
 
     @Test void registrar_unoContraUnoConElMismoPidEnLosDos_sinRival() {
         // Caracterización: datos raros (el mismo id en las dos plazas) no rompen nada, solo no hay rival.
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
-        Match m = partidaConJugadores(Instant.now(), null, false, jugador(1, "Yo"), jugador(1, "Yo"));
+        EstadoVivo e = new EstadoVivo(reloj());
+        Match m = partidaConJugadores(ahora(), null, false, jugador(1, "Yo"), jugador(1, "Yo"));
 
         e.registrar(m, 1);
 
@@ -232,8 +250,8 @@ class EstadoVivoTest {
     @Test void registrar_rivalSeGuardaAunqueLaPartidaYaTermino_esRaro() {
         // Caracterización: el guardado del rival no depende de si la partida sigue en curso, solo de que
         // haya 2 jugadores (el código lo hace fuera del "if enCursoReal"). Si esto cambia sin querer, rojo.
-        EstadoVivo e = new EstadoVivo(new RelojFalso());
-        Match m = partidaConJugadores(Instant.now().minus(Duration.ofMinutes(5)), Instant.now(), false,
+        EstadoVivo e = new EstadoVivo(reloj());
+        Match m = partidaConJugadores(ahora().minus(Duration.ofMinutes(5)), ahora(), false,
                 jugador(1, "Yo"), jugador(2, "Rival"));
 
         e.registrar(m, 1);
@@ -245,7 +263,7 @@ class EstadoVivoTest {
     // ----- 7. concurrencia -----
 
     @Test void marcarJugandoMarcarFueraYQuitarPartidaEnParalelo_sinExcepcionesYConEstadoCoherente() throws Exception {
-        final EstadoVivo e = new EstadoVivo(new RelojFalso());
+        final EstadoVivo e = new EstadoVivo(reloj());
         final int hilos = 8;
         final int pids = 50;
         final int matches = 5;

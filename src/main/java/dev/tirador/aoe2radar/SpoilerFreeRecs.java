@@ -120,6 +120,7 @@ import static dev.tirador.aoe2radar.cache.Paises.paisDe;
 import static dev.tirador.aoe2radar.cache.RecsDisco.RECS_DIR;
 import static dev.tirador.aoe2radar.cache.RecsDisco.destino;
 import static dev.tirador.aoe2radar.cache.RecsDisco.maxGteEnDisco;
+import static dev.tirador.aoe2radar.cache.Vivos.candidatoSocket;
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
 import static dev.tirador.aoe2radar.service.Aleatorio.componerTanda;
 import static dev.tirador.aoe2radar.service.Aleatorio.cumpleAzar;
@@ -6617,9 +6618,7 @@ public class SpoilerFreeRecs extends JFrame {
                 if (!ids.contains(mp.id)) continue;
                 if (m.finished != null) { VIVO.marcarFuera(mp.id); liveEvento(mp.id, m, true); cambio = true; }
                 // en curso DE VERDAD: empezada (no un lobby), sin terminar y hace menos de 3 h
-                else if (m.started != null && !m.started.isAfter(Instant.now().plusSeconds(60))
-                        && m.started.isAfter(Instant.now().minus(Duration.ofHours(3)))
-                        && !Long.valueOf(m.id).equals(VIVO.matchDe(mp.id))) candidatos.add(mp.id);
+                else if (candidatoSocket(m, Instant.now()) && !Long.valueOf(m.id).equals(VIVO.matchDe(mp.id))) candidatos.add(mp.id);
             }
             if (!candidatos.isEmpty()) confirmarEventoSocket(m, candidatos);   // la API tiene la última palabra (fantasmas fuera)
         }

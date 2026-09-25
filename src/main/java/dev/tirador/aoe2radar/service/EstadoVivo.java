@@ -4,6 +4,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.util.Reloj;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -81,7 +82,8 @@ public final class EstadoVivo {
      * ahora»; si es un 1v1, apunta el rival de pid. Todos los caminos que detectan a alguien en partida pasan por aquí.
      */
     public synchronized void registrar(Match m, long pid) {
-        if (enCursoReal(m)) { partida.put(pid, m); vistoMs.put(pid, reloj.ahoraMs()); }
+        long ahora = reloj.ahoraMs();   // un solo reloj para «en curso» y para el sello de «visto»
+        if (enCursoReal(m, Instant.ofEpochMilli(ahora))) { partida.put(pid, m); vistoMs.put(pid, ahora); }
         try {
             if (m.players.size() == 2) {
                 MatchPlayer riv = null;
