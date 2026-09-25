@@ -1958,38 +1958,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         JPanel center = construirCentro(top, bottom);
 
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, center);
-        split.setContinuousLayout(true);
-        split.setDividerSize(7);
-        split.setResizeWeight(0);   // al agrandar la ventana crece la tabla
-        left.setMinimumSize(new Dimension(230, 100));
-        center.setMinimumSize(new Dimension(420, 100));
-        try { split.setDividerLocation(Integer.parseInt(leerConfig("divisor", "355"))); }
-        catch (Exception ignored) { split.setDividerLocation(355); }
-        if (split.getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI bui)
-            bui.getDivider().addMouseListener(new MouseAdapter() {
-                @Override public void mouseClicked(MouseEvent e) {
-                    if (e.getClickCount() == 2) split.setDividerLocation(355);   // vuelta al ancho por defecto
-                }
-            });
-        splitPrincipal = split;
-        // Como el Explorador, en toda la ventana: clic en cualquier fondo que no sea un control = sin selección.
-        // Excepciones: la cabecera de columnas (ordena) y la cabecera «Partidas de:» (sus nombres son clicables).
-        Toolkit.getDefaultToolkit().addAWTEventListener(ev -> {
-            if (!(ev instanceof MouseEvent me) || me.getID() != MouseEvent.MOUSE_PRESSED) return;
-            if (!SwingUtilities.isLeftMouseButton(me) || me.isControlDown() || me.isShiftDown()) return;
-            Component c = me.getComponent();
-            if (c == null) return;
-            Window w = c instanceof Window win ? win : SwingUtilities.getWindowAncestor(c);
-            if (w != SpoilerFreeRecs.this) return;   // solo la ventana principal (la hover-card y los diálogos, no)
-            techTree.ocultarDetalle();   // la ficha flotante se cierra al clicar fuera
-            // Un fondo sin listeners no recibe el clic (sube hasta la ventana): miramos qué hay REALMENTE bajo el ratón
-            Point p = SwingUtilities.convertPoint(c, me.getPoint(), getLayeredPane());
-            Component bajo = SwingUtilities.getDeepestComponentAt(getLayeredPane(), p.x, p.y);
-            if (bajo == null || !esFondoDeseleccionable(bajo)) return;
-            if (!playersList.isSelectionEmpty()) { playersList.clearSelection(); actualizarTextoBuscar(); }
-        }, AWTEvent.MOUSE_EVENT_MASK);
-        add(split, BorderLayout.CENTER);
+        montarVentana(left, center);
 
         cargarCanales();
         loadPlayers();
@@ -3488,6 +3457,44 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         center.add(centroCards, BorderLayout.CENTER);
         center.add(bottom, BorderLayout.SOUTH);
         return center;
+    }
+
+    // El split principal (Watchlist | resto) y el filtro global de clics: en
+    // cualquier fondo sin control, clic izquierdo = quitar la seleccion de la
+    // Watchlist (como el Explorador de Windows).
+    private void montarVentana(JPanel left, JPanel center) {
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, center);
+        split.setContinuousLayout(true);
+        split.setDividerSize(7);
+        split.setResizeWeight(0);   // al agrandar la ventana crece la tabla
+        left.setMinimumSize(new Dimension(230, 100));
+        center.setMinimumSize(new Dimension(420, 100));
+        try { split.setDividerLocation(Integer.parseInt(leerConfig("divisor", "355"))); }
+        catch (Exception ignored) { split.setDividerLocation(355); }
+        if (split.getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI bui)
+            bui.getDivider().addMouseListener(new MouseAdapter() {
+                @Override public void mouseClicked(MouseEvent e) {
+                    if (e.getClickCount() == 2) split.setDividerLocation(355);   // vuelta al ancho por defecto
+                }
+            });
+        splitPrincipal = split;
+        // Como el Explorador, en toda la ventana: clic en cualquier fondo que no sea un control = sin selección.
+        // Excepciones: la cabecera de columnas (ordena) y la cabecera «Partidas de:» (sus nombres son clicables).
+        Toolkit.getDefaultToolkit().addAWTEventListener(ev -> {
+            if (!(ev instanceof MouseEvent me) || me.getID() != MouseEvent.MOUSE_PRESSED) return;
+            if (!SwingUtilities.isLeftMouseButton(me) || me.isControlDown() || me.isShiftDown()) return;
+            Component c = me.getComponent();
+            if (c == null) return;
+            Window w = c instanceof Window win ? win : SwingUtilities.getWindowAncestor(c);
+            if (w != SpoilerFreeRecs.this) return;   // solo la ventana principal (la hover-card y los diálogos, no)
+            techTree.ocultarDetalle();   // la ficha flotante se cierra al clicar fuera
+            // Un fondo sin listeners no recibe el clic (sube hasta la ventana): miramos qué hay REALMENTE bajo el ratón
+            Point p = SwingUtilities.convertPoint(c, me.getPoint(), getLayeredPane());
+            Component bajo = SwingUtilities.getDeepestComponentAt(getLayeredPane(), p.x, p.y);
+            if (bajo == null || !esFondoDeseleccionable(bajo)) return;
+            if (!playersList.isSelectionEmpty()) { playersList.clearSelection(); actualizarTextoBuscar(); }
+        }, AWTEvent.MOUSE_EVENT_MASK);
+        add(split, BorderLayout.CENTER);
     }
 
     // ----- Carpeta de recs ---------------------------------------------------
