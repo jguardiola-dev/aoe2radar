@@ -239,7 +239,7 @@ public final class WatchlistView {
     public javax.swing.border.TitledBorder tituloWatch;   // visible para RegresionCapturas
     private JButton delBtn;
     public JLabel cabLabel;   // visible: lo consulta esFondoDeseleccionable (cromo)
-    public JLabel resumenWatch;   // visible para RegresionCapturas
+    public JLabel resumenWatch;   // visible para RegresionCapturas; ejemplo: «50 jugadores · 6 en directo»
 
     public static final String TOP_LADDER = "\u2605 Top ladder";
     private static final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
@@ -372,7 +372,7 @@ public final class WatchlistView {
         });
         delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
 
-        playersList.addMouseListener(new MouseAdapter() {
+        playersList.addMouseListener(new MouseAdapter() {   // botón central sobre un jugador: su perfil en pestaña nueva
             @Override public void mousePressed(MouseEvent e) {
                 if (!SwingUtilities.isMiddleMouseButton(e)) return;
                 int idx = playersList.locationToIndex(e.getPoint());
@@ -528,7 +528,7 @@ public final class WatchlistView {
                         Player p = playersModel.get(idx);
                         String bajo = textoBajo(idx, e.getPoint());
                         if (bajo.contains("TW") || bajo.contains("\u21A5") || bajo.contains("\u270E") || sobreNota(idx, e.getPoint())) return;   // el clic simple ya actuó
-                        playersList.setSelectedIndex(idx);
+                        playersList.setSelectedIndex(idx);   // doble clic = sus partidas, SIEMPRE (espectar vive en el clic derecho)
                         enlacePartidas.fetchMatches();
                     }
                 }
@@ -626,7 +626,7 @@ public final class WatchlistView {
         soloVivosBtn.setFocusable(false);
         soloVivosBtn.addActionListener(e -> {
             playersList.setFixedCellHeight(0);
-            playersList.setFixedCellHeight(-1);
+            playersList.setFixedCellHeight(-1);   // invalida el caché de ALTURAS (las sublíneas de vivos)
             aplicarFiltroGrupo();
         });
         String paisGuardado = leerConfig("top_pais", "es");
@@ -897,7 +897,7 @@ public final class WatchlistView {
                     if (hoverCard != null) ocultarHoverCard();
                     hoverTimer.stop();
                     hoverPid = pid;
-                    if (false && pid != 0) {   // tarjeta flotante desactivada: ver comentario de la 1.1
+                    if (false && pid != 0) {   // tarjeta flotante desactivada: el ELO ya está en la lista y el perfil a un doble clic (y cada tarjeta era una llamada a la API)
                         hoverPantalla = e.getLocationOnScreen();
                         hoverTimer.restart();
                     }
@@ -1065,7 +1065,7 @@ public final class WatchlistView {
             if (!(vo instanceof javax.swing.text.View v)) return "";
             Insets in = l.getInsets();
             Rectangle alloc = new Rectangle(in.left, in.top, b.width - in.left - in.right, b.height - in.top - in.bottom);
-            v.setSize(alloc.width, alloc.height);
+            v.setSize(alloc.width, alloc.height);   // sin tamaño, la vista responde con coordenadas colapsadas
             int x = p.x - b.x, y = p.y - b.y;
             javax.swing.text.Position.Bias[] bias = new javax.swing.text.Position.Bias[1];
             int pos = v.viewToModel(x, y, alloc, bias);
@@ -1156,7 +1156,7 @@ public final class WatchlistView {
         final long miSerial = anfitrion.opSerial();
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
-                anfitrion.marcarHiloOperacionActual();
+                anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 anfitrion.cargarEloAyer();
                 List<Player> porApi = new ArrayList<>();
                 long ahoraTs = System.currentTimeMillis();
@@ -1494,7 +1494,7 @@ public final class WatchlistView {
             }
             @Override protected void done() {
                 vigilandoTop = false;
-                anfitrion.vigilarTwitchDirectos();
+                anfitrion.vigilarTwitchDirectos();   // el río acaba de enseñar canales: ahora sí, el cruce
                 try {
                     TopLadderService.ResultadoVigilancia r = get();
                     topVerificados.clear();
@@ -1510,7 +1510,7 @@ public final class WatchlistView {
                     for (Match fresco : terminadasRio)
                         for (Match m : all)
                             if (m.id == fresco.id && m.finished == null) {
-                                m.finished = fresco.finished;
+                                m.finished = fresco.finished;   // la EN DIRECTO de la tabla ya acabó
                                 m.players = fresco.players;
                                 tablaTocada = true;
                             }
@@ -1867,7 +1867,7 @@ public final class WatchlistView {
         boolean porElo = mostrarEloWatch && "elo".equals(leerConfig("orden_watch", "elo"));
         String ordenCfg = leerConfig("orden_watch", "elo");
         boolean porForma = formaVisible && ordenCfg.startsWith("forma");
-        boolean formaAsc = "forma_asc".equals(ordenCfg);
+        boolean formaAsc = "forma_asc".equals(ordenCfg);   // ascendente = los que más bajan, arriba
         final Map<Long, Forma> fa = formaActiva();
         FiltroLista.Resultado res = filtroLista.filtrar(todosJugadores, topLadder, modoTop(), g, soloVivos,
                 porForma, formaAsc, porElo, fa, eloWatch, vinculosExpandidos);
@@ -1877,11 +1877,11 @@ public final class WatchlistView {
         vivoFamilia.putAll(res.vivoFamilia());
         List<Player> vis = res.filas();
         Player invitadoActual = enlacePartidas.invitado();
-        if (invitadoActual != null && containsPlayerId(invitadoActual.id())) { enlacePartidas.limpiarInvitado(); invitadoActual = null; }
-        if (invitadoActual != null && !vistaActualId().equals(enlacePartidas.vistaDelInvitado())) { enlacePartidas.limpiarInvitado(); invitadoActual = null; }
+        if (invitadoActual != null && containsPlayerId(invitadoActual.id())) { enlacePartidas.limpiarInvitado(); invitadoActual = null; }   // fichado por cualquier vía: deja de flotar
+        if (invitadoActual != null && !vistaActualId().equals(enlacePartidas.vistaDelInvitado())) { enlacePartidas.limpiarInvitado(); invitadoActual = null; }   // cambiar de vista (grupo o país) despide al invitado
         if (enlacePartidas.sujetosPanelVisible() && !vistaActualId().equals(enlacePartidas.vistaDeSujetos())) {
             enlacePartidas.limpiarSujetos();
-            enlacePartidas.refrescarSujetos(List.of(), false);
+            enlacePartidas.refrescarSujetos(List.of(), false);   // la cabecera refleja la tabla; otra vista, otra historia
             enlacePartidas.taparResultados();
             apagarForma();
         }
@@ -1906,7 +1906,7 @@ public final class WatchlistView {
             int[] arr = idxs.stream().mapToInt(Integer::intValue).toArray();
             if (arr.length > 0) playersList.setSelectedIndices(arr);
         }
-        enlacePartidas.sincronizarSocket();
+        enlacePartidas.sincronizarSocket();   // la vista manda: el socket vigila exactamente lo que se ve
     }
 
     // ===== Ficha / grupos: infraestructura de vigilancia y refresco =====================================
@@ -2039,8 +2039,8 @@ public final class WatchlistView {
                     for (Match fresco : c.terminadas())
                         for (Match m : all)
                             if (m.id == fresco.id && m.finished == null) {
-                                m.finished = fresco.finished;
-                                m.players = fresco.players;
+                                m.finished = fresco.finished;   // la EN DIRECTO de la tabla acabó:
+                                m.players = fresco.players;     // fecha real y resultado disponibles
                                 tablaTocada = true;
                             }
                 }
@@ -2063,7 +2063,7 @@ public final class WatchlistView {
     /** Repinta lista, combo de grupos y el título («Watchlist — N en directo»). */
     public void refrescarAlturasWatch() {
         playersList.setFixedCellHeight(0);
-        playersList.setFixedCellHeight(-1);
+        playersList.setFixedCellHeight(-1);   // fuerza re-medir alturas (sublíneas que aparecen o mueren)
     }
 
     public void actualizarIndicadoresVivos() {
@@ -2186,7 +2186,7 @@ public final class WatchlistView {
         new SwingWorker<List<String[]>, Void>() {
             @Override protected List<String[]> doInBackground() throws Exception {
                 List<String[]> out = new ArrayList<>();
-                for (dev.tirador.aoe2radar.model.PerfilEncontrado p : anfitrion.buscarPerfilesApi(q)) {
+                for (dev.tirador.aoe2radar.model.PerfilEncontrado p : anfitrion.buscarPerfilesApi(q)) {   // sin reintento, como antes
                     long id = p.pid();
                     if (id <= 0) continue;
                     String name = p.nombre();
@@ -2215,7 +2215,7 @@ public final class WatchlistView {
                     String canO = t("Cancelar", "Cancel");
                     boolean perfilAbierto = anfitrion.perfilAbierto();
                     int r0;
-                    if (perfilAbierto && res.size() == 1) r0 = 0;
+                    if (perfilAbierto && res.size() == 1) r0 = 0;   // en la pestaña Perfil, el buscador de arriba abre el perfil directamente
                     else r0 = JOptionPane.showOptionDialog(ventana, pnl, t("Resultados", "Results"),
                             JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
                             perfilAbierto ? new Object[]{ perfO, canO } : new Object[]{ perfO, verO, addO, canO }, perfO);
@@ -2228,9 +2228,9 @@ public final class WatchlistView {
                         if (verPerfil) { status.setText(t("Listo.", "Ready.")); navegacion.abrirPerfil(p.id(), p.name()); return; }
                         if (verAhora) {
                             enlacePartidas.fijarObjetivo(p, vistaActualId());
-                            playersList.clearSelection();
-                            aplicarFiltroGrupo();
-                            new Thread(() -> {
+                            playersList.clearSelection();   // la selección vieja no debe filtrar al invitado
+                            aplicarFiltroGrupo();   // la fila flotante, visible EN EL ACTO (también en los tops)
+                            new Thread(() -> {   // ELO del invitado para su fila flotante
                                 Integer ei = perfiles.elo1v1(p.id());
                                 if (ei != null) SwingUtilities.invokeLater(() -> {
                                     eloWatch.put(p.id(), ei);
@@ -2270,7 +2270,7 @@ public final class WatchlistView {
     public void loadPlayers() {
         String error = listaSeguidos.cargar(todosJugadores);
         if (error != null) status.setText(error);
-        rebuildGrupos();
+        rebuildGrupos();       // SIEMPRE: sin esto, el combo quedaba vacío en instalaciones nuevas
         aplicarFiltroGrupo();
     }
 
