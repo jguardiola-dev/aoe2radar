@@ -90,10 +90,7 @@ import static dev.tirador.aoe2radar.cache.Anotaciones.cargarAliases;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarNotas;
 import static dev.tirador.aoe2radar.cache.Anotaciones.nombreVisible;
 import static dev.tirador.aoe2radar.cache.Anotaciones.notaDe;
-import static dev.tirador.aoe2radar.cache.CachePerfiles.ELO_VINC;
-import static dev.tirador.aoe2radar.cache.CachePerfiles.FAMILIA_CACHE;
 import static dev.tirador.aoe2radar.cache.CachePerfiles.PERFIL_CACHE;
-import static dev.tirador.aoe2radar.cache.CachePerfiles.VINCULADAS_CACHE;
 import static dev.tirador.aoe2radar.cache.Canales.CANAL_DE;
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
 import static dev.tirador.aoe2radar.cache.Canales.cargarCanales;
@@ -4300,7 +4297,7 @@ public class SpoilerFreeRecs extends JFrame {
     void actPintarVinculadas() {
         if (actVinculadasPanel == null) return;
         long pid = actPid;
-        List<Object[]> v = VINCULADAS_CACHE.get(pid);
+        List<Perfil.Vinculada> v = SERVICIO_PERFIL.vinculadasConocidas(pid);
         actVinculadasPanel.removeAll();
         JLabel etq = new JLabel(t("Cuentas vinculadas:", "Linked accounts:")); etq.setFont(etq.getFont().deriveFont(Font.BOLD, 13f));
         actVinculadasPanel.add(etq);
@@ -4312,19 +4309,16 @@ public class SpoilerFreeRecs extends JFrame {
         } else if (v == null) {
             JLabel b = new JLabel(t("buscando…", "looking up…")); b.setForeground(Color.GRAY); actVinculadasPanel.add(b);
             new Thread(() -> {
-                List<Object[]> res;
-                try { res = cuentasVinculadas(pid); } catch (Exception ex) { res = List.of(); }
-                VINCULADAS_CACHE.put(pid, res);
-                for (Object[] x : res) { long vid = (Long) x[0]; if (!ELO_VINC.containsKey(vid)) { Integer e = eloDeLadder(vid); ELO_VINC.put(vid, e == null ? 0 : e); } }
+                SERVICIO_PERFIL.vinculadasConElo(pid);   // las recuerda para la sesión, con el ELO de cada una
                 SwingUtilities.invokeLater(() -> { if (actPid == pid) actPintarVinculadas(); });
             }, "perfil-vinculadas").start();
         } else if (v.isEmpty()) {
             JLabel b = new JLabel(t("ninguna conocida", "none known")); b.setForeground(Color.GRAY); actVinculadasPanel.add(b);
         } else {
-            for (Object[] x : v) {
-                long vid = (Long) x[0]; String nombre = nombreVisible(vid, String.valueOf(x[1]));
-                Integer elo = ELO_VINC.get(vid);
-                JLabel l = new JLabel("<html><u>" + escapeHtml(nombre) + "</u>" + (elo != null && elo > 0 ? " <span style='color:gray'>(" + elo + ")</span>" : "") + (containsPlayerId(vid) ? " <span style='color:gray'>\u2605</span>" : "") + "</html>", iconoBandera(x.length > 2 && x[2] != null ? String.valueOf(x[2]) : paisDe(vid)), SwingConstants.LEFT);
+            for (Perfil.Vinculada x : v) {
+                long vid = x.pid(); String nombre = nombreVisible(vid, String.valueOf(x.nombre()));
+                Integer elo = SERVICIO_PERFIL.eloVinculada(vid);
+                JLabel l = new JLabel("<html><u>" + escapeHtml(nombre) + "</u>" + (elo != null && elo > 0 ? " <span style='color:gray'>(" + elo + ")</span>" : "") + (containsPlayerId(vid) ? " <span style='color:gray'>\u2605</span>" : "") + "</html>", iconoBandera(x.pais() != null ? String.valueOf(x.pais()) : paisDe(vid)), SwingConstants.LEFT);
                 l.setIconTextGap(4); l.setFont(l.getFont().deriveFont(Font.BOLD, 13f));
                 l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 l.setToolTipText(t("Clic: abrir su perfil · botón central o clic derecho: en pestaña nueva", "Click: open their profile · middle or right button: in a new tab"));
@@ -5550,7 +5544,7 @@ public class SpoilerFreeRecs extends JFrame {
     Integer elo1v1Conocido(long pid) {
         Integer e = ELO_1V1.get(pid); if (e != null) return e > 0 ? e : null;
         Object[] f = liveFicha(pid); if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
-        e = ELO_VINC.get(pid); if (e != null && e > 0) return e;
+        e = SERVICIO_PERFIL.eloVinculada(pid); if (e != null && e > 0) return e;
         FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(pid); if (perfil != null && perfil.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
         return null;
     }
@@ -5561,7 +5555,7 @@ public class SpoilerFreeRecs extends JFrame {
         it.setIconTextGap(6);
         it.addActionListener(a -> abrirPerfil(p.id, nombre));
         if (e1 == null && !ELO_1V1.containsKey(p.id)) new Thread(() -> {   // el ELO 1v1 se pide una vez y se rellena en el propio ítem
-            Integer e = eloDeLadder(p.id); ELO_1V1.put(p.id, e == null ? 0 : e);
+            Integer e = SERVICIO_PERFIL.elo1v1(p.id); ELO_1V1.put(p.id, e == null ? 0 : e);
             if (e != null && e > 0) SwingUtilities.invokeLater(() -> it.setText(nombre + "  1v1 " + e + (p.civ != null && !p.civ.isBlank() ? "  ·  " + p.civ : "")));
         }, "elo-1v1").start();
         return it;
@@ -9529,11 +9523,11 @@ public class SpoilerFreeRecs extends JFrame {
                     if (stopOperacion) break;
                     publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "\u2026");
                     try {
-                        List<Object[]> vinc = cuentasVinculadas(p.id());
+                        List<Perfil.Vinculada> vinc = SERVICIO_PERFIL.vinculadas(p.id());
                         Set<Long> familia = new HashSet<>(); familia.add(p.id());
-                        for (Object[] v : vinc) {
-                            long vid = (Long) v[0];
-                            if (!containsPlayerId(vid)) { todosJugadores.add(new Player(vid, (String) v[1], g)); anadidas++; }
+                        for (Perfil.Vinculada v : vinc) {
+                            long vid = v.pid();
+                            if (!containsPlayerId(vid)) { todosJugadores.add(new Player(vid, v.nombre(), g)); anadidas++; }
                             familia.add(vid);
                         }
                         if (familia.size() > 1) marcarVinculo(familia);
@@ -10053,7 +10047,7 @@ public class SpoilerFreeRecs extends JFrame {
             if (x.id() == pid && x.vinculo() != 0)
                 for (Player y : todosJugadores)
                     if (y.vinculo() == x.vinculo() && y.id() != pid) cand.put(y.id(), y.name());
-        Map<Long, String> cc = FAMILIA_CACHE.get(pid);
+        Map<Long, String> cc = SERVICIO_PERFIL.familia(pid);
         if (cc != null) cand.putAll(cc);
         long mejorId = 0; Integer mejorElo = null; String mejorNombre = null;
         for (Map.Entry<Long, String> e : cand.entrySet()) {
@@ -10066,48 +10060,18 @@ public class SpoilerFreeRecs extends JFrame {
         return new String[]{ mejorNombre, String.valueOf(mejorElo), String.valueOf(mejorId) };
     }
 
-    /** Cuentas vinculadas de un perfil según el companion (linked_profiles):
-     *  Object[]{ id (Long), nombre, país, partidas (Long) }. */
-    static List<Object[]> cuentasVinculadas(long profileId) {
-        List<Object[]> out = new ArrayList<>();
-        try {
-            Perfil pf = COMPANION.perfil(profileId);
-            aprenderCanal(profileId, pf.canal());
-            Set<Long> vistos = new HashSet<>();
-            for (Perfil.Vinculada lp : pf.vinculadas()) {
-                long id = lp.pid();
-                if (id <= 0 || id == profileId || !vistos.add(id)) continue;   // el propio no es su vinculada
-                String name = String.valueOf(lp.nombre());
-                String c = lp.pais();
-                String pais = c == null ? "" : c.toUpperCase();
-                long games = lp.partidas();
-                if (id > 0 && !"null".equals(name)) out.add(new Object[]{ id, name, pais, games });
-            }
-            if (!out.isEmpty()) {   // la familia consultada alimenta la señal \u21A5 de la sesión
-                Map<Long, String> deEste = FAMILIA_CACHE.computeIfAbsent(profileId, k -> new HashMap<>());
-                for (Object[] v : out) {
-                    long vid = (Long) v[0]; String vn = (String) v[1];
-                    deEste.put(vid, vn);
-                    FAMILIA_CACHE.computeIfAbsent(vid, k -> new HashMap<>()).put(profileId, "\u2014");
-                }
-            }
-        } catch (Exception ex) {
-            log("vinculadas: fallo con perfil " + profileId + ": " + causa(ex));
-        }
-        return out;
-    }
 
     /** Consulta las vinculadas de un seguido y casa las que YA sigues. */
     void vincularExistentes(Player p) {
         status.setText(t("Buscando cuentas vinculadas de ", "Looking up linked accounts of ") + p.name() + "…");
-        new SwingWorker<List<Object[]>, Void>() {
-            @Override protected List<Object[]> doInBackground() { return cuentasVinculadas(p.id()); }
+        new SwingWorker<List<Perfil.Vinculada>, Void>() {
+            @Override protected List<Perfil.Vinculada> doInBackground() { return SERVICIO_PERFIL.vinculadas(p.id()); }
             @Override protected void done() {
-                List<Object[]> vinc;
+                List<Perfil.Vinculada> vinc;
                 try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
                 Set<Long> familia = new HashSet<>();
                 familia.add(p.id());
-                for (Object[] v : vinc) if (containsPlayerId((Long) v[0])) familia.add((Long) v[0]);
+                for (Perfil.Vinculada v : vinc) if (containsPlayerId(v.pid())) familia.add(v.pid());
                 if (familia.size() < 2) {
                     status.setText(t("No sigues ninguna otra cuenta vinculada de ", "You don't follow any other linked account of ")
                             + p.name() + t(". Usa «Cuentas vinculadas…» para añadirlas.", ". Use “Linked accounts…” to add them."));
@@ -10260,7 +10224,7 @@ public class SpoilerFreeRecs extends JFrame {
         Integer e1 = elo1v1Conocido(mp.id);
         JMenu sub = new JMenu(prefijo + nombre + (e1 != null ? "  1v1 " + e1 : "") + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""));
         sub.setIcon(iconoBandera(paisDe(mp.id)));
-        if (e1 == null && !ELO_1V1.containsKey(mp.id)) new Thread(() -> { Integer e = eloDeLadder(mp.id); ELO_1V1.put(mp.id, e == null ? 0 : e); if (e != null && e > 0) SwingUtilities.invokeLater(() -> sub.setText(prefijo + nombre + "  1v1 " + e + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""))); }, "elo-1v1").start();
+        if (e1 == null && !ELO_1V1.containsKey(mp.id)) new Thread(() -> { Integer e = SERVICIO_PERFIL.elo1v1(mp.id); ELO_1V1.put(mp.id, e == null ? 0 : e); if (e != null && e > 0) SwingUtilities.invokeLater(() -> sub.setText(prefijo + nombre + "  1v1 " + e + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""))); }, "elo-1v1").start();
         JMenuItem perf = new JMenuItem(t("Perfil", "Profile")); perf.addActionListener(a -> abrirPerfil(mp.id, nombre)); sub.add(perf);
         JMenuItem perfN = new JMenuItem(t("Perfil en pestaña nueva", "Profile in a new tab")); perfN.addActionListener(a -> abrirPerfilEnPestana(mp.id, nombre)); sub.add(perfN);
         if (!containsPlayerId(mp.id)) {
@@ -10815,25 +10779,25 @@ public class SpoilerFreeRecs extends JFrame {
     /** Tras fichar a alguien: si tiene cuentas vinculadas, ofrecer añadirlas
      *  todas al mismo grupo de una vez. */
     void ofrecerVinculadasTrasAlta(long profileId, String nombre, String grupo) {
-        new SwingWorker<List<Object[]>, Void>() {
+        new SwingWorker<List<Perfil.Vinculada>, Void>() {
             final Map<Long, Integer> elosV = new HashMap<>();
-            @Override protected List<Object[]> doInBackground() {
-                List<Object[]> vinc = cuentasVinculadas(profileId);
-                for (Object[] v : vinc) {
-                    Integer e = eloDeLadder((Long) v[0]);
-                    if (e != null) elosV.put((Long) v[0], e);
+            @Override protected List<Perfil.Vinculada> doInBackground() {
+                List<Perfil.Vinculada> vinc = SERVICIO_PERFIL.vinculadas(profileId);
+                for (Perfil.Vinculada v : vinc) {
+                    Integer e = SERVICIO_PERFIL.elo1v1(v.pid());
+                    if (e != null) elosV.put(v.pid(), e);
                     dormir(PAUSA_MS / 2);
                 }
                 return vinc;
             }
             @Override protected void done() {
-                List<Object[]> vinc;
+                List<Perfil.Vinculada> vinc;
                 try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
-                List<Object[]> nuevas = new ArrayList<>();
-                for (Object[] v : vinc) if (!containsPlayerId((Long) v[0])) nuevas.add(v);
+                List<Perfil.Vinculada> nuevas = new ArrayList<>();
+                for (Perfil.Vinculada v : vinc) if (!containsPlayerId(v.pid())) nuevas.add(v);
                 if (nuevas.isEmpty()) return;
                 StringBuilder sb = new StringBuilder();
-                for (Object[] v : nuevas) sb.append(sb.isEmpty() ? "" : ", ").append(v[1]);
+                for (Perfil.Vinculada v : nuevas) sb.append(sb.isEmpty() ? "" : ", ").append(v.nombre());
                 int r = JOptionPane.showConfirmDialog(SpoilerFreeRecs.this,
                         nombre + t(" tiene ", " has ") + nuevas.size()
                                 + t(" cuentas vinculadas: ", " linked accounts: ") + sb
@@ -10844,11 +10808,11 @@ public class SpoilerFreeRecs extends JFrame {
                 if (r != JOptionPane.YES_OPTION) return;
                 Set<Long> familia = new HashSet<>();
                 familia.add(profileId);
-                for (Object[] v : nuevas) {
-                    todosJugadores.add(new Player((Long) v[0], (String) v[1], grupo));
-                    familia.add((Long) v[0]);
+                for (Perfil.Vinculada v : nuevas) {
+                    todosJugadores.add(new Player(v.pid(), v.nombre(), grupo));
+                    familia.add(v.pid());
                 }
-                for (Object[] v : vinc) if (containsPlayerId((Long) v[0])) familia.add((Long) v[0]);
+                for (Perfil.Vinculada v : vinc) if (containsPlayerId(v.pid())) familia.add(v.pid());
                 eloWatch.putAll(elosV);
                 marcarVinculo(familia);
                 savePlayers();
@@ -10865,18 +10829,19 @@ public class SpoilerFreeRecs extends JFrame {
     void mostrarVinculadas(long profileId, String nombre) {
         final Integer[] eloPropio = new Integer[1];
         status.setText(t("Buscando cuentas vinculadas de ", "Looking up linked accounts of ") + nombre + "…");
-        new SwingWorker<List<Object[]>, Void>() {
-            @Override protected List<Object[]> doInBackground() {
-                List<Object[]> vinc = cuentasVinculadas(profileId);
-                for (Object[] v : vinc) {   // ELO 1v1 actual de cada cuenta, del ladder
-                    v[3] = new Object[]{ v[3], eloDeLadder((Long) v[0]) };
+        new SwingWorker<List<Perfil.Vinculada>, Void>() {
+            final Map<Long, Integer> elosV = new HashMap<>();   // vid → ELO 1v1 actual (null: sin ELO)
+            @Override protected List<Perfil.Vinculada> doInBackground() {
+                List<Perfil.Vinculada> vinc = SERVICIO_PERFIL.vinculadas(profileId);
+                for (Perfil.Vinculada v : vinc) {   // ELO 1v1 actual de cada cuenta, del ladder
+                    elosV.put(v.pid(), SERVICIO_PERFIL.elo1v1(v.pid()));
                     dormir(PAUSA_MS / 2);
                 }
-                if (!containsPlayerId(profileId)) eloPropio[0] = eloDeLadder(profileId);
+                if (!containsPlayerId(profileId)) eloPropio[0] = SERVICIO_PERFIL.elo1v1(profileId);
                 return vinc;
             }
             @Override protected void done() {
-                List<Object[]> vinc;
+                List<Perfil.Vinculada> vinc;
                 try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
                 if (vinc.isEmpty()) {
                     status.setText(t("Listo.", "Ready."));
@@ -10888,20 +10853,18 @@ public class SpoilerFreeRecs extends JFrame {
                 }
                 status.setText(t("Listo.", "Ready."));
                 if (eloPropio[0] != null) eloWatch.put(profileId, eloPropio[0]);
-                for (Object[] v : vinc) {   // el ELO consultado siembra la watchlist al momento
-                    Object[] ex = (Object[]) v[3];
-                    if (ex[1] instanceof Integer e) eloWatch.put((Long) v[0], e);
+                for (Perfil.Vinculada v : vinc) {   // el ELO consultado siembra la watchlist al momento
+                    if (elosV.get(v.pid()) instanceof Integer e) eloWatch.put(v.pid(), e);
                 }
                 DefaultListModel<String> modelo = new DefaultListModel<>();
-                List<Object[]> anadibles = new ArrayList<>();
-                for (Object[] v : vinc) {
-                    boolean ya = containsPlayerId((Long) v[0]);
-                    Object[] extra = (Object[]) v[3];
-                    Integer eloV = (Integer) extra[1];
-                    String fila = ((String) v[2]).isBlank() ? String.valueOf(v[1]) : v[1] + " \u00B7 " + v[2];
+                List<Perfil.Vinculada> anadibles = new ArrayList<>();
+                for (Perfil.Vinculada v : vinc) {
+                    boolean ya = containsPlayerId(v.pid());
+                    Integer eloV = elosV.get(v.pid());
+                    String fila = v.pais().isBlank() ? String.valueOf(v.nombre()) : v.nombre() + " \u00B7 " + v.pais();
                     fila = fila + (eloV != null ? " \u00B7 " + eloV + " ELO" : t(" \u00B7 sin ELO", " \u00B7 no ELO"));
-                    if (extra[0] instanceof Long g && g >= 0)
-                        fila = fila + " \u00B7 " + g + t(" partidas", " games");
+                    if (v.partidas() >= 0)
+                        fila = fila + " \u00B7 " + v.partidas() + t(" partidas", " games");
                     fila = fila + (ya ? t("  (ya en tu watchlist)", "  (already in your watchlist)") : "");
                     modelo.addElement(fila);
                     if (!ya) anadibles.add(v);
@@ -10941,22 +10904,22 @@ public class SpoilerFreeRecs extends JFrame {
                     nuevos++;
                 }
                 int[] selIdx = lista.getSelectedIndices();
-                List<Object[]> elegidos = new ArrayList<>();
+                List<Perfil.Vinculada> elegidos = new ArrayList<>();
                 if (selIdx.length == 0) elegidos.addAll(anadibles);   // sin selección: todas las nuevas
                 else {
                     int i = 0;
-                    for (Object[] v : vinc) {
-                        boolean ya = containsPlayerId((Long) v[0]);
+                    for (Perfil.Vinculada v : vinc) {
+                        boolean ya = containsPlayerId(v.pid());
                         for (int s : selIdx) if (s == i && !ya) elegidos.add(v);
                         i++;
                     }
                 }
-                for (Object[] v : elegidos)
-                    if (!containsPlayerId((Long) v[0])) {
-                        todosJugadores.add(new Player((Long) v[0], (String) v[1], g));
+                for (Perfil.Vinculada v : elegidos)
+                    if (!containsPlayerId(v.pid())) {
+                        todosJugadores.add(new Player(v.pid(), v.nombre(), g));
                         nuevos++;
                     }
-                for (Object[] v : vinc) if (containsPlayerId((Long) v[0])) familia.add((Long) v[0]);
+                for (Perfil.Vinculada v : vinc) if (containsPlayerId(v.pid())) familia.add(v.pid());
                 if (nuevos > 0) {
                     savePlayers();
                     rebuildGrupos();
@@ -11138,19 +11101,6 @@ public class SpoilerFreeRecs extends JFrame {
         hoverCard.setVisible(true);
     }
 
-    /** ELO 1v1 actual de un perfil, preguntando su fila del leaderboard. */
-    static Integer eloDeLadder(long profileId) {
-        try {   // la vía del perfil: la misma que usa el hover, probada
-            Perfil pf = COMPANION.perfil(profileId);
-            aprenderCanal(profileId, pf.canal());
-            for (Perfil.Ladder lb : pf.ladders()) {
-                String lid = String.valueOf(lb.id());
-                if (!"rm_1v1".equals(lid) && !"3".equals(lid)) continue;
-                if (lb.rating() != null) return lb.rating();
-            }
-        } catch (Exception ignored) { }
-        return null;
-    }
 
 
     void refrescarWatchlist() {
@@ -12040,7 +11990,7 @@ public class SpoilerFreeRecs extends JFrame {
                             playersList.clearSelection();   // la selección vieja no debe filtrar al invitado
                             aplicarFiltroGrupo();   // la fila flotante, visible EN EL ACTO (también en los tops)
                             new Thread(() -> {   // ELO del invitado para su fila flotante
-                                Integer ei = eloDeLadder(p.id());
+                                Integer ei = SERVICIO_PERFIL.elo1v1(p.id());
                                 if (ei != null) SwingUtilities.invokeLater(() -> {
                                     eloWatch.put(p.id(), ei);
                                     playersList.repaint();

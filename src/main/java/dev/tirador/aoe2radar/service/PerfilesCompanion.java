@@ -5,9 +5,14 @@ import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.Perfil;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
 import static dev.tirador.aoe2radar.service.ReglasPartida.LADDER_IDS;
@@ -65,4 +70,65 @@ public final class PerfilesCompanion implements ProfileService {
     }
 
     @Override public FichaPerfil fichaConocida(long pid) { return fichas.ultimo(pid); }
+
+    @Override public Integer elo1v1(long pid) {
+        avisarSiUi("ProfileService.elo1v1");
+        try {   // la vía del perfil: la misma que usa el hover, probada
+            Perfil pf = api.perfil(pid);
+            aprenderCanal.accept(pid, pf.canal());
+            for (Perfil.Ladder lb : pf.ladders()) {
+                String lid = String.valueOf(lb.id());
+                if (!"rm_1v1".equals(lid) && !"3".equals(lid)) continue;
+                if (lb.rating() != null) return lb.rating();
+            }
+        } catch (Exception ignored) { }
+        return null;
+    }
+
+    // ----- Vinculadas y familias: estado de la sesión, sin caducidad (en la 1.1, mapas estáticos de CachePerfiles) -----
+    private final Map<Long, List<Perfil.Vinculada>> vinculadasSesion = new ConcurrentHashMap<>();   // pid → las de la cabecera
+    private final Map<Long, Integer> elosVinculadas = new ConcurrentHashMap<>();                     // vid → ELO 1v1 (0: no tiene)
+    private final Map<Long, Map<Long, String>> familias = new ConcurrentHashMap<>();                 // id → {altId → nombre}
+
+    @Override public List<Perfil.Vinculada> vinculadas(long profileId) {
+        avisarSiUi("ProfileService.vinculadas");
+        List<Perfil.Vinculada> out = new ArrayList<>();
+        try {
+            Perfil pf = api.perfil(profileId);
+            aprenderCanal.accept(profileId, pf.canal());
+            Set<Long> vistos = new HashSet<>();
+            for (Perfil.Vinculada lp : pf.vinculadas()) {
+                long id = lp.pid();
+                if (id <= 0 || id == profileId || !vistos.add(id)) continue;   // el propio no es su vinculada
+                String name = String.valueOf(lp.nombre());
+                String c = lp.pais();
+                String pais = c == null ? "" : c.toUpperCase();
+                long games = lp.partidas();
+                if (id > 0 && !"null".equals(name)) out.add(new Perfil.Vinculada(id, name, pais, games));
+            }
+            if (!out.isEmpty()) {   // la familia consultada alimenta la señal ↥ de la sesión
+                Map<Long, String> deEste = familias.computeIfAbsent(profileId, k -> new HashMap<>());
+                for (Perfil.Vinculada v : out) {
+                    deEste.put(v.pid(), v.nombre());
+                    familias.computeIfAbsent(v.pid(), k -> new HashMap<>()).put(profileId, "—");
+                }
+            }
+        } catch (Exception ex) {
+            log("vinculadas: fallo con perfil " + profileId + ": " + causa(ex));
+        }
+        return out;
+    }
+
+    @Override public List<Perfil.Vinculada> vinculadasConElo(long pid) {
+        List<Perfil.Vinculada> res = vinculadas(pid);
+        vinculadasSesion.put(pid, res);   // antes que los ELO, como la 1.1: un repintado entretanto las ve sin ELO
+        for (Perfil.Vinculada x : res) { long vid = x.pid(); if (!elosVinculadas.containsKey(vid)) { Integer e = elo1v1(vid); elosVinculadas.put(vid, e == null ? 0 : e); } }
+        return res;
+    }
+
+    @Override public List<Perfil.Vinculada> vinculadasConocidas(long pid) { return vinculadasSesion.get(pid); }
+
+    @Override public Integer eloVinculada(long vid) { return elosVinculadas.get(vid); }
+
+    @Override public Map<Long, String> familia(long pid) { return familias.get(pid); }
 }
