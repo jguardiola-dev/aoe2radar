@@ -3591,7 +3591,7 @@ public class SpoilerFreeRecs extends JFrame {
             ant.setEnabled(histPagina > 0); sig.setEnabled(histPagina < paginas - 1);
             boolean deSfr = a != null && a.completo() && actOrigenSfr && pid == actPid;
             info.setText(a == null ? t("sin datos", "no data") : miles(todas.size()) + t(" partidas", " games") + (deSfr ? t(" · último año · de sfr-data", " · last year · from sfr-data") : t(" · cargadas hasta ahora", " · loaded so far")));
-            mas.setVisible(a != null && !deSfr);
+            mas.setVisible(a != null && !deSfr && !a.completo());   // completo: no hay 50 más que traer (cada clic sería una llamada en vano)
         };
         modo.addActionListener(e -> { histModo = modo.getSelectedIndex() == 0 ? "*" : String.valueOf(modo.getSelectedItem()); histPagina = 0; pintar.run(); });
         ant.addActionListener(e -> { histPagina--; pintar.run(); });
