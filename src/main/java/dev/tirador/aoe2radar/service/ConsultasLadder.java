@@ -9,6 +9,7 @@ import dev.tirador.aoe2radar.model.LadderRow;
 
 import static dev.tirador.aoe2radar.sfrdata.Ladder.clanes;
 import static dev.tirador.aoe2radar.sfrdata.Ladder.hist;
+import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar;
 import static dev.tirador.aoe2radar.util.Formato.fmtTop;
 import static dev.tirador.aoe2radar.util.I18n.t;
 
@@ -63,6 +64,13 @@ public final class ConsultasLadder {
         for (Map.Entry<String, List<LadderRow>> en : clanes.entrySet()) if (clanLimpio(en.getKey()).equals(t0)) return en.getValue();
         return List.of();
     }
+
+    /** ¿Ya hay clanes cargados (sin ir a la red)? Live now lo usa para decidir si sugerir mientras se escribe. */
+    public static boolean clanesCargados() { return !clanes.isEmpty(); }
+
+    /** Asegura el resumen del ladder (con los clanes) en segundo plano si aún no está o ha caducado. Ver
+     *  sfrdata.Ladder.ladderAsegurar: ui no puede importar sfrdata directamente. */
+    public static void asegurarLadder(boolean forzar) { ladderAsegurar(forzar); }
 
     public static List<Map.Entry<String, Integer>> sugerirClanes(String q) {
         String q0 = clanLimpio(q);

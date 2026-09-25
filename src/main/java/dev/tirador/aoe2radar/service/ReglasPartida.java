@@ -13,6 +13,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+import dev.tirador.aoe2radar.cache.Vivos;
+
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 import static dev.tirador.aoe2radar.cache.Anotaciones.nombreVisible;
 import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
@@ -115,6 +117,10 @@ public final class ReglasPartida {
             m.fantasma = f;
         }
     }
+
+    /** ¿Sigue en curso de verdad ahora mismo? Delegado en cache.Vivos.enCursoReal: ui no puede importar cache,
+     *  así que Live now (y quien más lo necesite desde ui) pasa por aquí sin duplicar la regla. */
+    public static boolean enCursoReal(Match m) { return Vivos.enCursoReal(m); }
 
     /** Modo corto de una partida: «1v1 RM», «TG 3v3», «1v1 EW», «DM 2v2», «Custom»… */
     public static String modoCorto(Match m) {

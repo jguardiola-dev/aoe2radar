@@ -29,6 +29,10 @@ public final class ControlService {
         this.transporteVersion = transporteVersion;
     }
 
+    /** ¿Esta función sigue encendida en el mando a distancia? Delegado en Freno.ctrlOn: ui no puede importar
+     *  api, así que Live now (abrirAhora) pasa por aquí sin duplicar la lectura de control.json. */
+    public static boolean activo(String clave) { return Freno.ctrlOn(clave); }
+
     /**
      * Baja control.json y lo aplica a Freno.CONTROL (multiplicadores e interruptores; los valores nulos se
      * ignoran). Devuelve el mensaje nuevo a mostrar en la barra de estado, o null si no hay nada que enseñar

@@ -4,6 +4,7 @@ import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.util.Reloj;
 
+import java.io.IOException;
 import java.time.Instant;
 
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
@@ -44,4 +45,12 @@ public final class LiveService {
             return new Comprobacion(Veredicto.SIN_DATOS, null, ex);
         }
     }
+
+    /** Las últimas partidas de un jugador, tal cual las da la API (sin decidir nada): el barrido de Live now
+     *  hace su propio enCursoReal por lote. ui no puede importar api directamente, de ahí este paso. Va a la red. */
+    public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException { return api.partidas(pid, pagina, porPagina); }
+
+    /** Igual que {@link #partidas(long, int, int)} pero para varios pids a la vez (CSV), como hace el barrido
+     *  por lotes de Live now (una llamada por lote de hasta 15 pids). Va a la red. */
+    public Iterable<Match> partidas(String pidsCsv, int pagina, int porPagina) throws IOException, InterruptedException { return api.partidas(pidsCsv, pagina, porPagina); }
 }
