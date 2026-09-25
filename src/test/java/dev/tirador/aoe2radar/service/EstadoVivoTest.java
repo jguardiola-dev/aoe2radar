@@ -358,4 +358,30 @@ class EstadoVivoTest {
         e.apuntarTerminada(2);
         assertFalse(e.terminada(555), "a las 3 h justas ya no se recuerda (ninguna partida «en curso» dura más)");
     }
+
+    // ===== fin de partida por jugador (LiveService D: la regla del ELO) =====
+
+    @Test void marcarFueraSoloApuntaElFinSiEstabaJugando() {
+        RelojFalso r = reloj();
+        EstadoVivo e = new EstadoVivo(r);
+        e.marcarFuera(1);                                             // un barrido: no estaba jugando
+        assertNull(e.finMs(1), "no jugaba: no ha terminado nada");
+        e.marcarJugando(1, 555);
+        r.ahora = HORA + 5_000;
+        e.marcarFuera(1);
+        assertEquals(HORA + 5_000, e.finMs(1), "jugaba y ya no: su partida acaba de terminar");
+        r.ahora = HORA + 9_000;
+        e.marcarFuera(1);                                             // otro barrido después: no mueve el fin
+        assertEquals(HORA + 5_000, e.finMs(1));
+    }
+
+    @Test void quitarPartidaApuntaElFinDeCadaJugador() {
+        RelojFalso r = reloj();
+        EstadoVivo e = new EstadoVivo(r);
+        e.marcarJugando(1, 555);
+        e.marcarJugando(2, 555);
+        e.quitarPartida(555);
+        assertEquals(HORA, e.finMs(1));
+        assertEquals(HORA, e.finMs(2));
+    }
 }

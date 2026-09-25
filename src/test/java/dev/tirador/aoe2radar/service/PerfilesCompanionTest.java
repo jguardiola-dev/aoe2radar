@@ -68,11 +68,12 @@ class PerfilesCompanionTest {
     final TransporteFalso red = new TransporteFalso();
     final CompanionApi api = new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false));
     final RelojFalso reloj = new RelojFalso();
+    final EstadoVivo estadoVivo = new EstadoVivo(reloj);   // para la regla del ELO de las vinculadas
     final CacheMemoria<Long, FichaPerfil> fichas = new CacheService(reloj).memoria(Caducidad.PERFIL);
     final Map<Long, Object> canalAprendido = new HashMap<>();
     final Map<Long, Object> paisAprendido = new HashMap<>();
     final PerfilesCompanion servicio = new PerfilesCompanion(api, fichas,
-            (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), null, null);   // el año y el historial se prueban en AnioDesdeSfrTest e HistorialPerfilTest
+            (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), null, null, new EloSesion(estadoVivo, reloj, EloSesion.ESPERA));   // el año y el historial se prueban en AnioDesdeSfrTest e HistorialPerfilTest
 
     /** Cuántas veces se pidió /profiles/{pid} a la red. */
     long peticiones(long pid) {
@@ -348,6 +349,22 @@ class PerfilesCompanionTest {
         assertEquals(1, peticiones(81L), "pero el ELO de 81 ya se sabía de la primera vez: no se vuelve a pedir");
     }
 
+    @Test void vinculadasConEloVuelveAPedirElEloCuandoElJugadorTerminaUnaPartida() {
+        red.cuerpoPorUrl.put("/profiles/85", "{\"linked_profiles\":[{\"profile_id\":86,\"name\":\"Ana\",\"games\":10}]}");
+        red.cuerpoPorUrl.put("/profiles/86", "{\"leaderboards\":[{\"leaderboard_id\":\"3\",\"rating\":1500}]}");
+        servicio.vinculadasConElo(85L);
+        estadoVivo.marcarJugando(86L, 555L);
+        estadoVivo.marcarFuera(86L);                            // 86 termina una partida
+        reloj.avanzar(EloSesion.ESPERA.toMillis() - 1);
+        servicio.vinculadasConElo(85L);
+        assertEquals(1, peticiones(86L), "aún dentro de la espera: el companion no lo habría recalculado");
+        red.cuerpoPorUrl.put("/profiles/86", "{\"leaderboards\":[{\"leaderboard_id\":\"3\",\"rating\":1512}]}");
+        reloj.avanzar(1);
+        servicio.vinculadasConElo(85L);
+        assertEquals(2, peticiones(86L), "pasada la espera: se pide el nuevo");
+        assertEquals(1512, servicio.eloVinculada(86L));
+    }
+
     @Test void vinculadasConEloConLaRedCaidaRecuerdaListaVaciaNoNull() {
         red.estado = 500;
         List<Perfil.Vinculada> v = servicio.vinculadasConElo(90L);
@@ -395,7 +412,7 @@ class PerfilesCompanionTest {
             @Override public String civ(String clave) { return "Civ:" + clave; }
         };
         AnioDesdeSfr anio = new AnioDesdeSfr(elo, perfiles, new HashMap<>(), nombres, reloj);
-        return new PerfilesCompanion(api, fichas, (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), anio, null);
+        return new PerfilesCompanion(api, fichas, (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), anio, null, new EloSesion(estadoVivo, reloj, EloSesion.ESPERA));
     }
 
     @Test void anioSfrDevuelveLoQueDevuelveLeerYNullSiElJugadorNoEsta() throws Exception {

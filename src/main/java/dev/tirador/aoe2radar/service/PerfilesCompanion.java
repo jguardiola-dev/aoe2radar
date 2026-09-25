@@ -37,12 +37,13 @@ public final class PerfilesCompanion implements ProfileService {
     private final BiConsumer<Long, Object> aprenderCanal, aprenderPais;
     private final AnioDesdeSfr anio;
     private final HistorialPerfil historial;
+    private final EloSesion elosVinculadas;   // vid → ELO 1v1 (0: no tiene), con la regla del ELO actual
 
     public PerfilesCompanion(CompanionApi api, CacheMemoria<Long, FichaPerfil> fichas,
                              BiConsumer<Long, Object> aprenderCanal, BiConsumer<Long, Object> aprenderPais,
-                             AnioDesdeSfr anio, HistorialPerfil historial) {
+                             AnioDesdeSfr anio, HistorialPerfil historial, EloSesion elosVinculadas) {
         this.api = api; this.fichas = fichas; this.aprenderCanal = aprenderCanal; this.aprenderPais = aprenderPais;
-        this.anio = anio; this.historial = historial;
+        this.anio = anio; this.historial = historial; this.elosVinculadas = elosVinculadas;
     }
 
     @Override public FichaPerfil ficha(long pid) {
@@ -96,7 +97,6 @@ public final class PerfilesCompanion implements ProfileService {
 
     // ----- Vinculadas y familias: estado de la sesión, sin caducidad (en la 1.1, mapas estáticos de CachePerfiles) -----
     private final Map<Long, List<Perfil.Vinculada>> vinculadasSesion = new ConcurrentHashMap<>();   // pid → las de la cabecera
-    private final Map<Long, Integer> elosVinculadas = new ConcurrentHashMap<>();                     // vid → ELO 1v1 (0: no tiene)
     private final Map<Long, Map<Long, String>> familias = new ConcurrentHashMap<>();                 // id → {altId → nombre}
 
     @Override public List<Perfil.Vinculada> vinculadas(long profileId) {
@@ -131,13 +131,13 @@ public final class PerfilesCompanion implements ProfileService {
     @Override public List<Perfil.Vinculada> vinculadasConElo(long pid) {
         List<Perfil.Vinculada> res = vinculadas(pid);
         vinculadasSesion.put(pid, res);   // antes que los ELO, como la 1.1: un repintado entretanto las ve sin ELO
-        for (Perfil.Vinculada x : res) { long vid = x.pid(); if (!elosVinculadas.containsKey(vid)) { Integer e = elo1v1(vid); elosVinculadas.put(vid, e == null ? 0 : e); } }
+        for (Perfil.Vinculada x : res) { long vid = x.pid(); if (elosVinculadas.conocido(vid) == null || elosVinculadas.caducado(vid)) { long pedido = elosVinculadas.ahora(); elosVinculadas.apuntar(vid, elo1v1(vid), pedido); } }
         return res;
     }
 
     @Override public List<Perfil.Vinculada> vinculadasConocidas(long pid) { return vinculadasSesion.get(pid); }
 
-    @Override public Integer eloVinculada(long vid) { return elosVinculadas.get(vid); }
+    @Override public Integer eloVinculada(long vid) { return elosVinculadas.conocido(vid); }
 
     @Override public Map<Long, String> familia(long pid) { return familias.get(pid); }
 

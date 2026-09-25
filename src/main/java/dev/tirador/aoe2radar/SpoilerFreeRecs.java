@@ -61,6 +61,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
 import dev.tirador.aoe2radar.service.LiveService;
@@ -5431,9 +5432,9 @@ public class SpoilerFreeRecs extends JFrame {
         if (m.id > 0) { menu.addSeparator(); JMenuItem esp = new JMenuItem(t("Espectar la partida", "Spectate the game")); esp.addActionListener(a -> espectarPartida(m.id)); menu.add(esp); }
         return menu;
     }
-    static final Map<Long, Integer> ELO_1V1 = new java.util.concurrent.ConcurrentHashMap<>();   // pid → ELO 1v1 RM (sesión)
+    static final EloSesion ELO_1V1 = new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA);   // pid → ELO 1v1 RM (sesión; caduca al terminar una partida)
     Integer elo1v1Conocido(long pid) {
-        Integer e = ELO_1V1.get(pid); if (e != null) return e > 0 ? e : null;
+        Integer e = ELO_1V1.conocido(pid); if (e != null) return e > 0 ? e : null;
         Object[] f = liveFicha(pid); if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
         e = SERVICIO_PERFIL.eloVinculada(pid); if (e != null && e > 0) return e;
         FichaPerfil perfil = SERVICIO_PERFIL.fichaConocida(pid); if (perfil != null && perfil.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
@@ -5445,8 +5446,8 @@ public class SpoilerFreeRecs extends JFrame {
         JMenuItem it = new JMenuItem(nombre + (e1 != null ? "  1v1 " + e1 : "") + (p.civ != null && !p.civ.isBlank() ? "  ·  " + p.civ : ""), iconoBandera(paisDe(p.id)));
         it.setIconTextGap(6);
         it.addActionListener(a -> abrirPerfil(p.id, nombre));
-        if (e1 == null && !ELO_1V1.containsKey(p.id)) new Thread(() -> {   // el ELO 1v1 se pide una vez y se rellena en el propio ítem
-            Integer e = SERVICIO_PERFIL.elo1v1(p.id); ELO_1V1.put(p.id, e == null ? 0 : e);
+        if (((e1 == null && ELO_1V1.conocido(p.id) == null) || ELO_1V1.caducado(p.id)) && ELO_1V1.reservar(p.id)) new Thread(() -> {   // el ELO 1v1 se pide una vez y se rellena en el propio ítem
+            long pedido = ELO_1V1.ahora(); Integer e = SERVICIO_PERFIL.elo1v1(p.id); ELO_1V1.apuntar(p.id, e, pedido);
             if (e != null && e > 0) SwingUtilities.invokeLater(() -> it.setText(nombre + "  1v1 " + e + (p.civ != null && !p.civ.isBlank() ? "  ·  " + p.civ : "")));
         }, "elo-1v1").start();
         return it;
@@ -10025,7 +10026,7 @@ public class SpoilerFreeRecs extends JFrame {
         Integer e1 = elo1v1Conocido(mp.id);
         JMenu sub = new JMenu(prefijo + nombre + (e1 != null ? "  1v1 " + e1 : "") + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""));
         sub.setIcon(iconoBandera(paisDe(mp.id)));
-        if (e1 == null && !ELO_1V1.containsKey(mp.id)) new Thread(() -> { Integer e = SERVICIO_PERFIL.elo1v1(mp.id); ELO_1V1.put(mp.id, e == null ? 0 : e); if (e != null && e > 0) SwingUtilities.invokeLater(() -> sub.setText(prefijo + nombre + "  1v1 " + e + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""))); }, "elo-1v1").start();
+        if (((e1 == null && ELO_1V1.conocido(mp.id) == null) || ELO_1V1.caducado(mp.id)) && ELO_1V1.reservar(mp.id)) new Thread(() -> { long pedido = ELO_1V1.ahora(); Integer e = SERVICIO_PERFIL.elo1v1(mp.id); ELO_1V1.apuntar(mp.id, e, pedido); if (e != null && e > 0) SwingUtilities.invokeLater(() -> sub.setText(prefijo + nombre + "  1v1 " + e + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""))); }, "elo-1v1").start();
         JMenuItem perf = new JMenuItem(t("Perfil", "Profile")); perf.addActionListener(a -> abrirPerfil(mp.id, nombre)); sub.add(perf);
         JMenuItem perfN = new JMenuItem(t("Perfil en pestaña nueva", "Profile in a new tab")); perfN.addActionListener(a -> abrirPerfilEnPestana(mp.id, nombre)); sub.add(perfN);
         if (!containsPlayerId(mp.id)) {
@@ -12240,7 +12241,8 @@ public class SpoilerFreeRecs extends JFrame {
                 @Override public String mapa(String clave) { return nombreMapaClave(clave); }
                 @Override public String civ(String clave) { return nombreCivStats(clave); }
             }, Reloj.SISTEMA),
-            new HistorialPerfil(COMPANION, ACTIVIDAD_CACHE, pid -> cargarActividad(pid), a -> guardarActividad(a), ms -> dormir(ms), PER_PAGE, PAUSA_MS, Reloj.SISTEMA));
+            new HistorialPerfil(COMPANION, ACTIVIDAD_CACHE, pid -> cargarActividad(pid), a -> guardarActividad(a), ms -> dormir(ms), PER_PAGE, PAUSA_MS, Reloj.SISTEMA),
+            new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA));
 
     static String httpText(String url) throws IOException, InterruptedException { return API_CLIENTE.texto(url); }
 

@@ -38,6 +38,8 @@ public final class EstadoVivo {
     private final Map<Long, Match> partida = new HashMap<>();
     private final Map<Long, Rival> rival = new HashMap<>();
     private final Map<Long, Long> vistoMs = new HashMap<>();
+    /** Cuándo terminó la última partida de cada jugador (lo pone marcarFuera si estaba jugando): ver EloSesion. */
+    private final Map<Long, Long> finMs = new HashMap<>();
     /** Partidas que se sabe que terminaron (id → cuándo se supo), 3 h: una partida terminada no vuelve a estar en curso. */
     private final Map<Long, Long> terminadas = new LinkedHashMap<>();
 
@@ -87,7 +89,7 @@ public final class EstadoVivo {
 
     /** Ya no está en partida: se van su punto, su texto y su rival (la partida completa y el «visto» se quedan). */
     public synchronized void marcarFuera(long pid) {
-        matchDe.remove(pid);
+        if (matchDe.remove(pid) != null) finMs.put(pid, reloj.ahoraMs());   // estaba jugando: su partida acaba de terminar
         info.remove(pid);
         rival.remove(pid);
     }
@@ -132,6 +134,8 @@ public final class EstadoVivo {
     public synchronized String info(long pid) { return info.get(pid); }
     public synchronized Match partida(long pid) { return partida.get(pid); }
     public synchronized Rival rival(long pid) { return rival.get(pid); }
+    /** Cuándo (ms) se supo que terminó su última partida, o null si no se ha visto terminar ninguna. */
+    public synchronized Long finMs(long pid) { return finMs.get(pid); }
     /** Última vez (ms) que se le vio en partida, o null. */
     public synchronized Long vistoMs(long pid) { return vistoMs.get(pid); }
 }
