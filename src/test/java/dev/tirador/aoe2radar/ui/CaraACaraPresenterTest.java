@@ -8,6 +8,7 @@ import dev.tirador.aoe2radar.service.BusquedaPerfiles;
 import dev.tirador.aoe2radar.service.ProfileService;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.BooleanSupplier;
@@ -25,6 +26,7 @@ class CaraACaraPresenterTest {
     static class PerfilesFalso implements ProfileService {
         AnioSfr anioSfr;
         FichaPerfil ficha;
+        int anioSfrLlamadas;
         @Override public FichaPerfil ficha(long pid) { return ficha; }
         @Override public FichaPerfil fichaConocida(long pid) { return ficha; }
         @Override public Integer elo1v1(long pid) { return null; }
@@ -33,7 +35,7 @@ class CaraACaraPresenterTest {
         @Override public List<Perfil.Vinculada> vinculadasConocidas(long pid) { return null; }
         @Override public Integer eloVinculada(long vid) { return null; }
         @Override public Map<Long, String> familia(long pid) { return null; }
-        @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) { return anioSfr; }
+        @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) { anioSfrLlamadas++; return anioSfr; }
         @Override public Actividad actividad(long pid) { return null; }
         @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, BooleanSupplier cancelar) { return null; }
         @Override public int traerHoy(long pid) { return 0; }
@@ -48,7 +50,8 @@ class CaraACaraPresenterTest {
 
     final PerfilesFalso perfiles = new PerfilesFalso();
     final BusquedaFalsa busqueda = new BusquedaFalsa();
-    final CaraACaraPresenter presenter = new CaraACaraPresenter(perfiles, busqueda, Tareas.EN_LINEA);
+    final Map<Long, Actividad> actividadCache = new HashMap<>();
+    final CaraACaraPresenter presenter = new CaraACaraPresenter(perfiles, busqueda, Tareas.EN_LINEA, actividadCache);
 
     @Test void sugerir_pinta_si_la_query_no_cambio() {
         busqueda.resultado = List.<String[]>of(new String[]{ "1", "Fulano", "Fulano" });
@@ -84,6 +87,29 @@ class CaraACaraPresenterTest {
         Actividad[] pintado = { new Actividad(0, "", List.of(), false, 0, 0) };
         presenter.pedirAnioRival(9L, "Yo", () -> true, arF -> pintado[0] = arF);
         assertNull(pintado[0]);
+    }
+
+    /** B4: si el rival ya tiene actividad en la caché (p. ej. porque tiene su propio perfil abierto), se usa
+     *  esa y no se llama a anioSfr (misma condición exacta que la 1.1: {@code if (ar == null) { ... }}). */
+    @Test void pedir_anio_rival_usa_la_cache_si_ya_esta_y_no_llama_a_anioSfr() {
+        Actividad enCache = new Actividad(9L, "Rival", List.of(), true, 1, 1L);
+        actividadCache.put(9L, enCache);
+        perfiles.anioSfr = new AnioSfr(new Actividad(9L, "Rival", List.of(), true, 2, 2L), "2026-09-24", "es");   // si se llamara, pintaría OTRA actividad
+        Actividad[] pintado = new Actividad[1];
+        presenter.pedirAnioRival(9L, "Yo", () -> true, arF -> pintado[0] = arF);
+        assertSame(enCache, pintado[0]);
+        assertEquals(0, perfiles.anioSfrLlamadas);
+    }
+
+    /** B4: si no está en caché, se pide a sfr-data y el resultado se deja en la caché (para la próxima vez). */
+    @Test void pedir_anio_rival_sin_cache_pide_a_sfr_data_y_la_rellena() {
+        Actividad a = new Actividad(9L, "Rival", List.of(), true, 1, 1L);
+        perfiles.anioSfr = new AnioSfr(a, "2026-09-24", "es");
+        Actividad[] pintado = new Actividad[1];
+        presenter.pedirAnioRival(9L, "Yo", () -> true, arF -> pintado[0] = arF);
+        assertSame(a, pintado[0]);
+        assertEquals(1, perfiles.anioSfrLlamadas);
+        assertSame(a, actividadCache.get(9L));
     }
 
     @Test void pedir_ficha_pinta_siempre_sin_comprobar_caducidad() {

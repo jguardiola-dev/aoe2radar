@@ -1141,7 +1141,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** La pestaña Perfil (cabecera, actividad, calendario, cara a cara): ver ui.PerfilView. */
     PerfilView perfil;
 
-    /** Calienta en segundo plano los perfiles ya guardados: lo pide TechTreePresenter.precargar() la primera vez que se abre el tech tree. */
+    /** Delegado fino en ui.PerfilView/PerfilPresenter (calienta en segundo plano los perfiles ya guardados en disco).
+     *  Sigue haciendo falta como método de la ventana porque TechTreePresenter.precargar() lo pide por el
+     *  Anfitrion de TechTreeView la primera vez que se abre el tech tree. */
     void precalentarPerfiles() { perfil.precalentar(); }
 
     /** El botón «Perfil»: el jugador seleccionado en la watchlist o, si no hay, la página con el buscador. */
@@ -1214,6 +1216,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        perfil.marcarAbierta();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "perfil");
         subirArriba(perfil.panel());
         taparResultados(); apagarForma();
@@ -4089,6 +4092,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                     @Override public void nicksAnteriores(long pid, String nombre) { SpoilerFreeRecs.this.nicksAnteriores(pid, nombre); }
                     @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
                     @Override public void registrarDestino(long pid, String nombre) { SpoilerFreeRecs.this.registrarDestino(new Destino("perfil", pid, nombre, null)); }
+                    @Override public void actualizarTextoBuscar() { SpoilerFreeRecs.this.actualizarTextoBuscar(); }
                     @Override public JToggleButton crearBotonPestana(String texto, Icon icono) { return pestana(texto, icono); }
                     @Override public void traerAlFrente() { toFront(); requestFocus(); }
                     @Override public void mostrarEstadoGlobal(String texto) { status.setText(texto); }

@@ -60,6 +60,8 @@ public final class PerfilPresenter {
 
         /** «Actualizar hoy»: deshabilita el botón y cambia su texto mientras dura. */
         void hoyIniciado();
+        /** Ya se pidió la ficha con éxito: se recuerda para no preguntar solo por vinculadas en la sesión (mismo sitio que la 1.1: tras ficha(pid), antes de traerHoy). */
+        void marcarVinculadasPedidas(long pid);
         /** Terminó bien: repinta cabecera y cuerpo si hay partidas nuevas, y el botón según cuántas. */
         void hoyTerminado(FichaPerfil ficha, int nuevas);
         void hoyError(String mensaje);
@@ -84,12 +86,13 @@ public final class PerfilPresenter {
     private final BusquedaPerfiles busqueda;
     private final Tareas tareas;
     private final Map<Long, Integer> eloWatch;
+    private final Map<Long, Actividad> actividadCache;
     private final Pantalla pantalla;
 
     public PerfilPresenter(ProfileService perfiles, RatingsService ratings, BusquedaPerfiles busqueda, Tareas tareas,
-                            Map<Long, Integer> eloWatch, Pantalla pantalla) {
+                            Map<Long, Integer> eloWatch, Map<Long, Actividad> actividadCache, Pantalla pantalla) {
         this.perfiles = perfiles; this.ratings = ratings; this.busqueda = busqueda; this.tareas = tareas;
-        this.eloWatch = eloWatch; this.pantalla = pantalla;
+        this.eloWatch = eloWatch; this.actividadCache = actividadCache; this.pantalla = pantalla;
     }
 
     /** Ficha de cabecera sin llamada: el ELO más reciente que conocemos (watchlist, o el de su última partida por ladder). Igual que perfilSintetico de la 1.1. */
@@ -120,6 +123,7 @@ public final class PerfilPresenter {
                 } catch (Exception ex) { log("perfiles: " + causa(ex)); }
                 if (desdeSfr != null) {
                     Actividad a = desdeSfr; String hastaF = hastaSfr; String paisF = paisSfr;
+                    actividadCache.put(pid, a);
                     FichaPerfil perfilConocido = perfiles.fichaConocida(pid);
                     FichaPerfil ficha = perfilConocido != null ? perfilConocido : sintetico(pid, a, paisF);
                     tareas.enUi(() -> {
@@ -150,10 +154,12 @@ public final class PerfilPresenter {
 
     /** «Actualizar hoy»: ficha + las 50 partidas más recientes, fundidas con lo que ya había. Hilo "perfil-hoy". */
     public void actualizarHoy(long pid) {
+        if (pid <= 0) return;
         pantalla.hoyIniciado();
         tareas.enFondo("perfil-hoy", () -> {
             try {
                 FichaPerfil ficha = perfiles.ficha(pid);
+                pantalla.marcarVinculadasPedidas(pid);
                 int nuevas = perfiles.traerHoy(pid);
                 tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });
             } catch (Exception ex) {
@@ -217,8 +223,8 @@ public final class PerfilPresenter {
      * abren al instante. Sin Pantalla: no pinta nada, solo deja la actividad en {@code actividadCache} y en disco.
      * Igual que precalentarPerfiles de la 1.1; hilo "perfiles-precarga", demonio, prioridad mínima.
      */
-    public void precalentar(Map<Long, Actividad> actividadCache, Path perfilesDir, LongFunction<Actividad> cargarDeDisco) {
-        tareas.enFondoDemonio("perfiles-precarga", () -> {
+    public void precalentar(Path perfilesDir, LongFunction<Actividad> cargarDeDisco) {
+        tareas.enFondoDemonioMinima("perfiles-precarga", () -> {
             try {
                 Thread.sleep(90_000);
                 if (!Files.isDirectory(perfilesDir)) return;

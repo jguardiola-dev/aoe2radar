@@ -40,9 +40,10 @@ class PerfilPresenterTest {
         Exception historialFalla;
         int traerHoyResultado;
         Exception traerHoyFalla;
+        RuntimeException fichaFalla;
         Consumer<Actividad> ultimoParcial;
 
-        @Override public FichaPerfil ficha(long pid) { return ficha; }
+        @Override public FichaPerfil ficha(long pid) { if (fichaFalla != null) throw fichaFalla; return ficha; }
         @Override public FichaPerfil fichaConocida(long pid) { return ficha; }
         @Override public Integer elo1v1(long pid) { return null; }
         @Override public List<Perfil.Vinculada> vinculadas(long pid) { return List.of(); }
@@ -95,6 +96,7 @@ class PerfilPresenterTest {
         Actividad completadaPintada;
         String errorCarga;
         int hoyIniciadoVeces;
+        final java.util.Set<Long> vinculadasPedidasMarcadas = new java.util.HashSet<>();
         FichaPerfil hoyFicha; int hoyNuevas;
         String hoyError;
         Actividad masParcial; int masMax;
@@ -115,6 +117,7 @@ class PerfilPresenterTest {
         @Override public void cargaCompletada(Actividad a) { completadaPintada = a; }
         @Override public void errorCarga(String mensaje) { errorCarga = mensaje; }
         @Override public void hoyIniciado() { hoyIniciadoVeces++; }
+        @Override public void marcarVinculadasPedidas(long pid) { vinculadasPedidasMarcadas.add(pid); }
         @Override public void hoyTerminado(FichaPerfil ficha, int nuevas) { hoyFicha = ficha; hoyNuevas = nuevas; }
         @Override public void hoyError(String mensaje) { hoyError = mensaje; }
         @Override public void masProgreso(Actividad parcialA, int maxPaginas) { masParcial = parcialA; masMax = maxPaginas; }
@@ -131,7 +134,8 @@ class PerfilPresenterTest {
     final BusquedaFalsa busqueda = new BusquedaFalsa();
     final PantallaFalsa pantalla = new PantallaFalsa();
     final Map<Long, Integer> eloWatch = new HashMap<>();
-    final PerfilPresenter presenter = new PerfilPresenter(perfiles, ratings, busqueda, Tareas.EN_LINEA, eloWatch, pantalla);
+    final Map<Long, Actividad> actividadCache = new HashMap<>();
+    final PerfilPresenter presenter = new PerfilPresenter(perfiles, ratings, busqueda, Tareas.EN_LINEA, eloWatch, actividadCache, pantalla);
 
     private Actividad actividad(long pid, String nombre, List<Match> partidas) { return new Actividad(pid, nombre, partidas, true, 1, 1_700_000_000_000L); }
 
@@ -147,6 +151,16 @@ class PerfilPresenterTest {
         assertNotNull(pantalla.desdeSfrPintada);
         assertEquals("2026-09-24", pantalla.desdeSfrHasta);
         assertFalse(pantalla.cargando);   // se desmarca antes de pintar, como el resto de presentadores
+    }
+
+    @Test void cargar_desde_sfr_data_deja_la_actividad_en_actividadCache() {
+        // B3: la 1.1 hacía ACTIVIDAD_CACHE.put(pid, a) en el propio hilo de red, antes del enUi; H2H y la
+        // precarga de perfiles la leen de ahí, no solo de lo que pinta la pantalla.
+        pantalla.pidAbierto = 5L;
+        Actividad a = actividad(5L, "Fulano", List.of());
+        perfiles.anioSfr = new AnioSfr(a, "2026-09-24", "es");
+        presenter.cargar(5L, "Fulano", null, false);
+        assertSame(a, actividadCache.get(5L));
     }
 
     @Test void cargar_desde_sfr_data_descartada_si_el_pid_abierto_cambio() {
@@ -223,6 +237,28 @@ class PerfilPresenterTest {
         presenter.actualizarHoy(5L);
         assertNotNull(pantalla.hoyError);
         assertTrue(pantalla.hoyError.contains("caído"));
+    }
+
+    /** M2: la 1.1 no hacía nada con pid <= 0 (ni siquiera deshabilitaba el botón). */
+    @Test void actualizar_hoy_con_pid_0_no_hace_nada() {
+        presenter.actualizarHoy(0L);
+        assertEquals(0, pantalla.hoyIniciadoVeces);
+    }
+
+    /** M1: vinculadasPedidas.add solo se marca tras un ficha(pid) que no lanzó excepción, como la 1.1. */
+    @Test void actualizar_hoy_marca_vinculadas_pedidas_solo_si_ficha_no_falla() {
+        pantalla.pidAbierto = 5L;
+        perfiles.ficha = new FichaPerfil(Map.of(), "es", "", 0);
+        presenter.actualizarHoy(5L);
+        assertTrue(pantalla.vinculadasPedidasMarcadas.contains(5L));
+    }
+
+    @Test void actualizar_hoy_no_marca_vinculadas_pedidas_si_ficha_falla() {
+        pantalla.pidAbierto = 9L;
+        perfiles.fichaFalla = new RuntimeException("companion caído");
+        presenter.actualizarHoy(9L);
+        assertFalse(pantalla.vinculadasPedidasMarcadas.contains(9L));
+        assertNotNull(pantalla.hoyError);   // el fallo de ficha() también cae en el catch general de perfil-hoy
     }
 
     // ----- cargar más ------------------------------------------------------------------------

@@ -1,11 +1,13 @@
 package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Actividad;
+import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.service.BusquedaPerfiles;
 import dev.tirador.aoe2radar.service.ProfileService;
 
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -22,9 +24,10 @@ public final class CaraACaraPresenter {
     private final ProfileService perfiles;
     private final BusquedaPerfiles busqueda;
     private final Tareas tareas;
+    private final Map<Long, Actividad> actividadCache;
 
-    public CaraACaraPresenter(ProfileService perfiles, BusquedaPerfiles busqueda, Tareas tareas) {
-        this.perfiles = perfiles; this.busqueda = busqueda; this.tareas = tareas;
+    public CaraACaraPresenter(ProfileService perfiles, BusquedaPerfiles busqueda, Tareas tareas, Map<Long, Actividad> actividadCache) {
+        this.perfiles = perfiles; this.busqueda = busqueda; this.tareas = tareas; this.actividadCache = actividadCache;
     }
 
     /** Sugerencias del buscador de rival del diálogo. {@code actual} da el texto vigente al mirar la respuesta. Hilo "h2h-sugerir". */
@@ -41,11 +44,13 @@ public final class CaraACaraPresenter {
      */
     public void pedirAnioRival(long rivalPid, String nombreSiFalta, Supplier<Boolean> sigueAbierto, Consumer<Actividad> pintar) {
         tareas.enFondo("h2h-comparar", () -> {
-            Actividad ar = null;
-            try {
-                var anio = perfiles.anioSfr(rivalPid, nombreSiFalta);
-                if (anio != null) ar = anio.actividad();
-            } catch (Exception ex) { log("h2h rival: " + causa(ex)); }
+            Actividad ar = actividadCache.get(rivalPid);
+            if (ar == null) {
+                try {
+                    AnioSfr an = perfiles.anioSfr(rivalPid, nombreSiFalta);
+                    if (an != null) { ar = an.actividad(); actividadCache.put(rivalPid, ar); }
+                } catch (Exception ex) { log("h2h rival: " + causa(ex)); }
+            }
             final Actividad arF = ar;
             tareas.enUi(() -> { if (Boolean.TRUE.equals(sigueAbierto.get())) pintar.accept(arF); });
         });

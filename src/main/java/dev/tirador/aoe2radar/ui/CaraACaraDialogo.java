@@ -99,7 +99,7 @@ public final class CaraACaraDialogo {
 
     public CaraACaraDialogo(Window ventana, PerfilView view) {
         this.ventana = ventana; this.view = view;
-        this.presenter = new CaraACaraPresenter(view.perfiles, view.busqueda, view.tareas);
+        this.presenter = new CaraACaraPresenter(view.perfiles, view.busqueda, view.tareas, view.actividadCache);
     }
 
     private void registrar() {
@@ -129,6 +129,12 @@ public final class CaraACaraDialogo {
     /** ¿El diálogo está mostrado y tiene el foco? (para que el botón lateral del ratón de la ventana decida si es «atrás» del diálogo o el general). */
     public boolean mostradoConFoco() { return dialogo != null && dialogo.isShowing() && dialogo.isFocused(); }
 
+    /** ¿El diálogo está mostrado (sin exigir foco)? Lo usa PerfilView para el tope de filas de rivales/aliados (10 en vez de 5). */
+    public boolean mostrado() { return dialogo != null && dialogo.isShowing(); }
+
+    /** ¿Se ha llegado a crear el diálogo alguna vez? (para no tocar campos si mostrar() nunca se llamó). */
+    public boolean creado() { return dialogo != null; }
+
     /** El botón «atrás» propio del diálogo (también el botón lateral del ratón, ver mostradoConFoco). */
     public void irAtras() { atras(); }
 
@@ -155,7 +161,7 @@ public final class CaraACaraDialogo {
         });
         busca.addActionListener(e -> { if (popup.getComponentCount() > 0) ((JMenuItem) popup.getComponent(0)).doClick(); });
         JPanel izq = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
-        atrasBtn = new JButton("←"); atrasBtn.setFocusable(false); atrasBtn.setMargin(new Insets(1, 7, 1, 7)); atrasBtn.putClientProperty("JButton.buttonType", "roundRect"); atrasBtn.setEnabled(false);
+        atrasBtn = new JButton("\u2190"); atrasBtn.setFocusable(false); atrasBtn.setMargin(new Insets(1, 7, 1, 7)); atrasBtn.putClientProperty("JButton.buttonType", "roundRect"); atrasBtn.setEnabled(false);
         atrasBtn.setToolTipText(t("Atrás dentro de esta ventana (también el botón lateral del ratón)", "Back within this window (also the mouse's back button)"));
         atrasBtn.addActionListener(e -> atras());
         izq.add(atrasBtn);
@@ -271,9 +277,7 @@ public final class CaraACaraDialogo {
         for (Map.Entry<Long, String> en : locales.entrySet()) { long pid = en.getKey(); String nombre = view.anfitrion.nombreVisible(pid, en.getValue()); JMenuItem it = new JMenuItem(nombre + t("  (en su historial)", "  (in their history)"), iconoBandera(view.anfitrion.paisDe(pid))); it.addActionListener(x -> fijar(pid, nombre)); popup.add(it); if (++n >= 6) break; }
         if (n > 0 && busca.isShowing()) popup.show(busca, 0, busca.getHeight());
         presenter.sugerir(q, () -> busca == null ? null : busca.getText().trim(), res -> {
-            popup.removeAll();   // ver aviso: se repintan también las locales, igual que la 1.1 (que las reconstruía dentro del propio invokeLater)
             int k = 0;
-            for (Map.Entry<Long, String> en : locales.entrySet()) { long pid = en.getKey(); String nombre = view.anfitrion.nombreVisible(pid, en.getValue()); JMenuItem it = new JMenuItem(nombre + t("  (en su historial)", "  (in their history)"), iconoBandera(view.anfitrion.paisDe(pid))); it.addActionListener(x -> fijar(pid, nombre)); popup.add(it); if (++k >= 6) break; }
             for (String[] r : res) { long pid = Long.parseLong(r[0]); if (locales.containsKey(pid) || pid == pidAbierto) continue; JMenuItem it = new JMenuItem(r[2]); String nombre = r[1]; it.addActionListener(x -> fijar(pid, nombre)); popup.add(it); if (++k >= 6) break; }
             if (popup.getComponentCount() > 0 && busca.isShowing()) popup.show(busca, 0, busca.getHeight());
         });
@@ -424,7 +428,7 @@ public final class CaraACaraDialogo {
         cuerpo.add(columnas2);
         cuerpo.add(Box.createVerticalStrut(10));
         JPanel comparacion = new JPanel(); comparacion.setLayout(new BoxLayout(comparacion, BoxLayout.Y_AXIS)); comparacion.setOpaque(false); comparacion.setAlignmentX(0f);
-        comparacion.add(tituloSeccion(t("Cada uno por su lado", "Each on their own") + " · " + t("último año", "last year")));
+        comparacion.add(tituloSeccion(t("Cada uno por su lado", "Each on their own") + " \u00B7 " + t("último año", "last year")));
         JLabel cargando = new JLabel(t("cargando el perfil del rival…", "loading the opponent's profile…")); cargando.setForeground(colorSecundario()); cargando.setAlignmentX(0f); comparacion.add(cargando);
         cuerpo.add(comparacion);
         cuerpo.add(Box.createVerticalStrut(10));
@@ -438,8 +442,8 @@ public final class CaraACaraDialogo {
                     JPanel l1 = new JPanel(); l1.setLayout(new BoxLayout(l1, BoxLayout.Y_AXIS)); l1.setOpaque(false);
                     JPanel l2 = new JPanel(); l2.setLayout(new BoxLayout(l2, BoxLayout.Y_AXIS)); l2.setOpaque(false);
                     java.util.function.Function<String, Icon> ic = "mapas".equals(sec[0]) ? k -> iconoMapa(k, 18) : "civs".equals(sec[0]) ? k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18) : null;
-                    view.pintarListaAgg(l1, sec[1] + " · " + nombreAbierto, mio.get(sec[0]), 5, k -> k, null, ic);
-                    view.pintarListaAgg(l2, sec[1] + " · " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic);
+                    view.pintarListaAgg(l1, sec[1] + " \u00B7 " + nombreAbierto, mio.get(sec[0]), 5, k -> k, null, ic);
+                    view.pintarListaAgg(l2, sec[1] + " \u00B7 " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic);
                     par.add(l1); par.add(l2);
                     comparacion.add(par); comparacion.add(Box.createVerticalStrut(6));
                 }

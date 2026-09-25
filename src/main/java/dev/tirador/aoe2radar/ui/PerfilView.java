@@ -147,6 +147,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
         void abrirUrl(String url);
         void registrarDestino(long pid, String nombre);
+        /** Repinta el texto de «Buscar partidas (X)» (fetchBtn/guiaBtn) y objetivoEtiqueta según quién está seleccionado o abierto. */
+        void actualizarTextoBuscar();
         JToggleButton crearBotonPestana(String texto, Icon icono);
         void traerAlFrente();
         void mostrarEstadoGlobal(String texto);
@@ -251,7 +253,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         this.actividadCache = actividadCache; this.eloWatch = eloWatch; this.aliases = aliases; this.canalDe = canalDe;
         this.eloAyer = eloAyer; this.nombresAyer = nombresAyer; this.twitchLive = twitchLive; this.notaDeFn = notaDeFn;
         this.perfilesDir = perfilesDir; this.cargarDeDisco = cargarDeDisco; this.actDias = actDias;
-        this.presenter = new PerfilPresenter(perfiles, ratings, busqueda, tareas, eloWatch, this);
+        this.presenter = new PerfilPresenter(perfiles, ratings, busqueda, tareas, eloWatch, actividadCache, this);
         construirPanelPerfil();
     }
 
@@ -270,13 +272,16 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     public void cerrar() { actividadAbierta = false; }
 
     /** Calienta en segundo plano los perfiles ya guardados: llamar una vez al arrancar la ventana. */
-    public void precalentar() { presenter.precalentar(actividadCache, perfilesDir, cargarDeDisco); }
+    public void precalentar() { presenter.precalentar(perfilesDir, cargarDeDisco); }
 
     // ===== cromo: lo llama la ventana desde su abrirPerfil/abrirPerfilEnPestana =====================
 
+    /** Marca Perfil como abierto: lo llama la ventana ANTES del CardLayout.show, en el mismo punto que la 1.1
+     *  (actividadAbierta = true;), antes de subirArriba/taparResultados/apagarForma. */
+    public void marcarAbierta() { actividadAbierta = true; }
+
     /** La parte de vista de abrir un perfil (pid 0 = página vacía con el buscador); el cromo (botones, CardLayout…) ya lo hizo la ventana. */
     public void alAbrir(long pid, String nombre) {
-        actividadAbierta = true;
         if (pid <= 0) { actTitulo.setText(t("Perfil", "Profile")); actEstado.setText(""); actProgreso.setVisible(false); actMostrarCuerpo(false); perfilBusca.requestFocusInWindow(); refrescarTiraPerfil(); return; }
         perfilContabilizarPestana(pid, nombre);
         anfitrion.registrarDestino(pid, nombre);
@@ -284,7 +289,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actPid = pid; actNombre = nombre;
         actTitulo.setText(t("Perfil de ", "Profile of ") + nombre);
         actNombreReal = nombre;
-        actualizarTextoBuscar();
+        anfitrion.actualizarTextoBuscar();
         actMasBtn.setVisible(false);
         Actividad base = perfiles.actividad(pid);
         boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
@@ -295,13 +300,6 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
         presenter.cargar(pid, nombre, base, fresco);
     }
-
-    /** Actualiza solo el texto del buscador con el perfil abierto (no dispara sugerencias). */
-    private void actualizarTextoBuscar() {
-        perfilRellenandoBusca = true;
-        try { perfilBusca.setText(actPid > 0 ? actNombre : ""); } finally { perfilRellenandoBusca = false; }
-    }
-    private boolean perfilRellenandoBusca;
 
     /** Con Perfil abierto, seleccionar a alguien en la watchlist abre su perfil (lo llama el listener de playersList). */
     public void sincronizarSeleccion() {
@@ -324,7 +322,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         int i = indicePestana(pid);
         if (i >= 0) { perfilPestanaActiva = i; navegacion.abrirPerfil(pid, nombre); return; }
         if (perfilPestanas.size() >= PERFIL_MAX_PESTANAS) {
-            JOptionPane.showMessageDialog(actividadPanel, t("Ya hay " + PERFIL_MAX_PESTANAS + " perfiles abiertos, el máximo. Cierra alguno con su × para abrir otro.\n(Sin Ctrl, el clic abre al jugador en la pestaña actual.)",
+            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(actividadPanel), t("Ya hay " + PERFIL_MAX_PESTANAS + " perfiles abiertos, el máximo. Cierra alguno con su × para abrir otro.\n(Sin Ctrl, el clic abre al jugador en la pestaña actual.)",
                     "There are already " + PERFIL_MAX_PESTANAS + " profiles open, the maximum. Close one with its × to open another.\n(Without Ctrl, a click opens the player in the current tab.)"),
                     t("Pestañas de perfil", "Profile tabs"), JOptionPane.INFORMATION_MESSAGE);
             return;
@@ -365,7 +363,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
             JToggleButton tb = anfitrion.crearBotonPestana((String) p[1], iconoBandera(anfitrion.paisDe((Long) p[0])));
             tb.setSelected(i == perfilPestanaActiva);
             tb.addActionListener(e -> { if (!tb.isSelected()) { tb.setSelected(true); return; } perfilPestanaActiva = idx; navegacion.abrirPerfil((Long) p[0], (String) p[1]); });
-            JButton x = new JButton("×");
+            JButton x = new JButton("\u00D7");
             x.setFocusable(false); x.setMargin(new Insets(0, 4, 0, 4)); x.putClientProperty("JButton.buttonType", "borderless");
             x.setToolTipText(t("Cerrar esta pestaña", "Close this tab"));
             x.addActionListener(e -> cerrarPestana(idx));
@@ -423,7 +421,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         h2hBtn.setToolTipText(t("El cruce con un rival: balance, mapas, civ contra civ y últimas partidas entre ambos", "The pairing with an opponent: record, maps, civ vs civ and latest games between them"));
         h2hBtn.addActionListener(e -> mostrarCaraACara());
         izq.add(h2hBtn);
-        JButton masBtn = new JButton("⋯");
+        JButton masBtn = new JButton("\u22EF");
         masBtn.setFocusable(false); masBtn.setMargin(new Insets(1, 6, 1, 6)); masBtn.putClientProperty("JButton.buttonType", "roundRect");
         masBtn.setToolTipText(t("Nota, alias, nicks anteriores, cuentas vinculadas, watchlist…", "Note, alias, previous names, linked accounts, watchlist…"));
         masBtn.addActionListener(e -> actMenuNombre(new MouseEvent(masBtn, MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, 0, masBtn.getHeight(), 1, true), masBtn));
@@ -447,15 +445,15 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         perfilBusca.putClientProperty("JTextField.placeholderText", t("Buscar jugador… o selecciona en la watchlist", "Search a player… or select in the watchlist"));
         perfilBusca.putClientProperty("JTextField.showClearButton", true);
         perfilPopup = new JPopupMenu(); perfilPopup.setFocusable(false);
-        perfilDebounce = new javax.swing.Timer(450, e -> presenter.sugerirBuscador(perfilBusca.getText().trim()));
+        perfilDebounce = new javax.swing.Timer(450, e -> perfilSugerir());
         perfilDebounce.setRepeats(false);
         perfilBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { if (perfilRellenandoBusca) return; perfilDebounce.restart(); }
+            void cambio() { perfilDebounce.restart(); }
             @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
             @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
             @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
         });
-        perfilBusca.addActionListener(e -> { if (perfilPopup.isVisible() && perfilPopup.getComponentCount() > 0) ((JMenuItem) perfilPopup.getComponent(0)).doClick(); else presenter.sugerirBuscador(perfilBusca.getText().trim()); });
+        perfilBusca.addActionListener(e -> { if (perfilPopup.isVisible() && perfilPopup.getComponentCount() > 0) ((JMenuItem) perfilPopup.getComponent(0)).doClick(); else perfilSugerir(); });
         perfilBusca.addKeyListener(new KeyAdapter() {
             @Override public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_DOWN && perfilPopup.isVisible() && perfilPopup.getComponentCount() > 0) { ((JMenuItem) perfilPopup.getComponent(0)).doClick(); e.consume(); }
@@ -468,7 +466,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actEstado.setFont(actEstado.getFont().deriveFont(Font.PLAIN, 11f));
         izq.add(actEstado);
         norte.add(izq, BorderLayout.CENTER);
-        JButton cerrar = new JButton("×");
+        JButton cerrar = new JButton("\u00D7");
         cerrar.setFocusable(false); cerrar.setMargin(new Insets(0, 7, 0, 7)); cerrar.putClientProperty("JButton.buttonType", "roundRect");
         cerrar.setToolTipText(t("Cerrar", "Close"));
         cerrar.addActionListener(e -> { actividadAbierta = false; anfitrion.cerrarPerfil(); });
@@ -494,7 +492,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
         actCuerpo = new PanelScrollable();
         actCuerpo.setBorder(BorderFactory.createEmptyBorder(2, 0, 2, 4));
-        actPista = new JLabel(t("Selecciona un jugador en la watchlist, clic derecho → «Perfil completo…», o escribe un nick arriba.", "Select a player in the watchlist, right-click → “Full profile…”, or type a nick above."));
+        actPista = new JLabel(t("Selecciona un jugador en la watchlist, clic derecho → «Perfil completo…», o escribe un nick arriba.", "Select a player in the watchlist, right-click → \u201CFull profile…\u201D, or type a nick above."));
         actPista.setFont(actPista.getFont().deriveFont(Font.ITALIC, 12f)); actPista.setForeground(Color.GRAY); actPista.setAlignmentX(0f);
         actCuerpo.add(actPista);
         actCabecera = new JPanel(new BorderLayout(10, 2));
@@ -519,7 +517,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actSpark.setOpaque(false); actSpark.setPreferredSize(new Dimension(480, 150));
         actGrafica = new GraficaElo();
         actSpark.add(actGrafica, BorderLayout.CENTER);
-        JButton ampliar = new JButton("⛶");
+        JButton ampliar = new JButton("\u26F6");
         ampliar.setFocusable(false); ampliar.setMargin(new Insets(0, 4, 0, 4)); ampliar.putClientProperty("JButton.buttonType", "roundRect");
         ampliar.setToolTipText(t("Ampliar la gráfica de ELO", "Enlarge the ELO chart"));
         ampliar.addActionListener(e -> {
@@ -583,7 +581,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     }
 
     private void actMostrarCuerpo(boolean hay) {
-        if (hay) actPista.setText(t("Selecciona un jugador en la watchlist, clic derecho → «Perfil completo…», o escribe un nick arriba.", "Select a player in the watchlist, right-click → “Full profile…”, or type a nick above."));
+        if (hay) actPista.setText(t("Selecciona un jugador en la watchlist, clic derecho → «Perfil completo…», o escribe un nick arriba.", "Select a player in the watchlist, right-click → \u201CFull profile…\u201D, or type a nick above."));
         actPista.setVisible(!hay);
         for (Component c : actCuerpo.getComponents()) if (c != actPista) c.setVisible(hay);
         actModoCombo.setVisible(hay);
@@ -594,7 +592,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         JTextField d1 = new JTextField(actDesde == null ? LocalDate.now().minusDays(29).toString() : actDesde.toString(), 10), d2 = new JTextField(actHasta == null ? LocalDate.now().toString() : actHasta.toString(), 10);
         JPanel pnl = new JPanel(new GridLayout(2, 2, 6, 6));
         pnl.add(new JLabel(t("Desde (AAAA-MM-DD):", "From (YYYY-MM-DD):"))); pnl.add(d1); pnl.add(new JLabel(t("Hasta:", "To:"))); pnl.add(d2);
-        int r = JOptionPane.showConfirmDialog(actividadPanel, pnl, t("Rango de fechas", "Date range"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        int r = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(actividadPanel), pnl, t("Rango de fechas", "Date range"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (r != JOptionPane.OK_OPTION) return false;
         try { actDesde = LocalDate.parse(d1.getText().trim()); actHasta = LocalDate.parse(d2.getText().trim()); if (actHasta.isBefore(actDesde)) { LocalDate x = actDesde; actDesde = actHasta; actHasta = x; } return true; }
         catch (Exception ex) { anfitrion.mostrarEstadoGlobal(t("Fecha no válida: usa AAAA-MM-DD.", "Invalid date: use YYYY-MM-DD.")); return false; }
@@ -608,6 +606,14 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     }
 
     // ===== filtro «cara a cara con…» de la cabecera (distinto del diálogo Cara a cara) ==============
+
+    /** Sugerencias de nick para el buscador del perfil (búsqueda del companion, con retardo). */
+    private void perfilSugerir() {
+        String q = perfilBusca.getText().trim();
+        perfilPopup.setVisible(false); perfilPopup.removeAll();
+        if (q.length() < 2) return;
+        presenter.sugerirBuscador(q);
+    }
 
     private void h2hSugerir() {
         String q = actH2hBusca.getText().trim();
@@ -717,8 +723,9 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     @Override public void hoyIniciado() {
         actHoyBtn.setEnabled(false); actHoyBtn.setText(t("Actualizando…", "Updating…"));
-        vinculadasPedidas.add(actPid);
     }
+
+    @Override public void marcarVinculadasPedidas(long pid) { vinculadasPedidas.add(pid); }
 
     @Override public void hoyTerminado(FichaPerfil ficha, int nuevas) {
         actPintarCabecera(ficha);
@@ -823,7 +830,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         JComboBox<String> modo = new JComboBox<>(new String[]{ t("Todos los modos", "All modes"), "1v1 Random Map", "Team Random Map", "1v1 Empire Wars", "Team Empire Wars", "1v1 Death Match", "Team Death Match" });
         norte.add(new JLabel(t("Modo:", "Mode:"))); norte.add(modo);
         JLabel info = new JLabel(); info.setForeground(colorSecundario()); norte.add(info);
-        JButton ant = new JButton("←"), sig = new JButton("→"); for (JButton b : new JButton[]{ ant, sig }) { b.setFocusable(false); b.setMargin(new Insets(1, 8, 1, 8)); b.putClientProperty("JButton.buttonType", "roundRect"); }
+        JButton ant = new JButton("\u2190"), sig = new JButton("\u2192"); for (JButton b : new JButton[]{ ant, sig }) { b.setFocusable(false); b.setMargin(new Insets(1, 8, 1, 8)); b.putClientProperty("JButton.buttonType", "roundRect"); }
         JButton mas = new JButton(t("Cargar 50 más (1 llamada)", "Load 50 more (1 request)")); mas.setFocusable(false); mas.setMargin(new Insets(1, 8, 1, 8)); mas.putClientProperty("JButton.buttonType", "roundRect"); mas.setVisible(false);
         JLabel pag = new JLabel();
         norte.add(ant); norte.add(pag); norte.add(sig); norte.add(mas);
@@ -845,7 +852,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
                 Match m = todas.get(i); visibles.add(m);
                 StringBuilder j = new StringBuilder(); int team = -1;
                 for (MatchPlayer mp : m.players) { if (team != -1 && mp.team != team) j.append("  vs  "); else if (j.length() > 0) j.append(", "); j.append(anfitrion.nombreVisible(mp.id, mp.name)).append(mp.civ == null ? "" : " (" + mp.civ + ")"); team = mp.team; }
-                modelo.addRow(new Object[]{ m.started == null ? "" : m.started.atZone(ZoneId.systemDefault()).format(fmt), m.map, m.mode, j.toString(), m.enDisco ? "✓" : "" });
+                modelo.addRow(new Object[]{ m.started == null ? "" : m.started.atZone(ZoneId.systemDefault()).format(fmt), m.map, m.mode, j.toString(), m.enDisco ? "\u2713" : "" });
             }
             pag.setText((histPagina + 1) + " / " + paginas);
             ant.setEnabled(histPagina > 0); sig.setEnabled(histPagina < paginas - 1);
@@ -905,7 +912,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
             for (Perfil.Vinculada x : v) {
                 long vid = x.pid(); String nombre = anfitrion.nombreVisible(vid, String.valueOf(x.nombre()));
                 Integer elo = perfiles.eloVinculada(vid);
-                JLabel l = new JLabel("<html><u>" + escapeHtml(nombre) + "</u>" + (elo != null && elo > 0 ? " <span style='color:gray'>(" + elo + ")</span>" : "") + (anfitrion.estaEnWatchlist(vid) ? " <span style='color:gray'>★</span>" : "") + "</html>", iconoBandera(x.pais() != null ? String.valueOf(x.pais()) : anfitrion.paisDe(vid)), javax.swing.SwingConstants.LEFT);
+                JLabel l = new JLabel("<html><u>" + escapeHtml(nombre) + "</u>" + (elo != null && elo > 0 ? " <span style='color:gray'>(" + elo + ")</span>" : "") + (anfitrion.estaEnWatchlist(vid) ? " <span style='color:gray'>\u2605</span>" : "") + "</html>", iconoBandera(x.pais() != null ? String.valueOf(x.pais()) : anfitrion.paisDe(vid)), javax.swing.SwingConstants.LEFT);
                 l.setIconTextGap(4); l.setFont(l.getFont().deriveFont(Font.BOLD, 13f));
                 l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
                 l.setToolTipText(t("Clic: abrir su perfil · botón central o clic derecho: en pestaña nueva", "Click: open their profile · middle or right button: in a new tab"));
@@ -946,7 +953,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actChips.removeAll();
         actPintarVinculadas();
         String nota = notaDeFn.apply(actPid);
-        actNotaLinea.setText(nota != null ? "✎ " + nota : (aliases.get(actPid) != null && !aliases.get(actPid).isBlank() ? t("Mostrado como ", "Shown as ") + aliases.get(actPid) + t(" · nick real ", " · real nick ") + actNombreReal : ""));
+        actNotaLinea.setText(nota != null ? "\u270E " + nota : (aliases.get(actPid) != null && !aliases.get(actPid).isBlank() ? t("Mostrado como ", "Shown as ") + aliases.get(actPid) + t(" · nick real ", " · real nick ") + actNombreReal : ""));
         actNotaLinea.setVisible(!actNotaLinea.getText().isEmpty());
         String pais = perfil == null ? "" : String.valueOf(perfil.pais()), clan = perfil == null ? "" : String.valueOf(perfil.clan());
         long games = perfil == null ? 0 : perfil.partidas();
@@ -1064,7 +1071,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         int diasActivos = porDia.size();
         for (Component c : actChips.getComponents()) if (c instanceof JLabel l && "forma".equals(l.getName())) actChips.remove(l);
         if (f10 > 0) {
-            String forma = fW + "-" + fL + " · " + (fDiff >= 0 ? "+" : "") + fDiff + (fDiff > 0 ? " ▲" : fDiff < 0 ? " ▼" : "")
+            String forma = fW + "-" + fL + " · " + (fDiff >= 0 ? "+" : "") + fDiff + (fDiff > 0 ? " \u25B2" : fDiff < 0 ? " \u25BC" : "")
                     + (fRacha >= 2 ? " · " + t("racha ", "streak ") + fRacha + (Boolean.TRUE.equals(fRachaGana) ? "V" : "D") : "");
             JLabel lf = chipPerfil(t("Últimas ", "Last ") + f10 + ("*".equals(actModo) ? "" : " · " + actModo), escapeHtml(forma), t("Las partidas más recientes con resultado, en el modo elegido", "The most recent games with a result, in the chosen mode"));
             lf.setName("forma");
@@ -1104,9 +1111,9 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         pintarListaJugadores(actAliados, t("Aliados más frecuentes", "Most frequent allies"), aliados);
         Map<String, int[]> trOrd = new LinkedHashMap<>();
         if (franjas != null) for (String tr : franjas) if (tramos.containsKey(tr)) trOrd.put(tr, tramos.get(tr));
-        pintarListaAgg(actTramos, t("Winrate por ELO del rival", "Win rate by opponent ELO") + (eloActualJugador > 0 ? " · " + t("franjas centradas en ", "brackets centred on ") + eloActualJugador : ""), trOrd, 9, dev.tirador.aoe2radar.service.NombresStats::tramoNombre, null);
+        pintarListaAgg(actTramos, t("Winrate por ELO del rival", "Win rate by opponent ELO") + (eloActualJugador > 0 ? " \u00B7 " + t("franjas centradas en ", "brackets centred on ") + eloActualJugador : ""), trOrd, 9, dev.tirador.aoe2radar.service.NombresStats::tramoNombre, null);
         actDuracionFila.removeAll();
-        for (int i = 0; i < 5; i++) actDuracionFila.add(listas.tarjeta(dev.tirador.aoe2radar.service.ReglasPartida.DURACION_TRAMOS[i], durN[i] == 0 ? "–" : pct1(100.0 * durW[i] / durN[i]), durN[i] == 0 ? t("sin partidas", "no games") : miles(durN[i]) + t(" partidas, ", " games, ") + miles(durW[i]) + t(" victorias", " wins")));
+        for (int i = 0; i < 5; i++) actDuracionFila.add(listas.tarjeta(dev.tirador.aoe2radar.service.ReglasPartida.DURACION_TRAMOS[i], durN[i] == 0 ? "\u2013" : pct1(100.0 * durW[i] / durN[i]), durN[i] == 0 ? t("sin partidas", "no games") : miles(durN[i]) + t(" partidas, ", " games, ") + miles(durW[i]) + t(" victorias", " wins")));
         actDuracionFila.revalidate(); actDuracionFila.repaint();
         Map<String, int[]> posOrd = new LinkedHashMap<>(); if (posicion.containsKey("pocket")) posOrd.put("pocket", posicion.get("pocket")); if (posicion.containsKey("flanco")) posOrd.put("flanco", posicion.get("flanco"));
         pintarListaAgg(actPosicion, t("Pocket o flanco (Team RM, 3v3 y 4v4)", "Pocket or flank (Team RM, 3v3 & 4v4)"), posOrd, 2, k -> dev.tirador.aoe2radar.service.NombresStats.posicionNombre(k), null);
@@ -1115,7 +1122,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
             for (Map.Entry<String, int[]> en : posicionMapa.entrySet()) { String[] kv = en.getKey().split("\u0000"); int[][] f = porMapa.computeIfAbsent(kv[0], k -> new int[][]{ new int[2], new int[2] }); f["pocket".equals(kv[1]) ? 0 : 1] = en.getValue(); }
             List<Object[]> filasPos = new ArrayList<>();
             for (Map.Entry<String, int[][]> en : porMapa.entrySet()) { int[] pk = en.getValue()[0], fl = en.getValue()[1]; filasPos.add(new Object[]{ new Listas.Celda(iconoMapa(en.getKey(), 18), en.getKey(), null), (long) pk[0], pk[0] == 0 ? null : new Listas.Pct(100.0 * pk[1] / pk[0], pk[1], pk[0], true), (long) fl[0], fl[0] == 0 ? null : new Listas.Pct(100.0 * fl[1] / fl[0], fl[1], fl[0], true) }); }
-            actPosicion.add(listas.enlaceVerTodo(porMapa.size(), () -> listas.mostrarTablaCompleta(t("Pocket o flanco por mapa", "Pocket or flank by map") + " · " + actNombre, new String[]{ t("Mapa", "Map"), t("Partidas pocket", "Pocket games"), t("WR pocket", "Pocket WR"), t("Partidas flanco", "Flank games"), t("WR flanco", "Flank WR") }, filasPos, 1)));
+            actPosicion.add(listas.enlaceVerTodo(porMapa.size(), () -> listas.mostrarTablaCompleta(t("Pocket o flanco por mapa", "Pocket or flank by map") + " \u00B7 " + actNombre, new String[]{ t("Mapa", "Map"), t("Partidas pocket", "Pocket games"), t("WR pocket", "Pocket WR"), t("Partidas flanco", "Flank games"), t("WR flanco", "Flank WR") }, filasPos, 1)));
         }
         pintarListaAgg(actUltimos30Civs, t("Últimos 30 días · civs", "Last 30 days · civs"), civs30, 5, k -> k, null, k -> iconoCiv(techTree.claveCivDeNombre(k), 18));
         pintarListaAgg(actUltimos30Mapas, t("Últimos 30 días · mapas", "Last 30 days · maps"), mapas30, 5, k -> k, null, k -> iconoMapa(k, 18));
@@ -1180,7 +1187,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         try { pintarListaJugadoresImpl(panel, titulo, jugadores); } finally { listas.esFilaJugador = false; }
     }
 
-    private boolean h2hDialogoAbierto() { return caraACara != null && caraACara.mostradoConFoco(); }   // ver aviso: solo para el tope de filas, no necesita el foco realmente
+    private boolean h2hDialogoAbierto() { return caraACara != null && caraACara.mostrado(); }
 
     private void pintarListaJugadoresImpl(JPanel panel, String titulo, Map<Long, Object[]> jugadores) {
         Map<String, int[]> datos = new HashMap<>();
@@ -1200,10 +1207,12 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         caraACara.mostrar();
     }
 
-    /** Abre el diálogo de cara a cara y fija de una vez el cruce con este rival (lo usa el aviso «Mi partida»). */
+    /** Abre el diálogo de cara a cara y fija de una vez el cruce con este rival (lo usa el aviso «Mi partida»).
+     *  Si mostrarCaraACara() no llegó a crear el diálogo (sin historial cargado todavía), no fija nada, igual
+     *  que la 1.1 (que protegía la llamada a h2hFijar con {@code if (h2hDialogo != null)}). */
     public void abrirCaraACaraCon(long rivalPid, String rivalNombre) {
         mostrarCaraACara();
-        caraACara.fijarRival(rivalPid, rivalNombre);
+        if (caraACara.creado()) caraACara.fijarRival(rivalPid, rivalNombre);
     }
 
     /** El botón lateral del ratón: si el diálogo de cara a cara está mostrado y con foco, es su «atrás»; si no, nada (lo decide la ventana). */
