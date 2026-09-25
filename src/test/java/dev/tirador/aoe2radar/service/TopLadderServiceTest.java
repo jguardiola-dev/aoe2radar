@@ -1,9 +1,12 @@
 package dev.tirador.aoe2radar.service;
 
 import dev.tirador.aoe2radar.api.ApiClient;
+import dev.tirador.aoe2radar.api.Cancelacion;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Throttle;
 import dev.tirador.aoe2radar.api.Transporte;
+import dev.tirador.aoe2radar.cache.Canales;
+import dev.tirador.aoe2radar.cache.Paises;
 import dev.tirador.aoe2radar.model.LadderHist;
 import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
@@ -11,6 +14,7 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.sfrdata.Ladder;
 import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -87,6 +91,16 @@ class TopLadderServiceTest {
         return "{\"profile_id\":" + pid + ",\"name\":\"" + nombre + "\",\"rating\":" + rating + ",\"last_match_time\":" + ultimaMs
                 + ",\"streak\":" + racha + ",\"last10MatchesWon\":" + l10 + "}";
     }
+    String jugadorLbConPartidas(long pid, String nombre, int rating, long ultimaMs, int partidas) {
+        return "{\"profile_id\":" + pid + ",\"name\":\"" + nombre + "\",\"rating\":" + rating + ",\"last_match_time\":" + ultimaMs + ",\"games\":" + partidas + "}";
+    }
+    String jugadorLbSinRating(long pid, String nombre, int partidas) {
+        return "{\"profile_id\":" + pid + ",\"name\":\"" + nombre + "\",\"games\":" + partidas + "}";
+    }
+    String jugadorLbConPaisYCanal(long pid, String nombre, int rating, long ultimaMs, String pais, String canal) {
+        return "{\"profile_id\":" + pid + ",\"name\":\"" + nombre + "\",\"rating\":" + rating + ",\"last_match_time\":" + ultimaMs
+                + ",\"country\":\"" + pais + "\",\"social_twitch_channel\":\"" + canal + "\"}";
+    }
     String leaderboard(String... jugadores) { return "{\"players\":[" + String.join(",", jugadores) + "]}"; }
 
     String partidaEnCurso(long matchId, long haceMs, long... pids) {
@@ -143,6 +157,29 @@ class TopLadderServiceTest {
         red.responder("/leaderboards/3", leaderboard());
         TopLadderService.ResultadoTop res = nuevo().cargarTop(null, 50);
         assertTrue(res.filas().isEmpty());
+    }
+
+    @Test void topNuevo_aprendePartidasSoloDeLosQueEntranEnElTop() {
+        red.responder("/leaderboards/rm_1v1", leaderboard(
+                jugadorLbConPartidas(1L, "Ana", 2000, HORA, 250),      // entra en el top: aprende partidas
+                jugadorLbSinRating(2L, "SinElo", 999)));               // sin rating: no entra, no aprende partidas
+        TopLadderService.ResultadoTop res = nuevo().cargarTop(null, 50);
+        assertEquals(1, res.filas().size(), "el de sin rating no entra en las filas");
+        assertEquals(250, res.partidas().get(1L));
+        assertNull(res.partidas().get(2L), "sin rating: no se aprenden sus partidas");
+    }
+
+    @AfterEach void limpiarAprendizajeDePaisYCanal() throws Exception {
+        Paises.PAIS_DE.remove(501L);
+        Canales.CANAL_DE.remove(501L);
+        Files.deleteIfExists(Path.of("config.properties"));   // aprenderCanal lo escribe si el canal es nuevo (gitignored)
+    }
+
+    @Test void topNuevo_aprendePaisYCanalDePaso() {
+        red.responder("/leaderboards/rm_1v1", leaderboard(jugadorLbConPaisYCanal(501L, "Fifi", 2000, HORA, "fr", "fifitv")));
+        nuevo().cargarTop(null, 50);
+        assertEquals("fr", Paises.PAIS_DE.get(501L));
+        assertEquals("fifitv", Canales.CANAL_DE.get(501L));
     }
 
     // ===================== topFresco: caché de 10 minutos =====================
@@ -208,23 +245,39 @@ class TopLadderServiceTest {
     }
 
     // ===================== ★ Top clan =====================
+    // sfrdata.Ladder es un singleton estático sin puerto de inyección (fuera de este encargo): para que
+    // ladderAsegurar no vaya a la red se fuerza su «sello» a fresco por reflexión, solo en los tests de topClan.
+    // Se guardan aquí los valores PREVIOS de clanes/ladderHists/sello y se restauran siempre (no se fijan a 0L o
+    // Map.of(): otro test que corra antes podría haber dejado un estado válido que no nos toca borrar).
 
-    @AfterEach void limpiarLadder() throws Exception {
-        Ladder.clanes = Map.of();
-        Ladder.ladderHists = Map.of();
-        Field f = Ladder.class.getDeclaredField("LADDER_SELLO");
-        f.setAccessible(true);
-        Object sello = f.get(null);
-        sello.getClass().getMethod("marcar", long.class).invoke(sello, 0L);   // muy viejo: vuelve a "no fresco"
+    Map<String, List<LadderRow>> clanesPrevios;
+    Map<String, LadderHist> ladderHistsPrevios;
+    Field campoSello, campoMarcaMs;
+    long selloPrevioMs;
+
+    @BeforeEach void guardarEstadoLadder() throws Exception {
+        clanesPrevios = Ladder.clanes;
+        ladderHistsPrevios = Ladder.ladderHists;
+        campoSello = Ladder.class.getDeclaredField("LADDER_SELLO");
+        campoSello.setAccessible(true);
+        Object sello = campoSello.get(null);
+        campoMarcaMs = sello.getClass().getDeclaredField("marcaMs");
+        campoMarcaMs.setAccessible(true);
+        selloPrevioMs = (long) campoMarcaMs.get(sello);
     }
 
-    /** sfrdata.Ladder es un singleton estático sin puerto de inyección (fuera de este encargo): se fuerza su
-     *  «sello» a fresco por reflexión para que ladderAsegurar no vaya a la red en el test (ver DEUDA). */
-    static void marcarLadderFresco() throws Exception {
+    @AfterEach void restaurarEstadoLadder() throws Exception {
+        Ladder.clanes = clanesPrevios;
+        Ladder.ladderHists = ladderHistsPrevios;
+        campoMarcaMs.set(campoSello.get(null), selloPrevioMs);
+    }
+
+    /** Fuerza el «sello» del ladder a fresco por reflexión para que ladderAsegurar no vaya a la red (ver DEUDA).
+     *  El sello cuenta con el reloj REAL de CacheService.SISTEMA (no con el RelojFalso de este test): se marca
+     *  con marcar(), que apunta la hora real de ahora, igual que haría una carga de verdad. */
+    void marcarLadderFresco() throws Exception {
         Ladder.ladderHists = Map.of("rm_1v1", new LadderHist(1, 0, new int[]{ 1 }, 0, Map.of()));
-        Field f = Ladder.class.getDeclaredField("LADDER_SELLO");
-        f.setAccessible(true);
-        Object sello = f.get(null);
+        Object sello = campoSello.get(null);
         sello.getClass().getMethod("marcar").invoke(sello);
     }
 
@@ -270,6 +323,7 @@ class TopLadderServiceTest {
         assertEquals(Set.of(1L, 2L), r.verificados());
         assertEquals(500L, av.rio.get(1L).id);
         assertTrue(av.confirmados.isEmpty());
+        assertEquals(List.of(PAUSA_MS / 2), pausas, "un lote: una sola pausa, la de cortesía entre lotes");
     }
 
     @Test void vigilarTop_vivoConfirmadoIndividualmente() {
@@ -283,6 +337,44 @@ class TopLadderServiceTest {
         assertEquals(Set.of(77L), r.verificados());
         assertEquals(600L, av.confirmados.get(77L).id);
         assertTrue(av.rio.isEmpty());
+        assertEquals(List.of(PAUSA_MS / 2, PAUSA_MS / 3), pausas, "la pausa del lote y luego la de la confirmación individual, en ese orden");
+    }
+
+    @Test void vigilarTop_masDe15JugadoresUsaDosLotes() {
+        long[] ids = new long[17];
+        for (int i = 0; i < ids.length; i++) ids[i] = i + 1;
+        List<Player> top = jugadores(ids);
+        red.responder("per_page=100", matches());   // el río no trae a nadie en ningún lote
+        TopLadderService.ResultadoVigilancia r = nuevo().vigilarTop(top, pid -> false, pid -> null, (pid, m) -> { }, (pid, m) -> { });
+        List<String> lotes = red.pedidas.stream().filter(u -> u.contains("per_page=100")).toList();
+        assertEquals(2, lotes.size(), "17 jugadores: un lote de 15 y uno de 2");
+        StringBuilder csv1 = new StringBuilder(), csv2 = new StringBuilder();
+        for (int i = 1; i <= 15; i++) { if (i > 1) csv1.append(','); csv1.append(i); }
+        for (int i = 16; i <= 17; i++) { if (i > 16) csv2.append(','); csv2.append(i); }
+        assertTrue(lotes.get(0).contains("profile_ids=" + csv1), lotes.get(0));
+        assertTrue(lotes.get(1).contains("profile_ids=" + csv2), lotes.get(1));
+        Set<Long> esperados = new HashSet<>(); for (long id : ids) esperados.add(id);
+        assertEquals(esperados, r.verificados(), "los dos lotes se verifican");
+        assertEquals(List.of(PAUSA_MS / 2, PAUSA_MS / 2), pausas, "una pausa de cortesía por lote");
+    }
+
+    @Test void vigilarTop_paraConStopOperacionAntesDeLaPrimeraConfirmacion() {
+        List<Player> top = jugadores(1L, 2L);
+        red.responder("per_page=100", matches());   // ninguno en el río: los dos entrarían a confirmación
+        Cancelacion.stopOperacion = true;
+        try {
+            nuevo().vigilarTop(top, pid -> true, pid -> null, (pid, m) -> { }, (pid, m) -> { });
+        } finally { Cancelacion.stopOperacion = false; }
+        assertTrue(red.pedidas.stream().noneMatch(u -> u.contains("per_page=3")), "stopOperacion corta el bucle antes de la primera llamada de confirmación");
+    }
+
+    @Test void vigilarTop_confirmacionFallidaConservaElPuntoDeMatchDe() {
+        List<Player> top = jugadores(77L);
+        red.responder("per_page=100", matches());   // el río no lo trae
+        red.fallar("per_page=3");                    // y la confirmación individual falla
+        TopLadderService.ResultadoVigilancia r = nuevo().vigilarTop(top, pid -> true, pid -> 999L, (pid, m) -> { }, (pid, m) -> { });
+        assertEquals(Map.of(77L, 999L), r.resultado(), "sin respuesta: se conserva el punto que ya tenía EstadoVivo.matchDe");
+        assertEquals(Set.of(77L), r.verificados(), "el lote (per_page=100) sí respondió: queda verificado");
     }
 
     @Test void vigilarTop_terminadoDeVerdad() {

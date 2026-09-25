@@ -9531,11 +9531,12 @@ public class SpoilerFreeRecs extends JFrame {
             }
             @Override protected void done() {
                 cargandoTop = false;
-                if (modoClan() || !modoTop()) return;   // mientras cargaba, el usuario cambió de vista: no pintar encima
                 try {
                     TopLadderService.ResultadoTop res = get();
                     TOP_STREAK.putAll(res.racha());
                     TOP_LAST10.putAll(res.ultimas10());
+                    gamesWatch.putAll(res.partidas());   // como en la 1.1: se aprenden siempre, aunque el usuario haya cambiado de vista
+                    if (modoClan() || !modoTop()) return;   // mientras cargaba, el usuario cambió de vista: no pintar encima
                     if (res.filas().isEmpty()) {
                         if (cargarTopCache(firma)) {
                             topFirma = firma;
@@ -9569,7 +9570,6 @@ public class SpoilerFreeRecs extends JFrame {
                         lastTop.put(f.pid(), f.ultimaPartidaMs());
                         rankTop.put(f.pid(), topLadder.size());
                     }
-                    gamesWatch.putAll(res.partidas());
                     topCargado = System.currentTimeMillis();
                     topFirma = firma;
                     guardarTopCache(firma);

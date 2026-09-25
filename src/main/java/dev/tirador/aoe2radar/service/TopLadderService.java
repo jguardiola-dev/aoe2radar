@@ -35,10 +35,12 @@ import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * Los tops de la watchlist (★ ladder, ★ país, ★ clan): la parte de red, de decisión y de disco de la 1.1
- * (cargarTopLadder, guardarTopCache/cargarTopCache, cargarTopClan y vigilarTop), copiada literal. La aplicación a
- * Swing (topLadder, eloWatch, lastTop, rankTop, status…) y a EstadoVivo sigue en la app, en el mismo orden y en el
- * mismo hilo que hoy: por eso vigilarTop recibe callbacks en vez de escribir en EstadoVivo por su cuenta (ver DEUDA:
- * avisarSiCampana/resumenVivo son de la app y siguen llamándose desde el hilo de fondo, como en la 1.1).
+ * (cargarTopLadder, guardarTopCache/cargarTopCache, cargarTopClan y vigilarTop). La lógica de decisión es la misma;
+ * la única diferencia deliberada es que enCursoReal se evalúa con el reloj inyectado en vez de Instant.now() directo
+ * (mismo resultado en producción, ver DEUDA). La aplicación a Swing (topLadder, eloWatch, lastTop, rankTop, status…)
+ * y a EstadoVivo sigue en la app, en el mismo orden y en el mismo hilo que hoy: por eso vigilarTop recibe callbacks
+ * en vez de escribir en EstadoVivo por su cuenta (ver DEUDA: avisarSiCampana/resumenVivo son de la app y siguen
+ * llamándose desde el hilo de fondo, como en la 1.1).
  */
 public final class TopLadderService {
     /** Cuánto vale un top ya cargado antes de volver a pedirlo (cargarTopLadder, 1.1). */
@@ -171,8 +173,9 @@ public final class TopLadderService {
     public record ResultadoVigilancia(Map<Long, Long> resultado, Set<Long> verificados) { }
 
     /**
-     * El río en lotes de 15 y la confirmación individual presupuestada (hasta 3 llamadas extra) de quien se apaga.
-     * La decisión (quién sigue en curso) es de aquí; escribir en EstadoVivo (ponerInfo/avisarSiCampana/guardarPartida)
+     * El río en lotes de 15 y, para quien estaba jugando, se verificó en su lote y el río no lo trajo, una
+     * confirmación individual (una llamada por jugador, partidas(pid, 1, 3): las 3 últimas). La decisión (quién sigue
+     * en curso) es de aquí; escribir en EstadoVivo (ponerInfo/avisarSiCampana/guardarPartida)
      * sigue siendo cosa de la app -por eso los dos callbacks-, en el mismo momento y el mismo hilo (de fondo) que hoy.
      * jugando/matchDe leen EstadoVivo (solo lectura, sin escribir desde aquí). Va a la red.
      *
