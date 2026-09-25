@@ -110,7 +110,6 @@ import static dev.tirador.aoe2radar.api.Http.UA;
 import static dev.tirador.aoe2radar.api.Http.descargarBytes;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
 import static dev.tirador.aoe2radar.api.Http.req;
-import static dev.tirador.aoe2radar.api.Parseo.MAPA_IMG_PATRON;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
 import static dev.tirador.aoe2radar.cache.Anotaciones.NOTAS;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarAliases;
@@ -124,13 +123,11 @@ import static dev.tirador.aoe2radar.cache.Canales.cargarCanales;
 import static dev.tirador.aoe2radar.cache.Catalogos.CIVS_CAT;
 import static dev.tirador.aoe2radar.cache.Catalogos.MAPAS_CAT;
 import static dev.tirador.aoe2radar.cache.Catalogos.cargarCatalogos;
-import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.ACTIVIDAD_CACHE;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.ACT_DIAS;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.PERFILES_DIR;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.cargarActividad;
 import static dev.tirador.aoe2radar.cache.HistorialDisco.guardarActividad;
-import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.cache.Paises.PAIS_DE;
 import static dev.tirador.aoe2radar.cache.Paises.aprenderPais;
 import static dev.tirador.aoe2radar.cache.Paises.cargarPaises;
@@ -243,6 +240,10 @@ import static dev.tirador.aoe2radar.util.Texto.recorta;
 import static dev.tirador.aoe2radar.util.Texto.sinTildes;
 import static dev.tirador.aoe2radar.util.Texto.variantesNick;
 import static dev.tirador.aoe2radar.util.Texto.versionMayor;
+import static dev.tirador.aoe2radar.ui.Iconos.banderaHtml;
+import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
+import static dev.tirador.aoe2radar.ui.Iconos.iconoCiv;
+import static dev.tirador.aoe2radar.ui.Iconos.iconoMapa;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 
 import javax.swing.*;
@@ -2610,57 +2611,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     final Map<String, CivAgg> ttWrPorCiv = new HashMap<>();   // clave del tech tree («Aztecs») → agregado con los filtros
     boolean ttRellenandoFiltros;
-    static final Map<String, ImageIcon> ICONOS_CIV = new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** Icono de civ (techtree/img/Civs/<clave>.png) escalado a px; null si aún no está en disco. La clave del companion y la del tech tree coinciden en minúsculas. */
-    static ImageIcon iconoCiv(String clave, int px) {
-        if (clave == null || clave.isBlank()) return null;
-        String k = clave.toLowerCase(Locale.ROOT);
-        String kk = k + "@" + px;
-        ImageIcon ic = ICONOS_CIV.get(kk);
-        if (ic != null) return ic;
-        Path p = TT_DIR.resolve("img/Civs/" + k + ".png");
-        if (!Files.exists(p)) return null;
-        try {
-            BufferedImage img = javax.imageio.ImageIO.read(p.toFile());
-            if (img == null) return null;
-            ic = new ImageIcon(img.getScaledInstance(px, px, Image.SCALE_SMOOTH));
-            ICONOS_CIV.put(kk, ic);
-            return ic;
-        } catch (Exception ex) { return null; }
-    }
-    static final Map<String, ImageIcon> ICONOS_MAPA = new java.util.concurrent.ConcurrentHashMap<>();
-    static final Set<String> MAPAS_PIDIENDO = java.util.concurrent.ConcurrentHashMap.newKeySet();
-    /** Icono de mapa si conocemos su imagen (la API la da con cada partida); se descarga una vez a sfrdata/mapas. null si no hay. */
-    static ImageIcon iconoMapa(String nombre, int px) { return iconoMapa(nombre, null, px); }
-    /** Igual, probando primero la clave del volcado («rm_arabia») y luego el nombre («Arabia»). */
-    static ImageIcon iconoMapa(String nombre, String clave, int px) {
-        if ((nombre == null || nombre.isBlank()) && (clave == null || clave.isBlank())) return null;
-        String kc = clave == null ? null : clave.toLowerCase(Locale.ROOT).trim();
-        String kn = nombre == null ? null : nombre.toLowerCase(Locale.ROOT).trim();
-        String k = kc != null && MAPA_IMG_URL.containsKey(kc) ? kc : kn != null && MAPA_IMG_URL.containsKey(kn) ? kn : kc != null ? kc : kn;
-        String kk = k + "@" + px;
-        ImageIcon ic = ICONOS_MAPA.get(kk);
-        if (ic != null) return ic;
-        Path p = LADDER_DIR.resolve("mapas").resolve(k.replaceAll("[^a-z0-9_-]", "_") + ".png");
-        if (Files.exists(p)) {
-            try { BufferedImage img = javax.imageio.ImageIO.read(p.toFile()); if (img != null) { ic = new ImageIcon(img.getScaledInstance(px, px, Image.SCALE_SMOOTH)); ICONOS_MAPA.put(kk, ic); return ic; } } catch (Exception ignored) { }
-            return null;
-        }
-        String url = MAPA_IMG_URL.get(k);
-        if (url == null && kc != null && MAPA_IMG_PATRON != null) url = MAPA_IMG_PATRON.replace("{clave}", kc);   // mapa no visto todavía: por el patrón
-        if (url == null || !MAPAS_PIDIENDO.add(k)) return null;
-        String urlMini = url.contains("cdn.aoe2companion.com") && !url.contains("?") ? url + "?width=200" : url;   // miniatura de 200 px: el tamaño que el companion quiere servir
-        new Thread(() -> {
-            try {
-                Files.createDirectories(p.getParent());
-                HttpResponse<byte[]> r = HTTP.send(HttpRequest.newBuilder(URI.create(urlMini)).timeout(Duration.ofSeconds(20)).header("User-Agent", UA).GET().build(), HttpResponse.BodyHandlers.ofByteArray());
-                if (r.statusCode() / 100 == 2 && r.body().length > 0) Files.write(p, r.body());
-            } catch (Exception ex) { log("mapa " + k + ": " + causa(ex)); }
-            finally { MAPAS_PIDIENDO.remove(k); }
-        }, "mapa-icono").start();
-        return null;
-    }
     /** Clave de civ a partir del nombre que da la API en el idioma de la app («Aztecas», «Aztecs»). */
     String claveCivDeNombre(String nombre) {
         if (nombre == null || nombre.isBlank()) return null;
@@ -5487,48 +5437,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     void ocultarToast() { if (toast != null) { getLayeredPane().remove(toast); getLayeredPane().repaint(); toast = null; } }
 
-    // =====================================================================================
-    // BANDERAS — banderas de 20×15 en banderas/<cc>.png (dominio público, Wikimedia vía
-    // hampusborgos/country-flags; el bat las deja junto al exe). El país en sí vive en cache.Paises.
-    // =====================================================================================
-    static final Path BANDERAS_DIR = Path.of("banderas");
-    static final Map<String, ImageIcon> ICONOS_BANDERA = new java.util.concurrent.ConcurrentHashMap<>();
-
-    /** Bandera del país (código ISO de dos letras), o null si no hay archivo. */
-    static ImageIcon iconoBandera(String cc) {
-        if (cc == null) return null;
-        String k = cc.trim().toLowerCase(Locale.ROOT);
-        if (k.isEmpty() || "null".equals(k)) return null;
-        ImageIcon ic = ICONOS_BANDERA.get(k);
-        if (ic != null) return ic;
-        Path p = BANDERAS_DIR.resolve(k + ".png");
-        if (!Files.exists(p)) p = BANDERAS_DIR.resolve("banderas").resolve(k + ".png");   // «Extraer todo» de Windows anida la carpeta
-        if (!Files.exists(p)) return null;
-        ic = new ImageIcon(p.toString());
-        if (ic.getIconWidth() <= 0) return null;
-        ICONOS_BANDERA.put(k, ic);
-        return ic;
-    }
-    /** Bandera escalada a una altura dada (para Live now en 1v1). */
-    static ImageIcon iconoBandera(String cc, int alto) {
-        ImageIcon base = iconoBandera(cc);
-        if (base == null || alto <= 15) return base;
-        String k = cc.trim().toLowerCase(Locale.ROOT) + "@" + alto;
-        ImageIcon ic = ICONOS_BANDERA.get(k);
-        if (ic != null) return ic;
-        ic = new ImageIcon(base.getImage().getScaledInstance(alto * 4 / 3, alto, Image.SCALE_SMOOTH));
-        ICONOS_BANDERA.put(k, ic);
-        return ic;
-    }
-    /** La misma bandera dentro de un texto HTML (para el renderer de la watchlist). */
-    static String banderaHtml(String cc) {
-        if (cc == null) return "";
-        String k = cc.trim().toLowerCase(Locale.ROOT);
-        Path p = BANDERAS_DIR.resolve(k + ".png");
-        if (!Files.exists(p)) p = BANDERAS_DIR.resolve("banderas").resolve(k + ".png");
-        if (!Files.exists(p)) return "";
-        return "<img src='" + p.toUri() + "' width='16' height='12'>&nbsp;";
-    }
+    // Banderas, icono de civ e icono de mapa: ver ui.Iconos (cachés y escalado) y service.ImagenesJuego
+    // (rutas fijas y descarga de miniaturas de mapa).
 
     // =====================================================================================
     // Pestañas de perfiles (una tira sobre el panel de perfil) e historial de navegación («←», botón lateral del ratón)
