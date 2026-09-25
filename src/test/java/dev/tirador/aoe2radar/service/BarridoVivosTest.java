@@ -132,6 +132,18 @@ class BarridoVivosTest {
         BarridoVivos.Refresco r = nuevo().refrescar(7L);
         assertEquals(new BarridoVivos.Refresco(7L, null, null, 1500, 42), r);
         assertTrue(red.urls.isEmpty(), "el snapshot de ayer ya lo dice: ni una llamada (el socket avisará si juega)");
+        assertTrue(pausas.isEmpty(), "sin llamada de red, tampoco la pausa de la segunda vuelta (esa pausa es del servicio; "
+                + "la pausa de cortesía ENTRE jugadores de refrescarWatchlist es de la app: dormir(PAUSA_MS/2) en su doInBackground, "
+                + "que con este camino se salta con un `continue`, como en la 1.1)");
+    }
+
+    @Test void refrescar_conEloDeAyerEnCeroVaALaRed() throws Exception {
+        eloAyer.put(7L, new int[]{ 0, 5, 1600, 3 });   // snap[0] (elo1v1 de ayer) == 0: sin ELO 1v1 que restar, no vale como snapshot
+        responder(10, viva(305, Duration.ofMinutes(1).toMillis(), jugador(7)));
+        BarridoVivos.Refresco r = nuevo().refrescar(7L);
+        assertEquals(305L, r.vivo(), "snap[0] == 0 no vale como snapshot: se va a la red igual que sin snapshot");
+        assertNull(r.juegosNocturno(), "el snapshot no se usó: gamesWatch no se toca");
+        assertFalse(red.urls.isEmpty());
     }
 
     @Test void refrescar_sinSnapshotYSinEloEnLasUltimas10VaAUnaSegundaVuelta() throws Exception {
@@ -146,6 +158,15 @@ class BarridoVivosTest {
         assertNull(r.juegosNocturno(), "sin snapshot: gamesWatch no se toca");
         assertEquals(2, red.urls.size(), "dos llamadas: la de 10 y, al no traer ELO, la de 50");
         assertEquals(List.of(PAUSA_MS), pausas, "una pausa de cortesía entre la primera y la segunda vuelta");
+    }
+
+    @Test void refrescar_cuentaLaPrimeraPartidaVivaEncontrada() throws Exception {
+        responder(10,
+                viva(306, Duration.ofMinutes(3).toMillis(), jugador(7)),   // la primera: esta es la que cuenta
+                viva(307, Duration.ofMinutes(1).toMillis(), jugador(7)));  // una segunda partida viva: se ignora
+        BarridoVivos.Refresco r = nuevo().refrescar(7L);
+        assertEquals(306L, r.vivo(), "la PRIMERA partida en curso que aparece, no la más reciente ni la última");
+        assertEquals("R:306:7", r.resumen());
     }
 
     @Test void refrescar_vivoYEloEnLaPrimeraVueltaNoHaceSegundaLlamada() throws Exception {
@@ -173,6 +194,15 @@ class BarridoVivosTest {
         assertEquals(Map.of(1L, 400L), dec.vivos());
         assertEquals("R:400:1", dec.infos().get(1L));
         assertEquals(Set.of(2L), dec.fuera(), "solo el 2 (consultado con éxito y sin partida viva); el 3 no se toca");
+    }
+
+    @Test void decidirVivos_vivoEnResAunqueNoEsteEnConsultados() {
+        // «consultados» solo decide a quién se le puede marcar FUERA; a quien SÍ sale vivo en res se le marca
+        // vivo pase lo que pase (p. ej. lo vio el socket entretanto, o su página sí llegó pese al fallo de otra).
+        Match vivaA = matchDe(401, Duration.ofMinutes(1).toMillis(), 9);
+        BarridoVivos.DecisionBuscar dec = nuevo().decidirVivos(List.of(vivaA), List.of(9L), Set.of());
+        assertEquals(Map.of(9L, 401L), dec.vivos());
+        assertTrue(dec.fuera().isEmpty());
     }
 
     /** Un Match en curso (a mano, sin pasar por el parser de JSON: aquí solo interesa la decisión). */

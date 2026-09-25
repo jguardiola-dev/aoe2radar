@@ -1009,9 +1009,6 @@ public class SpoilerFreeRecs extends JFrame {
     }
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
     volatile int fallosFetch;   // jugadores sin respuesta en la última búsqueda
-    /** Seguidos cuya página 1 se pudo consultar sin excepción en la última búsqueda (BarridoVivos.decidirVivos: solo
-     *  a ellos se les puede marcar «fuera» si no salen vivos; ver DEUDA del falso «fuera»). */
-    volatile Set<Long> vivosConsultados = Set.of();
 
     // ----- Ladder (vista): constantes y estado de pantalla; los resúmenes de sfr-data viven en sfrdata.Ladder -----
     static final int MAX_COMPARADOS = 10;
@@ -10844,7 +10841,11 @@ public class SpoilerFreeRecs extends JFrame {
                 for (Player p : objetivo) {
                     try {
                         BarridoVivos.Refresco r = barridoVivos.refrescar(p.id());
-                        if (r.juegosNocturno() != null) gamesWatch.put(p.id(), r.juegosNocturno());   // del snapshot nocturno: sin llamada (el socket dirá si está en partida)
+                        if (r.juegosNocturno() != null) {   // del snapshot nocturno: sin llamada (el socket dirá si está en partida)
+                            gamesWatch.put(p.id(), r.juegosNocturno());
+                            publish(r);
+                            continue;   // como la 1.1: sin llamada de red, tampoco la pausa de cortesía entre llamadas
+                        }
                         publish(r);
                     } catch (Exception ex) {
                         log("watchlist: fallo con " + p.name() + ": " + causa(ex));
@@ -11765,11 +11766,15 @@ public class SpoilerFreeRecs extends JFrame {
         int hours = horasVentana();
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         SwingWorker<List<Match>, String> fw = new SwingWorker<>() {
+            /** Seguidos sin NINGUNA página fallida en esta búsqueda (BarridoVivos.decidirVivos: solo a ellos se les
+             *  puede marcar «fuera» si no salen vivos; ver DEUDA del falso «fuera»). Campo DEL WORKER, no de la
+             *  ventana: get() en done() ya garantiza ver los cambios de doInBackground, y así una búsqueda vieja que
+             *  siga corriendo tras un Detener no pisa el conjunto de la siguiente búsqueda. */
+            final Set<Long> exitosos = new HashSet<>();
             @Override protected List<Match> doInBackground() {
                 hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 Map<Long, Match> unicos = new LinkedHashMap<>();
                 topeAlcanzado = false;
-                Set<Long> exitosos = new HashSet<>();   // BarridoVivos.decidirVivos: solo a estos se les marca «fuera» si no salen vivos
                 final int MAX_PAGINAS = 6, MAX_TOTAL = 600;   // tope de seguridad por búsqueda
                 for (Player pl : tracked) {
                     if (isCancelled()) break;
@@ -11797,17 +11802,16 @@ public class SpoilerFreeRecs extends JFrame {
                             if (unicos.size() >= MAX_TOTAL) { topeAlcanzado = true; seguir = false; }
                             Thread.sleep(PAUSA_MS);
                         } catch (Exception ex) {
+                            fallo = true;   // también con InterruptedException sin Detener real: esta página quedó sin terminar
                             if (isCancelled() || ex instanceof InterruptedException) break;   // segunda pulsación: done() ya dijo «detenida»; no pisarlo ni contar un fallo en la búsqueda siguiente
                             fallosFetch++;
-                            fallo = true;
                             publish(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
                         }
                         if (!seguir) break;
                     }
-                    if (!isCancelled() && !fallo) exitosos.add(pl.id());   // ni una excepción con este seguido: se le puede marcar «fuera»
+                    if (!isCancelled() && !fallo) exitosos.add(pl.id());   // ninguna de sus páginas falló: se le puede marcar «fuera»
                     if (unicos.size() >= MAX_TOTAL) break;   // los que quedan sin tocar no entran en exitosos: no se les toca el estado
                 }
-                vivosConsultados = exitosos;
                 List<Match> lista = new ArrayList<>(unicos.values());
                 lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
                 return lista;
@@ -11831,7 +11835,7 @@ public class SpoilerFreeRecs extends JFrame {
                     aprenderCatalogos(res);
                     List<Long> idsTracked = new ArrayList<>();
                     for (Player pl : tracked) idsTracked.add(pl.id());
-                    BarridoVivos.DecisionBuscar dec = barridoVivos.decidirVivos(res, idsTracked, vivosConsultados);
+                    BarridoVivos.DecisionBuscar dec = barridoVivos.decidirVivos(res, idsTracked, exitosos);
                     for (Player pl : tracked) {
                         Long v = dec.vivos().get(pl.id());
                         if (v != null) { VIVO.marcarJugando(pl.id(), v, dec.infos().get(pl.id())); }
