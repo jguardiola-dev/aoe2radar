@@ -1965,7 +1965,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // Cierre, ventana recordada, foco perdido e iconos: ajustes del JFrame antes
     // de construir ningun panel. Se separa del resto del constructor porque es
-    // configuracion de ventana, no construccion de paneles.
+    // configuración de ventana, no construcción de paneles.
     private void configurarVentana() {
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         aplicarVentanaGuardada();
@@ -1987,7 +1987,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // El panel izquierdo: la Watchlist (buscador, grupos, pais/clan, la lista de
-    // jugadores seguidos con su ELO y su ~en vivo~, y los botones para quitarlos).
+    // jugadores seguidos con su ELO y su «en vivo», y los botones para quitarlos).
     // Devuelve el panel para que el constructor lo pase al split principal.
     private JPanel construirWatchlist() {
         // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
@@ -2576,9 +2576,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return left;
     }
 
-    // La barra de arriba: ventana de horas/buscar, filtros, pestanas de vistas,
-    // flechas de historial y el menu Configuracion (idioma, tema, letra...). Recibe
-    // temaInicial porque el menu de Tema marca la opcion ya activa al abrir.
+    // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,
+    // flechas de historial y el menú Configuración (idioma, tema, letra...). Recibe
+    // temaInicial porque el menú de Tema marca la opción ya activa al abrir.
     private JPanel construirBarraSuperior(String temaInicial) {
         // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
         fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
@@ -2926,7 +2926,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // La tabla de partidas: el JTable con sus renderers (fila en vivo en negrita,
-    // el ojo de "revelar resultado"), el menu contextual por fila y los atajos de
+    // el ojo de «revelar resultado»), el menú contextual por fila y los atajos de
     // teclado (Enter descarga, Ctrl+F busca, F5 refresca Directos).
     private void construirTablaPartidas() {
         // Tabla de partidas
@@ -3159,7 +3159,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         });
     }
 
-    // La franja inferior: los botones de descargar/enviar al juego, el menu de
+    // La franja inferior: los botones de descargar/enviar al juego, el menú de
     // carpetas, la firma y donacion, y la barra de estado (progreso, detener,
     // continuar buscando). Devuelve el panel para el centro de la ventana.
     private JPanel construirBarraInferior() {
@@ -3266,7 +3266,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // El centro de la ventana: las cartas (CardLayout) de cada vista -- tabla de
     // partidas/guia, Directos, Live now, tech tree, Ratings, Civ Stats y Perfil --
-    // encima de "top" y con "bottom" debajo. Aqui se crean las vistas y sus
+    // encima de «top» y con «bottom» debajo. Aquí se crean las vistas y sus
     // anfitriones (las interfaces que les dan acceso a la ventana).
     private JPanel construirCentro(JPanel top, JPanel bottom) {
         JPanel center = new JPanel(new BorderLayout());
@@ -3404,7 +3404,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // El split principal (Watchlist | resto) y el filtro global de clics: en
-    // cualquier fondo sin control, clic izquierdo = quitar la seleccion de la
+    // cualquier fondo sin control, clic izquierdo = quitar la selección de la
     // Watchlist (como el Explorador de Windows).
     private void montarVentana(JPanel left, JPanel center) {
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, center);
@@ -3443,7 +3443,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // Cargas iniciales (canales, jugadores, tema/fuentes) y el arranque de los
     // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
-    // precarga del tech tree y del ladder. Es lo ultimo que hace el constructor.
+    // precarga del tech tree y del ladder. Es lo último que hace el constructor.
     private void arrancar() {
         cargarCanales();
         loadPlayers();
