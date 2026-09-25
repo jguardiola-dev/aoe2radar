@@ -1,11 +1,15 @@
 package dev.tirador.aoe2radar.service;
 
+import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.Perfil;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 /**
  * El perfil de un jugador: de dónde sale cada dato y cuándo se va a la red. Crece por pasos en la fase 2 (A: ficha;
@@ -67,4 +71,16 @@ public interface ProfileService {
      * a la red (sfr-data); un fallo sale como excepción y quien llama decide (lo anota y sigue con la API).
      */
     AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception;
+
+    /** La actividad que se sabe: de memoria o, si no está, del disco (y la sube a memoria). null si ninguna. Sin red. */
+    Actividad actividad(long pid);
+
+    /**
+     * El historial por la API, página a página (ver HistorialPerfil.descargar): base null, desde la página 1; base con
+     * partidas y mas false, solo lo nuevo hasta una partida conocida; mas true, sigue tras la última página de base.
+     * parcial recibe el estado tras cada página (en el hilo de la descarga); cancelar se mira antes de cada llamada.
+     * El resultado queda en memoria y en disco. Va a la red, con pausa entre páginas.
+     */
+    Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas,
+                        Consumer<Actividad> parcial, BooleanSupplier cancelar) throws IOException, InterruptedException;
 }

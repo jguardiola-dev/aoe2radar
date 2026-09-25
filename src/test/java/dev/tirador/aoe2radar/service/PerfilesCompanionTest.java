@@ -72,7 +72,7 @@ class PerfilesCompanionTest {
     final Map<Long, Object> canalAprendido = new HashMap<>();
     final Map<Long, Object> paisAprendido = new HashMap<>();
     final PerfilesCompanion servicio = new PerfilesCompanion(api, fichas,
-            (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), null);   // el año de sfr-data se prueba en AnioDesdeSfrTest
+            (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), null, null);   // el año y el historial se prueban en AnioDesdeSfrTest e HistorialPerfilTest
 
     /** Cuántas veces se pidió /profiles/{pid} a la red. */
     long peticiones(long pid) {
@@ -395,7 +395,7 @@ class PerfilesCompanionTest {
             @Override public String civ(String clave) { return "Civ:" + clave; }
         };
         AnioDesdeSfr anio = new AnioDesdeSfr(elo, perfiles, new HashMap<>(), nombres, reloj);
-        return new PerfilesCompanion(api, fichas, (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), anio);
+        return new PerfilesCompanion(api, fichas, (pid, v) -> canalAprendido.put(pid, v), (pid, v) -> paisAprendido.put(pid, v), anio, null);
     }
 
     @Test void anioSfrDevuelveLoQueDevuelveLeerYNullSiElJugadorNoEsta() throws Exception {

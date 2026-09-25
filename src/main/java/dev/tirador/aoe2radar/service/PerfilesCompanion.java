@@ -2,10 +2,12 @@ package dev.tirador.aoe2radar.service;
 
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
+import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
 import dev.tirador.aoe2radar.model.Perfil;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -15,6 +17,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
 
 import static dev.tirador.aoe2radar.service.ReglasPartida.LADDER_IDS;
 import static dev.tirador.aoe2radar.util.Hilos.avisarSiUi;
@@ -32,10 +36,13 @@ public final class PerfilesCompanion implements ProfileService {
     private final CacheMemoria<Long, FichaPerfil> fichas;
     private final BiConsumer<Long, Object> aprenderCanal, aprenderPais;
     private final AnioDesdeSfr anio;
+    private final HistorialPerfil historial;
 
     public PerfilesCompanion(CompanionApi api, CacheMemoria<Long, FichaPerfil> fichas,
-                             BiConsumer<Long, Object> aprenderCanal, BiConsumer<Long, Object> aprenderPais, AnioDesdeSfr anio) {
-        this.api = api; this.fichas = fichas; this.aprenderCanal = aprenderCanal; this.aprenderPais = aprenderPais; this.anio = anio;
+                             BiConsumer<Long, Object> aprenderCanal, BiConsumer<Long, Object> aprenderPais,
+                             AnioDesdeSfr anio, HistorialPerfil historial) {
+        this.api = api; this.fichas = fichas; this.aprenderCanal = aprenderCanal; this.aprenderPais = aprenderPais;
+        this.anio = anio; this.historial = historial;
     }
 
     @Override public FichaPerfil ficha(long pid) {
@@ -137,5 +144,13 @@ public final class PerfilesCompanion implements ProfileService {
     @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception {
         avisarSiUi("ProfileService.anioSfr");
         return anio.leer(pid, nombreSiFalta);
+    }
+
+    @Override public Actividad actividad(long pid) { return historial.actividad(pid); }
+
+    @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas,
+                                         Consumer<Actividad> parcial, BooleanSupplier cancelar) throws IOException, InterruptedException {
+        avisarSiUi("ProfileService.historial");
+        return historial.descargar(pid, nombre, base, mas, maxPaginas, parcial, cancelar);
     }
 }

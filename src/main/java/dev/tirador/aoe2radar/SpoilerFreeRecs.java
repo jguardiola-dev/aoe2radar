@@ -60,6 +60,7 @@ import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
+import dev.tirador.aoe2radar.service.HistorialPerfil;
 import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
 import dev.tirador.aoe2radar.service.ProfileService;
@@ -2926,58 +2927,6 @@ public class SpoilerFreeRecs extends JFrame {
     // resultado de una partida suelta.
     // =====================================================================================
 
-    /**
-     * Descarga historial página a página y avisa tras cada página con el estado parcial.
-     * base == null: partidas nuevas desde la página 1 hasta maxPaginas (o el año). base con partidas: actualización —
-     * baja páginas nuevas hasta encontrar una partida ya conocida y las funde con la base. mas == true: continúa
-     * desde la última página de la base (botón «cargar más»).
-     */
-    static Actividad descargarActividad(long pid, String nombre, Actividad base, boolean mas, int maxPaginas,
-                                        java.util.function.Consumer<Actividad> parcial) throws Exception { return descargarActividad(pid, nombre, base, mas, maxPaginas, parcial, () -> false); }
-
-    static Actividad descargarActividad(long pid, String nombre, Actividad base, boolean mas, int maxPaginas,
-                                        java.util.function.Consumer<Actividad> parcial, java.util.function.BooleanSupplier cancelar) throws Exception {
-        Instant limite = Instant.now().minus(Duration.ofDays(ACT_DIAS));
-        Set<Long> conocidos = new HashSet<>();
-        List<Match> previas = new ArrayList<>();
-        if (base != null) for (Match m : base.partidas()) { if (m.started != null && !m.started.isBefore(limite)) { previas.add(m); conocidos.add(m.id); } }
-        boolean actualizar = base != null && !mas && !previas.isEmpty();
-        int desde = mas && base != null ? base.paginas() + 1 : 1;
-        int hasta = mas ? desde + maxPaginas - 1 : maxPaginas;
-        List<Match> nuevas = new ArrayList<>();
-        boolean completo = base != null && mas ? false : (base != null && actualizar ? base.completo() : false);
-        int ultimaPagina = base == null || !mas ? 0 : base.paginas();
-        boolean cancelado = false;
-        for (int pag = desde; pag <= hasta; pag++) {
-            if (cancelar.getAsBoolean()) { cancelado = true; break; }   // el usuario ya está mirando a otro: ni una llamada más
-            PaginaPartidas ms = COMPANION.pagina(pid, pag, PER_PAGE);
-            ultimaPagina = pag;
-            if (ms.brutas() == 0) { completo = true; break; }
-            boolean parar = false;
-            for (Match m : ms.partidas()) {
-                if (m.started == null) continue;
-                if (m.started.isBefore(limite)) { parar = true; completo = true; continue; }
-                if (conocidos.contains(m.id)) { if (actualizar) parar = true; continue; }
-                nuevas.add(m);
-                conocidos.add(m.id);
-            }
-            if (ms.brutas() < PER_PAGE) { completo = true; parar = true; }
-            List<Match> fusion = new ArrayList<>(mas ? previas : nuevas);
-            if (mas) fusion.addAll(nuevas); else fusion.addAll(previas);
-            Actividad parcialA = new Actividad(pid, nombre, fusion, completo && !(actualizar && !parar), actualizar ? Math.max(base.paginas(), pag) : ultimaPagina, System.currentTimeMillis());
-            parcial.accept(parcialA);
-            if (parar) break;
-            dormir(PAUSA_MS);
-        }
-        List<Match> fusion = new ArrayList<>(mas ? previas : nuevas);
-        if (mas) fusion.addAll(nuevas); else fusion.addAll(previas);
-        boolean fin = !cancelado && (completo || (actualizar && base.completo()));
-        int paginas = actualizar ? Math.max(base.paginas(), ultimaPagina) : ultimaPagina;
-        Actividad a = new Actividad(pid, nombre, fusion, fin, paginas, System.currentTimeMillis());
-        ACTIVIDAD_CACHE.put(pid, a);
-        guardarActividad(a);
-        return a;
-    }
 
     /** Calienta en segundo plano los perfiles ya guardados (solo páginas nuevas, despacio): así los tuyos abren al instante. */
     void precalentarPerfiles() {
@@ -2998,7 +2947,7 @@ public class SpoilerFreeRecs extends JFrame {
                     Actividad base = ACTIVIDAD_CACHE.get(pid);
                     if (base == null) base = cargarActividad(pid);
                     if (base == null || System.currentTimeMillis() - base.ms() < 6 * 3_600_000L) continue;
-                    try { descargarActividad(pid, base.nombre(), base, false, 3, a -> { }); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
+                    try { SERVICIO_PERFIL.historial(pid, base.nombre(), base, false, 3, a -> { }, () -> false); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
                     Thread.sleep(4000);
                 }
             } catch (InterruptedException ignored) { }
@@ -3657,7 +3606,7 @@ public class SpoilerFreeRecs extends JFrame {
         modo.addActionListener(e -> { histModo = modo.getSelectedIndex() == 0 ? "*" : String.valueOf(modo.getSelectedItem()); histPagina = 0; pintar.run(); });
         ant.addActionListener(e -> { histPagina--; pintar.run(); });
         sig.addActionListener(e -> { histPagina++; pintar.run(); });
-        mas.addActionListener(e -> { mas.setEnabled(false); new Thread(() -> { try { Actividad base = ACTIVIDAD_CACHE.get(pid); Actividad a2 = descargarActividad(pid, nombre, base, false, (base == null ? 0 : base.paginas()) + 1, null, () -> false); ACTIVIDAD_CACHE.put(pid, a2); } catch (Exception ex) { log("historial: " + causa(ex)); } SwingUtilities.invokeLater(() -> { mas.setEnabled(true); pintar.run(); }); }, "historial-mas").start(); });
+        mas.addActionListener(e -> { mas.setEnabled(false); new Thread(() -> { try { Actividad base = ACTIVIDAD_CACHE.get(pid); Actividad a2 = SERVICIO_PERFIL.historial(pid, nombre, base, false, (base == null ? 0 : base.paginas()) + 1, null, () -> false); /* parcial null: ver DEUDA (NPE) */ ACTIVIDAD_CACHE.put(pid, a2); } catch (Exception ex) { log("historial: " + causa(ex)); } SwingUtilities.invokeLater(() -> { mas.setEnabled(true); pintar.run(); }); }, "historial-mas").start(); });
         JPanel sur = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         JButton desc = new JButton(t("Descargar rec", "Download rec")), env = new JButton(t("Enviar al juego", "Send to game"));
         for (JButton b : new JButton[]{ desc, env }) { b.setFocusable(false); b.setMargin(new Insets(2, 10, 2, 10)); b.putClientProperty("JButton.buttonType", "roundRect"); }
@@ -3710,8 +3659,7 @@ public class SpoilerFreeRecs extends JFrame {
         actNombreReal = nombre;
         actualizarTextoBuscar();
         actMasBtn.setVisible(false);
-        Actividad base = ACTIVIDAD_CACHE.get(pid);
-        if (base == null) { base = cargarActividad(pid); if (base != null) ACTIVIDAD_CACHE.put(pid, base); }
+        Actividad base = SERVICIO_PERFIL.actividad(pid);
         boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
         if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
         else { actMostrarCuerpo(false); actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in.")); }
@@ -3754,7 +3702,7 @@ public class SpoilerFreeRecs extends JFrame {
                 FichaPerfil perfil = SERVICIO_PERFIL.ficha(pid);
                 SwingUtilities.invokeLater(() -> { if (actPid == pid) actPintarCabecera(perfil); });
                 int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // nuevo: primero 250 partidas; el resto solo si te quedas
-                Actividad a = (fresco && baseF.completo()) ? baseF : descargarActividad(pid, nombre, baseF, false, max, parcialA -> SwingUtilities.invokeLater(() -> {
+                Actividad a = (fresco && baseF.completo()) ? baseF : SERVICIO_PERFIL.historial(pid, nombre, baseF, false, max, parcialA -> SwingUtilities.invokeLater(() -> {
                     if (actPid != pid) return;
                     ACTIVIDAD_CACHE.put(pid, parcialA);
                     actProgreso.setIndeterminate(false); actProgreso.setMaximum(ACT_MAX_PAGINAS); actProgreso.setValue(Math.min(ACT_MAX_PAGINAS, parcialA.paginas()));
@@ -3784,7 +3732,7 @@ public class SpoilerFreeRecs extends JFrame {
         actProgreso.setVisible(true); actProgreso.setIndeterminate(true); actProgreso.setString(t("Cargando más…", "Loading more…"));
         new Thread(() -> {
             try {
-                Actividad a = descargarActividad(pid, nombre, base, true, paginas, parcialA -> SwingUtilities.invokeLater(() -> {
+                Actividad a = SERVICIO_PERFIL.historial(pid, nombre, base, true, paginas, parcialA -> SwingUtilities.invokeLater(() -> {
                     if (actPid != pid) return;
                     ACTIVIDAD_CACHE.put(pid, parcialA);
                     actProgreso.setIndeterminate(false); actProgreso.setMaximum(base.paginas() + paginas); actProgreso.setValue(parcialA.paginas());
@@ -12388,7 +12336,8 @@ public class SpoilerFreeRecs extends JFrame {
             new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
                 @Override public String mapa(String clave) { return nombreMapaClave(clave); }
                 @Override public String civ(String clave) { return nombreCivStats(clave); }
-            }, Reloj.SISTEMA));
+            }, Reloj.SISTEMA),
+            new HistorialPerfil(COMPANION, ACTIVIDAD_CACHE, pid -> cargarActividad(pid), a -> guardarActividad(a), ms -> dormir(ms), PER_PAGE, PAUSA_MS, Reloj.SISTEMA));
 
     static String httpText(String url) throws IOException, InterruptedException { return API_CLIENTE.texto(url); }
 
