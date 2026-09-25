@@ -16,7 +16,9 @@ techtree  Datos de aoe2techtree (data.json, árboles por civ, cadenas por idioma
 cache     CacheService: cachés en memoria y disco con TTL, una sola implementación para todas.
 service   Reglas de negocio: ProfileService (perfil = shard + «Actualizar hoy»), LiveService (Live now: barrido +
           socket + fantasmas), FormService (forma por resta + fallback), RecService (descargas/enviar al juego),
-          WatchlistService (grupos, tops, clanes), StatsService (civ stats), Throttle (freno + cortacircuitos),
+          WatchlistService (grupos, tops, clanes: repartido en ListaSeguidos, Familias, FiltroLista, BarridoVivos,
+          TopLadderService, Campanas, AnotacionesService + api.SteamApi; su estado pasa a AppState en la fase 3),
+          StatsService (civ stats), Throttle (freno + cortacircuitos),
           ControlService (control.json).
 ui        Swing: una vista por pestaña (WatchlistView, MatchesView, LiveView, ProfileView, RatingsView,
           CivStatsView, TechTreeView) y su presentador (…Presenter). Las vistas no llaman a la red: piden al
