@@ -32,11 +32,13 @@ package dev.tirador.aoe2radar;
 
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.Recs;
 import dev.tirador.aoe2radar.api.SocketVivo;
 import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
+import dev.tirador.aoe2radar.cache.RecsDisco;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.CivAgg;
@@ -63,15 +65,18 @@ import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
 import dev.tirador.aoe2radar.service.ControlService;
+import dev.tirador.aoe2radar.service.DescargaRecs;
 import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.FormaCompanion;
 import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.HistorialPerfil;
+import dev.tirador.aoe2radar.service.Juego;
 import dev.tirador.aoe2radar.service.LiveService;
 import dev.tirador.aoe2radar.service.NombresJuego;
 import dev.tirador.aoe2radar.service.PerfilesCompanion;
 import dev.tirador.aoe2radar.service.ProfileService;
+import dev.tirador.aoe2radar.service.RecService;
 import dev.tirador.aoe2radar.service.StatsService;
 import dev.tirador.aoe2radar.service.StatsServiceSfr;
 import dev.tirador.aoe2radar.sfrdata.SfrDataClient;
@@ -97,7 +102,6 @@ import static dev.tirador.aoe2radar.api.Http.descargarBytes;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
 import static dev.tirador.aoe2radar.api.Http.req;
 import static dev.tirador.aoe2radar.api.Parseo.MAPA_IMG_PATRON;
-import static dev.tirador.aoe2radar.api.Recs.descargarRec;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
 import static dev.tirador.aoe2radar.cache.Anotaciones.NOTAS;
 import static dev.tirador.aoe2radar.cache.Anotaciones.cargarAliases;
@@ -11905,6 +11909,11 @@ public class SpoilerFreeRecs extends JFrame {
 
     List<Match> allRows() { return new ArrayList<>(view); }
 
+    /** RecService: descarga, disco y savegame para UNA partida (ver service.RecService). Campo de instancia (no
+     *  static): se cablea junto al código que lo usa, sin tocar el bloque static de COMPANION/LIVE/SERVICIO_PERFIL. */
+    final RecService recService = new DescargaRecs(Recs::descargarRec, RecsDisco::destino, Juego::copiarASavegame,
+            SpoilerFreeRecs::dormir, PAUSA_MS);
+
     void download(List<Match> objetivoIn) { download(objetivoIn, false); }
 
     void download(List<Match> objetivoIn, boolean enviarSiempre) {
@@ -11942,32 +11951,17 @@ public class SpoilerFreeRecs extends JFrame {
                 for (Match m : objetivo) {
                     if (stopOperacion) break;
                     setEstado(m, "descargando…");
-                    boolean hecho = false;
-                    for (long pid : candidatos(m, trackedIds)) {
-                        if (stopOperacion) break;
-                        byte[] datos = descargarRec(m.id, pid);
-                        if (datos != null) {
-                            try {
-                                Files.write(destino(m), datos);
-                                hecho = true;
-                                break;
-                            } catch (IOException ex) {
-                                log("no se pudo escribir " + destino(m) + ": " + causa(ex));
-                            }
-                        }
-                        dormir(PAUSA_MS);
-                    }
-                    boolean copiada = false;
+                    RecService.Resultado r = recService.procesar(m, trackedIds, autoCopiarFinal, sgAuto, () -> stopOperacion);
+                    boolean hecho = r.estado() != RecService.Estado.FALLO;
                     if (hecho) {
                         m.enDisco = true;
                         ok++;
-                        if (autoCopiarFinal && sgAuto != null && copiarASavegame(m, sgAuto)) {
+                        if (r.enJuego()) {
                             copiadas++;
-                            copiada = true;
                             m.enJuego = true;
                         }
                     }
-                    setEstado(m, hecho ? (copiada ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
+                    setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
                     dormir(PAUSA_MS);
                 }
                 final int n = ok, tot = objetivo.size(), cop = copiadas;
@@ -11989,18 +11983,6 @@ public class SpoilerFreeRecs extends JFrame {
         }.execute();
     }
     boolean descargaSinCambiarVista; Runnable alTerminarDescarga;
-
-    /** POVs a intentar, por orden: el de referencia, con rec confirmada
-     *  (seguidos primero), seguidos, resto. */
-    static List<Long> candidatos(Match m, Set<Long> tracked) {
-        LinkedHashSet<Long> c = new LinkedHashSet<>();
-        for (MatchPlayer p : m.players) if (p.id == m.refId && !Boolean.FALSE.equals(p.replay)) c.add(p.id);
-        for (MatchPlayer p : m.players) if (Boolean.TRUE.equals(p.replay) && tracked.contains(p.id)) c.add(p.id);
-        for (MatchPlayer p : m.players) if (Boolean.TRUE.equals(p.replay)) c.add(p.id);
-        for (MatchPlayer p : m.players) if (tracked.contains(p.id)) c.add(p.id);
-        for (MatchPlayer p : m.players) c.add(p.id);
-        return new ArrayList<>(c).subList(0, Math.min(c.size(), 8));   // TGs de 8: todas las perspectivas caben
-    }
 
     void setEstado(Match m, String txt) {
         SwingUtilities.invokeLater(() -> {
