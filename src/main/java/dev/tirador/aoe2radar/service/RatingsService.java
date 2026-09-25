@@ -45,7 +45,7 @@ public interface RatingsService {
     /** ¿La familia «familia» tiene dispersión de activos publicada? (mismo papel que tieneActivos, para el título). Sin red. */
     boolean dispersionTieneActivos(String familia);
 
-    /** Los clanes del ladder 1v1 (tag → miembros, ordenados por rating), ya cargados por asegurar(). Sin red. */
+    /** Los clanes del ladder 1v1 (tag → miembros), en el orden que publica sfr-data (por rating), ya cargados por asegurar(). Sin red. */
     Map<String, List<LadderRow>> clanes();
 
     /** Mínimo de partidas para contar como «activo» (definido por sfr-data; por defecto 10). Sin red. */

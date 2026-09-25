@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 class RatingsServiceSfrTest {
 
-    final RatingsService ratings = new RatingsServiceSfr();
+    final RatingsService ratings = RatingsServiceSfr.SISTEMA;
 
     // valores originales de los estáticos de Ladder, para restaurarlos en @AfterEach
     Map<String, LadderHist> histsOriginal, histsActivosOriginal;
@@ -77,6 +77,8 @@ class RatingsServiceSfrTest {
     }
 
     @Test void tieneActivosMiraSoloElMapaDeActivos() {
+        // "todos" trae ambas claves: si tieneActivos mirara ladderHists en vez de ladderHistsActivos, las dos darían true.
+        Ladder.ladderHists = Map.of("rm_1v1", hist(1000, 0, 1200), "ew_1v1", hist(1000, 0, 1200));
         Ladder.ladderHistsActivos = Map.of("rm_1v1", hist(200, 0, 1500));
         assertTrue(ratings.tieneActivos("rm_1v1"));
         assertFalse(ratings.tieneActivos("ew_1v1"));
@@ -99,6 +101,8 @@ class RatingsServiceSfrTest {
     }
 
     @Test void dispersionTieneActivosMiraSoloElMapaDeActivos() {
+        // "todos" trae ambas familias: si dispersionTieneActivos mirara dispersionTodos, "ew" también daría true.
+        Ladder.dispersionTodos = Map.of("rm", rejilla(1000), "ew", rejilla(1000));
         Ladder.dispersionActivos = Map.of("rm", rejilla(200));
         assertTrue(ratings.dispersionTieneActivos("rm"));
         assertFalse(ratings.dispersionTieneActivos("ew"));

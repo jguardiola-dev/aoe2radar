@@ -13,12 +13,14 @@ import static dev.tirador.aoe2radar.util.Hilos.avisarSiUi;
 /**
  * RatingsService sobre sfr-data: delega en sfrdata.Ladder, que guarda las campanas, la dispersión y los clanes en
  * estáticos compartidos con la UI y el harness de capturas (por eso no se duplican aquí, igual que StatsServiceSfr
- * con CivStats). Sin dependencias que inyectar: SISTEMA es la única instancia que hace falta.
+ * con CivStats). A diferencia de StatsServiceSfr, que recibe un SfrDataClient por constructor para poder probarlo
+ * con una release falsa, aquí no se inyecta nada: Ladder.ladderAsegurar ya usa SfrDataClient.SISTEMA por dentro, así
+ * que no hay nada que variar entre producción y test. Por eso hay una sola forma de conseguirlo, SISTEMA.
  */
 public final class RatingsServiceSfr implements RatingsService {
     public static final RatingsServiceSfr SISTEMA = new RatingsServiceSfr();
 
-    public RatingsServiceSfr() {}
+    private RatingsServiceSfr() {}
 
     @Override public String asegurar(boolean forzar) {
         avisarSiUi("RatingsService.asegurar");
