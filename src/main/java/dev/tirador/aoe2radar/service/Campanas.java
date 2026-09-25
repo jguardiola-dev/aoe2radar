@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.LongFunction;
+import java.util.regex.Pattern;
 
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
 import static dev.tirador.aoe2radar.cache.Paises.aprenderPais;
@@ -50,15 +51,25 @@ public final class Campanas {
         this.guardarConfig = guardarConfig;
     }
 
-    // ----- el set de campanas activas (config «campanas», separadas con \u0001) -----
+    // ----- el set de campanas activas (config «campanas») -----
+
+    /**
+     * El separador guardado en config, tal cual lo escribía la 1.1: el texto literal de 6 caracteres «\u0001»
+     * (la barra doble en el código fuente escapa la barra, así que NO es el carácter de control U+0001, es
+     * texto). No se puede cambiar sin invalidar las configs ya guardadas.
+     */
+    private static final String SEPARADOR = "\\u0001";
 
     public Set<String> campanas() {
         Set<String> s = new LinkedHashSet<>();
-        for (String x : leerConfig.apply("campanas", "").split("\\u0001")) if (!x.isBlank()) s.add(x);
+        // Pattern.quote: partir por el texto literal SEPARADOR, no por la expresión regular \u0001 (que Pattern
+        // interpreta como el carácter real U+0001 y que, como tal, nunca aparece en lo guardado: antes del
+        // arreglo esto dejaba pegadas todas las campanas en un único elemento cuando había más de una).
+        for (String x : leerConfig.apply("campanas", "").split(Pattern.quote(SEPARADOR))) if (!x.isBlank()) s.add(x);
         return s;
     }
 
-    public void guardarCampanas(Set<String> s) { guardarConfig.accept("campanas", String.join("\\u0001", s)); }
+    public void guardarCampanas(Set<String> s) { guardarConfig.accept("campanas", String.join(SEPARADOR, s)); }
 
     /** Enciende o apaga la campana de una vista; devuelve si quedó encendida. */
     public boolean alternar(String id) {

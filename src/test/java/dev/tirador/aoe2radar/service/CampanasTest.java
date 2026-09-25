@@ -74,19 +74,23 @@ class CampanasTest {
         assertEquals(Set.of("grupo|A"), campanas.campanas());
     }
 
+    @Test void guardaYLeeVariasCampanas() {
+        Set<String> tres = new LinkedHashSet<>(List.of("grupo|A", "grupo|B", "★ladder"));
+        campanas.guardarCampanas(tres);
+        assertEquals(tres, campanas.campanas());
+    }
+
     /**
-     * DEUDA (encontrada al mover, no corregida): guardarCampanas separa con el texto literal de 6 caracteres
-     * "\u0001" (un escape de unicode mal escrito: la barra doble hace que quede como texto, no como el carácter
-     * U+0001); campanas() lo divide con una expresión regular que SÍ interpreta "\u0001" como el carácter U+0001
-     * real. Como el texto guardado nunca contiene ese carácter, split() nunca corta: con más de una campana activa
-     * quedan pegadas en un único elemento. Así se comportaba ya la 1.1; se documenta tal cual (ver DEUDA.md).
+     * Arreglo (2026-09-25): antes, campanas() dividía con una expresión regular que interpretaba "\u0001" como
+     * el carácter real U+0001; como lo guardado nunca contenía ese carácter (ver guardarCampanas/SEPARADOR),
+     * con más de una campana activa quedaban pegadas en un único elemento. El FORMATO GUARDADO no cambia (sigue
+     * siendo el texto literal de 6 caracteres "\u0001" entre cada campana, tal cual lo escribía la 1.1): esta
+     * prueba simula una config ya existente, escrita con ese mismo texto literal, y comprueba que ahora se lee
+     * bien, sin pasar por guardarCampanas.
      */
-    @Test void conDosCampanasActivasQuedanPegadasEnUnSoloElemento() {
-        campanas.guardarCampanas(new LinkedHashSet<>(List.of("grupo|A", "grupo|B")));
-        Set<String> leidas = campanas.campanas();
-        assertEquals(1, leidas.size(), "las dos campanas deberían ser dos elementos, pero el separador no corta (bug heredado)");
-        String unico = leidas.iterator().next();
-        assertTrue(unico.contains("grupo|A") && unico.contains("grupo|B"), unico);
+    @Test void leeUnaConfigVieja() {
+        config.put("campanas", "grupo|A" + "\\u0001" + "grupo|B" + "\\u0001" + "★ladder");
+        assertEquals(Set.of("grupo|A", "grupo|B", "★ladder"), campanas.campanas());
     }
 
     // ----- alternar -----
