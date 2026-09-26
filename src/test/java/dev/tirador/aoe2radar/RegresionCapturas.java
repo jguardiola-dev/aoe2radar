@@ -68,6 +68,7 @@ class RegresionCapturas {
     static int fotos;
 
     @BeforeAll static void prepararDirectorio() throws IOException {
+        AvisoHarness.comprobarSesionActiva();   // antes de preparar nada: si la sesión está bloqueada, falla ya y claro
         if (!HARNESS.endsWith(Path.of("target", "harness")))
             throw new IllegalStateException("el harness debe correr en target/harness (workingDirectory de surefire), no en " + HARNESS);
         AvisoHarness.empezar(BASE);   // pitido y cartel rojo: a partir de aquí la pantalla es del harness
