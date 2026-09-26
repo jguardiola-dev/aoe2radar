@@ -873,15 +873,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** El cromo de navegación (pestañas, historial, esqueleto de los abrir*): ver ui.Navegador/ui.AppState.
      *  La ventana implementa ui.Navegacion delegando en él (fase 3, tanda 4, T4-Z1). Se crea al principio del
-     *  constructor porque construirBarraSuperior necesita sus botones; conectarVistas lo completa con las
-     *  vistas y el split, que no existen hasta construirCentro/montarVentana (mismo truco de referencia
-     *  adelantada que ya usa el resto de la ventana). */
+     *  constructor porque construirBarraSuperior necesita sus botones; recibe partidas directamente (es un
+     *  inicializador de campo, ya construido antes de este punto, como status); conectarVistas lo completa con
+     *  el resto de vistas y el split, que no existen hasta construirCentro/montarVentana (mismo truco de
+     *  referencia adelantada que ya usa el resto de la ventana; ver el javadoc de ui.Navegador). */
     final dev.tirador.aoe2radar.ui.Navegador navegador;
 
     SpoilerFreeRecs(String temaInicial) {
         super(NOMBRE + " " + VERSION + t(" — tu radar del AoE2 competitivo, sin spoilers · por ", " — your competitive AoE2 radar, spoiler-free · by ") + AUTOR);
         configurarVentana();
-        navegador = new dev.tirador.aoe2radar.ui.Navegador(status, this::perfilDesdeBoton);
+        navegador = new dev.tirador.aoe2radar.ui.Navegador(status, partidas, this::perfilDesdeBoton);
 
         sujetosPanel = new JPanel();
         watchlist = new WatchlistView(this, SERVICIO_PERFIL, BUSQUEDA, TOP_LADDER_SERVICE, formaService, campanas,
@@ -901,7 +902,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         JPanel center = construirCentro(top, bottom);
 
         montarVentana(left, center);
-        navegador.conectarVistas(partidas, watchlist, perfil, liveNow, techTree, ratings, civStats, directos, centroCards, splitPrincipal);
+        navegador.conectarVistas(watchlist, perfil, liveNow, techTree, ratings, civStats, directos, centroCards, splitPrincipal);
 
         arrancar();
     }

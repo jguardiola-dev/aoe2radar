@@ -14,12 +14,18 @@ import static dev.tirador.aoe2radar.util.I18n.t;
  * {@link AppState}; este objeto decide QUÉ pasa al navegar y pinta los botones. Implementa {@link Navegacion}:
  * las vistas piden «abre tal cosa» sin conocer ni la ventana ni al resto de vistas.
  *
- * <p>Se construye en dos tiempos porque los botones de pestaña hacen falta ANTES de que existan las vistas (se
- * montan en {@code construirBarraSuperior}, antes de {@code construirCentro}): el constructor solo prepara el
- * historial y dónde pintar el estado; {@link #conectarVistas} las enchufa en cuanto la ventana las tiene todas
- * construidas (justo después de {@code montarVentana}). Es el mismo truco de «referencia adelantada» que ya usa
- * el resto de la app (p. ej. {@code liveNow} capturando {@code techTree::claveCivDeNombre} antes de que el campo
- * exista): los botones solo LEEN estas vistas cuando alguien hace clic, mucho después de que ya estén conectadas.
+ * <p>Se construye en dos tiempos. {@code partidas} llega ya en el constructor: es un inicializador de campo de
+ * la ventana (se crea antes de que corra el cuerpo del constructor, como {@code status}), así que está listo
+ * antes incluso de {@code configurarVentana()}. El resto de vistas ({@code watchlist}, {@code perfil},
+ * {@code liveNow}, {@code techTree}, {@code ratings}, {@code civStats}, {@code directos}) y {@code centroCards}/
+ * {@code splitPrincipal} llegan tarde de verdad: {@code watchlist} se asigna en el cuerpo del constructor
+ * (después de {@code configurarVentana}), y las demás las crea {@code construirCentro}/{@code montarVentana},
+ * que corren después de que {@code construirBarraSuperior} ya haya pedido los botones de pestaña. Por eso
+ * {@link #conectarVistas} las enchufa aparte, justo después de {@code montarVentana}. Nada síncrono las usa
+ * antes: {@code abrirLadder}/{@code abrirCivStats}/etc. solo se disparan por un clic de botón o por
+ * {@code irA}, siempre después de que el constructor de la ventana haya terminado del todo — el mismo truco de
+ * «referencia adelantada» que ya usa el resto de la app (p. ej. {@code liveNow} capturando
+ * {@code techTree::claveCivDeNombre} antes de que el campo exista).
  */
 public final class Navegador implements Navegacion {
 
@@ -28,13 +34,14 @@ public final class Navegador implements Navegacion {
 
     // Botones de pestaña y flechas de historial: públicos porque RegresionCapturas los usa por nombre
     // (app.navegador.xxxBtn.doClick()).
-    public JToggleButton recsBtn, directosBtn, ahoraBtn, perfilBtn, ladderBtn, civStatsBtn, techTreeBtn;
+    public JToggleButton recsBtn;                    // pestaña «Partidas»
+    public JToggleButton directosBtn, ahoraBtn, perfilBtn, ladderBtn, civStatsBtn, techTreeBtn;
     public JButton atrasBtn, adelanteBtn;
 
     private final JLabel status;
+    private final PartidasView partidas;
     private final Runnable perfilDesdeBoton;
 
-    private PartidasView partidas;
     private WatchlistView watchlist;
     private PerfilView perfil;
     private LiveNowView liveNow;
@@ -47,19 +54,22 @@ public final class Navegador implements Navegacion {
     private int ttDivisorPrevio = -1;
 
     /** @param status la barra de estado (la pinta actualizarControlesTabla, no la construye este objeto).
+     *  @param partidas la pestaña Partidas: llega ya construida porque, como {@code status}, es un
+     *  inicializador de campo de la ventana (se crea antes de que corra el cuerpo del constructor).
      *  @param perfilDesdeBoton qué hacer cuando se pulsa la pestaña «Perfil» directamente (decide qué jugador
      *  abrir; sigue viviendo en la ventana porque no es navegación, es elegir a quién navegar). */
-    public Navegador(JLabel status, Runnable perfilDesdeBoton) {
+    public Navegador(JLabel status, PartidasView partidas, Runnable perfilDesdeBoton) {
         this.status = status;
+        this.partidas = partidas;
         this.perfilDesdeBoton = perfilDesdeBoton;
         estado.agregarOyente(this::actualizarBotonesHistorial);
     }
 
-    /** Enchufa las vistas y el contenedor de cards, ya construidos por la ventana (construirCentro/montarVentana). */
-    public void conectarVistas(PartidasView partidas, WatchlistView watchlist, PerfilView perfil, LiveNowView liveNow,
+    /** Enchufa el resto de vistas y el contenedor de cards, que la ventana crea tarde (construirCentro/
+     *  montarVentana, después de construirBarraSuperior): ver el javadoc de la clase para el porqué. */
+    public void conectarVistas(WatchlistView watchlist, PerfilView perfil, LiveNowView liveNow,
             TechTreeView techTree, RatingsView ratings, CivStatsView civStats, DirectosView directos,
             JPanel centroCards, JSplitPane splitPrincipal) {
-        this.partidas = partidas;
         this.watchlist = watchlist;
         this.perfil = perfil;
         this.liveNow = liveNow;
@@ -93,8 +103,8 @@ public final class Navegador implements Navegacion {
         if (partidas.parRival != null) partidas.parRival.setVisible(hay);
     }
 
-    /** Ratings (card "ladder"): la vista y el presentador viven en ui.RatingsView/ui.RatingsPresenter; aquí
-     *  solo queda el cromo (botones, historial, CardLayout), igual que el resto de vistas de la fase 3. */
+    /** Ratings (card "ladder"): la vista y el presentador viven en ui.RatingsView/ui.RatingsPresenter;
+     *  aqui solo queda el cromo (botones, historial, CardLayout), igual que el resto de vistas de la fase 3. */
     @Override public void abrirLadder() {
         estado.registrarDestino(new AppState.Destino("ladder", 0, null, null));
         if (ladderBtn != null && !ladderBtn.isSelected()) ladderBtn.setSelected(true);
@@ -129,8 +139,8 @@ public final class Navegador implements Navegacion {
 
     /** Abre el perfil de un jugador; pid 0 = página vacía con el buscador. El cromo (botones, CardLayout,
      *  historial) vive aquí; la carga y la pintura son de ui.PerfilView (perfil.alAbrir). Nota: a diferencia
-     *  del resto de abrir*, esta no llama a registrarDestino (lo hace PerfilView vía su Anfitrion, ya en la
-     *  1.1: el destino de un perfil se registra cuando termina de cargar, no al pedirlo). */
+     *  del resto de abrir*, esta no llama a registrarDestino: lo hace PerfilView.alAbrir, al final de este
+     *  método, y solo si pid > 0. */
     @Override public void abrirPerfil(long pid, String nombre) {
         if (perfilBtn != null && !perfilBtn.isSelected()) perfilBtn.setSelected(true);
         directosBtn.setSelected(false);
@@ -290,13 +300,13 @@ public final class Navegador implements Navegacion {
      *  llama justo donde antes se construía el bloque inline. */
     public JPanel construirFilaVistas() {
         JPanel filaVistas = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 0));
-        atrasBtn = new JButton("←");
+        atrasBtn = new JButton("\u2190");
         atrasBtn.setFocusable(false); atrasBtn.setMargin(new Insets(2, 8, 2, 8)); atrasBtn.putClientProperty("JButton.buttonType", "roundRect");
         atrasBtn.setToolTipText(t("Atrás: vuelve a la vista anterior (también el botón lateral del ratón)", "Back: return to the previous view (also the mouse's back button)"));
         atrasBtn.setEnabled(false);
         atrasBtn.addActionListener(e -> volverAtras());
         filaVistas.add(atrasBtn);
-        adelanteBtn = new JButton("→");
+        adelanteBtn = new JButton("\u2192");
         adelanteBtn.setFocusable(false); adelanteBtn.setMargin(new Insets(2, 8, 2, 8)); adelanteBtn.putClientProperty("JButton.buttonType", "roundRect");
         adelanteBtn.setToolTipText(t("Adelante (también el botón lateral del ratón)", "Forward (also the mouse's forward button)"));
         adelanteBtn.setEnabled(false);
