@@ -4,6 +4,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.util.Reloj;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -87,11 +88,86 @@ public final class LiveNowPresenter {
     /** El EstadoVivo se inyecta (DEUDA, fila 125): en la app, LiveNowView pasa EstadoVivo.SISTEMA explícitamente;
      *  en los tests, cada uno puede traer el suyo y no compartir el singleton de toda la app entre pruebas. */
     public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla, EstadoVivo estadoVivo) {
+        this(buscador, socketExtra, tareas, pantalla, estadoVivo, Reloj.SISTEMA);
+    }
+
+    /** Como el otro, con el reloj de la gracia del socket (los tests traen uno falso). */
+    public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla, EstadoVivo estadoVivo, Reloj reloj) {
         this.buscador = buscador;
         this.socketExtra = socketExtra;
         this.tareas = tareas;
         this.pantalla = pantalla;
         this.estadoVivo = estadoVivo;
+        this.reloj = reloj;
+    }
+
+    // ----- suscripción del top al socket: se suelta con la pestaña cerrada (plan API de la 1.3) -----
+
+    /** Cuánto sigue el top de Live now en el socket tras cerrar la pestaña. SocketVivo reconecta cada vez que cambia el
+     *  conjunto de ids: sin esta gracia, entrar y salir de la pestaña costaría una reconexión (y su hueco) por vez. */
+    public static final long GRACIA_SOCKET_MS = 5 * 60_000L;
+
+    private final Reloj reloj;
+    /** Cuándo se cerró la pestaña; -1 si está abierta o nunca se cerró. Lo escribe el EDT y lo lee el hilo del socket
+     *  (idsSocket), por eso es volatile. */
+    private volatile long cerradaMs = -1;
+    /** ¿Ya se soltó el top del socket (y se olvidó «en curso»)? Solo lo tocan alAbrir y soltarSiToca, en el EDT. */
+    private boolean soltado;
+
+    /** ¿El top de la fuente sigue suscrito al socket? Sí con la pestaña abierta y durante GRACIA_SOCKET_MS tras cerrarla. */
+    public boolean topSuscrito() {
+        long c = cerradaMs;
+        return c < 0 || reloj.ahoraMs() - c < GRACIA_SOCKET_MS;
+    }
+
+    /**
+     * Los ids extra que el socket debe vigilar ahora (los pide EnlaceVivo.sincronizarSocket, vía la ventana): todo
+     * socketExtra mientras el top siga suscrito; si no, solo los de alguna vista con campana, que no se sueltan nunca.
+     * «Mi partida» (mi_pid) no pasa por aquí: lo añade EnlaceVivo aparte. Se filtra al leer, no al escribir: así quien
+     * llena socketExtra (el barrido, refrescarCampanas) no tiene que saber si la pestaña está abierta. Seguro desde
+     * cualquier hilo: socketExtra es concurrente y cerradaMs, volatile.
+     */
+    public Set<Long> idsSocket() {
+        if (topSuscrito()) return socketExtra;
+        Set<Long> conCampana = new HashSet<>();
+        for (Long id : socketExtra) if (pantalla.campanaContiene(id)) conCampana.add(id);
+        return conCampana;
+    }
+
+    /** La pestaña se cierra: empieza la gracia (la cuenta el primer cierre). Desde el EDT. */
+    public void alCerrar() { if (cerradaMs < 0) cerradaMs = reloj.ahoraMs(); }
+
+    /**
+     * Pasada la gracia con la pestaña cerrada: el socket se resincroniza sin el top (idsSocket ya no lo da) y se olvida
+     * «en curso». Motivo: sin socket nadie mantiene ese mapa, y el barrido de reapertura conserva lo que EstadoVivo aún
+     * da por vivo (F2), pero EstadoVivo tampoco se entera ya de los finales de quien solo vigilaba Live now: sin
+     * olvidarlo, una partida terminada con la pestaña cerrada seguiría «en curso» al volver y taparía la nueva. El
+     * barrido de apertura (forzado: se olvida también su hora) lo rehace entero. No hace nada si la pestaña se reabrió
+     * o la gracia no ha vencido. Desde el EDT (el Timer de LiveNowView).
+     */
+    public void soltarSiToca() {
+        if (soltado || topSuscrito()) return;
+        soltado = true;
+        olvidarEnCurso();
+        pantalla.sincronizarSocket();
+    }
+
+    /**
+     * La pestaña se abre, antes del barrido de apertura: si el top estaba suelto, vuelve al socket (resincroniza con él).
+     * Dentro de la gracia no cambia nada y el socket no se toca. Si la gracia venció pero el Timer aún no pasó, se hace
+     * aquí lo que él habría hecho (olvidar «en curso»). Desde el EDT.
+     */
+    public void alAbrir() {
+        boolean volver = soltado || !topSuscrito();
+        if (volver && !soltado) olvidarEnCurso();
+        soltado = false;
+        cerradaMs = -1;
+        if (volver) pantalla.sincronizarSocket();
+    }
+
+    private void olvidarEnCurso() {
+        synchronized (ahoraEnCurso) { ahoraEnCurso.clear(); }
+        ahoraUltimaMs = 0;   // el próximo refrescar(false) no se queda en «solo pintar»: barrido completo
     }
 
     /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null. Bajo el mismo candado que

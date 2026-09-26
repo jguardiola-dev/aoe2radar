@@ -163,6 +163,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
     public boolean ahoraAbierta;   // visible para RegresionCapturas y para el cromo de la ventana
     private boolean liveRellenando;
     private javax.swing.Timer ahoraTimer, liveReloj;
+    private javax.swing.Timer soltarTimer;   // la gracia del socket tras cerrar la pestaña (ver marcarCerrada)
     private String liveMapaSel = "*";
     private final List<JLabel> liveRelojes = new ArrayList<>();
     /** Ids extra para el socket (Live now abierto, vistas con campana): el MISMO Set que usa refrescarCampanas y
@@ -218,7 +219,28 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
 
     /** Marca la pestaña como abierta ANTES del CardLayout.show: el hilo del socket (puedeRepintar) puede leer
      *  esta bandera en cuanto se decide abrir, igual que la 1.1 (`ahoraAbierta = true;` antes del show). */
-    public void marcarAbierta() { ahoraAbierta = true; }
+    public void marcarAbierta() {
+        ahoraAbierta = true;
+        if (soltarTimer != null) soltarTimer.stop();
+        presenter.alAbrir();   // si el top se había soltado del socket, vuelve (ver LiveNowPresenter.alAbrir)
+    }
+
+    /** Cierra la pestaña (lo llaman los abrir* de las otras vistas, en el EDT). Si estaba abierta, empieza la gracia del
+     *  socket: pasados LiveNowPresenter.GRACIA_SOCKET_MS sin reabrirla, el top de Live now sale del socket. */
+    public void marcarCerrada() {
+        if (!ahoraAbierta) return;
+        ahoraAbierta = false;
+        presenter.alCerrar();
+        if (soltarTimer == null) {
+            soltarTimer = new javax.swing.Timer((int) LiveNowPresenter.GRACIA_SOCKET_MS, e -> presenter.soltarSiToca());
+            soltarTimer.setRepeats(false);
+        }
+        soltarTimer.restart();
+    }
+
+    /** Los ids extra que el socket vigila por Live now y por las campanas (ver LiveNowPresenter.idsSocket). Seguro desde
+     *  cualquier hilo. */
+    public Set<Long> idsSocket() { return presenter.idsSocket(); }
 
     /** La parte de vista de abrirAhora que va justo tras mostrar la tarjeta "ahora" del CardLayout. */
     public void alAbrirAntes() {

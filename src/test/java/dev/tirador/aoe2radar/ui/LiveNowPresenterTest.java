@@ -4,6 +4,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.util.Reloj;
+import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -499,5 +500,93 @@ class LiveNowPresenterTest {
         p.refrescar(false);
         assertNotNull(propio.partida(9901L), "se guardó en el EstadoVivo inyectado");
         assertNull(EstadoVivo.SISTEMA.partida(9901L), "y no en el singleton global de la app");
+    }
+
+    // ----- el top de Live now sale del socket con la pestaña cerrada (plan API de la 1.3) -----
+
+    /** Presentador con reloj falso para la gracia del socket. */
+    LiveNowPresenter conReloj(RelojFalso reloj, EstadoVivo vivo, java.util.Set<Long> extra) {
+        return new LiveNowPresenter(buscador, extra, Tareas.EN_LINEA, pantalla, vivo, reloj);
+    }
+
+    @Test void socket_cerradaMenosDeCincoMinutos_siguenLosIdsYReabrirNoResincroniza() {
+        RelojFalso reloj = new RelojFalso();
+        java.util.Set<Long> extra = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), extra);
+        pantalla.fuente = List.<Object[]>of(ficha(701L, "Uno", 1500, 10, "es"), ficha(702L, "Dos", 1400, 20, "es"));
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        assertEquals(java.util.Set.of(701L, 702L), p.idsSocket());
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS - 1);
+        p.soltarSiToca();   // el Timer, si llegara antes de tiempo: no suelta nada
+        assertEquals(java.util.Set.of(701L, 702L), p.idsSocket(), "dentro de la gracia, el top sigue en el socket");
+        p.alAbrir();
+        assertEquals(sincronizadas, pantalla.sincronizarSocketVeces, "reabrir dentro de la gracia no reconecta el socket");
+        reloj.avanzar(60 * 60_000L);
+        assertTrue(p.topSuscrito(), "abierta, el top sigue suscrito aunque pase el tiempo");
+    }
+
+    @Test void socket_pasadaLaGracia_sueltaElTopMenosLasCampanasYVuelveAlReabrir() {
+        RelojFalso reloj = new RelojFalso();
+        java.util.Set<Long> extra = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), extra);
+        pantalla.fuente = List.<Object[]>of(ficha(711L, "Uno", 1500, 10, "es"), ficha(712L, "Dos", 1400, 20, "es"));
+        pantalla.conCampana.add(712L);   // 712 está además en una vista con campana
+        extra.add(713L); pantalla.conCampana.add(713L);   // y 713 solo por la campana
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS);
+        p.soltarSiToca();
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces, "el socket se resincroniza sin el top");
+        assertEquals(java.util.Set.of(712L, 713L), p.idsSocket(), "las campanas se quedan; el resto del top sale");
+        assertFalse(p.topSuscrito());
+        p.soltarSiToca();   // un segundo aviso no vuelve a resincronizar
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces);
+        p.alAbrir();
+        assertEquals(sincronizadas + 2, pantalla.sincronizarSocketVeces, "al reabrir, el top vuelve al socket");
+        assertEquals(java.util.Set.of(711L, 712L, 713L), p.idsSocket());
+    }
+
+    @Test void socket_graciaVencidaSinQueLlegueElTimer_reabrirTambienResincroniza() {
+        RelojFalso reloj = new RelojFalso();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(721L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS + 1);
+        assertTrue(p.idsSocket().isEmpty(), "vencida la gracia, el socket ya no lo pide aunque el Timer no haya pasado");
+        p.alAbrir();
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces);
+        assertEquals(java.util.Set.of(721L), p.idsSocket());
+    }
+
+    /**
+     * Lo que el barrido de reapertura debe reparar: con la pestaña cerrada y el top fuera del socket, nadie avisa del
+     * final de su partida. EstadoVivo lo sigue dando por vivo en ella (el socket lo marcó al confirmarla, como hace
+     * EnlaceVivo), y el barrido conserva lo que EstadoVivo da por vivo (F2): sin olvidar «en curso» al soltar, la partida
+     * vieja taparía la nueva al volver.
+     */
+    @Test void socket_trasSoltarElTop_elBarridoDeReaperturaNoConservaLaPartidaVieja() {
+        RelojFalso reloj = new RelojFalso();
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = conReloj(reloj, vivo, java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(731L, "Uno", 1500, 10, "es"));
+        Match vieja = matchEnCurso(97310L, 731L);
+        buscador.resultado = List.of(vieja);
+        p.refrescar(false);
+        vivo.marcarJugando(731L, vieja.id);   // el socket la confirmó (EnlaceVivo.confirmarEventoSocket)
+        assertEquals(vieja, p.enCursoSnapshot().get(731L));
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS);
+        p.soltarSiToca();
+        // con la pestaña cerrada, la vieja termina (hace más de 2 h: el barrido ya no la trae) y empieza otra
+        Match nueva = matchEnCurso(97311L, 731L);
+        buscador.resultado = List.of(nueva);
+        p.alAbrir();
+        p.refrescar(false);   // lo que hace LiveNowView.alAbrirDespues
+        assertEquals(nueva, p.enCursoSnapshot().get(731L), "la foto del barrido manda: la vieja no tapa la nueva");
     }
 }
