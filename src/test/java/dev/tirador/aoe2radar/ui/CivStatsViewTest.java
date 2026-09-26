@@ -31,7 +31,7 @@ class CivStatsViewTest {
         @Override public String asegurar(String ventana, boolean conTendencias) { return null; }
         @Override public VentanaStats ventana(String clave) { return v; }
         @Override public boolean tieneVentana(String clave) { return true; }
-        @Override public String[] modos() { return new String[]{ "rm_1v1" }; }
+        @Override public String[] modos() { return new String[]{ "rm_1v1", "rm_2v2" }; }
         @Override public String[] clavesVentanas() { return new String[]{ "30" }; }
         @Override public Tendencias tendencias() { return null; }
         @Override public boolean tramoEnRango(String tramo, List<String> tramos, String rango) { return true; }
@@ -78,6 +78,24 @@ class CivStatsViewTest {
         });
         assertEquals("Matchups (civ de la fila contra civ de la columna)  ⓘ", titulo[0]);
         assertEquals("Matchups (civ de la fila contra civ de la columna) · todos los mapas  ⓘ", titulo[1]);
+    }
+
+    /** B1 (revisión de F3): cambiar de modo borra la civ elegida a propósito; las civs de tendencias
+     *  (stCivsSeleccionadas) también tienen que vaciarse, aunque el repintado ya no avise con fila -1. */
+    @Test void cambiarDeModoVaciaLasCivsDeTendencias() throws Exception {
+        FiltroStats filtro = new FiltroStats("rm_1v1", "30", "*", "*");
+        List<List<String>> tras = new java.util.ArrayList<>();
+        SwingUtilities.invokeAndWait(() -> {
+            CivStatsView cs = vista(filtro);
+            cs.filtrosCambiados(false);
+            for (int r = 0; r < cs.stModelo.getRowCount(); r++) if ("franks".equals(cs.stTabla.getClientProperty("civ" + r))) { int vr = cs.stTabla.convertRowIndexToView(r); cs.stTabla.setRowSelectionInterval(vr, vr); }
+            tras.add(new java.util.ArrayList<>(cs.stCivsSeleccionadas));
+            cs.stModoCombo.setSelectedIndex(1);
+            tras.add(new java.util.ArrayList<>(cs.stCivsSeleccionadas));
+        });
+        assertEquals(List.of("franks"), tras.get(0));
+        assertEquals(List.of(), tras.get(1), "tras cambiar de modo no queda ninguna civ en tendencias");
+        assertEquals(null, filtro.civSeleccionada());
     }
 
     /** F3 (revisión 1.3): con una civ seleccionada en la tabla, cambiar el mapa (o el tramo) repinta la tabla

@@ -506,11 +506,12 @@ public final class CivStatsView {
             }
         } finally { stRepintandoTabla = false; }
         stTituloTabla.setText(t("Winrate por civilización", "Win rate by civilization") + "  ·  " + modoNombre(filtroStats.modo()) + " · " + nombreMapaStats(v, filtroStats.mapa()) + " · " + tramoNombre(filtroStats.tramo()));
+        boolean esta = false;
         if (filtroStats.civSeleccionada() != null) {
-            boolean esta = false;
             for (int r = 0; r < stModelo.getRowCount(); r++) if (filtroStats.civSeleccionada().equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); esta = true; break; }
-            if (!esta) { filtroStats.civSeleccionada(null); stCivsSeleccionadas.clear(); }   // con estos filtros ya no sale en la tabla: como antes, sin civ elegida
+            if (!esta) filtroStats.civSeleccionada(null);   // con estos filtros ya no sale en la tabla: como antes, sin civ elegida
         }
+        if (!esta) stCivsSeleccionadas.clear();   // B1: ninguna fila restaurada (tampoco tras el cambio de modo, que borra la civ antes): sin civs en tendencias, como hacía el aviso de fila -1
         Color barra = temaOscuroActivo ? new Color(0x5a, 0x8f, 0xc7) : new Color(0x3b, 0x6e, 0xa8);
         stMasJugadas.removeAll();
         stMasJugadas.add(tituloSeccion(t("Más jugadas", "Most played"), t("Las civs más elegidas con estos filtros: porcentaje de todas las partidas en las que aparece cada una (pick rate).", "The most chosen civs with these filters: share of all games in which each one appears (pick rate).")));
