@@ -71,6 +71,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
@@ -141,10 +142,17 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     private final Anfitrion anfitrion;
     private final EnlaceCivStats enlaceCivStats;
     private final TechTreePresenter presenter;
+    private final Tareas tareas;
 
     /** Icono (ImageIcon: tipo Swing) ya escalado, de memoria; vive aquí porque la caché de la 1.1 era estática pero
-     *  con una única ventana por app el resultado es el mismo (ver docs/DEUDA.md, fase 3, cachés de iconos de estático a instancia). */
-    private final Map<String, ImageIcon> ttIconos = new ConcurrentHashMap<>();
+     *  con una única ventana por app el resultado es el mismo (ver docs/DEUDA.md, fase 3, cachés de iconos de estático a instancia).
+     *  Package-private (no private): TechTreeViewTest, en este mismo paquete, comprueba que el pintado no la
+     *  rellena leyendo disco en el EDT (fila 145 de DEUDA). */
+    final Map<String, ImageIcon> ttIconos = new ConcurrentHashMap<>();
+
+    /** Claves (tipo/id@px) de ttIconos con una carga de disco ya pedida en un hilo de fondo (ttIconoPintado):
+     *  evita pedir la misma carga dos veces mientras la primera sigue en marcha. */
+    private final Set<String> ttPendientesDisco = ConcurrentHashMap.newKeySet();
 
     JPanel techTreePanel, ttArbolPanel, ttFichaCards;
     JEditorPane ttFichaCiv;
@@ -186,6 +194,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         this.listas = listas;
         this.anfitrion = anfitrion;
         this.enlaceCivStats = enlaceCivStats;
+        this.tareas = tareas;
         this.presenter = new TechTreePresenter(tt, stats, filtroStats, tareas, this, anfitrion, enlaceCivStats);
         construirPanelTechTree();
     }
@@ -332,6 +341,27 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
             } catch (Exception ignored) { }
         }
         presenter.pedirIcono("img/" + tipo + "/" + id + ".png");
+        return null;
+    }
+
+    /**
+     * Como ttIcono, pero para el PINTADO (EDT): fila 145 de DEUDA. La precarga (precalentarIcono) ya deja casi
+     * todo en ttIconos antes de pintar, en el hilo techtree-civ; pero si falla (primera apertura sin tamaño de
+     * visor todavía, o llega tarde) ttIcono leería el disco aquí mismo, en el EDT. Este método NUNCA toca disco:
+     * si no está en caché, pide la carga en un hilo de fondo (una sola vez por clave, con ttPendientesDisco) y
+     * devuelve null para que el llamador pinte la celda sin icono por ahora; al terminar la carga, repinta el
+     * árbol entero (ttPintarDeNuevo), igual que hace la cola de red de pedirIcono.
+     */
+    ImageIcon ttIconoPintado(String tipo, long id, int px) {
+        String clave = tipo + "/" + id + "@" + px;
+        ImageIcon ic = ttIconos.get(clave);
+        if (ic != null) return ic;
+        if (ttPendientesDisco.add(clave)) {
+            tareas.enFondo("techtree-icono-disco", () -> {
+                try { ttIcono(tipo, id, px); } finally { ttPendientesDisco.remove(clave); }
+                tareas.enUi(this::ttPintarDeNuevo);
+            });
+        }
         return null;
     }
 
@@ -726,8 +756,8 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
             columna.setMaximumSize(new Dimension(anchoCol + 12, TT_CAB + 2 + 8 * (TT_CELDA + TT_VGAP)));
             columna.setAlignmentY(Component.TOP_ALIGNMENT);   // todas las columnas arrancan arriba: filas alineadas con las edades
             // cabecera del edificio: icono + nombre a todo el ancho de la columna
-            ImageIcon bic = ttIcono("Building", bPic, TT_CELDA - 6);
-            ImageIcon bicCab = ttIcono("Building", bPic, 34);
+            ImageIcon bic = ttIconoPintado("Building", bPic, TT_CELDA - 6);
+            ImageIcon bicCab = ttIconoPintado("Building", bPic, 34);
             JLabel cab = new JLabel() {
                 @Override protected void paintComponent(Graphics g) {   // fondo de placa debajo del icono y el nombre
                     Graphics2D g2 = (Graphics2D) g.create();
@@ -788,7 +818,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
                         long nid = lng(n.get("node_id")), pic = lng(n.get("picture_index"));
                         boolean disp = !"NotAvailable".equals(String.valueOf(n.get("node_status")));
                         String nombre = tt.nombre(n.get("name_string_id"));
-                        ImageIcon ic = ttIcono(tipo, pic, TT_CELDA - 6);
+                        ImageIcon ic = ttIconoPintado(tipo, pic, TT_CELDA - 6);
                         if (ic != null) l.setIcon(disp ? ic : new ImageIcon(TechTreeArbol.imagenApagada(ic.getImage())));
                         else if (!disp) { l.setText("\u00D7"); l.setForeground(gris); }
                         l.setToolTipText(ttTooltip(tipo, nid, nombre, disp));
