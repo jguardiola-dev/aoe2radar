@@ -77,6 +77,10 @@ public final class TechTreePresenter {
     // La última civ pedida a pedirArbol(): si el árbol de una civ vieja llega tarde, no se pinta.
     private volatile String civEnCurso;
 
+    /** La civ pedida ahora mismo (o null si aún no se pidió ninguna): única fuente de verdad (antes también vivía
+     *  como ttCivPedida en TechTreeView, ver DEUDA, fila 117); la vista la lee de aquí. */
+    public String civEnCurso() { return civEnCurso; }
+
     public TechTreePresenter(TechTreeService tt, StatsService stats, FiltroStats filtroStats, Tareas tareas,
                               Pantalla pantalla, TechTreeView.Anfitrion anfitrion, TechTreeView.EnlaceCivStats enlaceCivStats) {
         this.tt = tt;

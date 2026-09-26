@@ -154,7 +154,6 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     volatile boolean ttCargando, ttRellenandoCombo;
     final Map<String, String> ttCivPorNombre = new LinkedHashMap<>();   // nombre mostrado → clave (Aztecs)
     JTextField ttBuscaCiv;
-    volatile String ttCivPedida;
 
     // ----- Tech tree × Civ Stats: banda inferior con los filtros compartidos, el winrate de la civ y su puesto -----
     JPanel ttBanda, ttMapasPanel;
@@ -194,8 +193,9 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     /** El panel de la pestaña, para el CardLayout de la ventana. */
     public JPanel panel() { return techTreePanel; }
 
-    /** La civ pedida ahora mismo (o null): la ventana la usa para el historial de navegación. */
-    public String civPedida() { return ttCivPedida; }
+    /** La civ pedida ahora mismo (o null): la ventana la usa para el historial de navegación. Única fuente:
+     *  presenter.civEnCurso() (ver DEUDA, fila 117; antes se duplicaba en ttCivPedida). */
+    public String civPedida() { return presenter.civEnCurso(); }
 
     /** Cierra (si está abierta) la ficha flotante de un elemento: la ventana la llama al clicar fuera o al cerrar la pestaña. */
     public void ocultarDetalle() { if (ttDetalleDialog != null && ttDetalleDialog.isVisible()) ttDetalleDialog.setVisible(false); }
@@ -634,7 +634,6 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
 
     void ttMostrarCiv(String civ) {
         ocultarDetalle();
-        ttCivPedida = civ;
         ttArbolPanel.removeAll();
         ttEstado.setText(t("Cargando ", "Loading ") + civ + "…");
         presenter.pedirArbol(civ);
@@ -973,7 +972,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     /** La banda de la civ elegida: winrate con intervalo, pick, partidas y puesto; barras por tramo de ELO; mejores y peores mapas. */
     void ttActualizarBanda() {
         if (ttWrLabel == null) return;
-        String civ = ttCivPedida;
+        String civ = presenter.civEnCurso();
         VentanaStats v = stats.ventana(filtroStats.ventana());
         ttMapasPanel.removeAll();
         ttEmblema.setIcon(civ == null ? null : iconoCiv(civ, 40));
@@ -1060,7 +1059,8 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
             }
         });
         lista.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        if (ttCivPedida != null) lista.setSelectedValue(ttCivPedida, true);
+        String civPedida = presenter.civEnCurso();
+        if (civPedida != null) lista.setSelectedValue(civPedida, true);
         lista.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 int i = lista.locationToIndex(e.getPoint());

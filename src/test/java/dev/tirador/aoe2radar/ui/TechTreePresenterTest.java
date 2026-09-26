@@ -171,6 +171,14 @@ class TechTreePresenterTest {
         assertEquals("nueva", pantalla.civArbolListo);   // solo se pintó la última, nunca "vieja"
     }
 
+    @Test void civEnCursoEsLaMismaFuenteQuePedirArbol() {
+        TechTreePresenter p = crear(Tareas.EN_LINEA);
+        assertNull(p.civEnCurso());
+        tt.arbolCiv = Map.of("units_techs", List.of());
+        p.pedirArbol("britons");
+        assertEquals("britons", p.civEnCurso());
+    }
+
     @Test void cargarStatsVentanaYaCargadaNoVaARed() {
         TechTreePresenter p = crear(Tareas.EN_LINEA);
         stats.tieneVentana = true;
