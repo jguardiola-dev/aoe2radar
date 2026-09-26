@@ -7,6 +7,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.stream.Stream;
 
 import static dev.tirador.aoe2radar.util.Log.causa;
@@ -28,7 +29,42 @@ public final class Archivos {
     @FunctionalInterface
     public interface IOConsumer<T> { void accept(T t) throws IOException; }
 
+    /** Pausa de escrituras mientras se colocan datos importados (ImportacionDatos.colocar): cada escribirAtomico
+     *  toma el cerrojo de lectura con tryLock; quien importa toma el de escritura, así espera a las escrituras en
+     *  curso y las nuevas fallan al momento con IOException (todos los que llaman ya la capturan). Ninguna escritura
+     *  ESPERA a la pausa: savePlayers o guardarConfig desde el EDT fallan enseguida en vez de congelar la interfaz.
+     *  Cubre en un solo punto a los escritores de la carpeta de datos: el Timer de países, la caché del top,
+     *  sfr-data, config.properties y players.txt.
+     *  <p>Orden de cerrojos: primero el monitor de Config (Config.class) y después esta pausa, nunca al revés.
+     *  ImportacionDatos.colocar lo respeta; guardarConfig, que llega aquí con Config.class tomado, también. */
+    private static final ReentrantReadWriteLock CERROJO = new ReentrantReadWriteLock();
+    private static volatile boolean congeladas;
+
+    /** Espera a que acaben las escrituras en curso y hace fallar las siguientes. Mismo hilo para descongelar. */
+    public static void congelarEscrituras() {
+        CERROJO.writeLock().lock();
+        congeladas = true;
+    }
+
+    /** Deshace congelarEscrituras (desde el mismo hilo). Sin efecto si este hilo no las congeló. */
+    public static void descongelarEscrituras() {
+        if (!CERROJO.isWriteLockedByCurrentThread()) return;
+        congeladas = false;
+        CERROJO.writeLock().unlock();
+    }
+
     public static void escribirAtomico(Path destino, IOConsumer<OutputStream> escritor) throws IOException {
+        if (congeladas) throw new IOException("escrituras en pausa: importando datos");   // antes del cerrojo: quien congeló no se bloquea a sí mismo
+        if (!CERROJO.readLock().tryLock()) throw new IOException("escrituras en pausa: importando datos");   // sin esperar
+        try {
+            if (congeladas) throw new IOException("escrituras en pausa: importando datos");
+            escribirAtomicoYa(destino, escritor);
+        } finally {
+            CERROJO.readLock().unlock();
+        }
+    }
+
+    private static void escribirAtomicoYa(Path destino, IOConsumer<OutputStream> escritor) throws IOException {
         // config.properties es un nombre suelto (sin carpeta): destino.getParent() daría null. Con toAbsolutePath()
         // siempre hay carpeta (la de trabajo), tanto para ese caso como para las rutas con carpeta de sfr-data.
         Path dirPadre = destino.toAbsolutePath().getParent();
@@ -65,12 +101,17 @@ public final class Archivos {
      * carpeta donde solo escribirAtomico escribe archivos sueltos (p. ej. sfrdata/perfiles_shards).
      */
     public static void limpiarTemporales(Path dir, String prefijo, Duration antiguedad) {
+        limpiarTemporales(dir, prefijo, ".tmp", antiguedad);
+    }
+
+    /** Igual, con otra terminación (p. ej. ".importando", las recs a medio copiar de ImportacionDatos). */
+    public static void limpiarTemporales(Path dir, String prefijo, String sufijo, Duration antiguedad) {
         if (dir == null || !Files.isDirectory(dir)) return;
         long limite = System.currentTimeMillis() - antiguedad.toMillis();
         try (Stream<Path> listado = Files.list(dir)) {
             listado.filter(p -> {
                 String nombre = p.getFileName().toString();
-                return nombre.startsWith(prefijo) && nombre.endsWith(".tmp");
+                return nombre.startsWith(prefijo) && nombre.endsWith(sufijo);
             }).forEach(p -> {
                 try {
                     if (Files.getLastModifiedTime(p).toMillis() < limite) Files.deleteIfExists(p);

@@ -41,8 +41,21 @@ precomputed profiles, so the app does not depend only on the API when you open i
 3. Open `aoe2radar.exe`.
 4. Windows may warn that the program is not signed ("Windows protected your PC"). This is expected: the
    executable has no code-signing certificate. Click **More info** → **Run anyway**.
-5. If you are upgrading and want to keep your settings and player list, copy `config.properties` and
-   `players.txt` from the old folder to the new one before you open the app.
+5. If you are upgrading from a 1.x zip, the first time the new version starts it asks whether you want to
+   import your data: click **Choose folder…** and pick the folder where the old `aoe2radar.exe` was. Your
+   groups, settings, caches and recs are copied (the old folder is left untouched). You can also do it later
+   in **Configuración** → **Import data from another version…**; if you already have data in the new version,
+   it asks first and keeps a copy of it in `%APPDATA%\aoe2radar\.antes_de_importar`. The app then restarts.
+
+### Where your data lives
+
+- Settings, player list, log and caches: `%APPDATA%\aoe2radar` (usually
+  `C:\Users\<you>\AppData\Roaming\aoe2radar`), not the program folder. This way the program can live in a
+  folder you cannot write to and an update never touches your data.
+- Downloaded recs: `Documents\aoe2radar\recs` (your real Documents folder, also when OneDrive moves it).
+- **Portable mode**: to keep everything next to the `.exe` (for example, on a USB stick), create an empty file
+  named `portable` (or `portable.txt`) in the same folder as `aoe2radar.exe`. The app then reads and writes
+  its data and recs in that folder, as versions 1.1 to 1.3 did.
 
 The zip includes its own Java runtime, so there is nothing else to install. The app is available in Spanish
 and English; you can switch the language in **Configuración** (Settings).
@@ -60,7 +73,8 @@ and English; you can switch the language in **Configuración** (Settings).
 
 ## Privacy
 
-What the app stores on disk, next to the `.exe`:
+What the app stores on disk, in `%APPDATA%\aoe2radar` (recs in `Documents\aoe2radar\recs`; everything next
+to the `.exe` in portable mode, see [Where your data lives](#where-your-data-lives)):
 - `config.properties`: your settings.
 - `players.txt`: the list of players you follow.
 - `recs/`: the recorded games you download (plus `descargas.log`, the download history).
@@ -133,5 +147,9 @@ Instalación:
 3. Abre `aoe2radar.exe`. Si Windows avisa de que no está firmado, pulsa **Más información** →
    **Ejecutar de todas formas**.
 
-Si vienes de una versión anterior, copia `config.properties` y `players.txt` a la carpeta nueva antes de
-abrir la app. Privacidad, créditos y licencia: ver las secciones en inglés de arriba.
+Tus datos (configuración, jugadores, log y cachés) se guardan en `%APPDATA%\aoe2radar`, y las recs en
+`Documentos\aoe2radar\recs`. Si vienes de una 1.x en zip, el primer arranque te ofrece importar: elige la
+carpeta donde estaba el `aoe2radar.exe` viejo (también en **Configuración** → **Importar datos de otra
+versión…**). Modo portátil: crea un archivo vacío `portable` (o `portable.txt`) junto a `aoe2radar.exe` y
+todo se queda en esa carpeta, como antes. Privacidad, créditos y licencia: ver las secciones en inglés de
+arriba.
