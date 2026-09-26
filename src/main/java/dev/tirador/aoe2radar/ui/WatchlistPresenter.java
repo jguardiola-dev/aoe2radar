@@ -1,7 +1,9 @@
 package dev.tirador.aoe2radar.ui;
 
+import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.VistaInicial;
 
@@ -11,12 +13,18 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
+import java.util.function.BooleanSupplier;
+import java.util.function.Consumer;
+import java.util.function.LongFunction;
 
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
+import static dev.tirador.aoe2radar.util.Log.causa;
+import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * La lógica de la Watchlist sin Swing (fase 5): qué vista está elegida (grupo, ★ ladder, ★ país, ★ clan), los
@@ -69,12 +77,28 @@ public final class WatchlistPresenter {
     PaisItem paisActual;
     List<PaisItem> catalogoOrdenado = List.of();
 
+    // ----- forma reciente -----
+    private final FormService formaService;
+    /** El «partidas jugadas» que conoce la app (la MISMA instancia que la ventana): lo lee FormService.porResta. */
+    private final Map<Long, Integer> gamesWatch;
+    static final Map<Long, Integer> TOP_STREAK = new java.util.concurrent.ConcurrentHashMap<>();   // racha del ladder (+3 / -2)
+    static final Map<Long, int[]> TOP_LAST10 = new java.util.concurrent.ConcurrentHashMap<>();   // {ganadas, perdidas} de las últimas 10
+    final Map<Long, Forma> forma24 = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Long, Forma> forma7d = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Long, Long> formaTs24 = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Long, Long> formaTs7d = new java.util.concurrent.ConcurrentHashMap<>();
+    volatile boolean formaVisible;   // el chip: nace apagado, no se recuerda
+    volatile int ventanaForma = 24;   // 24 h o 7 d (selector junto al chip)
+
     /** topPais/topClan/paises: los de la vista (calculados al construirla, con el idioma ya fijado), no otros. */
     WatchlistPresenter(Pantalla pantalla, List<Player> todosJugadores, Path playersFile,
                        String topPais, String topClan, PaisItem[] paises,
-                       BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg) {
+                       BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg,
+                       FormService formaService, Map<Long, Integer> gamesWatch) {
         this.pantalla = pantalla;
         this.todosJugadores = todosJugadores;
+        this.formaService = formaService;
+        this.gamesWatch = gamesWatch;
         this.topPais = topPais; this.topClan = topClan; this.paises = paises;
         this.leerCfg = leerCfg; this.guardarCfg = guardarCfg;
         this.listaSeguidos = new ListaSeguidos(playersFile, WatchlistView.GRUPO_GENERAL, leerCfg, guardarCfg);
@@ -159,6 +183,92 @@ public final class WatchlistPresenter {
         pantalla.refrescarFiltro();
         pantalla.refrescarWatchlist();
         pantalla.indicadoresVivos();
+    }
+
+    // ===== Forma reciente (±ELO en una ventana de horas; 1v1 ranked) ======================================
+
+    static String formaLarga(Forma f) {
+        if (f.partidas() == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
+        String r = f.racha() >= 2 ? " \u00B7 " + t("racha ", "streak ") + f.racha() + (f.rachaGana() ? t("V", "W") : t("D", "L")) : "";
+        return f.w() + "-" + f.l() + " \u00B7 " + (f.diff() >= 0 ? "+" : "") + f.diff() + r;
+    }
+
+    static String tipVerForma() { return t("Consulta el ±ELO reciente (según el selector) y lo muestra como columna ordenable junto al ELO. Con jugadores seleccionados consulta solo esos; sin selección, todos. No se recuerda entre sesiones.",
+            "Fetches the recent ±ELO (per the selector) and shows it as a sortable column next to the ELO. With players selected it checks only those; with none, everyone. Not remembered between sessions."); }
+    static String tipOcultarForma() { return t("Oculta la columna Forma (los datos siguen en caché 10 min).", "Hides the Recent form column (data stays cached for 10 min)."); }
+
+    Map<Long, Forma> formaActiva() { return ventanaForma <= 24 ? forma24 : forma7d; }
+
+    /** Los de {@code objetivo} cuya forma de esa ventana hay que (re)consultar: caducada (10 min) o nunca pedida. */
+    List<Player> pendientesForma(List<Player> objetivo, int horas) {
+        Map<Long, Long> ts = horas <= 24 ? formaTs24 : formaTs7d;
+        List<Player> pendientes = new ArrayList<>();
+        long ahora = dev.tirador.aoe2radar.util.Reloj.SISTEMA.ahoraMs();   // una sola lectura del reloj para todo el lote, como la 1.1
+        for (Player p : objetivo) if (formaService.pendiente(ts.getOrDefault(p.id(), 0L), ahora)) pendientes.add(p);
+        return pendientes;
+    }
+
+    /** ¿Hay que avisar antes de consultar? Solo en los tops y con más de 20 jugadores pendientes (tarda). */
+    boolean confirmarForma(int pendientes) { return modoTop() && pendientes > 20; }
+
+    /** El texto del aviso: cuántos jugadores y cuánto tarda (~0,6 s por jugador). */
+    static String textoConfirmarForma(int pendientes, int horas) {
+        int seg = (int) Math.ceil(pendientes * 0.6);
+        return (horas <= 24 ? t("Consultar la forma de las últimas 24 h de ", "Fetching the last 24 h form of ")
+                            : t("Consultar la forma de los últimos 7 días de ", "Fetching the last 7 days form of "))
+                + pendientes + t(" jugadores tarda ~", " players takes ~") + seg + " s.\n"
+                + t("Se consulta jugador a jugador (con pausas) y queda guardado 10 minutos.", "It goes player by player (with pauses) and is cached for 10 minutes.");
+    }
+
+    /**
+     * El trabajo de «Ver forma», en el hilo de fondo del SwingWorker de la vista (que sigue siendo el transporte: su
+     * hilo, su progreso y su done()). 1) Resta con el snapshot nocturno, sin llamadas; 2) quien no está en el
+     * snapshot: su serie de rating, exacta (una llamada por jugador), hasta que se pida Detener. {@code eloActual}:
+     * el «ELO actual» para la resta (null si el conocido es el de anoche); {@code publicar}: el texto de progreso.
+     */
+    void consultarForma(List<Player> pendientes, int horas, LongFunction<Integer> eloActual,
+                        Consumer<String> publicar, BooleanSupplier detener) {
+        List<Player> porApi = new ArrayList<>();
+        long ahoraTs = System.currentTimeMillis();
+        for (Player p : pendientes) {   // 1) resta con el snapshot nocturno: sin llamadas
+            Forma[] f = formaService.porResta(p.id(), eloActual, gamesWatch::get);
+            if (f == null) { porApi.add(p); continue; }
+            forma24.put(p.id(), f[0]); formaTs24.put(p.id(), ahoraTs);
+            if (f[1] != null) { forma7d.put(p.id(), f[1]); formaTs7d.put(p.id(), ahoraTs); } else if (horas > 24) porApi.add(p);
+        }
+        publicar.accept(t("Forma: ", "Recent form: ") + (pendientes.size() - porApi.size()) + t(" del snapshot nocturno", " from the nightly snapshot") + (porApi.isEmpty() ? "" : " · " + porApi.size() + t(" consultas", " requests")));
+        for (Player p : porApi) {   // 2) quien no está en el snapshot: su serie de rating, exacta (una llamada por jugador)
+            if (detener.getAsBoolean()) break;
+            try {
+                Forma[] ambas = formaService.porSerie(p.id());
+                if (ambas != null) { forma24.put(p.id(), ambas[0]); formaTs24.put(p.id(), ahoraTs); forma7d.put(p.id(), ambas[1]); formaTs7d.put(p.id(), ahoraTs); }
+            } catch (Exception ex) { log("forma " + p.name() + ": " + causa(ex)); }
+        }
+    }
+
+    /** Al apagar la columna Forma: si la lista iba ordenada por forma, vuelve a ordenarse por ELO (util.Config). */
+    void quitarOrdenPorForma() {
+        if (leerConfig("orden_watch", "elo").startsWith("forma")) dev.tirador.aoe2radar.util.Config.guardarConfig("orden_watch", "elo");
+    }
+
+    private String rachaTexto(long pid, Forma f) {
+        int n = 0; boolean gana = true;
+        if (f != null && f.racha() >= 2) { n = f.racha(); gana = f.rachaGana(); }
+        else if (modoTop() && TOP_STREAK.containsKey(pid) && Math.abs(TOP_STREAK.get(pid)) >= 2) { n = Math.abs(TOP_STREAK.get(pid)); gana = TOP_STREAK.get(pid) > 0; }
+        if (n == 0) return "";
+        return " \u00B7 " + n + (gana ? t(" victorias seguidas", " wins in a row") : t(" derrotas seguidas", " losses in a row"));
+    }
+
+    /** Tooltip de la celda Forma (lo pide playersList.getToolTipText, en la ventana). */
+    public String tipForma(long pid) {
+        Forma f = formaActiva().get(pid);
+        StringBuilder sb = new StringBuilder(ventanaForma <= 24 ? t("Últimas 24 h: ", "Last 24 h: ") : t("Últimos 7 días: ", "Last 7 days: "));
+        if (f == null) sb.append(t("sin consultar (selecciónalo y pulsa Ver forma)", "not fetched (select them and press Recent form)"));
+        else if (f.partidas() == 0) sb.append(t("sin partidas 1v1", "no 1v1 games"));
+        else sb.append(f.w()).append("-").append(f.l()).append(" \u00B7 ").append(f.diff() >= 0 ? "+" : "").append(f.diff()).append(rachaTexto(pid, f));
+        int[] l10 = TOP_LAST10.get(pid);
+        if (modoTop() && l10 != null) sb.append(" \u00B7 ").append(t("últimas 10: ", "last 10: ")).append(l10[0]).append("-").append(l10[1]);
+        return sb.toString();
     }
 
     // ===== País (★ Top país) ==============================================================================

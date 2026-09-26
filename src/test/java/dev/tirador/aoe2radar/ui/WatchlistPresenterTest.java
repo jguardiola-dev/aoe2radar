@@ -1,5 +1,6 @@
 package dev.tirador.aoe2radar.ui;
 
+import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.VistaInicial;
@@ -49,6 +50,25 @@ class WatchlistPresenterTest {
         @Override public void ofrecerVinculadasTrasAlta(long pid, String nombre, String grupo) { llamadas.add("vinculadas:" + pid + ":" + nombre + ":" + grupo); }
     }
 
+    /** FormService de mentira: resta y serie por pid (null = no hay); pendiente = nunca consultado (ts 0). Apunta
+     *  qué ELO/partidas le pasaron para la resta y a quién pidió la serie. */
+    static final class FormaFalsa implements dev.tirador.aoe2radar.service.FormService {
+        final Map<Long, Forma[]> resta = new HashMap<>(), serie = new HashMap<>();
+        final List<String> pedidos = new ArrayList<>();
+        @Override public Forma[] porResta(long pid, java.util.function.LongFunction<Integer> eloActual, java.util.function.LongFunction<Integer> partidasActual) {
+            pedidos.add("resta:" + pid + ":" + eloActual.apply(pid) + ":" + partidasActual.apply(pid));
+            return resta.get(pid);
+        }
+        @Override public Forma[] porSerie(long pid) throws Exception {
+            pedidos.add("serie:" + pid);
+            if (pid == 13L) throw new java.io.IOException("sin red");
+            return serie.get(pid);
+        }
+        @Override public boolean pendiente(long ultimaConsultaTs, long ahoraMs) { return ultimaConsultaTs == 0; }
+    }
+
+    FormaFalsa forma;
+    Map<Long, Integer> gamesWatch;
     PantallaFalsa pantalla;
     List<Player> jugadores;
     Map<String, String> cfg;
@@ -68,12 +88,14 @@ class WatchlistPresenterTest {
         pantalla = new PantallaFalsa();
         jugadores = new ArrayList<>();
         cfg = new HashMap<>();
+        forma = new FormaFalsa();
+        gamesWatch = new HashMap<>();
         p = nuevo(tmp.resolve("players.txt"));
     }
 
     private WatchlistPresenter nuevo(Path playersFile) {
         return new WatchlistPresenter(pantalla, jugadores, playersFile, TOP_PAIS, TOP_CLAN, paises,
-                (k, def) -> cfg.getOrDefault(k, def), cfg::put);
+                (k, def) -> cfg.getOrDefault(k, def), cfg::put, forma, gamesWatch);
     }
 
     @AfterEach void restaurar() throws Exception {
@@ -313,6 +335,68 @@ class WatchlistPresenterTest {
         pantalla.llamadas.clear();
         p.guardarJugadores();
         assertEquals(List.of(), pantalla.llamadas, "guardado bien: sin mensaje");
+    }
+
+    // ===== forma reciente ===============================================================================================
+
+    @Test void pendientesForma_losNuncaConsultadosDeEsaVentana() {
+        List<Player> objetivo = List.of(new Player(1L, "Uno", "G"), new Player(2L, "Dos", "G"));
+        p.formaTs24.put(2L, 123L);
+        assertEquals(List.of(1L), p.pendientesForma(objetivo, 24).stream().map(Player::id).toList());
+        assertEquals(List.of(1L, 2L), p.pendientesForma(objetivo, 24 * 7).stream().map(Player::id).toList(), "7 d mira su propia hora");
+    }
+
+    @Test void confirmarForma_soloEnLosTopsYConMasDe20() {
+        pantalla.grupo = "Amigos";
+        assertFalse(p.confirmarForma(50));
+        pantalla.grupo = WatchlistView.TOP_LADDER;
+        assertFalse(p.confirmarForma(20));
+        assertTrue(p.confirmarForma(21));
+        assertEquals("Consultar la forma de las últimas 24 h de 25 jugadores tarda ~15 s.\nSe consulta jugador a jugador (con pausas) y queda guardado 10 minutos.",
+                WatchlistPresenter.textoConfirmarForma(25, 24));
+        assertTrue(WatchlistPresenter.textoConfirmarForma(21, 168).startsWith("Consultar la forma de los últimos 7 días de 21 jugadores tarda ~13 s."));
+    }
+
+    @Test void consultarForma_primeroLaRestaLuegoLaSerie() {
+        Forma a = new Forma(10, 2, 1, 0, true, 3), b = new Forma(-5, 1, 2, 0, true, 3), c = new Forma(1, 1, 0, 0, true, 1);
+        forma.resta.put(1L, new Forma[]{ a, b });       // resta completa: sin llamadas
+        forma.resta.put(2L, new Forma[]{ a, null });    // sin 7 d: con 7 d elegido, también por la serie
+        forma.serie.put(2L, new Forma[]{ c, c });
+        gamesWatch.put(1L, 40);
+        List<Player> pend = List.of(new Player(1L, "Uno", "G"), new Player(2L, "Dos", "G"), new Player(13L, "Trece", "G"));
+        List<String> publicado = new ArrayList<>();
+        p.consultarForma(pend, 24 * 7, pid -> pid == 1L ? 1500 : null, publicado::add, () -> false);
+        assertEquals(List.of("Forma: 1 del snapshot nocturno · 2 consultas"), publicado);
+        assertEquals(List.of("resta:1:1500:40", "resta:2:null:null", "resta:13:null:null", "serie:2", "serie:13"), forma.pedidos);
+        assertSame(a, p.forma24.get(1L)); assertSame(b, p.forma7d.get(1L));
+        assertSame(c, p.forma24.get(2L), "la serie pisa la resta"); assertSame(c, p.forma7d.get(2L));
+        assertNull(p.forma24.get(13L), "la serie falló: se apunta en el log y sigue");
+        assertNotNull(p.formaTs24.get(1L)); assertNotNull(p.formaTs7d.get(2L)); assertNull(p.formaTs24.get(13L));
+    }
+
+    @Test void consultarForma_detenerCortaLasLlamadas() {
+        List<String> publicado = new ArrayList<>();
+        p.consultarForma(List.of(new Player(5L, "Cinco", "G")), 24, pid -> null, publicado::add, () -> true);
+        assertEquals(List.of("Forma: 0 del snapshot nocturno · 1 consultas"), publicado);
+        assertEquals(List.of("resta:5:null:null"), forma.pedidos, "con Detener pulsado, ni una serie");
+    }
+
+    @Test void tipForma_yFormaActivaSiguenLaVentana() {
+        pantalla.grupo = "Amigos";
+        p.forma24.put(7L, new Forma(3, 1, 0, 0, true, 1));
+        assertEquals("Últimas 24 h: 1-0 · +3", p.tipForma(7L));
+        p.ventanaForma = 24 * 7;
+        assertSame(p.forma7d, p.formaActiva());
+        assertEquals("Últimos 7 días: sin consultar (selecciónalo y pulsa Ver forma)", p.tipForma(7L));
+    }
+
+    @Test void quitarOrdenPorForma_soloSiIbaPorForma() {
+        Config.guardarConfig("orden_watch", "forma_asc");
+        p.quitarOrdenPorForma();
+        assertEquals("elo", Config.leerConfig("orden_watch", "?"));
+        Config.guardarConfig("orden_watch", "alfa");
+        p.quitarOrdenPorForma();
+        assertEquals("alfa", Config.leerConfig("orden_watch", "?"));
     }
 
     @Test void eleccionInicial_compruebaLoQueExiste() {

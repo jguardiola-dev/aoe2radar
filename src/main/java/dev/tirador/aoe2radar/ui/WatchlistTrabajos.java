@@ -1,6 +1,5 @@
 package dev.tirador.aoe2radar.ui;
 
-import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
@@ -35,29 +34,21 @@ final class WatchlistTrabajos {
 
     /** Cambiar de vista apaga la columna Forma (vuelve solo si la pides). */
     public void apagarForma() {
-        if (!wv.formaVisible) return;
-        wv.formaVisible = false;
+        if (!wv.presenter.formaVisible) return;
+        wv.presenter.formaVisible = false;
         if (wv.ocultarFormaBtn != null) wv.ocultarFormaBtn.setVisible(false);
         if (wv.formaBtn != null) actualizarTextoForma();
-        if (leerConfig("orden_watch", "elo").startsWith("forma")) guardarConfig("orden_watch", "elo");
+        wv.presenter.quitarOrdenPorForma();
         wv.refrescarCabeceraOrden();
     }
 
-    /** Consulta la forma de los jugadores dados (con caché de 10 min), con progreso y Detener. */
+    /** Consulta la forma de los jugadores dados (con caché de 10 min), con progreso y Detener. El SwingWorker es el
+     *  transporte (hilo, publish/process, done); qué consultar y cómo, lo decide WatchlistPresenter. */
     void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) {
-        Map<Long, Forma> cache = horas <= 24 ? wv.forma24 : wv.forma7d;
-        Map<Long, Long> ts = horas <= 24 ? wv.formaTs24 : wv.formaTs7d;
-        List<Player> pendientes = new ArrayList<>();
-        long ahora = dev.tirador.aoe2radar.util.Reloj.SISTEMA.ahoraMs();   // una sola lectura del reloj para todo el lote, como la 1.1
-        for (Player p : objetivo) if (wv.formaService.pendiente(ts.getOrDefault(p.id(), 0L), ahora)) pendientes.add(p);
+        List<Player> pendientes = wv.presenter.pendientesForma(objetivo, horas);
         if (pendientes.isEmpty()) { if (alTerminar != null) alTerminar.run(); return; }
-        if (wv.modoTop() && pendientes.size() > 20) {
-            int seg = (int) Math.ceil(pendientes.size() * 0.6);
-            int ok = JOptionPane.showConfirmDialog(wv.ventana,
-                    (horas <= 24 ? t("Consultar la forma de las últimas 24 h de ", "Fetching the last 24 h form of ")
-                                 : t("Consultar la forma de los últimos 7 días de ", "Fetching the last 7 days form of "))
-                            + pendientes.size() + t(" jugadores tarda ~", " players takes ~") + seg + " s.\n"
-                            + t("Se consulta jugador a jugador (con pausas) y queda guardado 10 minutos.", "It goes player by player (with pauses) and is cached for 10 minutes."),
+        if (wv.presenter.confirmarForma(pendientes.size())) {
+            int ok = JOptionPane.showConfirmDialog(wv.ventana, WatchlistPresenter.textoConfirmarForma(pendientes.size(), horas),
                     t("Forma reciente", "Recent form"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
             if (ok != JOptionPane.OK_OPTION) return;
         }
@@ -67,22 +58,8 @@ final class WatchlistTrabajos {
             @Override protected Void doInBackground() {
                 wv.anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 wv.anfitrion.cargarEloAyer();
-                List<Player> porApi = new ArrayList<>();
-                long ahoraTs = System.currentTimeMillis();
-                for (Player p : pendientes) {   // 1) resta con el snapshot nocturno: sin llamadas
-                    Forma[] f = wv.formaService.porResta(p.id(), pid -> WatchlistView.eloParaResta(pid, wv.eloWatch, wv.eloDelSnapshot), wv.gamesWatch::get);
-                    if (f == null) { porApi.add(p); continue; }
-                    wv.forma24.put(p.id(), f[0]); wv.formaTs24.put(p.id(), ahoraTs);
-                    if (f[1] != null) { wv.forma7d.put(p.id(), f[1]); wv.formaTs7d.put(p.id(), ahoraTs); } else if (horas > 24) porApi.add(p);
-                }
-                publish(t("Forma: ", "Recent form: ") + (pendientes.size() - porApi.size()) + t(" del snapshot nocturno", " from the nightly snapshot") + (porApi.isEmpty() ? "" : " · " + porApi.size() + t(" consultas", " requests")));
-                for (Player p : porApi) {   // 2) quien no está en el snapshot: su serie de rating, exacta (una llamada por jugador)
-                    if (wv.anfitrion.detenerOperacion()) break;
-                    try {
-                        Forma[] ambas = wv.formaService.porSerie(p.id());
-                        if (ambas != null) { wv.forma24.put(p.id(), ambas[0]); wv.formaTs24.put(p.id(), ahoraTs); wv.forma7d.put(p.id(), ambas[1]); wv.formaTs7d.put(p.id(), ahoraTs); }
-                    } catch (Exception ex) { log("forma " + p.name() + ": " + causa(ex)); }
-                }
+                wv.presenter.consultarForma(pendientes, horas, pid -> WatchlistView.eloParaResta(pid, wv.eloWatch, wv.eloDelSnapshot),
+                        this::publish, wv.anfitrion::detenerOperacion);
                 return null;
             }
             @Override protected void process(List<String> ch) { wv.status.setText(ch.get(ch.size() - 1)); }
@@ -181,8 +158,8 @@ final class WatchlistTrabajos {
                 wv.cargandoTop = false;
                 try {
                     TopLadderService.ResultadoTop res = get();
-                    WatchlistView.TOP_STREAK.putAll(res.racha());
-                    WatchlistView.TOP_LAST10.putAll(res.ultimas10());
+                    WatchlistPresenter.TOP_STREAK.putAll(res.racha());
+                    WatchlistPresenter.TOP_LAST10.putAll(res.ultimas10());
                     wv.gamesWatch.putAll(res.partidas());   // como en la 1.1: se aprenden siempre, aunque el usuario haya cambiado de vista
                     if (wv.modoClan() || !wv.modoTop()) return;   // mientras cargaba, el usuario cambió de vista: no pintar encima
                     if (res.filas().isEmpty()) {

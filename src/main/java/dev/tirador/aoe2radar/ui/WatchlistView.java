@@ -270,17 +270,9 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     boolean avisoTopMostrado;   // el popup del top caído: solo la primera vez por sesión
     final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    // ----- forma reciente -----
-    static final Map<Long, Integer> TOP_STREAK = new java.util.concurrent.ConcurrentHashMap<>();   // racha del ladder (+3 / -2)
-    static final Map<Long, int[]> TOP_LAST10 = new java.util.concurrent.ConcurrentHashMap<>();   // {ganadas, perdidas} de las últimas 10
-    final Map<Long, Forma> forma24 = new java.util.concurrent.ConcurrentHashMap<>();
-    final Map<Long, Forma> forma7d = new java.util.concurrent.ConcurrentHashMap<>();
-    final Map<Long, Long> formaTs24 = new java.util.concurrent.ConcurrentHashMap<>();
-    final Map<Long, Long> formaTs7d = new java.util.concurrent.ConcurrentHashMap<>();
-    volatile boolean formaVisible;   // el chip: nace apagado, no se recuerda
+    // ----- forma reciente (el estado vive en WatchlistPresenter) -----
     /** ¿Se ve la columna Forma? La consulta playersList.getToolTipText (queda en la ventana: playersList es suyo). */
-    public boolean formaVisible() { return formaVisible; }
-    volatile int ventanaForma = 24;   // 24 h o 7 d (selector junto al chip)
+    public boolean formaVisible() { return presenter.formaVisible; }
     JButton formaBtn, ocultarFormaBtn;
 
     // ----- campanas -----
@@ -358,7 +350,8 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         this.status = status; this.progreso = progreso; this.all = all;
         this.sujetosPanel = sujetosPanel;
         this.pausaMs = pausaMs; this.perPage = perPage;
-        this.presenter = new WatchlistPresenter(this, todosJugadores, playersFile, TOP_PAIS, TOP_CLAN, PAISES, leerCfg, guardarCfg);
+        this.presenter = new WatchlistPresenter(this, todosJugadores, playersFile, TOP_PAIS, TOP_CLAN, PAISES, leerCfg, guardarCfg,
+                formaService, gamesWatch);
         this.topCache = topCache;
         construirPanel();
     }
@@ -393,7 +386,7 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
 
     public boolean enZonaForma(Point p) {
         int wL = playersList.getWidth() - 22, elo = anchoCeldaElo(wL);
-        return formaVisible && p.x >= wL - elo - 72 && p.x <= wL - elo;
+        return presenter.formaVisible && p.x >= wL - elo - 72 && p.x <= wL - elo;
     }
 
     public String vistaActualId() { return presenter.vistaActualId(); }
@@ -416,18 +409,6 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     public List<Player> topLadderSnapshot() { synchronized (topLadder) { return new ArrayList<>(topLadder); } }
 
     // ----- Forma reciente (±ELO en una ventana de horas; 1v1 ranked) --------------
-
-    static String formaLarga(Forma f) {
-        if (f.partidas() == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
-        String r = f.racha() >= 2 ? " \u00B7 " + t("racha ", "streak ") + f.racha() + (f.rachaGana() ? t("V", "W") : t("D", "L")) : "";
-        return f.w() + "-" + f.l() + " \u00B7 " + (f.diff() >= 0 ? "+" : "") + f.diff() + r;
-    }
-
-    static String tipVerForma() { return t("Consulta el ±ELO reciente (según el selector) y lo muestra como columna ordenable junto al ELO. Con jugadores seleccionados consulta solo esos; sin selección, todos. No se recuerda entre sesiones.",
-            "Fetches the recent ±ELO (per the selector) and shows it as a sortable column next to the ELO. With players selected it checks only those; with none, everyone. Not remembered between sessions."); }
-    static String tipOcultarForma() { return t("Oculta la columna Forma (los datos siguen en caché 10 min).", "Hides the Recent form column (data stays cached for 10 min)."); }
-
-    Map<Long, Forma> formaActiva() { return ventanaForma <= 24 ? forma24 : forma7d; }
 
     /** Jugadores cuyo ELO en eloWatch es el del snapshot nocturno (el barrido de un grupo sin red, o el resumen
      *  diario de ★ Top clan), no uno fresco. Lo escriben el EDT y lo lee el hilo de «Ver forma»: concurrente. */
@@ -474,24 +455,7 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     List<Player> objetivoForma() { return trabajos.objetivoForma(); }
     public void actualizarTextoForma() { trabajos.actualizarTextoForma(); }
 
-    private String rachaTexto(long pid, Forma f) {
-        int n = 0; boolean gana = true;
-        if (f != null && f.racha() >= 2) { n = f.racha(); gana = f.rachaGana(); }
-        else if (modoTop() && TOP_STREAK.containsKey(pid) && Math.abs(TOP_STREAK.get(pid)) >= 2) { n = Math.abs(TOP_STREAK.get(pid)); gana = TOP_STREAK.get(pid) > 0; }
-        if (n == 0) return "";
-        return " \u00B7 " + n + (gana ? t(" victorias seguidas", " wins in a row") : t(" derrotas seguidas", " losses in a row"));
-    }
-
-    public String tipForma(long pid) {
-        Forma f = formaActiva().get(pid);
-        StringBuilder sb = new StringBuilder(ventanaForma <= 24 ? t("Últimas 24 h: ", "Last 24 h: ") : t("Últimos 7 días: ", "Last 7 days: "));
-        if (f == null) sb.append(t("sin consultar (selecciónalo y pulsa Ver forma)", "not fetched (select them and press Recent form)"));
-        else if (f.partidas() == 0) sb.append(t("sin partidas 1v1", "no 1v1 games"));
-        else sb.append(f.w()).append("-").append(f.l()).append(" \u00B7 ").append(f.diff() >= 0 ? "+" : "").append(f.diff()).append(rachaTexto(pid, f));
-        int[] l10 = TOP_LAST10.get(pid);
-        if (modoTop() && l10 != null) sb.append(" \u00B7 ").append(t("últimas 10: ", "last 10: ")).append(l10[0]).append("-").append(l10[1]);
-        return sb.toString();
-    }
+    public String tipForma(long pid) { return presenter.tipForma(pid); }
 
     // ===== Campanas: aviso cuando alguien de una vista marcada entra en partida =========================
 
@@ -688,9 +652,9 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         boolean soloVivos = soloVivosBtn != null && soloVivosBtn.isSelected();
         boolean porElo = mostrarEloWatch && "elo".equals(leerConfig("orden_watch", "elo"));
         String ordenCfg = leerConfig("orden_watch", "elo");
-        boolean porForma = formaVisible && ordenCfg.startsWith("forma");
+        boolean porForma = presenter.formaVisible && ordenCfg.startsWith("forma");
         boolean formaAsc = "forma_asc".equals(ordenCfg);   // ascendente = los que más bajan, arriba
-        final Map<Long, Forma> fa = formaActiva();
+        final Map<Long, Forma> fa = presenter.formaActiva();
         FiltroLista.Resultado res = filtroLista.filtrar(todosJugadores, topLadder, modoTop(), g, soloVivos,
                 porForma, formaAsc, porElo, fa, eloWatch, vinculosExpandidos);
         marcaFila.clear();

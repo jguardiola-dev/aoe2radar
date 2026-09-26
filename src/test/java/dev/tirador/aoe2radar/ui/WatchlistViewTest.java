@@ -894,9 +894,32 @@ class WatchlistViewTest {
     @Test void formaLarga_rachaTraducida() {
         Forma f = new Forma(25, 3, 0, 3, true, 3);
         IDIOMA = "en";
-        assertTrue(WatchlistView.formaLarga(f).endsWith("3W"), WatchlistView.formaLarga(f));
+        assertTrue(WatchlistPresenter.formaLarga(f).endsWith("3W"), WatchlistPresenter.formaLarga(f));
         IDIOMA = "es";
-        assertTrue(WatchlistView.formaLarga(f).endsWith("3V"), WatchlistView.formaLarga(f));
+        assertTrue(WatchlistPresenter.formaLarga(f).endsWith("3V"), WatchlistPresenter.formaLarga(f));
+    }
+
+    /** Caracterización (antes de pasar la forma a WatchlistPresenter): el tooltip de la celda Forma según lo
+     *  consultado, la ventana (24 h / 7 d) y, solo en los tops, la racha del ladder y las últimas 10. */
+    @Test void tipForma_textosSegunVentanaYModo() {
+        watchlist.rebuildGrupos();
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("Todos"), watchlist.grupoCombo);
+        long pid = 424_242L;
+        assertEquals("Últimas 24 h: sin consultar (selecciónalo y pulsa Ver forma)", watchlist.tipForma(pid));
+        watchlist.presenter.forma24.put(pid, new Forma(0, 0, 0, 0, true, 0));
+        assertEquals("Últimas 24 h: sin partidas 1v1", watchlist.tipForma(pid));
+        watchlist.presenter.forma24.put(pid, new Forma(-12, 1, 3, 3, false, 4));
+        assertEquals("Últimas 24 h: 1-3 · -12 · 3 derrotas seguidas", watchlist.tipForma(pid));
+        watchlist.presenter.forma7d.put(pid, new Forma(30, 5, 2, 1, true, 7));
+        watchlist.presenter.ventanaForma = 24 * 7;
+        assertEquals("Últimos 7 días: 5-2 · +30", watchlist.tipForma(pid), "racha 1: no se cuenta; fuera de los tops no mira la del ladder");
+        WatchlistPresenter.TOP_STREAK.put(pid, 4);
+        WatchlistPresenter.TOP_LAST10.put(pid, new int[]{ 7, 3 });
+        try {
+            assertEquals("Últimos 7 días: 5-2 · +30", watchlist.tipForma(pid), "fuera de los tops, ni racha ni últimas 10 del ladder");
+            sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+            assertEquals("Últimos 7 días: 5-2 · +30 · 4 victorias seguidas · últimas 10: 7-3", watchlist.tipForma(pid));
+        } finally { WatchlistPresenter.TOP_STREAK.remove(pid); WatchlistPresenter.TOP_LAST10.remove(pid); }
     }
 
     /** F12 de la revisión 1.3: el aviso de campana enseñaba el id interno («★pais es», «grupo Amigos»). */

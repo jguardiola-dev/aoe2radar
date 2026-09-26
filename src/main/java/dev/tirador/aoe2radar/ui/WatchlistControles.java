@@ -202,9 +202,9 @@ final class WatchlistControles {
         wv.formaBtn = new JButton(t("Ver forma", "Recent form"));
         wv.formaBtn.putClientProperty("JButton.buttonType", "roundRect");
         wv.formaBtn.setFocusable(false);
-        wv.formaBtn.setToolTipText(WatchlistView.tipVerForma());
-        wv.formaBtn.addActionListener(e -> wv.cargarForma(wv.objetivoForma(), wv.ventanaForma, () -> {   // siempre consulta (y suma a lo ya consultado)
-            wv.formaVisible = true; wv.actualizarTextoForma();
+        wv.formaBtn.setToolTipText(WatchlistPresenter.tipVerForma());
+        wv.formaBtn.addActionListener(e -> wv.cargarForma(wv.objetivoForma(), wv.presenter.ventanaForma, () -> {   // siempre consulta (y suma a lo ya consultado)
+            wv.presenter.formaVisible = true; wv.actualizarTextoForma();
             if (wv.ocultarFormaBtn != null) wv.ocultarFormaBtn.setVisible(true);
             wv.refrescarCabeceraOrden(); wv.aplicarFiltroGrupo(); wv.playersList.repaint();
         }));
@@ -212,15 +212,15 @@ final class WatchlistControles {
         wv.ocultarFormaBtn.setFocusable(false);
         wv.ocultarFormaBtn.setMargin(new Insets(1, 6, 1, 6));
         wv.ocultarFormaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        wv.ocultarFormaBtn.setToolTipText(WatchlistView.tipOcultarForma());
+        wv.ocultarFormaBtn.setToolTipText(WatchlistPresenter.tipOcultarForma());
         wv.ocultarFormaBtn.setVisible(false);
         wv.ocultarFormaBtn.addActionListener(e -> wv.apagarForma());
         JComboBox<String> ventanaCb = new JComboBox<>(new String[]{ t("últimas 24 h", "last 24 h"), t("últimos 7 días", "last 7 days") });
         ventanaCb.setFocusable(false);
         ventanaCb.setToolTipText(t("Ventana de la forma que consulta «Ver forma»", "Window used by \u201CRecent form\u201D"));
         ventanaCb.addActionListener(e -> {
-            wv.ventanaForma = ventanaCb.getSelectedIndex() == 1 ? 24 * 7 : 24;
-            if (wv.formaVisible) { wv.refrescarCabeceraOrden(); wv.aplicarFiltroGrupo(); wv.playersList.repaint(); }   // la columna cambia de ventana al instante
+            wv.presenter.ventanaForma = ventanaCb.getSelectedIndex() == 1 ? 24 * 7 : 24;
+            if (wv.presenter.formaVisible) { wv.refrescarCabeceraOrden(); wv.aplicarFiltroGrupo(); wv.playersList.repaint(); }   // la columna cambia de ventana al instante
         });
         JPanel chips = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));   // envuelve a otra línea, nunca se trunca
         chips.setOpaque(false);
