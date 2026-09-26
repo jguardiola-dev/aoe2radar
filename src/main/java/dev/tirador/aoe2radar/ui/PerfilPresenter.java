@@ -69,7 +69,8 @@ public final class PerfilPresenter {
 
         /** «Actualizar hoy»: deshabilita el botón y cambia su texto mientras dura. */
         void hoyIniciado();
-        /** Ya se pidió la ficha con éxito: se recuerda para no preguntar solo por vinculadas en la sesión (mismo sitio que la 1.1: tras ficha(pid), antes de traerHoy). */
+        /** Ya se pidió la ficha con éxito: se recuerda para no preguntar solo por vinculadas en la sesión (mismo sitio que la 1.1: tras ficha(pid), antes de traerHoy).
+         *  Fila 129: se llama FUERA del EDT, en el hilo de fondo "perfil-hoy" (no pasa por tareas.enUi); quien la implemente debe usar una colección segura entre hilos. */
         void marcarVinculadasPedidas(long pid);
         /** Terminó bien: repinta cabecera y cuerpo si hay partidas nuevas, y el botón según cuántas. */
         void hoyTerminado(FichaPerfil ficha, int nuevas);
