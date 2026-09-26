@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -216,5 +218,31 @@ class LiveNowPresenterTest {
         presenter.liveEvento(701L, matchEnCurso(9401L, 701L), false);
         assertEquals(pintarAntes, pantalla.pintarVeces);
         assertTrue(presenter.enCursoSnapshot().containsKey(701L));   // el estado se actualiza igual; solo el repintado se salta
+    }
+
+    // ----- ficha: mismo candado que topSnapshot/conTop (DEUDA, fila 123) ------------------
+
+    /** Sin el candado, un escritor que hace conTop(t -> { t.clear(); t.addAll(...); }) mientras un lector recorre
+     *  ahoraTop en ficha() dispara casi siempre una ConcurrentModificationException en unos pocos cientos de ms:
+     *  esta es la mutación que demuestra el arreglo (quítalo y este test se pone en rojo). */
+    @Test void ficha_esSeguraFrenteAEscriturasConcurrentesDeAhoraTop() throws InterruptedException {
+        List<Object[]> base = new ArrayList<>();
+        for (long i = 0; i < 400; i++) base.add(ficha(i, "J" + i, 1000, (int) i, "es"));
+        presenter.conTop(t -> t.addAll(base));
+        AtomicBoolean parar = new AtomicBoolean(false);
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        Thread escritor = new Thread(() -> {
+            try { while (!parar.get()) presenter.conTop(t -> { t.clear(); t.addAll(base); }); }
+            catch (Throwable ex) { error.set(ex); }
+        }, "test-escritor-ahoraTop");
+        Thread lector = new Thread(() -> {
+            try { long fin = System.currentTimeMillis() + 500; while (System.currentTimeMillis() < fin) presenter.ficha(200L); }
+            catch (Throwable ex) { error.set(ex); }
+        }, "test-lector-ficha");
+        escritor.start(); lector.start();
+        lector.join(3000);
+        parar.set(true);
+        escritor.join(1000);
+        assertNull(error.get(), () -> "ficha() debe leer bajo el mismo candado que topSnapshot/conTop: " + error.get());
     }
 }

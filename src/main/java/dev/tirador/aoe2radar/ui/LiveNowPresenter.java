@@ -80,10 +80,13 @@ public final class LiveNowPresenter {
         this.pantalla = pantalla;
     }
 
-    /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null. Sin candado, igual que la
-     *  1.1 (liveFicha): esta lectura nunca se sincronizó, y no se cambia ahora. */
+    /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null. Bajo el mismo candado que
+     *  topSnapshot/conTop (DEUDA, fila 123: antes se recorría ahoraTop sin candado, con riesgo de
+     *  ConcurrentModificationException si el barrido lo estaba reescribiendo a la vez). */
     public Object[] ficha(long pid) {
-        for (Object[] f : ahoraTop) if ((Long) f[0] == pid) return f;
+        synchronized (ahoraTop) {
+            for (Object[] f : ahoraTop) if ((Long) f[0] == pid) return f;
+        }
         return null;
     }
 
