@@ -106,7 +106,6 @@ import dev.tirador.aoe2radar.ui.SelectorRangoElo;
 import dev.tirador.aoe2radar.ui.Tareas;
 import dev.tirador.aoe2radar.ui.TechTreeView;
 import dev.tirador.aoe2radar.ui.TemaApp;
-import dev.tirador.aoe2radar.ui.WrapLayout;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Reloj;
 
@@ -229,7 +228,6 @@ import static dev.tirador.aoe2radar.ui.Componentes.estiloCab;
 import static dev.tirador.aoe2radar.ui.Componentes.etiquetaK;
 import static dev.tirador.aoe2radar.ui.Componentes.listaVertical;
 import static dev.tirador.aoe2radar.ui.Componentes.pasoBonito;
-import static dev.tirador.aoe2radar.ui.Componentes.subirArriba;
 import static dev.tirador.aoe2radar.ui.Componentes.tituloSeccion;
 import static dev.tirador.aoe2radar.ui.Iconos.banderaHtml;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
@@ -418,92 +416,27 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     JPanel sujetosPanel;
 
     final Map<Long, String[]> twitchLive = new HashMap<>();   // pid -> { canal, título, viewers }; escribe ui.DirectosView, leen Live now/Perfil
-    JToggleButton directosBtn;
     Player objetivoForzado;           // jugador concreto pedido con «Ver sus partidas» (una sola búsqueda)
 
+    // pestana/iconoVista/sincronizarPestanas/recsBtn/actualizarControlesTabla: movidos a ui.Navegador (fase 3,
+    // tanda 4, T4-Z1). Delegados de una línea más abajo para quien los llamaba desde otra zona de este fichero.
+    static JToggleButton pestana(String texto, Icon icono) { return dev.tirador.aoe2radar.ui.Navegador.pestana(texto, icono); }
 
-    /** Una pestaña de la barra de vistas: estilo «tab» de FlatLaf (subrayado en la activa), icono y sin foco. */
-    static JToggleButton pestana(String texto, Icon icono) {
-        JToggleButton b = new JToggleButton(texto, icono);
-        b.setFocusable(false);
-        b.setIconTextGap(6);
-        b.putClientProperty("JButton.buttonType", "tab");
-        b.setMargin(new Insets(4, 10, 4, 10));
-        return b;
-    }
+    static Icon iconoVista(String tipo) { return dev.tirador.aoe2radar.ui.Navegador.iconoVista(tipo); }
 
-    /** «Partidas» está marcada cuando ninguna otra vista lo está. */
-    void sincronizarPestanas(boolean tablaVisible) {
-        if (recsBtn == null) return;
-        boolean otra = (directosBtn != null && directosBtn.isSelected()) || (techTreeBtn != null && techTreeBtn.isSelected())
-                || (ladderBtn != null && ladderBtn.isSelected()) || (civStatsBtn != null && civStatsBtn.isSelected()) || (perfilBtn != null && perfilBtn.isSelected()) || (ahoraBtn != null && ahoraBtn.isSelected());
-        if (recsBtn.isSelected() == otra) recsBtn.setSelected(!otra);
-    }
-
-    /** Iconos vectoriales de las pestañas (16 px, en el color del texto): lista, punto en directo, persona, campana, barras. */
-    static Icon iconoVista(String tipo) {
-        return new Icon() {
-            @Override public int getIconWidth() { return 16; }
-            @Override public int getIconHeight() { return 16; }
-            @Override public void paintIcon(Component c, Graphics g, int x, int y) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                Color col = c.getForeground() != null ? c.getForeground() : Color.GRAY;
-                g2.setColor(col);
-                g2.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                switch (tipo) {
-                    case "partidas" -> { for (int i = 0; i < 3; i++) g2.drawLine(x + 2, y + 3 + i * 5, x + 14, y + 3 + i * 5); }
-                    case "directos" -> { g2.fillOval(x + 5, y + 5, 6, 6); g2.drawOval(x + 1, y + 1, 14, 14); }
-                    case "ahora" -> { g2.drawOval(x + 1, y + 1, 14, 14); g2.drawLine(x + 8, y + 4, x + 8, y + 8); g2.drawLine(x + 8, y + 8, x + 11, y + 10); }
-                    case "campana" -> { g2.drawArc(x + 3, y + 2, 10, 12, 0, 180); g2.drawLine(x + 3, y + 8, x + 3, y + 12); g2.drawLine(x + 13, y + 8, x + 13, y + 12); g2.drawLine(x + 1, y + 12, x + 15, y + 12); g2.fillOval(x + 6, y + 13, 4, 3); }
-                    case "perfil" -> { g2.drawOval(x + 5, y + 1, 6, 6); g2.drawArc(x + 2, y + 8, 12, 12, 0, 180); }
-                    case "ratings" -> { java.awt.geom.Path2D.Double p = new java.awt.geom.Path2D.Double(); p.moveTo(x + 1, y + 14); p.curveTo(x + 6, y + 14, x + 6, y + 2, x + 8, y + 2); p.curveTo(x + 10, y + 2, x + 10, y + 14, x + 15, y + 14); g2.draw(p); }
-                    case "civstats" -> { g2.fillRect(x + 2, y + 9, 3, 6); g2.fillRect(x + 7, y + 4, 3, 11); g2.fillRect(x + 12, y + 7, 3, 8); }
-                    default -> g2.drawRect(x + 2, y + 2, 12, 12);
-                }
-                g2.dispose();
-            }
-        };
-    }
-    JToggleButton recsBtn;                    // pestaña «Partidas»
-    void actualizarControlesTabla() {
-        boolean tablaVisible = partidas.recsCards != null && partidas.recsCards.isShowing() && !(directosBtn != null && directosBtn.isSelected()) && !(techTreeBtn != null && techTreeBtn.isSelected()) && !(ladderBtn != null && ladderBtn.isSelected()) && !(civStatsBtn != null && civStatsBtn.isSelected()) && !(perfil != null && perfil.abierto()) && !(liveNow != null && liveNow.ahoraAbierta);
-        boolean hay = tablaVisible && partidas.hayPartidas();
-        if (partidas.filaNota != null) partidas.filaNota.setVisible(tablaVisible);
-        if (partidas.filaBotonesInferiores != null) partidas.filaBotonesInferiores.setVisible(tablaVisible);
-        status.setVisible(tablaVisible || (directosBtn != null && directosBtn.isSelected()));   // los mensajes de estado, solo donde se usan
-        sincronizarPestanas(tablaVisible);
-        if (partidas.resultadosBtn != null) partidas.resultadosBtn.setVisible(hay);
-        if (partidas.parModo != null) partidas.parModo.setVisible(hay);
-        if (partidas.parRival != null) partidas.parRival.setVisible(hay);
-    }
+    void actualizarControlesTabla() { navegador.actualizarControlesTabla(); }
 
     /** Forma reciente (±ELO): la lógica y el estado viven en ui.WatchlistView; este campo se inyecta porque
      *  se construye después de COMPANION (static) y antes que la propia Watchlist. */
     /** Campo de instancia (no static): se inicializa después de COMPANION, que es static (SpoilerFreeRecs paso FormService). */
     final FormService formaService = new FormaCompanion(COMPANION, Snapshots.ELO, Reloj.SISTEMA);
 
-    JToggleButton ladderBtn;
     /** La vista Ratings (card "ladder"): ver ui.RatingsView. */
     RatingsView ratings;
 
-    /** Ratings (card "ladder"): la vista y el presentador viven en ui.RatingsView/ui.RatingsPresenter;
-     *  aqui solo queda el cromo (botones, historial, CardLayout), igual que el resto de vistas de la fase 3. */
-    @Override public void abrirLadder() {
-        registrarDestino(new Destino("ladder", 0, null, null));
-        if (ladderBtn != null && !ladderBtn.isSelected()) ladderBtn.setSelected(true);
-        directosBtn.setSelected(false);
-        if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        if (perfil != null) perfil.cerrar();
-        if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
-        ((CardLayout) centroCards.getLayout()).show(centroCards, "ladder");
-        ratings.alAbrirAntes();
-        partidas.taparResultados(); watchlist.apagarForma();
-        SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        ratings.alAbrirDespues();
-    }
+    /** Ratings (card "ladder"): la vista y el presentador viven en ui.RatingsView/ui.RatingsPresenter; el cromo
+     *  (botones, historial, CardLayout) vive ahora en ui.Navegador (fase 3, tanda 4, T4-Z1). */
+    @Override public void abrirLadder() { navegador.abrirLadder(); }
 
     // =====================================================================================
     // CIV STATS — resúmenes de sfr-data (civstats/ventanas/vN.json.gz y tendencias.json.gz):
@@ -514,31 +447,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final StatsService stats = new StatsServiceSfr(SfrDataClient.SISTEMA);
     /** Filtros de Civ Stats (y de la banda del Tech tree, que los comparte): ver ui.FiltroStats. */
     final FiltroStats filtroStats = new FiltroStats(leerConfig("stats_modo", "rm_1v1"), leerConfig("stats_ventana", "30"), leerConfig("stats_mapa", "*"), leerConfig("stats_tramo", "*"));
-    JToggleButton civStatsBtn;
     /** La pestaña Civ Stats (winrate, pick rate, tendencias, matchups): ver ui.CivStatsView. */
     CivStatsView civStats;
 
-    @Override public void abrirCivStats() {
-        registrarDestino(new Destino("civstats", 0, null, null));
-        if (civStatsBtn != null && !civStatsBtn.isSelected()) civStatsBtn.setSelected(true);
-        directosBtn.setSelected(false);
-        if (ladderBtn != null) ladderBtn.setSelected(false);
-        if (perfil != null) perfil.cerrar();
-        if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
-        ((CardLayout) centroCards.getLayout()).show(centroCards, "civstats");
-        civStats.subirArriba();
-        partidas.taparResultados(); watchlist.apagarForma();
-        SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        civStats.alAbrir();
-    }
+    @Override public void abrirCivStats() { navegador.abrirCivStats(); }
 
     // =====================================================================================
     // PERFIL — la página de un jugador: ver ui.PerfilView/ui.PerfilPresenter y, para el diálogo de cara a
-    // cara, ui.CaraACaraDialogo/ui.CaraACaraPresenter. Aquí solo queda el cromo (botón, CardLayout, historial).
+    // cara, ui.CaraACaraDialogo/ui.CaraACaraPresenter. El cromo (botón, CardLayout, historial) vive en
+    // ui.Navegador (fase 3, tanda 4, T4-Z1).
     // =====================================================================================
-    JToggleButton perfilBtn;
     /** La pestaña Perfil (cabecera, actividad, calendario, cara a cara): ver ui.PerfilView. */
     PerfilView perfil;
 
@@ -547,7 +465,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
      *  Anfitrion de TechTreeView; lo lanza el temporizador de arranque (8 s), no la apertura del tech tree. */
     void precalentarPerfiles() { perfil.precalentar(); }
 
-    /** El botón «Perfil»: el jugador seleccionado en la watchlist o, si no hay, la página con el buscador. */
+    /** El botón «Perfil»: el jugador seleccionado en la watchlist o, si no hay, la página con el buscador. No es
+     *  navegación (no decide CÓMO se abre, decide A QUIÉN): se queda en la ventana y ui.Navegador lo invoca como
+     *  colaborador (Runnable) cuando se pulsa la pestaña directamente, ver conectarVistas/construirFilaVistas. */
     void perfilDesdeBoton() {
         List<Player> sel = playersList.getSelectedValuesList();
         if (!sel.isEmpty()) abrirPerfil(sel.get(0).id(), nombreVisible(sel.get(0).id(), sel.get(0).name()));
@@ -560,53 +480,23 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // (lógica pura del azar/GTE, ver T3-A3). gamesWatch se queda: lo usa FormService, no el azar.
     final Map<Long, Integer> gamesWatch = new java.util.concurrent.ConcurrentHashMap<>();
 
-    /** Abre el perfil de un jugador; pid 0 = página vacía con el buscador. El cromo (botones, CardLayout, historial) vive
-     *  aquí; la carga y la pintura son de ui.PerfilView (perfil.alAbrir). */
-    @Override public void abrirPerfil(long pid, String nombre) {
-        if (perfilBtn != null && !perfilBtn.isSelected()) perfilBtn.setSelected(true);
-        directosBtn.setSelected(false);
-        if (ladderBtn != null) ladderBtn.setSelected(false);
-        if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        perfil.marcarAbierta();
-        ((CardLayout) centroCards.getLayout()).show(centroCards, "perfil");
-        subirArriba(perfil.panel());
-        partidas.taparResultados(); watchlist.apagarForma();
-        SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        perfil.alAbrir(pid, nombre);
-    }
+    /** Abre el perfil de un jugador; pid 0 = página vacía con el buscador. El cromo vive en ui.Navegador. */
+    @Override public void abrirPerfil(long pid, String nombre) { navegador.abrirPerfil(pid, nombre); }
 
     /** Abre a un jugador en una pestaña NUEVA (Ctrl+clic, «+»); la cuenta de pestañas es de ui.PerfilView. */
-    @Override public void abrirPerfilEnPestana(long pid, String nombre) { perfil.abrirEnPestanaNueva(pid, nombre); }
+    @Override public void abrirPerfilEnPestana(long pid, String nombre) { navegador.abrirPerfilEnPestana(pid, nombre); }
 
     // =====================================================================================
     // LIVE NOW — partidas en curso de los 250 mejores del ladder 1v1 (tarjetas por partida) y las
     // terminadas en las últimas 2 horas (sin resultado, con la rec a un clic). La vista y el presentador
-    // viven en ui.LiveNowView/ui.LiveNowPresenter; aquí solo queda el cromo (botón de pestaña, CardLayout,
-    // historial) y lo que se queda con la watchlist (los seis métodos de MenusJugador, ELO_1V1, el toast y
-    // la campanita: ver más abajo).
+    // viven en ui.LiveNowView/ui.LiveNowPresenter; el cromo (botón de pestaña, CardLayout, historial) vive en
+    // ui.Navegador. Aquí se queda lo que comparte con la watchlist (los seis métodos de MenusJugador, ELO_1V1,
+    // el toast y la campanita: ver más abajo).
     // =====================================================================================
-    JToggleButton ahoraBtn;
     /** La pestaña Live now: ver ui.LiveNowView. */
     LiveNowView liveNow;
 
-    @Override public void abrirAhora() {
-        registrarDestino(new Destino("ahora", 0, null, null));
-        if (ahoraBtn != null && !ahoraBtn.isSelected()) ahoraBtn.setSelected(true);
-        directosBtn.setSelected(false);
-        if (ladderBtn != null) ladderBtn.setSelected(false);
-        if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
-        if (perfil != null) perfil.cerrar();
-        if (perfilBtn != null) perfilBtn.setSelected(false);
-        liveNow.marcarAbierta();
-        ((CardLayout) centroCards.getLayout()).show(centroCards, "ahora");
-        liveNow.alAbrirAntes();
-        partidas.taparResultados(); watchlist.apagarForma();
-        SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        liveNow.alAbrirDespues();
-    }
+    @Override public void abrirAhora() { navegador.abrirAhora(); }
 
     /** ÚNICA instancia del ELO 1v1 de sesión: la usan MenusJugadorSwing (inyectada) y submenuJugadorPartida (watchlist), aquí. */
     static final EloSesion ELO_1V1 = new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA);   // pid → ELO 1v1 RM (sesión; caduca al terminar una partida)
@@ -643,54 +533,19 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // Banderas, icono de civ e icono de mapa: ver ui.Iconos (cachés y escalado) y service.ImagenesJuego
     // (rutas fijas y descarga de miniaturas de mapa).
     boolean ultimoClicCtrl;
-    record Destino(String vista, long pid, String nombre, String civ) { }
-    final List<Destino> historial = new ArrayList<>();
-    int historialPos = -1;
-    boolean navegandoAtras;
-    JButton atrasBtn, adelanteBtn;
 
-    void registrarDestino(Destino d) {
-        if (navegandoAtras) return;
-        if (historialPos >= 0 && historialPos < historial.size()) {
-            Destino u = historial.get(historialPos);
-            if (u.vista().equals(d.vista()) && u.pid() == d.pid() && Objects.equals(u.civ(), d.civ())) return;
-        }
-        while (historial.size() > historialPos + 1) historial.remove(historial.size() - 1);   // una ruta nueva borra el «adelante»
-        historial.add(d);
-        while (historial.size() > 60) historial.remove(0);
-        historialPos = historial.size() - 1;
-        actualizarBotonesHistorial();
-    }
-    void actualizarBotonesHistorial() {
-        if (atrasBtn != null) atrasBtn.setEnabled(historialPos > 0);
-        if (adelanteBtn != null) adelanteBtn.setEnabled(historialPos >= 0 && historialPos < historial.size() - 1);
-    }
-    /** Vuelve a la vista anterior (perfil, civ del tech tree, Civ Stats…). */
-    void volverAtras() {
-        if (historialPos <= 0) return;
-        historialPos--;
-        navegandoAtras = true;
-        try { irA(historial.get(historialPos)); } finally { navegandoAtras = false; }
-        actualizarBotonesHistorial();
-    }
-    void irAdelante() {
-        if (historialPos < 0 || historialPos >= historial.size() - 1) return;
-        historialPos++;
-        navegandoAtras = true;
-        try { irA(historial.get(historialPos)); } finally { navegandoAtras = false; }
-        actualizarBotonesHistorial();
-    }
-    void irA(Destino d) {
-        switch (d.vista()) {
-            case "directos" -> mostrarDirectos(true);
-            case "ladder" -> abrirLadder();
-            case "civstats" -> abrirCivStats();
-            case "ahora" -> abrirAhora();
-            case "techtree" -> abrirTechTree(d.civ());
-            case "perfil" -> abrirPerfil(d.pid(), d.nombre());
-            default -> mostrarDirectos(false);
-        }
-    }
+    // Destino/historial/historialPos/navegandoAtras/atrasBtn/adelanteBtn/actualizarBotonesHistorial/irA: movidos
+    // a ui.AppState + ui.Navegador (fase 3, tanda 4, T4-Z1: estado observable de la app, ver docs/ARQUITECTURA.md).
+    // Destino sigue existiendo aquí como un compat de una línea: PerfilView.Anfitrion (construida en
+    // construirCentro, fuera de mi zona) construye "new Destino(...)" y llama a este registrarDestino tal cual.
+    record Destino(String vista, long pid, String nombre, String civ) { }
+
+    void registrarDestino(Destino d) { navegador.estado.registrarDestino(new dev.tirador.aoe2radar.ui.AppState.Destino(d.vista(), d.pid(), d.nombre(), d.civ())); }
+
+    /** Delegado: instalarAutoScroll (botones laterales del ratón) lo llama por su nombre. */
+    void volverAtras() { navegador.volverAtras(); }
+    /** Delegado: instalarAutoScroll lo llama por su nombre. */
+    void irAdelante() { navegador.irAdelante(); }
 
     // =====================================================================================
     // Desplazamiento con la rueda pulsada (como Chrome) y vuelta arriba al cambiar de vista
@@ -738,45 +593,17 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // =====================================================================================
-    // TECH TREE — la vista (árbol, ficha, banda de winrate) vive en ui.TechTreeView; aquí solo el
-    // cromo compartido con el resto de pestañas: botón, CardLayout, historial y la watchlist plegada.
+    // TECH TREE — la vista (árbol, ficha, banda de winrate) vive en ui.TechTreeView; el cromo compartido con
+    // el resto de pestañas (botón, CardLayout, historial y el pliegue de la watchlist) vive en ui.Navegador
+    // (fase 3, tanda 4, T4-Z1): splitPrincipal se crea en montarVentana (Z5) y se le pasa por conectarVistas.
     // =====================================================================================
     TechTreeView techTree;
-    int ttDivisorPrevio = -1;
-    JToggleButton techTreeBtn;
 
-    /** Abre el panel (plegando la watchlist) y, si se pide, en una civ concreta. */
-    @Override public void abrirTechTree(String civ) {
-        registrarDestino(new Destino("techtree", 0, null, civ != null ? civ : techTree.civPedida()));
-        if (techTreeBtn != null && !techTreeBtn.isSelected()) techTreeBtn.setSelected(true);
-        directosBtn.setSelected(false);
-        if (ladderBtn != null) ladderBtn.setSelected(false);
-        if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        if (perfil != null) perfil.cerrar();
-        if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        ((CardLayout) centroCards.getLayout()).show(centroCards, "techtree");
-        partidas.taparResultados(); watchlist.apagarForma();
-        SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        if (splitPrincipal != null && ttDivisorPrevio < 0) {   // la watchlist se pliega: el árbol necesita el ancho
-            ttDivisorPrevio = splitPrincipal.getDividerLocation();
-            splitPrincipal.setOneTouchExpandable(true);
-            splitPrincipal.setDividerLocation(0);
-        }
-        techTree.alAbrir(civ);
-    }
+    /** Abre el panel (plegando la watchlist) y, si se pide, en una civ concreta. El cromo vive en ui.Navegador. */
+    @Override public void abrirTechTree(String civ) { navegador.abrirTechTree(civ); }
 
-    void cerrarTechTree() {
-        techTree.ocultarDetalle();
-        if (techTreeBtn != null) techTreeBtn.setSelected(false);
-        if (splitPrincipal != null && ttDivisorPrevio >= 0) {   // la watchlist vuelve a su ancho
-            splitPrincipal.setDividerLocation(ttDivisorPrevio);
-            SwingUtilities.invokeLater(() -> { if (watchlist.norteWatchRef != null) { watchlist.norteWatchRef.revalidate(); watchlist.norteWatchRef.repaint(); } });   // las filas del norte se recalculan con el ancho ya restaurado
-            splitPrincipal.setOneTouchExpandable(false);
-            ttDivisorPrevio = -1;
-        }
-        mostrarDirectos(false);
-    }
+    /** Delegado: TechTreeView.Anfitrion.cerrar() (construida en construirCentro) lo llama por su nombre. */
+    void cerrarTechTree() { navegador.cerrarTechTree(); }
 
     // ----- Partidas en curso en tiempo real: websocket «ongoing-matches» del companion -----------------
     // Se abre una conexión con los ids de la vista actual y el servidor empuja matchAdded /
@@ -1044,9 +871,17 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         };
     }
 
+    /** El cromo de navegación (pestañas, historial, esqueleto de los abrir*): ver ui.Navegador/ui.AppState.
+     *  La ventana implementa ui.Navegacion delegando en él (fase 3, tanda 4, T4-Z1). Se crea al principio del
+     *  constructor porque construirBarraSuperior necesita sus botones; conectarVistas lo completa con las
+     *  vistas y el split, que no existen hasta construirCentro/montarVentana (mismo truco de referencia
+     *  adelantada que ya usa el resto de la ventana). */
+    final dev.tirador.aoe2radar.ui.Navegador navegador;
+
     SpoilerFreeRecs(String temaInicial) {
         super(NOMBRE + " " + VERSION + t(" — tu radar del AoE2 competitivo, sin spoilers · por ", " — your competitive AoE2 radar, spoiler-free · by ") + AUTOR);
         configurarVentana();
+        navegador = new dev.tirador.aoe2radar.ui.Navegador(status, this::perfilDesdeBoton);
 
         sujetosPanel = new JPanel();
         watchlist = new WatchlistView(this, SERVICIO_PERFIL, BUSQUEDA, TOP_LADDER_SERVICE, formaService, campanas,
@@ -1066,6 +901,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         JPanel center = construirCentro(top, bottom);
 
         montarVentana(left, center);
+        navegador.conectarVistas(partidas, watchlist, perfil, liveNow, techTree, ratings, civStats, directos, centroCards, splitPrincipal);
 
         arrancar();
     }
@@ -1100,7 +936,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     private JPanel construirBarraSuperior(String temaInicial) {
         // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
         JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));   // fija: nada salta de sitio
-        JPanel filaVistas = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 0));
         unidadCombo.setSelectedIndex(Math.max(0, Math.min(2, Integer.parseInt(leerConfig("ventana_unidad", "0")))));
         unidadCombo.setFocusable(false);
         unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 año)", "Unit of the search window (up to 1 year)"));
@@ -1116,58 +951,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         { int u0 = unidadCombo.getSelectedIndex(); int max0 = u0 == 0 ? 24 : u0 == 1 ? 7 : 1; ((SpinnerNumberModel) hoursSpinner.getModel()).setMaximum(max0); if ((int) hoursSpinner.getValue() > max0) hoursSpinner.setValue(max0); }
         fila1.add(par(new JLabel(t("Últimas", "Last")), hoursSpinner, unidadCombo));
         partidas.agregarFilaConsulta(fila1);   // modo, rival (sugerencias), mapa, periodo, Buscar partidas, Al azar por ELO, Guess the ELO: ver ui.PartidasView
-        atrasBtn = new JButton("\u2190");
-        atrasBtn.setFocusable(false); atrasBtn.setMargin(new Insets(2, 8, 2, 8)); atrasBtn.putClientProperty("JButton.buttonType", "roundRect");
-        atrasBtn.setToolTipText(t("Atrás: vuelve a la vista anterior (también el botón lateral del ratón)", "Back: return to the previous view (also the mouse's back button)"));
-        atrasBtn.setEnabled(false);
-        atrasBtn.addActionListener(e -> volverAtras());
-        filaVistas.add(atrasBtn);
-        adelanteBtn = new JButton("\u2192");
-        adelanteBtn.setFocusable(false); adelanteBtn.setMargin(new Insets(2, 8, 2, 8)); adelanteBtn.putClientProperty("JButton.buttonType", "roundRect");
-        adelanteBtn.setToolTipText(t("Adelante (también el botón lateral del ratón)", "Forward (also the mouse's forward button)"));
-        adelanteBtn.setEnabled(false);
-        adelanteBtn.addActionListener(e -> irAdelante());
-        filaVistas.add(adelanteBtn);
-        recsBtn = pestana(t("Partidas", "Games"), iconoVista("partidas"));
-        recsBtn.addActionListener(e -> {   // desde un perfil: la tabla pasa a ser de ese jugador (búsqueda de sus partidas recientes), salvo que ya lo sea
-            if (perfil.pidAbierto() > 0 && partidas.objetivoEtiqueta != null && partidas.objetivoEtiqueta.id() == perfil.pidAbierto() && perfil.historialEnTabla() != perfil.pidAbierto() && (partidas.ultimosSujetos.size() != 1 || partidas.ultimosSujetos.get(0).id() != perfil.pidAbierto()) && partidas.fetchWorker == null)
-                SwingUtilities.invokeLater(() -> partidas.fetchMatches(partidas.fetchBtn));
-        });
-        recsBtn.setSelected(true);
-        recsBtn.setToolTipText(t("La tabla de partidas de tu watchlist (recs sin spoilers)", "Your watchlist's games table (spoiler-free recs)"));
-        recsBtn.addActionListener(e -> { if (!recsBtn.isSelected()) { recsBtn.setSelected(true); return; } mostrarDirectos(false); });
-        filaVistas.add(recsBtn);
-        directosBtn = pestana("Twitch", iconoVista("directos"));
-        directosBtn.setToolTipText(t("Todos los canales dando AoE2 en Twitch ahora mismo",
-                "Every channel streaming AoE2 on Twitch right now"));
-        directosBtn.addActionListener(e -> { if (!directosBtn.isSelected()) { directosBtn.setSelected(true); return; } mostrarDirectos(true); });
-        ahoraBtn = pestana("Live now", iconoVista("ahora"));
-        ahoraBtn.setToolTipText(t("Partidas en curso de los 250 mejores del ladder 1v1, en vivo: bandos, mapa, reloj, Twitch, espectar; y las terminadas en las últimas 2 h con su rec", "Ongoing games of the top 250 of the 1v1 ladder, live: sides, map, clock, Twitch, spectate; and those finished in the last 2 h with their rec"));
-        ahoraBtn.addActionListener(e -> { if (!ahoraBtn.isSelected()) { ahoraBtn.setSelected(true); return; } abrirAhora(); });
-        filaVistas.add(ahoraBtn);
-        filaVistas.add(directosBtn);
-        perfilBtn = pestana(t("Perfil", "Profile"), iconoVista("perfil"));
-        perfilBtn.setToolTipText(t("Perfil y actividad del último año del jugador seleccionado en la watchlist (o de cualquier nick): ELO, forma, calendario, civs, mapas y rivales",
-                "Profile and last year's activity of the player selected in the watchlist (or any nick): ELO, form, calendar, civs, maps and rivals"));
-        perfilBtn.addActionListener(e -> { if (!perfilBtn.isSelected()) { perfilBtn.setSelected(true); return; } perfilDesdeBoton(); });
-        filaVistas.add(perfilBtn);
-        ladderBtn = pestana("Ratings", iconoVista("ratings"));
-        ladderBtn.setToolTipText(t("Distribución de ELO por ladder, percentiles, dispersión 1v1 × equipos y comparador de jugadores (volcado diario de aoe2companion)",
-                "ELO distribution per ladder, percentiles, 1v1 × team scatter and player comparison (aoe2companion daily dump)"));
-        ladderBtn.addActionListener(e -> { if (!ladderBtn.isSelected()) { ladderBtn.setSelected(true); return; } abrirLadder(); });
-        filaVistas.add(ladderBtn);
-        civStatsBtn = pestana("Civ Stats", iconoVista("civstats"));
-        civStatsBtn.setToolTipText(t("Winrate y pick rate por civilización, mapa y tramo de ELO; matchups y tendencias (volcados diarios de aoe2companion)",
-                "Win rate and pick rate by civilization, map and ELO bracket; matchups and trends (aoe2companion daily dumps)"));
-        civStatsBtn.addActionListener(e -> { if (!civStatsBtn.isSelected()) { civStatsBtn.setSelected(true); return; } abrirCivStats(); });
-        filaVistas.add(civStatsBtn);
-        techTreeBtn = pestana("Tech tree", TechTreeView.iconoBoton());
-        techTreeBtn.setIconTextGap(6);
-        techTreeBtn.setToolTipText(t("Árbol tecnológico de cada civilización (datos de aoe2techtree, se actualizan solos)",
-                "Every civilization's tech tree (data from aoe2techtree, updates itself)"));
-        techTreeBtn.addActionListener(e -> { if (!techTreeBtn.isSelected()) { techTreeBtn.setSelected(true); return; } abrirTechTree(null); });
-        filaVistas.add(techTreeBtn);
-        filaVistas.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(128, 128, 128, 70)));
+        // Pestañas de vistas y flechas de atrás/adelante: ver ui.Navegador.construirFilaVistas (fase 3, tanda 4, T4-Z1).
+        JPanel filaVistas = navegador.construirFilaVistas();
 
         JButton configBtn = new JButton(t("Configuración ▾", "Settings ▾"));
         configMenu = new JPopupMenu();
@@ -1470,7 +1255,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public void repintarLista() { playersList.repaint(); }
             @Override public void estado(String texto) { status.setText(texto); }
             @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-            @Override public boolean seleccionada() { return directosBtn != null && directosBtn.isSelected(); }
+            @Override public boolean seleccionada() { return navegador.directosBtn != null && navegador.directosBtn.isSelected(); }
         });
         centroCards.add(directos.panel(), "directos");
         liveNow = new LiveNowView(campanas, LIVE, List.of(WatchlistView.PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
@@ -1697,23 +1482,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         catch (Exception ex) { status.setText(t("No se pudo abrir el navegador: ", "Couldn't open the browser: ") + causa(ex)); }
     }
 
-    /** La zona central alterna entre la tabla de recs y los directos. */
-    void mostrarDirectos(boolean mostrar) {
-        directosBtn.setSelected(mostrar);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) { techTreeBtn.setSelected(false); }
-        if (ladderBtn != null) ladderBtn.setSelected(false);
-        if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        if (perfil != null) perfil.cerrar();
-        if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        if (splitPrincipal != null && ttDivisorPrevio >= 0) { SwingUtilities.invokeLater(() -> { if (watchlist.norteWatchRef != null) { watchlist.norteWatchRef.revalidate(); watchlist.norteWatchRef.repaint(); } }); splitPrincipal.setDividerLocation(ttDivisorPrevio); splitPrincipal.setOneTouchExpandable(false); ttDivisorPrevio = -1; }
-        if (mostrar) { partidas.taparResultados(); watchlist.apagarForma(); }   // cambiar de pantalla apaga el modo consulta y la forma
-        ((CardLayout) centroCards.getLayout()).show(centroCards, mostrar ? "directos" : "recs");
-        if (!mostrar && !partidas.hayPartidas() && partidas.fetchWorker == null) partidas.mostrarGuiaVacia(true);   // sin partidas: la guía con su botón, no una tabla vacía
-        registrarDestino(new Destino(mostrar ? "directos" : "recs", 0, null, null));
-        SwingUtilities.invokeLater(this::actualizarControlesTabla);
-        if (mostrar) directos.alAbrir();
-    }
+    /** La zona central alterna entre la tabla de recs y los directos. El cromo vive en ui.Navegador; se queda
+     *  este delegado porque medio fichero llama a «mostrarDirectos» por su nombre (Watchlist, Partidas, Perfil…). */
+    void mostrarDirectos(boolean mostrar) { navegador.mostrarDirectos(mostrar); }
 
 
     boolean usarCA() { return Boolean.parseBoolean(leerConfig("usar_ca", "false")); }
@@ -2001,7 +1772,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 @Override public void mostrarDirectos(boolean mostrar) { SpoilerFreeRecs.this.mostrarDirectos(mostrar); }
                 @Override public void refrescarDirectos() {
                     directos.refrescarForzado();
-                    if (directosBtn != null && directosBtn.isSelected()) status.setText(t("Refrescando directos…", "Refreshing streams…"));
+                    if (navegador.directosBtn != null && navegador.directosBtn.isSelected()) status.setText(t("Refrescando directos…", "Refreshing streams…"));
                 }
                 @Override public void enfocarBuscador() { watchlist.enfocarBuscador(); }   // misma guarda de null, ahora dentro de WatchlistView
                 @Override public boolean confirmarEspectar(String nombre) { return SpoilerFreeRecs.this.confirmarEspectar(nombre); }
