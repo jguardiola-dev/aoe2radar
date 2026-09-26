@@ -13,7 +13,7 @@ import java.time.format.DateTimeFormatter;
 public final class Log {
     private Log() {}
 
-    public static final Path LOG_FILE = Path.of("descargas.log");
+    public static final Path LOG_FILE = Sistema.enCarpetaBase("descargas.log");
 
     /** Tope de descargas.log: al arrancar, si lo pasa, se aparta a descargas.log.1 (sustituye al anterior) y se empieza otro. */
     static final long LOG_MAX_BYTES = 5L * 1024 * 1024;

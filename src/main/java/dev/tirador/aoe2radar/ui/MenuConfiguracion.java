@@ -280,7 +280,7 @@ public final class MenuConfiguracion {
             @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
             void menu(MouseEvent e) {
                 JPopupMenu pm = new JPopupMenu();
-                JMenuItem otra = new JMenuItem(t("Cambiar de cuenta…", "Change account…")); otra.addActionListener(a -> { guardarConfig("mi_pid", ""); anfitrion.cambiarCuentaPropia(); }); pm.add(otra);
+                JMenuItem otra = new JMenuItem(t("Cambiar de cuenta…", "Change account…")); otra.addActionListener(a -> cambiarDeCuenta()); pm.add(otra);
                 pm.show(miPerfilBtn, e.getX(), e.getY());
             }
         });
@@ -288,6 +288,12 @@ public final class MenuConfiguracion {
         esquinaPanel.add(configBtn);
         this.esquina = esquinaPanel;
     }
+
+    /** «Cambiar de cuenta…» (arreglo F16 de la revisión 1.3): solo pide el nick nuevo. La cuenta guardada se sustituye
+     *  cuando el usuario elige la nueva (MiPartidaPresenter.buscarMiNick → fijarIdentidad); si cancela o no la
+     *  encuentra, se queda la anterior. Antes se borraba mi_pid aquí, antes de preguntar. Paquete: lo prueba
+     *  MenuConfiguracionTest (el popup del clic derecho necesita pantalla). */
+    void cambiarDeCuenta() { anfitrion.cambiarCuentaPropia(); }
 
     /** El popup del botón «Configuración ▾» (lo lee ComponentesTema para repintarlo al cambiar de tema). */
     public JPopupMenu menu() { return menu; }

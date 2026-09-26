@@ -35,7 +35,7 @@ class ControlServiceTest {
 
     @Test void controlBuenoRellenaYLosNullSeIgnoran() {
         control.cuerpo = "{\"intervalo\":2,\"activo\":true,\"otro\":null}";
-        String msg = servicio.cargarControl("", txt -> fail("sin mensaje no debería marcar visto"));
+        String msg = servicio.cargarControl("");
         assertNull(msg);
         assertEquals(2.0, ((Number) Freno.CONTROL.get("intervalo")).doubleValue());
         assertEquals(Boolean.TRUE, Freno.CONTROL.get("activo"));
@@ -46,7 +46,7 @@ class ControlServiceTest {
         Freno.CONTROL.put("previo", "valor");
         control.estado = 500;
         control.cuerpo = "{\"intervalo\":9}";
-        String msg = servicio.cargarControl("", txt -> fail("estado != 200: no debería marcar visto"));
+        String msg = servicio.cargarControl("");
         assertNull(msg);
         assertEquals("valor", Freno.CONTROL.get("previo"), "un estado != 200 no toca CONTROL");
         assertFalse(Freno.CONTROL.containsKey("intervalo"));
@@ -56,7 +56,7 @@ class ControlServiceTest {
         Freno.CONTROL.put("previo", "valor");
         control.estado = 201;   // solo vale 200 exacto, ni siquiera otro 2xx
         control.cuerpo = "{\"intervalo\":9}";
-        String msg = servicio.cargarControl("", txt -> fail("estado 201: no debería marcar visto"));
+        String msg = servicio.cargarControl("");
         assertNull(msg);
         assertEquals("valor", Freno.CONTROL.get("previo"), "solo vale 200 exacto");
         assertFalse(Freno.CONTROL.containsKey("intervalo"));
@@ -65,7 +65,7 @@ class ControlServiceTest {
     @Test void controlBuenoBorraLasClavesAnteriores() {
         Freno.CONTROL.put("viejo", "de una vuelta anterior");
         control.cuerpo = "{\"intervalo\":3}";
-        servicio.cargarControl("", txt -> fail("sin mensaje no debería marcar visto"));
+        servicio.cargarControl("");
         assertFalse(Freno.CONTROL.containsKey("viejo"), "control.json reemplaza el mapa entero (clear), no lo mezcla");
         assertEquals(3.0, ((Number) Freno.CONTROL.get("intervalo")).doubleValue());
     }
@@ -73,35 +73,35 @@ class ControlServiceTest {
     @Test void jsonQueNoEsObjetoNoTocaControl() {
         Freno.CONTROL.put("previo", "valor");
         control.cuerpo = "[1,2,3]";
-        String msg = servicio.cargarControl("", txt -> fail("JSON que no es objeto: no debería marcar visto"));
+        String msg = servicio.cargarControl("");
         assertNull(msg);
         assertEquals("valor", Freno.CONTROL.get("previo"));
     }
 
-    @Test void mensajeNuevoSeDevuelveYSeMarcaVisto() {
+    @Test void mensajeNuevoSeDevuelveSinMarcarloVisto() {
+        // F10 (revisión 1.3): el servicio ya no lo marca como visto; lo hace la ventana cuando lo ha enseñado
+        // (BarraEstado.mostrarAvisoCuandoSeVea). Por eso cargarControl ya no recibe con qué marcarlo.
         control.cuerpo = "{\"mensaje\":\"hola\"}";
-        List<String> vistos = new ArrayList<>();
-        String msg = servicio.cargarControl("", vistos::add);
-        assertEquals("hola", msg);
-        assertEquals(List.of("hola"), vistos);
+        assertEquals("hola", servicio.cargarControl(""));
+        assertEquals("hola", servicio.cargarControl(""), "sin marcar, la recarga de cada hora lo vuelve a traer");
     }
 
     @Test void mensajeYaVistoDevuelveNull() {
         control.cuerpo = "{\"mensaje\":\"hola\"}";
-        String msg = servicio.cargarControl("hola", txt -> fail("ya visto: no debería marcar de nuevo"));
+        String msg = servicio.cargarControl("hola");
         assertNull(msg);
     }
 
     @Test void mensajeEnBlancoNoSeDevuelveNiSeMarcaVisto() {
         control.cuerpo = "{\"mensaje\":\"   \"}";
-        String msg = servicio.cargarControl("", txt -> fail("mensaje en blanco: no debería marcar visto"));
+        String msg = servicio.cargarControl("");
         assertNull(msg);
     }
 
     @Test void falloDeRedNoLanzaYNoTocaControl() {
         Freno.CONTROL.put("previo", "valor");
         control.fallo = new RuntimeException("sin red");
-        String msg = assertDoesNotThrow(() -> servicio.cargarControl("", txt -> fail("fallo de red: no debería marcar visto")));
+        String msg = assertDoesNotThrow(() -> servicio.cargarControl(""));
         assertNull(msg);
         assertEquals("valor", Freno.CONTROL.get("previo"));
     }

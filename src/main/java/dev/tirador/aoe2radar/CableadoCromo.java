@@ -1,6 +1,7 @@
 package dev.tirador.aoe2radar;
 
 import dev.tirador.aoe2radar.app.Servicios;
+import dev.tirador.aoe2radar.cache.Paises;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.EnlaceVivo;
@@ -58,12 +59,18 @@ final class CableadoCromo {
     // configuración de ventana, no construcción de paneles.
     static void configurarVentana(SpoilerFreeRecs v) {
         VentanaPrincipalAjustes.configurar(v, v.logo, new VentanaPrincipalAjustes.Anfitrion() {
-            @Override public void alCerrar() { VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar(); }
+            @Override public void alCerrar() {
+                VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar();
+                Paises.guardarAlCerrar(2000);   // F13 (1.3): los países del último minuto; retiene el cierre 2 s como mucho
+            }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
         });
         // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
         // barraEstado ya construido (es un inicializador de campo, corre antes que el cuerpo del constructor).
         Servicios.avisoPausa429 = v.barraEstado::mostrarPausaApi;
+        // El mensaje de control.json (arreglo F10 de la revisión 1.3): la barra lo enseña cuando la ventana está a
+        // la vista y solo entonces se marca como visto.
+        Servicios.avisoControl = v.barraEstado::mostrarAvisoCuandoSeVea;
     }
 
     // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,
@@ -74,9 +81,9 @@ final class CableadoCromo {
         JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));   // fija: nada salta de sitio
         v.unidadCombo.setSelectedIndex(Math.max(0, Math.min(2, Integer.parseInt(leerConfig("ventana_unidad", "0")))));
         v.unidadCombo.setFocusable(false);
-        v.unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 año)", "Unit of the search window (up to 1 year)"));
-        v.hoursSpinner.setToolTipText(t("Ventana de búsqueda: hasta 1 año. Las ventanas largas piden más páginas por jugador (tope: 300 partidas/jugador, se avisa).",
-                "Search window: up to 1 year. Long windows fetch more pages per player (cap: 300 games/player, you get a warning)."));
+        v.unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 semana)", "Unit of the search window (up to 1 week)"));
+        v.hoursSpinner.setToolTipText(t("Ventana de búsqueda: hasta 1 semana. Las ventanas largas piden más páginas por jugador (tope: 300 partidas/jugador, se avisa).",
+                "Search window: up to 1 week. Long windows fetch more pages per player (cap: 300 games/player, you get a warning)."));
         v.unidadCombo.addActionListener(e -> {
             guardarConfig("ventana_unidad", String.valueOf(v.unidadCombo.getSelectedIndex()));
             int u = v.unidadCombo.getSelectedIndex(), max = u == 0 ? 24 : u == 1 ? 7 : 1;   // el techo, en la unidad elegida: 24 h, 7 días o 1 semana
@@ -177,6 +184,7 @@ final class CableadoCromo {
                 }
             });
         v.splitPrincipal = split;
+        VentanaGuardada.guardarAlCambiar(v, split);   // F11 (1.3): la geometría se guarda al cambiar, no solo al cerrar
         // Como el Explorador, en toda la ventana: clic en cualquier fondo que no sea un control = sin selección.
         // Excepciones: la cabecera de columnas (ordena) y la cabecera «Partidas de:» (sus nombres son clicables).
         // Ver ui.ClicEnFondo: mezcla excepciones de varias vistas, así que se las pedimos por interfaz.

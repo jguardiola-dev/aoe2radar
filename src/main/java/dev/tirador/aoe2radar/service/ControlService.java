@@ -5,7 +5,6 @@ import dev.tirador.aoe2radar.api.Transporte;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.function.Consumer;
 
 import static dev.tirador.aoe2radar.util.Hilos.avisarSiUi;
 import static dev.tirador.aoe2radar.util.Json.obj;
@@ -37,10 +36,11 @@ public final class ControlService {
      * Baja control.json y lo aplica a Freno.CONTROL (multiplicadores e interruptores; los valores nulos se
      * ignoran). Devuelve el mensaje nuevo a mostrar en la barra de estado, o null si no hay nada que enseñar
      * (sin mensaje, ya visto, estado distinto de 200 o cuerpo que no es un objeto) o si falló la red.
-     * visto: el texto ya mostrado la última vez (config «control_msg_visto»); marcarVisto: cómo guardarlo si
-     * hay uno nuevo. No lanza.
+     * visto: el texto ya mostrado la última vez (config «control_msg_visto»). No lo marca como visto: eso lo
+     * hace la ventana cuando lo ha enseñado de verdad (arreglo F10 de la revisión 1.3; antes se marcaba al
+     * descargarlo y otros estados lo pisaban antes de verse). No lanza.
      */
-    public String cargarControl(String visto, Consumer<String> marcarVisto) {
+    public String cargarControl(String visto) {
         avisarSiUi("ControlService.cargarControl");
         try {
             Transporte.Respuesta r = transporteControl.get(Freno.CONTROL_URL);
@@ -51,10 +51,7 @@ public final class ControlService {
             for (Map.Entry<?, ?> en : m.entrySet()) if (en.getValue() != null) Freno.CONTROL.put(String.valueOf(en.getKey()), en.getValue());
             log("control.json: " + Freno.CONTROL);
             Object msg = Freno.CONTROL.get("mensaje");
-            if (msg instanceof String txt && !txt.isBlank() && !txt.equals(visto)) {
-                marcarVisto.accept(txt);
-                return txt;
-            }
+            if (msg instanceof String txt && !txt.isBlank() && !txt.equals(visto)) return txt;
             return null;
         } catch (Exception ex) {
             log("control.json: " + causa(ex));
