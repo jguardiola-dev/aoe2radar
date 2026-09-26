@@ -86,9 +86,11 @@ class PartidasViewTest {
         @Override public void refrescarDirectos() { }
         @Override public void enfocarBuscador() { }
         @Override public boolean confirmarEspectar(String nombre) { return false; }
-        @Override public void espectarVerificando(long profileId, long matchId) { }
+        final List<Long> espectadas = Collections.synchronizedList(new ArrayList<>());
+        volatile int capturesLanzados;
+        @Override public void espectarVerificando(long profileId, long matchId) { espectadas.add(matchId); }
         @Override public void espectarPartida(long matchId) { }
-        @Override public void lanzarCaptureAge(Path rec) { }
+        @Override public void lanzarCaptureAge(Path rec) { capturesLanzados++; }
         @Override public void abrirUrl(String url) { }
         @Override public String nombreVisible(long pid, String nombre) { return nombre; }
         @Override public String paisDe(long pid) { return null; }
@@ -425,11 +427,13 @@ class PartidasViewTest {
 
     /** Corre {@code cuerpo} con la carpeta savegame de config apuntando a {@code sg}, y deja config.properties
      *  (el del directorio de trabajo del test, target/harness) como estaba. */
-    static void conSavegame(Path sg, ThrowingRunnable cuerpo) throws Exception {
+    static void conSavegame(Path sg, ThrowingRunnable cuerpo) throws Exception { conConfig("savegame", sg.toString(), cuerpo); }
+
+    static void conConfig(String clave, String valor, ThrowingRunnable cuerpo) throws Exception {
         Path cfg = dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
         byte[] previo = java.nio.file.Files.exists(cfg) ? java.nio.file.Files.readAllBytes(cfg) : null;
         try {
-            dev.tirador.aoe2radar.util.Config.guardarConfig("savegame", sg.toString());
+            dev.tirador.aoe2radar.util.Config.guardarConfig(clave, valor);
             cuerpo.run();
         } finally {
             if (previo != null) java.nio.file.Files.write(cfg, previo); else java.nio.file.Files.deleteIfExists(cfg);
@@ -509,6 +513,22 @@ class PartidasViewTest {
         asentar();
         assertEquals("✓ saved", m.estado);
         assertTrue(anfitrion.estados.contains("1/1 recs saved to " + recs), "sin «./» delante de la carpeta: " + anfitrion.estados);
+    }
+
+    // ----- dudoso confirmado: «Espectar con CaptureAge» lanzaba CA dos veces con «Usar CaptureAge» -----
+
+    @Test void espectarConCaptureAge_conUsarCaptureAge_noLoLanzaDosVeces() throws Exception {
+        Match m = partida(8601, A, Instant.now());
+        conConfig("usar_ca", "true", () -> enEdt(() -> vista.menuPartida.espectarConCaptureAge(m)));
+        assertEquals(0, anfitrion.capturesLanzados, "con la casilla, lo lanza espectarPartida al abrir el juego (una vez)");
+        assertEquals(List.of(8601L), anfitrion.espectadas);
+    }
+
+    @Test void espectarConCaptureAge_sinUsarCaptureAge_loLanzaUnaVez() throws Exception {
+        Match m = partida(8602, A, Instant.now());
+        conConfig("usar_ca", "false", () -> enEdt(() -> vista.menuPartida.espectarConCaptureAge(m)));
+        assertEquals(1, anfitrion.capturesLanzados);
+        assertEquals(List.of(8602L), anfitrion.espectadas);
     }
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
