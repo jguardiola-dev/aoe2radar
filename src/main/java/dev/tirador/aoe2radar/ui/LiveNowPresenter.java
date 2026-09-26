@@ -2,6 +2,7 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 
 import java.time.Duration;
@@ -223,4 +224,27 @@ public final class LiveNowPresenter {
         }
         if (pantalla.puedeRepintar()) tareas.enUi(pantalla::pintar);
     }
+
+    /**
+     * «resultado»: pide a la API el resultado real de la partida m (el socket avisa del final antes de que la
+     * API lo tenga listo, así que solo se pide si el usuario lo pulsa). Actualiza el {@code won} de cada
+     * MatchPlayer de m y llama a alListo en el EDT cuando termine. Movido tal cual desde LiveNowView (DEUDA,
+     * fila 124): mismo nombre de hilo, misma llamada (CSV de un solo pid, igual que LiveService.partidas(long,…)),
+     * mismo orden de pintado (alListo solo se llama al final, en el EDT).
+     */
+    public void pedirResultado(Match m, Runnable alListo) {
+        long pid0 = m.players.get(0).id;
+        tareas.enFondo("resultado", () -> {
+            try {
+                for (Match x : buscador.partidas(String.valueOf(pid0), 1, 5))
+                    if (x != null && x.id == m.id) { for (MatchPlayer mp : m.players) for (MatchPlayer xp : x.players) if (xp.id == mp.id) mp.won = xp.won; break; }
+            } catch (Exception ex) { log("resultado: " + causa(ex)); }
+            tareas.enUi(alListo);
+        });
+    }
+
+    /** «clanes»: si el catálogo de clanes del ladder aún no está en memoria, lo trae en un hilo demonio (nadie
+     *  espera el resultado: la próxima vez que el usuario escriba ya estará). Movido tal cual desde LiveNowView
+     *  (DEUDA, fila 124): mismo nombre de hilo; la vista sigue decidiendo cuándo hace falta (clanesCargados()). */
+    public void pedirClanes() { tareas.enFondoDemonio("clanes", () -> ConsultasLadder.asegurarLadder(false)); }
 }

@@ -80,8 +80,6 @@ import static dev.tirador.aoe2radar.util.Formato.reloj;
 import static dev.tirador.aoe2radar.util.Formato.truncarPx;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
-import static dev.tirador.aoe2radar.util.Log.causa;
-import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * La pestaña Live now (card "ahora"): partidas en curso de los 250 mejores del ladder 1v1 (u otra fuente: país,
@@ -524,7 +522,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
                 String q = ed.getText().trim();
                 liveClanPopup.setVisible(false); liveClanPopup.removeAll();
                 if (q.length() < 1) return;
-                if (!ConsultasLadder.clanesCargados()) { tareas.enFondoDemonio("clanes", () -> ConsultasLadder.asegurarLadder(false)); return; }
+                if (!ConsultasLadder.clanesCargados()) { presenter.pedirClanes(); return; }
                 for (Map.Entry<String, Integer> en : ConsultasLadder.sugerirClanes(q)) {
                     JMenuItem it = new JMenuItem(en.getKey() + "  (" + en.getValue() + ")");
                     it.addActionListener(a -> { liveClanPopup.setVisible(false); liveValor.setSelectedItem(en.getKey()); aplicarFuenteLive(); });
@@ -804,11 +802,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
                     boolean hay = false; for (MatchPlayer mp : m.players) if (mp.won != null) hay = true;
                     if (hay || m.players.isEmpty()) { pintar.run(); return; }
                     res.setText(t("consultando…", "checking…"));
-                    long pid0 = m.players.get(0).id;
-                    tareas.enFondo("resultado", () -> {   // el socket avisa del final antes de que la API tenga el resultado: una llamada, solo si lo pides
-                        try { Iterable<Match> leidas = liveService.partidas(pid0, 1, 5); for (Match x : leidas) { if (x != null && x.id == m.id) { for (MatchPlayer mp : m.players) for (MatchPlayer xp : x.players) if (xp.id == mp.id) mp.won = xp.won; break; } } } catch (Exception ex) { log("resultado: " + causa(ex)); }
-                        tareas.enUi(pintar);
-                    });
+                    presenter.pedirResultado(m, pintar);
                 } });
                 botones.add(Box.createVerticalGlue()); botones.add(rec); botones.add(Box.createVerticalStrut(2)); botones.add(res); botones.add(Box.createVerticalGlue());
             }

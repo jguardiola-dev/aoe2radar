@@ -72,6 +72,18 @@ class LiveNowPresenterTest {
         @Override public void enUi(Runnable trabajo) { trabajo.run(); }
     }
 
+    /** Guarda el nombre de hilo con el que se llamó enFondo/enFondoDemonio, sin ejecutar el trabajo demonio (así
+     *  pedirClanes() no llega a tocar ConsultasLadder de verdad): para comprobar que un hilo movido a un
+     *  presentador conserva su nombre (DEUDA, fila 124). */
+    static final class TareasQueGuardaNombre implements Tareas {
+        String ultimoNombreFondo, ultimoNombreDemonio;
+        Runnable trabajoDemonioPendiente;
+        @Override public void enFondo(String nombre, Runnable trabajo) { ultimoNombreFondo = nombre; trabajo.run(); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { ultimoNombreDemonio = nombre; trabajoDemonioPendiente = trabajo; }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { trabajo.run(); }
+    }
+
     static Object[] ficha(long pid, String nombre, int rating, int rango, String pais) { return new Object[]{ pid, nombre, rating, rango, pais }; }
 
     static Match matchEnCurso(long id, long pid) {
@@ -246,6 +258,38 @@ class LiveNowPresenterTest {
         parar.set(true);
         escritor.join(1000);
         assertNull(error.get(), () -> "ficha() debe leer bajo el mismo candado que topSnapshot/conTop: " + error.get());
+    }
+
+    // ----- pedirResultado / pedirClanes: hilos movidos desde LiveNowView (DEUDA, fila 124) ------
+
+    @Test void pedirResultado_consultaLaApiConElCsvDeUnSoloPidYActualizaWonAntesDeAvisar() {
+        TareasQueGuardaNombre tareas = new TareasQueGuardaNombre();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla);
+        Match m = matchTerminado(9501L, 501L);
+        Match conResultado = matchTerminado(9501L, 501L);
+        conResultado.players.get(0).won = true;
+        buscador.resultado = List.of(conResultado);
+        boolean[] avisado = { false };
+        p.pedirResultado(m, () -> avisado[0] = true);
+        assertEquals("resultado", tareas.ultimoNombreFondo, "el hilo conserva su nombre de antes (log y volcados de hilos)");
+        assertEquals(List.of("501"), buscador.csvsPedidos, "mismo CSV que LiveService.partidas(pid0, 1, 5)");
+        assertEquals(Boolean.TRUE, m.players.get(0).won, "el won de la partida original queda actualizado");
+        assertTrue(avisado[0], "el callback se llama al terminar, en el EDT (tareas.enUi)");
+    }
+
+    @Test void pedirResultado_siLaApiFallaNoRompeYAunAsiAvisa() {
+        buscador.falla = new RuntimeException("sin red");
+        boolean[] avisado = { false };
+        presenter.pedirResultado(matchTerminado(9502L, 502L), () -> avisado[0] = true);
+        assertTrue(avisado[0]);
+    }
+
+    @Test void pedirClanes_lanzaUnHiloDemonioLlamadoClanes() {
+        TareasQueGuardaNombre tareas = new TareasQueGuardaNombre();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla);
+        p.pedirClanes();
+        assertEquals("clanes", tareas.ultimoNombreDemonio);
+        assertNotNull(tareas.trabajoDemonioPendiente);
     }
 
     // ----- EstadoVivo inyectado, no el singleton global (DEUDA, fila 125) -----------------
