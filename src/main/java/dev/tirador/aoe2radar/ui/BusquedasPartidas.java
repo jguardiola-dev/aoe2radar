@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static dev.tirador.aoe2radar.service.AzarService.ajustarRefAzar;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -142,20 +141,11 @@ final class BusquedasPartidas {
                         vista.anfitrion.estado(PartidasPresenter.mensajeAzarNada(lo, hi, hours));
                         return;
                     }
-                    List<Player> refs = new ArrayList<>();
-                    Set<Long> refIds = new HashSet<>();
-                    for (Match m : res) {
-                        m.azar = true;
-                        ajustarRefAzar(m, civSel);
-                        if (refIds.add(m.refId)) {
-                            String nom = vista.texto.refNombre(m);
-                            refs.add(new Player(m.refId, nom, "", 0));
-                        }
-                    }
+                    PartidasPresenter.SujetosAzar sujetos = PartidasPresenter.sujetosAzar(res, civSel, vista.texto::refNombre);
                     PartidasView.SUJETOS.clear();
-                    PartidasView.SUJETOS.addAll(refIds);
+                    PartidasView.SUJETOS.addAll(sujetos.refIds());
                     vista.vistaDeSujetos = vista.enlaceWatchlist.vistaActualId();
-                    vista.refrescarSujetos(refs, false);
+                    vista.refrescarSujetos(sujetos.refs(), false);
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.enlaceWatchlist.limpiarSeleccion();
@@ -346,21 +336,13 @@ final class BusquedasPartidas {
                     final int fallosFetch = r.fallos();
                     final Set<Long> exitosos = r.exitosos();
                     vista.anfitrion.aprenderCatalogos(res);
-                    List<Long> idsTracked = new ArrayList<>();
-                    for (Player pl : tracked) idsTracked.add(pl.id());
-                    BarridoVivos.DecisionBuscar dec = vista.barridoVivos.decidirVivos(res, idsTracked, exitosos);
-                    for (Player pl : tracked) {
-                        Long v = dec.vivos().get(pl.id());
-                        if (v != null) { EstadoVivo.SISTEMA.marcarJugando(pl.id(), v, dec.infos().get(pl.id())); }
-                        else if (dec.fuera().contains(pl.id())) { EstadoVivo.SISTEMA.marcarFuera(pl.id()); }
-                    }
+                    BarridoVivos.DecisionBuscar dec = vista.barridoVivos.decidirVivos(res, PartidasPresenter.ids(tracked), exitosos);
+                    PartidasPresenter.aplicarVivos(dec, tracked, EstadoVivo.SISTEMA);
                     vista.enlaceWatchlist.actualizarIndicadoresVivos();
                     // Una descarga pudo seguir mientras se buscaba (F7): la misma partida vuelve como OTRO Match, y
                     // su estado («descargando…», «✓ guardada»…) se conserva por id de partida. enDisco/enJuego los
                     // vuelve a mirar applyFilters (y otra vez la descarga al acabar).
-                    java.util.Map<Long, String> estados = new java.util.HashMap<>();
-                    for (Match viejo : vista.all) if (!viejo.estado.isBlank()) estados.put(viejo.id, viejo.estado);
-                    for (Match nuevo : res) { String e = estados.get(nuevo.id); if (e != null && nuevo.estado.isBlank()) nuevo.estado = e; }
+                    PartidasPresenter.conservarEstados(vista.all, res);
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.refreshModeCombo();

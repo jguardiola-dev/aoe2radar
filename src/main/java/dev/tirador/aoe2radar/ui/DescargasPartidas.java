@@ -11,7 +11,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Consumer;
@@ -244,9 +243,9 @@ final class DescargasPartidas {
         final Runnable alTerminar = alTerminarDescarga;
         descargaSinCambiarVista = false;
         alTerminarDescarga = null;
-        List<Match> objetivo = new ArrayList<>();
-        List<Match> vivas = new ArrayList<>();
-        for (Match m : objetivoIn) (m.finished == null ? vivas : objetivo).add(m);
+        PartidasPresenter.Separadas separadas = PartidasPresenter.separarVivas(objetivoIn);
+        List<Match> objetivo = separadas.terminadas();
+        List<Match> vivas = separadas.vivas();
         if (!vivas.isEmpty() && objetivo.isEmpty()) {
             if (vivas.size() == 1) vista.anfitrion.espectarPartida(vivas.get(0).id);
             else vista.anfitrion.estado(t("Esas partidas están EN DIRECTO: doble clic en una para espectarla.",
@@ -261,8 +260,7 @@ final class DescargasPartidas {
         vista.dlSel.setEnabled(false); vista.dlAll.setEnabled(false);
         vista.anfitrion.trabajando(true);
         final long miSerial = vista.anfitrion.operacionActual();
-        Set<Long> trackedIds = new HashSet<>();
-        for (int i = 0; i < vista.enlaceWatchlist.totalJugadores(); i++) trackedIds.add(vista.enlaceWatchlist.jugador(i).id());
+        Set<Long> trackedIds = PartidasPresenter.idsDeLaLista(vista.enlaceWatchlist);
         final boolean autoCopiar = vista.anfitrion.autoCopiarAlDescargar();
         final boolean autoCopiarFinal = autoCopiar || enviarSiempre;
         Path sgResuelta = null;

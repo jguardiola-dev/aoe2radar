@@ -3,6 +3,8 @@ package dev.tirador.aoe2radar.ui;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.service.BarridoVivos;
+import dev.tirador.aoe2radar.service.EstadoVivo;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -15,8 +17,10 @@ import java.util.TreeMap;
 import java.util.TreeSet;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Predicate;
 
+import static dev.tirador.aoe2radar.service.AzarService.ajustarRefAzar;
 import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
@@ -319,6 +323,72 @@ public final class PartidasPresenter {
                 + guardadas + "/" + total + t(" recs guardadas en ", " recs saved to ") + carpeta
                 + (alJuego > 0 ? "  ·  " + alJuego + t(" al juego", " to the game") : "")
                 + (guardadas < total ? t("  ·  detalle en descargas.log", "  ·  details in descargas.log") : "");
+    }
+
+    // ======================================================================
+    // Lo que se hace con los resultados: azar, buscar y descargar
+    // ======================================================================
+
+    /** Los sujetos de una tirada de «Al azar por ELO»: el titular de cada partida (sin repetir, en el orden de las
+     *  partidas) y sus ids, para la cabecera «Partidas de:» y la negrita de la tabla. */
+    public record SujetosAzar(List<Player> refs, Set<Long> refIds) { }
+
+    /** Marca cada partida como del azar, le fija el titular (AzarService.ajustarRefAzar: con filtro de civ, quien la
+     *  jugó) y reúne los titulares, cada uno una vez, con el nombre que enseña la columna «Jugador». */
+    public static SujetosAzar sujetosAzar(List<Match> res, String civSel, Function<Match, String> refNombre) {
+        List<Player> refs = new ArrayList<>();
+        Set<Long> refIds = new HashSet<>();
+        for (Match m : res) {
+            m.azar = true;
+            ajustarRefAzar(m, civSel);
+            if (refIds.add(m.refId)) {
+                String nom = refNombre.apply(m);
+                refs.add(new Player(m.refId, nom, "", 0));
+            }
+        }
+        return new SujetosAzar(refs, refIds);
+    }
+
+    /** Los ids de unos jugadores, en el mismo orden. */
+    public static List<Long> ids(List<Player> jugadores) {
+        List<Long> ids = new ArrayList<>();
+        for (Player pl : jugadores) ids.add(pl.id());
+        return ids;
+    }
+
+    /** Los ids de toda la lista de la watchlist (lo que la descarga manda a RecService como «seguidos»). */
+    public static Set<Long> idsDeLaLista(Watchlist watchlist) {
+        Set<Long> ids = new HashSet<>();
+        for (int i = 0; i < watchlist.totalJugadores(); i++) ids.add(watchlist.jugador(i).id());
+        return ids;
+    }
+
+    /** Tras «Buscar partidas»: cada buscado que BarridoVivos da por jugando pasa a jugando (con su partida y su
+     *  texto) y el que da por fuera, a fuera; del resto no se sabe nada nuevo y no se toca. */
+    public static void aplicarVivos(BarridoVivos.DecisionBuscar dec, List<Player> tracked, EstadoVivo estado) {
+        for (Player pl : tracked) {
+            Long v = dec.vivos().get(pl.id());
+            if (v != null) { estado.marcarJugando(pl.id(), v, dec.infos().get(pl.id())); }
+            else if (dec.fuera().contains(pl.id())) { estado.marcarFuera(pl.id()); }
+        }
+    }
+
+    /** Una búsqueda que vuelve con partidas ya en la tabla trae OTROS Match de las mismas partidas: cada uno sin
+     *  estado toma el que tenía la fila vieja («descargando…», «✓ guardada»…), por id de partida. */
+    public static void conservarEstados(List<Match> viejos, List<Match> nuevos) {
+        Map<Long, String> estados = new java.util.HashMap<>();
+        for (Match viejo : viejos) if (!viejo.estado.isBlank()) estados.put(viejo.id, viejo.estado);
+        for (Match nuevo : nuevos) { String e = estados.get(nuevo.id); if (e != null && nuevo.estado.isBlank()) nuevo.estado = e; }
+    }
+
+    /** Lo que se pidió descargar, repartido: las terminadas (se descargan) y las que siguen en directo (no). */
+    public record Separadas(List<Match> terminadas, List<Match> vivas) { }
+
+    public static Separadas separarVivas(List<Match> pedidas) {
+        List<Match> terminadas = new ArrayList<>();
+        List<Match> vivas = new ArrayList<>();
+        for (Match m : pedidas) (m.finished == null ? vivas : terminadas).add(m);
+        return new Separadas(terminadas, vivas);
     }
 
     /** Al acabar «Enviar al juego»: cuántas se copiaron y cuántas ya estaban (se actualizan). */

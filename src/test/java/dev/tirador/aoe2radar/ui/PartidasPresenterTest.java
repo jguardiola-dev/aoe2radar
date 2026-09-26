@@ -399,4 +399,61 @@ class PartidasPresenterTest {
         IDIOMA = "en";
         assertEquals("2 recs sent to the game (1 were already there, refreshed).", PartidasPresenter.mensajeEnvio(2, 1));
     }
+
+    // ----- lo que se hace con los resultados -----
+
+    @Test void sujetosAzar_titularesSinRepetirEnOrdenYConFiltroDeCiv() {
+        Match a = partida(1, mp(10, "Uno", 1, 1850), mp(11, "Dos", 2, 1880));
+        Match b = partida(2, mp(12, "Tres", 1, 1800), mp(11, "Dos", 2, 1890));
+        Match c = partida(3, mp(13, "Cuatro", 1, 1870), mp(14, "Cinco", 2, 1820));
+        c.players.get(1).civ = "Franks";
+        PartidasPresenter.SujetosAzar s = PartidasPresenter.sujetosAzar(List.of(a, b, c), null, m -> "n" + m.refId);
+        assertEquals(List.of(new Player(11, "n11", "", 0), new Player(13, "n13", "", 0)), s.refs());
+        assertEquals(Set.of(11L, 13L), s.refIds());
+        assertTrue(a.azar && b.azar && c.azar);
+        s = PartidasPresenter.sujetosAzar(List.of(c), "franks", m -> "n" + m.refId);
+        assertEquals(14, c.refId, "con civ: quien la jugó, aunque tenga menos ELO");
+        assertEquals(List.of(new Player(14, "n14", "", 0)), s.refs());
+    }
+
+    @Test void ids_yIdsDeLaLista() {
+        assertEquals(List.of(3L, 1L, 2L), PartidasPresenter.ids(List.of(new Player(3, "c", "G"), new Player(1, "a", "G"), new Player(2, "b", "G"))));
+        WatchlistFalsa w = new WatchlistFalsa();
+        w.jugadores.addAll(List.of(new Player(5, "e", "G"), new Player(6, "f", "G")));
+        w.seleccion.add(new Player(7, "g", "G"));
+        assertEquals(Set.of(5L, 6L), PartidasPresenter.idsDeLaLista(w), "la lista, no la selección");
+    }
+
+    @Test void aplicarVivos_jugandoFueraYElRestoSinTocar() {
+        dev.tirador.aoe2radar.service.EstadoVivo e = new dev.tirador.aoe2radar.service.EstadoVivo(new dev.tirador.aoe2radar.util.RelojFalso());
+        e.marcarJugando(2, 70);
+        e.marcarJugando(3, 71);
+        e.marcarJugando(4, 72);
+        dev.tirador.aoe2radar.service.BarridoVivos.DecisionBuscar dec = new dev.tirador.aoe2radar.service.BarridoVivos.DecisionBuscar(
+                Map.of(1L, 55L), Map.of(1L, "en Arabia"), Set.of(3L, 4L));
+        PartidasPresenter.aplicarVivos(dec, List.of(new Player(1, "a", "G"), new Player(2, "b", "G"), new Player(3, "c", "G")), e);
+        assertTrue(e.jugando(1), "el que da por jugando");
+        assertEquals(55L, e.matchDe(1));
+        assertEquals("en Arabia", e.info(1));
+        assertTrue(e.jugando(2), "sin noticias: como estaba");
+        assertFalse(e.jugando(3), "el que da por fuera");
+        assertTrue(e.jugando(4), "fuera de los buscados: no se toca");
+    }
+
+    @Test void conservarEstados_porIdYSoloSiLaNuevaNoTiene() {
+        Match v1 = partida(1), v2 = partida(2), v3 = partida(3);
+        v1.estado = "descargando…"; v2.estado = " "; v3.estado = "✓ guardada";
+        Match n1 = partida(1), n2 = partida(2), n3 = partida(3), n4 = partida(4);
+        n3.estado = "✗ no disponible";
+        PartidasPresenter.conservarEstados(List.of(v1, v2, v3), List.of(n1, n2, n3, n4));
+        assertEquals(List.of("descargando…", "", "✗ no disponible", ""), List.of(n1.estado, n2.estado, n3.estado, n4.estado));
+    }
+
+    @Test void separarVivas_enOrden() {
+        Match a = partida(1), b = partida(2), c = partida(3);
+        b.finished = null;
+        PartidasPresenter.Separadas s = PartidasPresenter.separarVivas(List.of(a, b, c));
+        assertEquals(List.of(a, c), s.terminadas());
+        assertEquals(List.of(b), s.vivas());
+    }
 }
