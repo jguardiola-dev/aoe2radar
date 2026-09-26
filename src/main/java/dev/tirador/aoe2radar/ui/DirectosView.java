@@ -124,13 +124,14 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         vigilarTwitch();   // refresco de cortesía al abrir
     }
 
-    /** Cruza el listado global de Twitch con la watchlist visible (botón «Refrescar», F5, el río del top…). */
+    /** Cruza el listado global de Twitch con la watchlist visible, respetando el ritmo de 170 s (al abrir, el río del top…). */
     public void vigilarTwitch() { presenter.vigilarTwitch(anfitrion::visibles); }
 
     /** El conjunto de jugadores vigilado cambió (nuevo top/país/clan): su barrido de Twitch se hace en el acto. */
     public void reiniciarThrottle() { presenter.reiniciarThrottle(); }
 
-    /** F5: fuerza el barrido saltándose el throttle, igual que la 1.1. */
+    /** F5 y el botón «Refrescar»: fuerzan el barrido saltándose el throttle (el botón, desde la 1.3: antes se
+     *  ignoraba en silencio si el último barrido tenía menos de 170 s). */
     public void refrescarForzado() { presenter.reiniciarThrottle(); vigilarTwitch(); }
 
     // ===== Construcción del panel =========================================================
@@ -199,7 +200,7 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         });
         arriba.add(idiomaDirCombo);
         JButton refrescarDir = new JButton(t("Refrescar", "Refresh"));
-        refrescarDir.addActionListener(e -> vigilarTwitch());
+        refrescarDir.addActionListener(e -> refrescarForzado());   // como F5: el botón no respeta el ritmo de 170 s (sí el freno global y el anti-solape)
         arriba.add(refrescarDir);
         JLabel ayudaDir = new JLabel(t("Clic en el nombre de un canal = abrir su directo en Twitch.",
                 "Click a channel name to open its Twitch stream."));
