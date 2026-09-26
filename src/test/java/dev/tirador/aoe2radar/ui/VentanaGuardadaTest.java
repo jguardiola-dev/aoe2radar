@@ -140,6 +140,26 @@ class VentanaGuardadaTest {
     }
 
     @Test
+    void cerrarMinimizadaNoPisaLaPosicionGuardada() throws Exception {
+        // F11 (revisión 1.3): el cierre (p. ej. «Cerrar ventana» desde la barra de tareas) sigue la misma regla que el
+        // guardado al cambiar: minimizada, se conserva la última posición buena.
+        Files.writeString(CONFIG_FILE, "ventana=100,120,900,600\n");
+        SwingUtilities.invokeAndWait(() -> {
+            JFrame f = new JFrame();
+            try {
+                f.setBounds(-32000, -32000, 160, 28);
+                f.setExtendedState(JFrame.ICONIFIED);
+                VentanaGuardada.guardar(f, null);
+            } finally {
+                f.dispose();
+            }
+        });
+        Properties p = leerConfigDeDisco();
+        assertEquals("100,120,900,600", p.getProperty("ventana"));
+        assertEquals("false", p.getProperty("ventana_max"));
+    }
+
+    @Test
     void moverElDivisorTambienProgramaElGuardado() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             JFrame f = new JFrame();

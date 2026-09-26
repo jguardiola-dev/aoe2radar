@@ -100,14 +100,15 @@ public final class VentanaGuardada {
     }
 
     /** Las claves que escribe {@link #guardar}, en el mismo orden: divisor (si hay split), ventana_max y, si no está
-     *  maximizada, ventana. Se leen del JFrame, así que hay que llamarla en el EDT. */
+     *  maximizada ni minimizada, ventana (minimizada, Windows puede dar una posición fuera de pantalla: se conserva la
+     *  última buena, igual en el cierre que en el guardado al cambiar). Se leen del JFrame: hay que llamarla en el EDT. */
     static Map<String, String> geometria(JFrame ventana, JSplitPane splitPrincipal) {
         Map<String, String> out = new LinkedHashMap<>();
         if (splitPrincipal != null)
             out.put("divisor", String.valueOf(splitPrincipal.getDividerLocation()));
         boolean max = (ventana.getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
         out.put("ventana_max", String.valueOf(max));
-        if (!max) {
+        if (!max && (ventana.getExtendedState() & JFrame.ICONIFIED) == 0) {
             Rectangle b = ventana.getBounds();
             out.put("ventana", b.x + "," + b.y + "," + b.width + "," + b.height);
         }
@@ -132,7 +133,7 @@ public final class VentanaGuardada {
     }
 
     /** Lee la geometría en el EDT y la escribe en un hilo aparte (disco fuera del EDT). Minimizada no guarda nada:
-     *  Windows la lleva a -32000,-32000 y se perdería la posición buena. */
+     *  Windows puede llevarla a -32000,-32000 y se perdería la posición buena. */
     static void guardarEnSegundoPlano(JFrame ventana, JSplitPane splitPrincipal) {
         if ((ventana.getExtendedState() & JFrame.ICONIFIED) != 0) return;
         Map<String, String> valores = geometria(ventana, splitPrincipal);
