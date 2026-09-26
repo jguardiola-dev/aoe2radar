@@ -119,12 +119,14 @@ public final class ListaSeguidos {
         guardarConfig.accept("grupos", String.join(",", gs));
     }
 
-    /** Renombra el grupo en los jugadores y en la config. No toca disco (players.txt): eso lo hace quien llama. */
+    /** Renombra el grupo en los jugadores y en la config, conservando el vínculo de familia de cada uno (misma
+     *  regla que moverJugador, decisión 5; antes de la 1.3 renombrar deshacía las familias del grupo). No toca
+     *  disco (players.txt): eso lo hace quien llama. */
     public void renombrarGrupo(List<Player> jugadores, String viejo, String nuevo) {
         for (int i = 0; i < jugadores.size(); i++) {
             Player p = jugadores.get(i);
             if (p.grupo().equalsIgnoreCase(viejo))
-                jugadores.set(i, new Player(p.id(), p.name(), nuevo));
+                jugadores.set(i, new Player(p.id(), p.name(), nuevo, p.vinculo()));
         }
         Set<String> gs = gruposConfig();
         gs.removeIf(g -> g.equalsIgnoreCase(viejo));
@@ -138,7 +140,7 @@ public final class ListaSeguidos {
         for (int i = 0; i < jugadores.size(); i++) {
             Player p = jugadores.get(i);
             if (p.grupo().equalsIgnoreCase(g))
-                jugadores.set(i, new Player(p.id(), p.name(), grupoGeneral));
+                jugadores.set(i, new Player(p.id(), p.name(), grupoGeneral, p.vinculo()));   // conserva el vínculo (F2 de la 1.3)
         }
         Set<String> gs = gruposConfig();
         gs.removeIf(x -> x.equalsIgnoreCase(g));

@@ -247,6 +247,31 @@ class ListaSeguidosTest {
         assertEquals("Todos", cfg.get("grupo_activo"));
     }
 
+    /** F2 de la revisión 1.3: renombrar o borrar un grupo deshacía las familias (Player de 3 argumentos, vínculo 0). */
+    @Test void renombrarGrupo_conservaElVinculoDeFamilia() {
+        List<Player> jugadores = new ArrayList<>(List.of(
+                new Player(1L, "Ana", "Amigos", 7L),
+                new Player(2L, "Ana2", "Amigos", 7L)
+        ));
+
+        svc.renombrarGrupo(jugadores, "Amigos", "Colegas");
+
+        assertEquals(new Player(1L, "Ana", "Colegas", 7L), jugadores.get(0));
+        assertEquals(new Player(2L, "Ana2", "Colegas", 7L), jugadores.get(1));
+    }
+
+    @Test void borrarGrupo_conservaElVinculoDeFamilia() {
+        List<Player> jugadores = new ArrayList<>(List.of(
+                new Player(1L, "Ana", "Amigos", 7L),
+                new Player(2L, "Ana2", "Amigos", 7L)
+        ));
+
+        svc.borrarGrupo(jugadores, "Amigos");
+
+        assertEquals(new Player(1L, "Ana", GENERAL, 7L), jugadores.get(0));
+        assertEquals(new Player(2L, "Ana2", GENERAL, 7L), jugadores.get(1));
+    }
+
     // ----- Altas, bajas y movimientos --------------------------------------------------------------
 
     @Test void ficharDesdeTop_anadeSiNoEstaba() {
