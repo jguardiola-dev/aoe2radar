@@ -1,109 +1,111 @@
-# aoe2radar — README técnico
+# aoe2radar — technical README
 
-## Qué es
-App de escritorio Windows para Age of Empires II DE: recs (grabaciones de partidas) sin spoilers, Live now, perfiles,
-ratings, civ stats y tech tree. Java 21 + Swing + FlatLaf. Los datos vienen de la API de aoe2companion
-(REST + websocket) y de aoe2techtree; el repo `sfr-data` precalcula resúmenes nocturnos y perfiles.
+## What it is
+A Windows desktop app for Age of Empires II DE: spoiler-free recs (recorded games), Live now, profiles,
+ratings, civ stats and tech tree. Java 21 + Swing + FlatLaf. Data comes from the aoe2companion API
+(REST + websocket) and from aoe2techtree; the `sfr-data` repo precomputes nightly summaries and profiles.
 
-Está en migración de un único archivo (`SpoilerFreeRecs.java`, ~13.900 líneas) a paquetes con
-responsabilidad propia. El plan completo, con fases y criterios de cierre, vive en
+It is being migrated from a single file (`SpoilerFreeRecs.java`, ~13,900 lines) to packages that each have
+their own responsibility. The full plan, with phases and closing criteria, lives in
 [docs/ARQUITECTURA.md](ARQUITECTURA.md).
 
-## Requisitos
-- JDK 21 (con `jpackage`; lo trae cualquier JDK 21 completo, no un JRE).
-- Maven 3.9+ (`mvn -version` para comprobarlo).
-- Windows: la app y el harness de capturas están pensados para Windows (Swing + rutas del registro).
+## Requirements
+- JDK 21 (with `jpackage`; any full JDK 21 includes it, a JRE does not).
+- Maven 3.9+ (check with `mvn -version`).
+- Windows: the app and the screenshot harness are designed for Windows (Swing + registry paths).
 
-## Compilar
+## Build
 ```
 mvn -q -DskipTests compile
 ```
-Compila sin tests, para comprobar rápido que todo encaja. El jar completo:
+Compiles without tests, as a quick check that everything fits together. The full jar:
 ```
 mvn -q -DskipTests package
 ```
 
 ## Tests
-Dos maneras de pasar la batería, según cuánto tiempo tengas y si puedes ceder la pantalla:
+Two ways to run the test suite, depending on how much time you have and whether you can give up the screen:
 
-| Comando | Qué hace | Cuándo usarlo |
+| Command | What it does | When to use it |
 |---|---|---|
-| `.\verificar.ps1 -Rapido` | Compila, la regla de capas (`tools\capas.py`) y todos los tests salvo el harness de capturas. Sin pantalla. | Mientras iteras, antes de cada commit pequeño. |
-| `.\verificar.ps1` | Lo mismo + el harness completo (`RegresionCapturas`): abre la app y compara sus 29 capturas píxel a píxel. Avisa con pitido y una ventanita antes de empezar y al acabar: no toques el ratón en el monitor principal mientras corre (~1 min). | Al cerrar un grupo de 2-3 commits, y siempre antes de cambiar de paquete o de fase. |
+| `.\verificar.ps1 -Rapido` | Compiles, runs the layer rule (`tools\capas.py`) and all tests except the screenshot harness. No screen needed. | While iterating, before each small commit. |
+| `.\verificar.ps1` | The same + the full harness (`RegresionCapturas`): opens the app and compares its 29 screenshots pixel by pixel. It beeps and shows a small window before starting and when it ends: don't touch the mouse on the main monitor while it runs (~1 min). | When closing a group of 2-3 commits, and always before moving to another package or phase. |
 
-Si el harness sale rojo, no se ajusta la captura: es un bug y se investiga (docs/ARQUITECTURA.md, «Reglas de desarrollo»). Antes de cada
-foto, `asegurarTamanoRaiz` mide el tamaño real de la ventana (JRootPane) en esta máquina y lo usa como
-referencia (no una constante fija): si no coincide (p. ej. el marco de Windows cambia unos píxeles), reajusta y
-reintenta una vez antes de fallar de verdad. Si la primera foto sale negra, `AvisoHarness.logonUiActivo` mira
-si la pantalla de bloqueo de Windows (`LogonUI.exe`) está entre los procesos, solo para hacer el mensaje de
-error más claro; nunca decide ella sola que la sesión está bloqueada.
+If the harness goes red, the screenshot is not adjusted: it is a bug and it gets investigated
+(docs/ARQUITECTURA.md, "Development rules (Reglas de desarrollo)"). Before each screenshot,
+`asegurarTamanoRaiz` measures the real size of the window (JRootPane) on this machine and uses it as the
+reference (not a fixed constant): if it does not match (e.g. the Windows frame changes by a few pixels), it
+resizes and retries once before really failing. If the first screenshot comes out black,
+`AvisoHarness.logonUiActivo` checks whether the Windows lock screen (`LogonUI.exe`) is among the running
+processes, only to make the error message clearer; it never decides on its own that the session is locked.
 
-## Empaquetar (perfil Maven `empaquetar`)
-El build normal (`mvn test`, `mvn package`) no genera el `.exe`: eso vive en un perfil aparte que **no se
-activa solo**, para no tocar ni ralentizar el día a día.
+## Packaging (Maven profile `empaquetar`)
+The normal build (`mvn test`, `mvn package`) does not produce the `.exe`: that lives in a separate profile
+that is **not activated automatically**, so it does not affect or slow down day-to-day work.
 
 ```
 mvn -Pempaquetar -DskipTests package
 ```
 
-Qué hace, en orden (todo dentro de `target/`, que ya está en `.gitignore`, para que `mvn clean` también
-limpie el empaquetado):
-1. Copia las dependencias de runtime (FlatLaf) a `target/jpackage-input`.
-2. Copia ahí el jar de la app, ya construido por `maven-jar-plugin`.
-3. Genera `target/logo.ico` (multi-tamaño) llamando a `dev.tirador.aoe2radar.SpoilerFreeRecs --make-ico`,
-   el mismo mecanismo que usaba `crear_exe.bat` en la 1.1 (ver la nota en el propio `pom.xml`: ese script no
-   está en el repo ni en el histórico de Git; sus parámetros están deducidos del código — nombre y versión de
-   `util.Identidad`, clase principal del manifest, `--make-ico` documentado en `AcercaDe.generarIco()`).
-4. Llama a `jpackage` del JDK con `--type app-image`: una carpeta `target/dist/aoe2radar/` con
-   `aoe2radar.exe`, su runtime propio (jlink implícito, sin instalar nada aparte) y los jars en `app/`. No
-   hace falta WiX Toolset porque no se genera instalador, solo la carpeta de la app.
+What it does, in order (everything inside `target/`, which is already in `.gitignore`, so `mvn clean` also
+cleans the packaging):
+1. Copies the runtime dependencies (FlatLaf) to `target/jpackage-input`.
+2. Copies the app jar there, already built by `maven-jar-plugin`.
+3. Generates `target/logo.ico` (multi-size) by calling `dev.tirador.aoe2radar.SpoilerFreeRecs --make-ico`,
+   the same mechanism `crear_exe.bat` used in 1.1 (see the note in `pom.xml` itself: that script is not in
+   the repo or in the Git history; its parameters are deduced from the code — name and version from
+   `util.Identidad`, main class from the manifest, `--make-ico` documented in `AcercaDe.generarIco()`).
+4. Calls the JDK's `jpackage` with `--type app-image`: a `target/dist/aoe2radar/` folder with
+   `aoe2radar.exe`, its own runtime (implicit jlink, nothing to install separately) and the jars in `app/`.
+   WiX Toolset is not needed because no installer is generated, only the app folder.
 
-La versión del `.exe` (`jpackage.appVersion` en el perfil) se sincroniza a mano con
-`util.Identidad.VERSION` hasta que la fase 4 lo automatice.
+The `.exe` version (`jpackage.appVersion` in the profile) is kept in sync by hand with
+`util.Identidad.VERSION` until phase 4 automates it.
 
-## Arquitectura en capas
-Tabla resumida; el detalle de qué conoce cada capa y los contratos clave está en
-[docs/ARQUITECTURA.md](ARQUITECTURA.md#capas-de-dentro-hacia-fuera).
+## Layered architecture
+Summary table; the details of what each layer knows and the key contracts are in
+[docs/ARQUITECTURA.md](ARQUITECTURA.md#layers-inside-out).
 
-| Paquete | Qué vive ahí |
+| Package | What lives there |
 |---|---|
-| `model` | Datos puros (`Match`, `Player`, `Forma`…). Sin Swing, sin red. |
-| `util` | `Json`, `t()` (i18n), formatos, `Log`, `Identidad`, `Config`, `Reloj`, `Archivos` (escritura atómica). |
-| `api` | Cliente del companion: REST + websocket. Solo transporte y parseo. |
-| `sfrdata` | Cliente de `sfr-data` (shards, elo, muestra, civstats, ladder), con caché en disco. |
-| `techtree` | Datos de aoe2techtree, con caché en disco y ETag. |
-| `cache` | `CacheService`: cachés en memoria y disco con TTL, una sola implementación. |
-| `service` | Reglas de negocio: `ProfileService`, `LiveService`, `FormService`, `RecService`, `WatchlistService`, `RatingsService`, `Throttle`, `ControlService`… |
-| `ui` | Una vista por pestaña (`…View`) y su presentador (`…Presenter`). Las vistas no llaman a la red. |
-| `app` | `Main` (arranque real: `--make-ico`, catálogos, idioma, tema, ventana en el EDT) y `Servicios` (raíz de composición: crea y conecta, en un orden fijo, los servicios que hablan con el companion). |
-| (paquete raíz) | `SpoilerFreeRecs` es la ventana (`JFrame`): declara los campos que comparten las vistas y llama al cableado en orden desde el constructor; hoy menos de 300 líneas. Las clases `Cableado*`/`AccionesVentana` (mismo paquete, para leer esos campos sin volverlos `public`) hacen la composición (qué vista con qué servicio) y las acciones de «abrir algo» (URL, Twitch, espectar, CaptureAge). |
+| `model` | Plain data (`Match`, `Player`, `Forma`…). No Swing, no network. |
+| `util` | `Json`, `t()` (i18n), formats, `Log`, `Identidad`, `Config`, `Reloj`, `Archivos` (atomic write). |
+| `api` | Companion client: REST + websocket. Transport and parsing only. |
+| `sfrdata` | `sfr-data` client (shards, elo, muestra, civstats, ladder), with a disk cache. |
+| `techtree` | aoe2techtree data, with a disk cache and ETag. |
+| `cache` | `CacheService`: in-memory and disk caches with TTL, one single implementation. |
+| `service` | Business rules: `ProfileService`, `LiveService`, `FormService`, `RecService`, `WatchlistService`, `RatingsService`, `Throttle`, `ControlService`… |
+| `ui` | One view per tab (`…View`) and its presenter (`…Presenter`). Views do not call the network. |
+| `app` | `Main` (the real startup: `--make-ico`, catalogs, language, theme, window on the EDT) and `Servicios` (composition root: creates and connects, in a fixed order, the services that talk to the companion). |
+| (root package) | `SpoilerFreeRecs` is the window (`JFrame`): it declares the fields the views share and calls the wiring in order from the constructor; today under 300 lines. The `Cableado*`/`AccionesVentana` classes (same package, so they can read those fields without making them `public`) do the composition (which view with which service) and the "open something" actions (URL, Twitch, spectate, CaptureAge). |
 
-Regla de dependencia: cada capa solo conoce las de más adentro (`ui` conoce `service` y `model`, nunca al
-revés). Se comprueba en cada `verificar.ps1` con `tools/capas.py`, que falla si aparece una flecha hacia
-fuera.
+Dependency rule: each layer only knows the ones further in (`ui` knows `service` and `model`, never the
+other way round). It is checked on every `verificar.ps1` run by `tools/capas.py`, which fails if an arrow
+points outwards.
 
-## Cómo se añade una vista nueva (patrón vista + presentador)
-Cada pestaña sale entera de `SpoilerFreeRecs.java` a dos clases en `ui`, con cuatro piezas de contrato entre
-ellas (interfaces pequeñas, una por responsabilidad):
+## How to add a new view (view + presenter pattern)
+Each tab leaves `SpoilerFreeRecs.java` whole and becomes two classes in `ui`, with four contract pieces
+between them (small interfaces, one per responsibility):
 
-- **Presentador** (`…Presenter`): la lógica de la pestaña sin Swing. Recibe los eventos de la vista
-  (`onBuscar`, `onAbrirPerfil`…), llama a los servicios y decide qué pintar.
-- **Pantalla** (interfaz `Presenter.Pantalla`, la implementa la vista): lo que el presentador necesita de la
-  vista — pintar un resultado, mostrar un mensaje de estado, dar el estado actual de un componente. La vista
-  nunca decide lógica, solo pinta lo que le piden.
-- **Anfitrión** (interfaz `View.Anfitrion`, la implementa la ventana principal): lo que la vista necesita de
-  fuera de sí misma (por ejemplo, la selección de otra pestaña). Así la vista no conoce la ventana ni a las
-  demás vistas.
-- **Navegación** (`ui.Navegacion`): cómo una vista pide abrir OTRA vista (“abre el perfil de este jugador”),
-  sin conocerla directamente.
-- **Tareas** (`ui.Tareas`): las dos reglas de hilos de la app, ya explicadas una sola vez. El presentador
-  pide `tareas.enFondo(nombre, trabajo)` para lo lento (red, disco) y `tareas.enUi(trabajo)` para volver al
-  EDT antes de tocar Swing. En los tests se usa `Tareas.EN_LINEA`, que ejecuta todo en el acto, sin hilos.
+- **Presenter** (`…Presenter`): the tab's logic, without Swing. It receives the view's events
+  (`onBuscar`, `onAbrirPerfil`…), calls the services and decides what to paint.
+- **Screen** (interface `Presenter.Pantalla`, implemented by the view): what the presenter needs from the
+  view — paint a result, show a status message, give the current state of a component. The view never
+  decides logic, it only paints what it is asked to.
+- **Host** (interface `View.Anfitrion`, implemented by the main window): what the view needs from outside
+  itself (for example, the selection in another tab). This way the view knows neither the window nor the
+  other views.
+- **Navigation** (`ui.Navegacion`): how a view asks to open ANOTHER view ("open this player's profile")
+  without knowing it directly.
+- **Tasks** (`ui.Tareas`): the app's two threading rules, written down in one place. The presenter calls
+  `tareas.enFondo(nombre, trabajo)` for slow work (network, disk) and `tareas.enUi(trabajo)` to get back to
+  the EDT before touching Swing. Tests use `Tareas.EN_LINEA`, which runs everything immediately, with no
+  threads.
 
-Ejemplo real: `ui/RatingsPresenter.java` + `ui/RatingsView.java` (la pestaña Ratings).
+Real example: `ui/RatingsPresenter.java` + `ui/RatingsView.java` (the Ratings tab).
 
 ```java
-// RatingsPresenter.java — la Pantalla es lo que el presentador le pide a la vista
+// RatingsPresenter.java — Pantalla is what the presenter asks of the view
 public interface Pantalla {
     List<Comparado> comparados();
     void refrescarComparados();
@@ -116,9 +118,9 @@ public void cargar() {
     if (servicio.cargando()) return;
     servicio.cargando(true);
     pantalla.cargaIniciada();
-    tareas.enFondo("ladder-datos", () -> {           // trabajo lento, fuera del EDT
+    tareas.enFondo("ladder-datos", () -> {           // slow work, off the EDT
         String err = servicio.asegurar(false);
-        tareas.enUi(() -> {                           // de vuelta al EDT para pintar
+        tareas.enUi(() -> {                           // back on the EDT to paint
             pantalla.pararProgreso();
             servicio.cargando(false);
             pantalla.cargaTerminada(err);
@@ -128,7 +130,7 @@ public void cargar() {
 ```
 
 ```java
-// RatingsView.java — implementa Pantalla y pide a la ventana lo que necesita vía Anfitrion
+// RatingsView.java — implements Pantalla and asks the window for what it needs via Anfitrion
 public final class RatingsView implements RatingsPresenter.Pantalla {
     public interface Anfitrion {
         List<Player> seleccion();
@@ -136,17 +138,17 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         String nombreVisible(long pid, String nombre);
         // …
     }
-    // los métodos de Pantalla pintan Swing; nunca llaman a un servicio ni deciden lógica
+    // the Pantalla methods paint Swing; they never call a service or decide logic
 }
 ```
 
-Pasos para una vista nueva:
-1. Crear `NuevaView` y `NuevaPresenter` en `ui`, con la interfaz `Pantalla` en el presentador y, si la vista
-   necesita algo de la ventana, `Anfitrion` en la vista.
-2. Mover el código de esa pestaña desde `SpoilerFreeRecs.java` tal cual (sin cambiar lógica) y borrarlo del
-   original: la pestaña sale entera, no queda a medias en los dos sitios.
-3. El presentador solo llama a servicios (`service`) y modelos (`model`); nunca a `javax.swing.*` ni a
-   `java.net.*`. Si necesita hilos, los pide a `Tareas`.
-4. Test de caracterización del presentador con `Tareas.EN_LINEA` y una `Pantalla`/`Anfitrion` de prueba
-   (doble), sin levantar Swing ni red.
-5. `.\verificar.ps1 -Rapido` antes de cada commit; `.\verificar.ps1` completo al cerrar el grupo.
+Steps for a new view:
+1. Create `NuevaView` and `NuevaPresenter` in `ui`, with the `Pantalla` interface in the presenter and, if
+   the view needs something from the window, `Anfitrion` in the view.
+2. Move that tab's code from `SpoilerFreeRecs.java` as is (without changing logic) and delete it from the
+   original: the tab leaves whole, it is never left half in each place.
+3. The presenter only calls services (`service`) and models (`model`); never `javax.swing.*` or
+   `java.net.*`. If it needs threads, it asks `Tareas` for them.
+4. Characterization test of the presenter with `Tareas.EN_LINEA` and a test `Pantalla`/`Anfitrion`
+   (test double), without starting Swing or the network.
+5. `.\verificar.ps1 -Rapido` before each commit; the full `.\verificar.ps1` when closing the group.
