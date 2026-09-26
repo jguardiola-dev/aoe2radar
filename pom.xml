@@ -207,6 +207,47 @@
               </execution>
             </executions>
           </plugin>
+
+          <!-- 5) maven-antrun-plugin: dos tareas que jpackage y crear_exe.bat no cubrían, en los dos extremos
+               del empaquetado. Antes (prepare-package, luego de copiar dependencias): borrar target/dist/aoe2radar
+               si quedó de un empaquetado anterior, porque jpackage (tipo app-image) se niega a escribir sobre un
+               destino que ya existe (fila 148 de DEUDA: sin esto, un segundo empaquetado seguido falla). Después
+               (package, TRAS empaquetar-jpackage: por eso este plugin va el último del perfil, y dentro de la
+               misma fase Maven respeta el orden de los plugins del pom): copiar las banderas también junto al
+               exe, como respaldo (la app ya las lee del jar si esa carpeta no está; ver service/Banderas). -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>borrar-dist-anterior</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${project.build.directory}/dist/aoe2radar" quiet="true" />
+                  </target>
+                </configuration>
+              </execution>
+              <execution>
+                <id>copiar-banderas-al-empaquetado</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <copy todir="${project.build.directory}/dist/aoe2radar/banderas">
+                      <fileset dir="${project.basedir}/src/main/resources/banderas" />
+                    </copy>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
         </plugins>
       </build>
     </profile>
