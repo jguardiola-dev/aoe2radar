@@ -23,7 +23,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
@@ -214,7 +213,7 @@ final class WatchlistDialogos {
                 t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
         if (nombre == null || nombre.isBlank()) return;
         String limpio = WatchlistView.limpiarGrupo(nombre);
-        guardarConfig("grupo_activo", limpio);
+        wv.guardarCfg.accept("grupo_activo", limpio);
         wv.registrarGrupo(limpio);
         wv.grupoCombo.setSelectedItem(limpio);
         wv.aplicarFiltroGrupo();

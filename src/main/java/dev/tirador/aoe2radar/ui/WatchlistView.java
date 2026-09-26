@@ -59,6 +59,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -192,6 +194,13 @@ public final class WatchlistView {
     static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
 
     // ----- propios -----
+    /** config.properties (util.Config en la app). Inyectable para que los tests de grupos usen un mapa en memoria y no
+     *  el fichero real: en Windows, un guardado que falla en silencio (Config traga la IOException del move atómico
+     *  si el fichero está bloqueado un instante) dejaba grupo_activo sin escribir y el test leía «Todos» (el flaky de
+     *  la fila 146 de DEUDA). Pasan por aquí grupo_activo, abrir_en, clanes_guardados y lo de ListaSeguidos; el resto
+     *  de claves (orden, país, clan...) sigue con util.Config directamente, en esta clase y en sus piezas. */
+    final BiFunction<String, String, String> leerCfg;
+    final BiConsumer<String, String> guardarCfg;
     /** Persistencia, grupos y altas/bajas/movimientos de la watchlist: ver service.ListaSeguidos. */
     final ListaSeguidos listaSeguidos;
     final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
@@ -320,6 +329,24 @@ public final class WatchlistView {
                           Map<Long, Integer> eloWatch, Map<Long, Integer> gamesWatch, Map<Long, String[]> twitchLive,
                           Map<Long, String> aliases, JLabel status, JProgressBar progreso, List<Match> all,
                           JPanel sujetosPanel, Path playersFile, Path topCache, long pausaMs, int perPage) {
+        this(ventana, perfiles, busqueda, topLadderService, formaService, campanas, barridoVivos, eloSesion, menus, dialogos,
+                navegacion, tareas, enlacePartidas, anfitrion, todosJugadores, playersModel, playersList, eloWatch, gamesWatch,
+                twitchLive, aliases, status, progreso, all, sujetosPanel, playersFile, topCache, pausaMs, perPage,
+                dev.tirador.aoe2radar.util.Config::leerConfig, dev.tirador.aoe2radar.util.Config::guardarConfig);
+    }
+
+    /** Como el público, con la config inyectada (los tests: un mapa en memoria; ver leerCfg). */
+    WatchlistView(Window ventana, ProfileService perfiles,
+                  dev.tirador.aoe2radar.service.BusquedaPerfiles busqueda, TopLadderService topLadderService,
+                  FormService formaService, Campanas campanas, BarridoVivos barridoVivos, EloSesion eloSesion,
+                  MenusJugador menus, DialogosJugador dialogos, Navegacion navegacion,
+                  Tareas tareas, EnlacePartidas enlacePartidas, Anfitrion anfitrion,
+                  List<Player> todosJugadores, DefaultListModel<Player> playersModel, JList<Player> playersList,
+                  Map<Long, Integer> eloWatch, Map<Long, Integer> gamesWatch, Map<Long, String[]> twitchLive,
+                  Map<Long, String> aliases, JLabel status, JProgressBar progreso, List<Match> all,
+                  JPanel sujetosPanel, Path playersFile, Path topCache, long pausaMs, int perPage,
+                  BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg) {
+        this.leerCfg = leerCfg; this.guardarCfg = guardarCfg;
         this.ventana = ventana; this.perfiles = perfiles; this.busqueda = busqueda; this.topLadderService = topLadderService;
         this.formaService = formaService; this.campanas = campanas; this.barridoVivos = barridoVivos; this.eloSesion = eloSesion;
         this.menus = menus; this.dialogos = dialogos; this.navegacion = navegacion;
@@ -329,7 +356,7 @@ public final class WatchlistView {
         this.status = status; this.progreso = progreso; this.all = all;
         this.sujetosPanel = sujetosPanel;
         this.pausaMs = pausaMs; this.perPage = perPage;
-        this.listaSeguidos = new ListaSeguidos(playersFile, GRUPO_GENERAL, dev.tirador.aoe2radar.util.Config::leerConfig, dev.tirador.aoe2radar.util.Config::guardarConfig);
+        this.listaSeguidos = new ListaSeguidos(playersFile, GRUPO_GENERAL, leerCfg, guardarCfg);
         this.topCache = topCache;
         construirPanel();
     }
@@ -539,7 +566,7 @@ public final class WatchlistView {
 
     // ===== «★ Top clan» =================================================================================
 
-    public List<String> clanesGuardados() { List<String> l = new ArrayList<>(); for (String x : leerConfig("clanes_guardados", "").split(",")) if (!x.isBlank()) l.add(x.trim()); return l; }
+    public List<String> clanesGuardados() { List<String> l = new ArrayList<>(); for (String x : leerCfg.apply("clanes_guardados", "").split(",")) if (!x.isBlank()) l.add(x.trim()); return l; }
     /** El tag de clan escrito ahora mismo en el campo (Top clan); "" si no hay campo o está vacío. */
     public String clanBuscado() { return clanField == null ? "" : clanField.getText().trim(); }
 
@@ -649,7 +676,7 @@ public final class WatchlistView {
     public void rebuildGrupos() {
         var listener = grupoCombo.getActionListeners();
         for (var l : listener) grupoCombo.removeActionListener(l);
-        String guardado = leerConfig("grupo_activo", t("Todos", "All"));
+        String guardado = leerCfg.apply("grupo_activo", t("Todos", "All"));
         Set<String> grupos = listaSeguidos.calcularGrupos(todosJugadores);   // un grupo ya nunca se esfuma al vaciarse
         grupoCombo.removeAllItems();
         grupoCombo.addItem(t("Todos", "All"));
@@ -692,19 +719,19 @@ public final class WatchlistView {
     void onGrupoElegido() {
         String sel = String.valueOf(grupoCombo.getSelectedItem());
         if (sel.equals(TOP_CLAN)) {
-            guardarConfig("grupo_activo", sel);
+            guardarCfg.accept("grupo_activo", sel);
             actualizarBotonesModo();
             if (clanField != null && clanField.getText().isBlank()) clanField.setText(leerConfig("clan_tag", ""));
             cargarTopClan();
             return;
         }
         if (sel.equals(TOP_LADDER) || sel.equals(TOP_PAIS)) {
-            guardarConfig("grupo_activo", sel);
+            guardarCfg.accept("grupo_activo", sel);
             actualizarBotonesModo();
             cargarTopLadder(false);
             return;
         }
-        guardarConfig("grupo_activo", sel);
+        guardarCfg.accept("grupo_activo", sel);
         actualizarBotonesModo();
         aplicarFiltroGrupo();
         refrescarWatchlist();

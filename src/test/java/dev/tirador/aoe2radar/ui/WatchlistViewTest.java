@@ -185,6 +185,9 @@ class WatchlistViewTest {
     AnfitrionFalso anfitrion;
     Campanas campanas;
     WatchlistView watchlist;
+    /** La config de las WatchlistView del test, en memoria (grupo_activo, abrir_en, grupos...): antes los tests
+     *  escribían config.properties de verdad y en Windows un guardado fallido en silencio daba el flaky de la fila 146. */
+    Map<String, String> cfg;
 
     /** TOP_PAIS/TOP_CLAN/PAISES se calculan en el constructor de WatchlistView (arreglo de fase 4: antes eran
      *  "static final" y salían siempre en español, ver docs/DEUDA.md), así que hay que fijar I18n.IDIOMA
@@ -195,6 +198,7 @@ class WatchlistViewTest {
     @BeforeEach void crear() {
         idiomaPrevio = IDIOMA;
         IDIOMA = "es";
+        cfg = new HashMap<>();
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
         TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
@@ -242,13 +246,14 @@ class WatchlistViewTest {
                 Tareas.SWING, enlace, anfitrion,
                 todosJugadores, playersModel, playersList, eloWatch, gamesWatch, new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
-                java.nio.file.Path.of("players_test.txt"), java.nio.file.Path.of("top_cache_test.txt"), 300L, 50);
+                java.nio.file.Path.of("players_test.txt"), java.nio.file.Path.of("top_cache_test.txt"), 300L, 50,
+                (k, def) -> cfg.getOrDefault(k, def), cfg::put);
     }
 
     @AfterEach void restaurar() {
         IDIOMA = idiomaPrevio;
-        // config.properties: util.Config lee/escribe un fichero real (no está inyectado); los tests de
-        // grupo_activo lo tocan a propósito, así que se borra aquí para no dejar rastro entre tests.
+        // config.properties: grupo_activo/abrir_en/grupos ya van al mapa «cfg», pero las piezas de la vista aún escriben
+        // otras claves con util.Config (p. ej. clan_tag en aplicarTopClan): se borra para no dejar rastro entre tests.
         try { Files.deleteIfExists(Config.CONFIG_FILE); } catch (Exception ignored) { }
     }
 
@@ -300,7 +305,8 @@ class WatchlistViewTest {
                 jugadores, new DefaultListModel<>(), new JList<>(new DefaultListModel<>()),
                 new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
-                java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50);
+                java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50,
+                (k, def) -> cfg.getOrDefault(k, def), cfg::put);
     }
 
     // ===== idioma: TOP_PAIS/TOP_CLAN/PAISES tras fijar I18n.IDIOMA (bug resuelto en fase 4) ====================
@@ -349,7 +355,7 @@ class WatchlistViewTest {
     }
 
     @Test void grupoActivoGuardadoEnEspanol_appEnIngles_seleccionaTopPais() {
-        Config.guardarConfig("grupo_activo", "★ Top país");
+        cfg.put("grupo_activo", "★ Top país");
         IDIOMA = "en";
         WatchlistView w = nuevaInstancia();
         w.rebuildGrupos();
@@ -357,7 +363,7 @@ class WatchlistViewTest {
     }
 
     @Test void grupoActivoGuardadoEnIngles_appEnEspanol_seleccionaTopClan() {
-        Config.guardarConfig("grupo_activo", "★ Clan top");
+        cfg.put("grupo_activo", "★ Clan top");
         IDIOMA = "es";
         WatchlistView w = nuevaInstancia();
         w.rebuildGrupos();
@@ -372,7 +378,7 @@ class WatchlistViewTest {
      * defecto): solo pasa si la equivalencia bilingüe encontró de verdad el TOP_CLAN.
      */
     @Test void grupoActivoBilingue_cambiaLaSeleccionDeVerdad() {
-        Config.guardarConfig("grupo_activo", "★ Clan top");
+        cfg.put("grupo_activo", "★ Clan top");
         IDIOMA = "es";
         WatchlistView w = nuevaInstancia();
         assertFalse(w.modoClan(), "antes de rebuildGrupos, el combo está en blanco: de fábrica no es modoClan");
@@ -388,15 +394,16 @@ class WatchlistViewTest {
      * coincidencia EXACTA (como en la 1.1) se prueba primero, así que el grupo real gana siempre.
      */
     @Test void grupoDeUsuarioLlamadoAll_ganaALaEquivalenciaBilingue() {
-        Config.guardarConfig("grupo_activo", "All");
+        cfg.put("grupo_activo", "All");
         IDIOMA = "es";
         WatchlistView w = nuevaInstancia(new ArrayList<>(List.of(new Player(1L, "Uno", "All"))));
         w.rebuildGrupos();
         assertEquals("All", w.grupoActivo(), "hay un grupo de verdad llamado \"All\": debe ganar a la traducción de \"Todos\"");
+        assertFalse(Files.exists(Config.CONFIG_FILE), "fila 146 de DEUDA: la config de los grupos va al mapa del test, no al fichero real");
     }
 
     @Test void grupoDeUsuarioLlamadoTodos_ganaALaEquivalenciaBilingueEnIngles() {
-        Config.guardarConfig("grupo_activo", "Todos");
+        cfg.put("grupo_activo", "Todos");
         IDIOMA = "en";
         WatchlistView w = nuevaInstancia(new ArrayList<>(List.of(new Player(1L, "Uno", "Todos"))));
         w.rebuildGrupos();
