@@ -248,6 +248,28 @@ class PerfilViewTest {
         assertEquals("1", orden[0], "y el orden pasa a «por winrate»");
     }
 
+    /** F10 (1.3): A y B en dos pestañas; se cierra la de A; «atrás» hasta A la abre en una pestaña nueva, sin
+     *  sustituir la de B (antes B desaparecía). Si la pestaña no se cerró sino que se reutilizó, sigue como siempre. */
+    @Test void volverAtrasAUnPerfilDePestanaCerradaAbrePestanaNueva() throws Exception {
+        actividadCache.put(1L, fresca(1L, "A")); actividadCache.put(2L, fresca(2L, "B")); actividadCache.put(3L, fresca(3L, "C"));
+        perfiles.ficha = ficha("es", 1500);
+        List<String> tras = new ArrayList<>();
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.alAbrir(1L, "A");
+            v.perfilPestanaActiva = -1; v.alAbrir(2L, "B");   // Ctrl+clic: B en pestaña nueva
+            v.cerrarPestana(0);                                 // × en la pestaña de A
+            v.alAbrir(2L, "B");                                 // lo que haría la ventana al cerrar (navegacion.abrirPerfil)
+            v.antesDeVolverPorHistorial(1L); v.alAbrir(1L, "A"); // «atrás» hasta A
+            for (Object[] p : v.perfilPestanas) tras.add((String) p[1]);
+            tras.add("activa=" + v.perfilPestanaActiva);
+            v.alAbrir(3L, "C");                                 // clic sin Ctrl: C sustituye a A en su pestaña
+            v.antesDeVolverPorHistorial(1L); v.alAbrir(1L, "A"); // «atrás» hasta A: A no se cerró, se reutilizó
+            for (Object[] p : v.perfilPestanas) tras.add((String) p[1]);
+        });
+        assertEquals(List.of("B", "A", "activa=1", "B", "A"), tras);
+    }
+
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la
      *  cabecera que ya estaba pintada no se sustituye por «Sin datos de perfil». */
     @Test void actualizarHoySinFichaNoBorraLaCabecera() throws Exception {

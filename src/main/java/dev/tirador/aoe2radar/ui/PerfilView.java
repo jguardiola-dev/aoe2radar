@@ -240,6 +240,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     public final List<Object[]> perfilPestanas = new ArrayList<>();   // visible para RegresionCapturas: {pid Long, nombre String}
     public int perfilPestanaActiva = -1;                              // visible para RegresionCapturas
     private JPanel perfilTira;
+    /** F10 (1.3): pids cuya pestaña cerró el usuario con su ×; salen de aquí en cuanto vuelven a tener pestaña. */
+    private final Set<Long> pestanasCerradas = new java.util.HashSet<>();
 
     public PerfilView(ProfileService perfiles, RatingsService ratings, BusquedaPerfiles busqueda, StatsService stats,
                        EstadoVivo vivo, MenusJugador menus, Navegacion navegacion, TechTreeView techTree, Listas listas,
@@ -341,7 +343,18 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     private int indicePestana(long pid) { for (int i = 0; i < perfilPestanas.size(); i++) if ((Long) perfilPestanas.get(i)[0] == pid) return i; return -1; }
 
+    /**
+     * F10 (1.3): la ventana va a abrir pid desde su historial (atrás/adelante). Si ese perfil tenía pestaña y el
+     * usuario la cerró, vuelve en una pestaña nueva en vez de sustituir la activa (antes se perdía el perfil que se
+     * estaba mirando). Si la pestaña no se cerró sino que se reutilizó (clic sin Ctrl), sigue como siempre: el
+     * historial vuelve atrás dentro de la pestaña activa. Con el tope de pestañas lleno, también como siempre.
+     */
+    public void antesDeVolverPorHistorial(long pid) {
+        if (pid > 0 && indicePestana(pid) < 0 && pestanasCerradas.contains(pid) && perfilPestanas.size() < PERFIL_MAX_PESTANAS) perfilPestanaActiva = -1;
+    }
+
     private void perfilContabilizarPestana(long pid, String nombre) {
+        pestanasCerradas.remove(pid);
         int i = indicePestana(pid);
         if (i >= 0) perfilPestanaActiva = i;
         else if (perfilPestanaActiva >= 0 && perfilPestanaActiva < perfilPestanas.size()) perfilPestanas.set(perfilPestanaActiva, new Object[]{ pid, nombre });
@@ -349,8 +362,9 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         refrescarTiraPerfil();
     }
 
-    private void cerrarPestana(int i) {
+    void cerrarPestana(int i) {   // de paquete: lo usa PerfilViewTest
         if (i < 0 || i >= perfilPestanas.size()) return;
+        pestanasCerradas.add((Long) perfilPestanas.get(i)[0]);   // F10
         perfilPestanas.remove(i);
         if (perfilPestanas.isEmpty()) { perfilPestanaActiva = -1; refrescarTiraPerfil(); navegacion.abrirPerfil(0, ""); return; }
         if (perfilPestanaActiva >= perfilPestanas.size()) perfilPestanaActiva = perfilPestanas.size() - 1;
