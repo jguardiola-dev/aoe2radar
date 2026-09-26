@@ -97,6 +97,14 @@ public final class LiveNowPresenter {
         return null;
     }
 
+    /** ¿La ficha {pid, nombre, rating, rango, país} tiene puesto en el ladder 1v1? Rango 0 = sin puesto: la fuente
+     *  «Grupo» no lo sabe (Campanas.cargarFuenteLive pone 0). Sin puesto no se pinta «#0» (revisión 1.3, F3). */
+    public static boolean conPuesto(Object[] ficha) { return ficha != null && (Integer) ficha[3] > 0; }
+
+    /** ¿La ficha está entre los «hasta» primeros del ladder 1v1? Sin puesto (rango 0) nunca: si no, un grupo entero
+     *  pasaba por «top 50 vs top 50» y por el filtro «Solo top contra top» (revisión 1.3, F3). */
+    public static boolean enTop(Object[] ficha, int hasta) { return conPuesto(ficha) && (Integer) ficha[3] <= hasta; }
+
     public long ultimaMs() { return ahoraUltimaMs; }
 
     public boolean cargando() { return ahoraCargando; }

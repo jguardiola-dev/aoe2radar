@@ -294,6 +294,23 @@ class LiveNowPresenterTest {
         assertNotNull(tareas.trabajoDemonioPendiente);
     }
 
+    // ----- puesto de la ficha: la fuente «Grupo» no tiene puesto (revisión 1.3, F3) ----------
+
+    @Test void fichaDeGrupoConRangoCero_notienePuestoNiCuentaComoTop() {
+        Object[] deGrupo = ficha(1L, "Amigo", 1500, 0, "es");   // Campanas.cargarFuenteLive pone rango 0 en «grupo»
+        assertFalse(LiveNowPresenter.conPuesto(deGrupo), "sin puesto: no se pinta «#0»");
+        assertFalse(LiveNowPresenter.enTop(deGrupo, 50), "no cuenta para «top 50 vs top 50» ni para «Solo top contra top»");
+        assertFalse(LiveNowPresenter.enTop(deGrupo, 25), "ni para «élite 25 vs 25»");
+        assertFalse(LiveNowPresenter.enTop(null, 50), "fuera de la fuente: tampoco");
+    }
+
+    @Test void fichaConPuesto_cuentaSoloHastaElTope() {
+        assertTrue(LiveNowPresenter.conPuesto(ficha(1L, "Uno", 2500, 1, "es")));
+        assertTrue(LiveNowPresenter.enTop(ficha(1L, "Uno", 2500, 50, "es"), 50));
+        assertFalse(LiveNowPresenter.enTop(ficha(1L, "Uno", 2500, 51, "es"), 50));
+        assertFalse(LiveNowPresenter.enTop(ficha(1L, "Uno", 2500, 26, "es"), 25));
+    }
+
     // ----- EstadoVivo inyectado, no el singleton global (DEUDA, fila 125) -----------------
 
     @Test void usaElEstadoVivoInyectadoNoElSingletonGlobal() {

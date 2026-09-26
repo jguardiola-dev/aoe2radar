@@ -389,7 +389,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         for (Object[] f : top) {
             Match m = vivos.get((Long) f[0]);
             String ahora = m == null ? "" : ("\u25CF " + (m.map == null ? "" : m.map) + (m.started != null ? " · " + reloj(Duration.between(m.started, Instant.now())) : ""));
-            modelo.addRow(new Object[]{ f[3], anfitrion.nombreVisible((Long) f[0], (String) f[1]), f[2], f[4] == null ? "" : String.valueOf(f[4]).toUpperCase(Locale.ROOT), m == null ? "" : modoCorto(m), ahora, m == null || m.id <= 0 ? "" : String.valueOf(m.id) });
+            modelo.addRow(new Object[]{ LiveNowPresenter.conPuesto(f) ? f[3] : null, anfitrion.nombreVisible((Long) f[0], (String) f[1]), f[2], f[4] == null ? "" : String.valueOf(f[4]).toUpperCase(Locale.ROOT), m == null ? "" : modoCorto(m), ahora, m == null || m.id <= 0 ? "" : String.valueOf(m.id) });
             filas.add(new Object[]{ f[0], anfitrion.nombreVisible((Long) f[0], (String) f[1]), m == null ? 0L : m.id });
         }
         javax.swing.table.TableRowSorter<DefaultTableModel> sorter = new javax.swing.table.TableRowSorter<>(modelo);
@@ -601,7 +601,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         lista.removeIf(m -> !liveTipoOk(m));
         if (!"*".equals(liveMapaSel)) lista.removeIf(m -> !liveMapaSel.equals(m.map));
         if (liveTwitch.isSelected()) lista.removeIf(m -> m.players.stream().noneMatch(mp -> twitchLive.containsKey(mp.id)));
-        if (liveTopTop.isSelected()) lista.removeIf(m -> { Set<Integer> equipos = new HashSet<>(); for (MatchPlayer mp : m.players) { Object[] f = fichas.get(mp.id); if (f != null && (Integer) f[3] <= 50) equipos.add(mp.team); } return equipos.size() < 2; });
+        if (liveTopTop.isSelected()) lista.removeIf(m -> { Set<Integer> equipos = new HashSet<>(); for (MatchPlayer mp : m.players) { Object[] f = fichas.get(mp.id); if (LiveNowPresenter.enTop(f, 50)) equipos.add(mp.team); } return equipos.size() < 2; });
         java.util.function.ToIntFunction<Match> eloMax = m -> { int mx = 0; for (MatchPlayer mp : m.players) if (mp.rating != null) mx = Math.max(mx, mp.rating); return mx; };
         if (liveOrden.getSelectedIndex() == 1) lista.sort((a, b) -> { Instant x = a.started == null ? Instant.EPOCH : a.started, y = b.started == null ? Instant.EPOCH : b.started; return x.compareTo(y); });
         else lista.sort((a, b) -> eloMax.applyAsInt(b) - eloMax.applyAsInt(a));
@@ -724,7 +724,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         modo.setFont(modo.getFont().deriveFont(ranked ? Font.PLAIN : Font.ITALIC, 12f)); modo.setForeground(ranked ? (temaOscuroActivo ? new Color(0x9f, 0xc5, 0xe8) : new Color(0x2f, 0x5f, 0x8f)) : Color.GRAY);
         mapaTxt.add(mapaNombre); mapaTxt.add(modo);
         { Set<Integer> con50 = new HashSet<>(), con25 = new HashSet<>();
-          for (MatchPlayer mp : m.players) { Object[] f = fichas.get(mp.id); if (f == null) continue; if ((Integer) f[3] <= 50) con50.add(mp.team); if ((Integer) f[3] <= 25) con25.add(mp.team); }
+          for (MatchPlayer mp : m.players) { Object[] f = fichas.get(mp.id); if (LiveNowPresenter.enTop(f, 50)) con50.add(mp.team); if (LiveNowPresenter.enTop(f, 25)) con25.add(mp.team); }
           String etq = m.players.size() == 2 && con25.size() >= 2 ? t("élite 25 vs 25", "elite 25 vs 25") : con50.size() >= 2 ? "top 50 vs top 50" : null;
           if (etq != null) { JLabel tt = new JLabel(etq); tt.setFont(tt.getFont().deriveFont(Font.BOLD, 10.5f)); tt.setForeground(temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)); tt.setToolTipText(m.players.size() == 2 && con25.size() >= 2 ? t("Los dos jugadores están en el top 25 del ladder 1v1", "Both players are in the 1v1 ladder's top 25") : t("Los dos bandos tienen a alguien del top 50 del ladder 1v1", "Both sides have someone from the 1v1 ladder's top 50")); mapaTxt.add(tt); } }
         mapa.add(mapaTxt, BorderLayout.CENTER);
@@ -876,10 +876,10 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         GridBagConstraints gc = new GridBagConstraints(); gc.gridy = 0; gc.anchor = GridBagConstraints.WEST; gc.insets = new Insets(grande ? 3 : 1, 0, grande ? 3 : 1, 6);
         int altoFila = grande ? 26 : 22;
         Color ambar = temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00);
-        JLabel puesto = new JLabel(ficha != null ? "#" + ficha[3] : "", SwingConstants.RIGHT);
+        JLabel puesto = new JLabel(LiveNowPresenter.conPuesto(ficha) ? "#" + ficha[3] : "", SwingConstants.RIGHT);   // rango 0 (fuente «Grupo»): sin puesto
         puesto.setFont(puesto.getFont().deriveFont(Font.BOLD, 11.5f));
-        puesto.setForeground(ficha != null && (Integer) ficha[3] <= 50 ? ambar : Color.GRAY);
-        if (ficha != null) puesto.setToolTipText(t("Puesto ", "Rank ") + ficha[3] + t(" del ladder 1v1 · ELO 1v1 ", " on the 1v1 ladder · 1v1 ELO ") + ficha[2]);
+        puesto.setForeground(LiveNowPresenter.enTop(ficha, 50) ? ambar : Color.GRAY);
+        if (LiveNowPresenter.conPuesto(ficha)) puesto.setToolTipText(t("Puesto ", "Rank ") + ficha[3] + t(" del ladder 1v1 · ELO 1v1 ", " on the 1v1 ladder · 1v1 ELO ") + ficha[2]);
         String cc = ficha != null ? (String) ficha[4] : anfitrion.paisDe(mp.id);
         JLabel bandera = new JLabel(iconoBandera(cc, 18));
         String nick = anfitrion.nombreVisible(mp.id, mp.name);
