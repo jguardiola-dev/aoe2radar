@@ -8,7 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
- * El freno de cortesía (CLAUDE.md: «1 llamada/s con ráfaga de 5, cortacircuitos ante 429»), probado sin esperar:
+ * El freno de cortesía (docs/ARQUITECTURA.md, «Reglas de desarrollo»: «1 llamada/s con ráfaga de 5, cortacircuitos ante 429»), probado sin esperar:
  * el reloj es falso y solo avanza cuando el test o el propio freno «duermen».
  */
 class ThrottleCuboTest {

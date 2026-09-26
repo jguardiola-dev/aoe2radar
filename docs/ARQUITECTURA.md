@@ -98,6 +98,21 @@ abiertas unas pocas filas de bajo riesgo (prioridad `baja`/`media`) y la fila 13
 `PartidasView`), aplazada a la 1.2.x por decisión de Jorge. El empaquetado con `jpackage` ya existe como perfil
 Maven (`-Pempaquetar`, ver README_TECNICO.md); falta la release 1.2 en sí.
 
+## Reglas de desarrollo
+
+- **Hilo de la interfaz:** todo lo que toca Swing va en el EDT (`SwingUtilities.invokeLater` o `Tareas.enUi`); la red
+  y el disco, nunca. Los servicios avisan en el log si se les llama desde el EDT (`util.Hilos.avisarSiUi`).
+- **Cortesía con la API del companion:** freno global (1 llamada/s con ráfaga de 5), cortacircuitos ante 429 y
+  «nocturno primero»: lo que den los resúmenes de sfr-data no se pide a la API. Estas reglas viven en un solo sitio
+  (`api.Throttle`/`api.ApiClient`).
+- **Capas:** `tools/capas.py` comprueba qué paquete puede importar a cuál (y que `ui` no importe `java.net`).
+- **Harness de capturas:** `RegresionCapturas` compara 29 capturas con sus referencias. Si una cambia sin que el
+  cambio fuera intencionado, es un bug: se investiga, no se regraba la referencia.
+- **Commits:** cada commit compila y pasa `verificar.ps1 -Rapido` (sin pantalla); el harness completo
+  (`verificar.ps1`) antes de integrar un grupo de cambios. Mensajes en español que empiezan por el paquete tocado.
+- **Cambios delicados** (socket de vivos, freno, estado compartido): revisión antes del commit y test que falle sin
+  el arreglo.
+
 ## Decisiones cerradas (no reabrir)
 Civ Stats en una sola página; forma solo como dato de ELO (sin W-L); listas del perfil a 5; Live now sin scroll
 horizontal; sin tarjetas flotantes; «nocturno primero» (sfr-data antes que API); perfil sin llamadas al abrir y

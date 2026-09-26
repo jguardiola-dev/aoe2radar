@@ -14,7 +14,7 @@ import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Protocolo del websocket «ongoing-matches» (CLAUDE.md: cortacircuitos y reconexión viven en un solo sitio),
+ * Protocolo del websocket «ongoing-matches» (docs/ARQUITECTURA.md, «Reglas de desarrollo»: cortacircuitos y reconexión viven en un solo sitio),
  * sin red: un Conector falso que el test completa a mano, un Canal falso que cuenta pings y cierres, y un
  * Planificador falso cuyas tareas el test ejecuta cuando quiere. Primero se fija lo que el código hace hoy
  * (caracterización); después, las reglas del enunciado, una a una.

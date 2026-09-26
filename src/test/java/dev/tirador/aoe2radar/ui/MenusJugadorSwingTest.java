@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * MenusJugadorSwing con Tareas.EN_LINEA (sin hilos reales) y dobles de EstadoVivo/EloSesion (instancias propias, no
  * el singleton SISTEMA), ProfileService, Navegacion y Acciones. Todo dentro de invokeAndWait: aunque construir un
- * JMenu no exige el EDT, es donde vive en la app real (ver CLAUDE.md, «hilo de la UI»).
+ * JMenu no exige el EDT, es donde vive en la app real (ver docs/ARQUITECTURA.md, «Reglas de desarrollo»: hilo de la interfaz).
  * <p>Cubre lo que se movió tal cual desde SpoilerFreeRecs en la tanda 3 (oleada A2): menú «en partida ahora» (o
  * null si no juega), el orden de fuentes de elo1v1Conocido y que itemJugadorPartida no lanza una segunda petición
  * mientras la primera sigue en vuelo.
