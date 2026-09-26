@@ -45,6 +45,10 @@ public final class PerfilPresenter {
         boolean cargando();
         void cargando(boolean v);
 
+        /** Fila 28: lo que había en disco/memoria al abrir (perfiles.actividad + fichaConocida, leídos en un hilo
+         *  de fondo). Pinta el cuerpo y la cabecera si hay algo, y decide si hace falta seguir cargando. */
+        void baseLista(Actividad base, FichaPerfil perfilCache);
+
         /** Arranca el aviso de «consultando el perfil…» con el progreso indeterminado. */
         void cargaIniciada();
         /** Ya se sabe la cabecera (ficha): la pinta si el pid sigue siendo el abierto. */
@@ -106,6 +110,20 @@ public final class PerfilPresenter {
         Integer eloW = eloWatch.get(pid);
         if (eloW != null && eloW > 0) { int[] v = m.computeIfAbsent("rm_1v1", k -> new int[5]); v[0] = eloW; }
         return new FichaPerfil(m, pais == null ? "" : pais, "", (long) a.partidas().size());
+    }
+
+    /**
+     * Fila 28: la primera mirada al abrir un perfil (perfiles.actividad, que sin ir a la red sí puede leer disco
+     * si no está en memoria, más fichaConocida) sale del EDT: antes se llamaba directamente en alAbrir. El
+     * resultado vuelve por baseLista(), que pinta y decide si hace falta seguir cargando (sfr-data o la API).
+     * Hilo "perfil-abrir-" + pid.
+     */
+    public void abrirBase(long pid, String nombre) {
+        tareas.enFondo("perfil-abrir-" + pid, () -> {
+            Actividad base = perfiles.actividad(pid);
+            FichaPerfil perfilCache = perfiles.fichaConocida(pid);
+            tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.baseLista(base, perfilCache); });
+        });
     }
 
     /** Abre pid: primero sfr-data (el año completo sin tocar la API); si no está en su alcance, la API página a página. Hilo "perfil-" + pid. */

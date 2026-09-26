@@ -291,14 +291,14 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actNombreReal = nombre;
         anfitrion.actualizarTextoBuscar();
         actMasBtn.setVisible(false);
-        Actividad base = perfiles.actividad(pid);
-        boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
-        if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
-        else { actMostrarCuerpo(false); actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in.")); }
-        FichaPerfil perfilCache = perfiles.fichaConocida(pid);
-        if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
-        if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
-        presenter.cargar(pid, nombre, base, fresco);
+        // Fila 28: perfiles.actividad(pid) mira el disco si no está en memoria (HistorialDisco.cargarActividad);
+        // antes se llamaba aquí mismo, en el EDT. Ahora se pide a PerfilPresenter.abrirBase, que lo hace en un
+        // hilo y vuelve a pintar con baseLista(). Mientras tanto se deja el mismo aviso que antes se veía solo
+        // cuando no había nada en disco: con historial ya guardado, ahora hay un instante de «Descargando…»
+        // antes de que la lectura en segundo plano termine y repinte el cuerpo completo.
+        actMostrarCuerpo(false);
+        actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in."));
+        presenter.abrirBase(pid, nombre);
     }
 
     /** Con Perfil abierto, seleccionar a alguien en la watchlist abre su perfil (lo llama el listener de playersList). */
@@ -687,6 +687,18 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     @Override public boolean cargando() { return actCargando; }
     @Override public void cargando(boolean v) { actCargando = v; }
+
+    /** Fila 28: lo que alAbrir hacía en el acto con perfiles.actividad(pid)/fichaConocida(pid) (ambas sin red, pero
+     *  la primera puede leer disco): ahora llega desde el hilo de PerfilPresenter.abrirBase. Mismas decisiones que
+     *  antes, en el mismo orden: pintar cuerpo y cabecera si hay algo, y si ya está fresco y completo no hace
+     *  falta seguir cargando; si no, sigue como siempre por sfr-data o la API (presenter.cargar). */
+    @Override public void baseLista(Actividad base, FichaPerfil perfilCache) {
+        boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
+        if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
+        if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
+        if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
+        presenter.cargar(actPid, actNombre, base, fresco);
+    }
 
     @Override public void cargaIniciada() {
         actEstado.setText(t("Consultando el perfil…", "Fetching the profile…"));

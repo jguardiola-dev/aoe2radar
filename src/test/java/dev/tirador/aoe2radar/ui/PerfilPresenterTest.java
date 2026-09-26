@@ -38,6 +38,7 @@ class PerfilPresenterTest {
         Exception anioSfrFalla;
         Actividad historialResultado;
         Exception historialFalla;
+        Actividad actividadResultado;
         int traerHoyResultado;
         Exception traerHoyFalla;
         RuntimeException fichaFalla;
@@ -52,7 +53,7 @@ class PerfilPresenterTest {
         @Override public Integer eloVinculada(long vid) { return null; }
         @Override public Map<Long, String> familia(long pid) { return null; }
         @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception { if (anioSfrFalla != null) throw anioSfrFalla; return anioSfr; }
-        @Override public Actividad actividad(long pid) { return null; }
+        @Override public Actividad actividad(long pid) { return actividadResultado; }
         @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, BooleanSupplier cancelar) throws java.io.IOException {
             ultimoParcial = parcial;
             if (historialFalla != null) { if (historialFalla instanceof java.io.IOException io) throw io; throw new RuntimeException(historialFalla); }
@@ -85,12 +86,25 @@ class PerfilPresenterTest {
         @Override public List<String[]> local(String q) { return resultado; }
     }
 
+    /** Fila 28 y 128: un Tareas que encola el trabajo de fondo en vez de ejecutarlo en el acto, para comprobar
+     *  DOS cosas que Tareas.EN_LINEA no distingue: que el presentador de verdad manda el trabajo a enFondo (no lo
+     *  hace en el hilo que llama) y con qué nombre de hilo. enUi sigue en el acto, como en el resto de tests. */
+    static final class TareasAplazadas implements Tareas {
+        final List<String> nombresFondo = new ArrayList<>();
+        final List<Runnable> pendientesFondo = new ArrayList<>();
+        @Override public void enFondo(String nombre, Runnable trabajo) { nombresFondo.add(nombre); pendientesFondo.add(trabajo); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { trabajo.run(); }
+    }
+
     /** La Pantalla de mentira: guarda lo que el presentador le pide, como haría PerfilView. */
     static class PantallaFalsa implements PerfilPresenter.Pantalla {
         long pidAbierto;
         boolean cargando;
         int cargaIniciadaVeces;
         FichaPerfil cabeceraPintada;
+        Actividad baseListaBase; FichaPerfil baseListaFicha; int baseListaVeces;
         Actividad desdeSfrPintada; String desdeSfrHasta;
         Actividad parcialPintada; int parcialMax;
         Actividad completadaPintada;
@@ -110,6 +124,7 @@ class PerfilPresenterTest {
         @Override public long pidAbierto() { return pidAbierto; }
         @Override public boolean cargando() { return cargando; }
         @Override public void cargando(boolean v) { cargando = v; }
+        @Override public void baseLista(Actividad base, FichaPerfil perfilCache) { baseListaBase = base; baseListaFicha = perfilCache; baseListaVeces++; }
         @Override public void cargaIniciada() { cargaIniciadaVeces++; }
         @Override public void cabecera(FichaPerfil ficha) { cabeceraPintada = ficha; }
         @Override public void desdeSfr(Actividad a, String hastaSfr) { desdeSfrPintada = a; desdeSfrHasta = hastaSfr; }
@@ -138,6 +153,44 @@ class PerfilPresenterTest {
     final PerfilPresenter presenter = new PerfilPresenter(perfiles, ratings, busqueda, Tareas.EN_LINEA, eloWatch, actividadCache, pantalla);
 
     private Actividad actividad(long pid, String nombre, List<Match> partidas) { return new Actividad(pid, nombre, partidas, true, 1, 1_700_000_000_000L); }
+
+    // ----- abrir base (fila 28): perfiles.actividad/fichaConocida fuera del EDT -------------
+
+    @Test void abrir_base_pinta_lo_que_hay_en_disco_y_memoria_si_el_pid_sigue_abierto() {
+        pantalla.pidAbierto = 5L;
+        perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
+        perfiles.ficha = new FichaPerfil(Map.of(), "es", "", 0);
+        presenter.abrirBase(5L, "Fulano");
+        assertSame(perfiles.actividadResultado, pantalla.baseListaBase);
+        assertSame(perfiles.ficha, pantalla.baseListaFicha);
+    }
+
+    @Test void abrir_base_no_pinta_si_el_pid_abierto_cambio_mientras_tanto() {
+        pantalla.pidAbierto = 999L;   // se navegó a otro perfil antes de que volviera la lectura de disco
+        perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
+        presenter.abrirBase(5L, "Fulano");
+        assertEquals(0, pantalla.baseListaVeces);
+    }
+
+    /**
+     * Mutación (fila 28): sin el arreglo, PerfilView llamaba a perfiles.actividad(pid) EN EL ACTO, en el hilo que
+     * llama (el EDT en la app real). Con el arreglo, PerfilPresenter.abrirBase manda ese trabajo a tareas.enFondo
+     * con el nombre "perfil-abrir-" + pid, y solo pinta cuando ese trabajo vuelve. Se comprueba con un Tareas que
+     * ENCOLA en vez de ejecutar: si se quitara el arreglo (llamada directa a pantalla.baseLista sin pasar por
+     * enFondo), nombresFondo seguiría vacío y baseListaBase ya tendría el valor antes de ejecutar el pendiente:
+     * el test fallaría en rojo. Restaurado el arreglo, vuelve a verde.
+     */
+    @Test void abrir_base_manda_la_lectura_a_un_hilo_de_fondo_llamado_perfil_abrir_mas_el_pid() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        pantalla.pidAbierto = 5L;
+        perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
+        p.abrirBase(5L, "Fulano");
+        assertEquals(List.of("perfil-abrir-5"), tareasAplazadas.nombresFondo);
+        assertEquals(0, pantalla.baseListaVeces);   // todavía no "volvió" del hilo de fondo
+        tareasAplazadas.pendientesFondo.get(0).run();   // ahora sí
+        assertSame(perfiles.actividadResultado, pantalla.baseListaBase);
+    }
 
     // ----- cargar: sfr-data ----------------------------------------------------------------
 
