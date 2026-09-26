@@ -58,12 +58,14 @@ public final class SocketVivo {
         void ping();
         void cerrar(String motivo);
     }
-    /** Lo que el transporte avisa. Tras abierto y tras cada texto, el transporte pide el siguiente mensaje. */
+    /** Lo que el transporte avisa. Tras abierto, cada texto y cada pong, el transporte pide el siguiente mensaje. */
     public interface Receptor {
         void abierto(Canal c);
         void texto(CharSequence trozo, boolean ultimo);
         void cerrado(Canal c, int codigo, String motivo);
         void error(Throwable t);
+        /** Llegó la respuesta a un ping (un marco de control, no un texto): la conexión sigue viva. */
+        default void pong() { }
     }
     public interface Conector {
         CompletableFuture<Canal> conectar(String url, Receptor r);
@@ -118,15 +120,39 @@ public final class SocketVivo {
 
     public boolean conectado() { return conectado; }
 
-    /** Conectado y con algún mensaje hace menos de 10 min. */
+    /** Conectado y con algún mensaje o pong hace menos de 10 min. */
     public boolean sano() { return conectado && reloj.ahoraMs() - ultimoMsgMs < 10 * 60_000; }
 
-    /** Arranca el ping cada 30 s (mantiene viva la conexión mientras no llegan eventos). */
+    /** Arranca el ping cada 30 s (mantiene viva la conexión mientras no llegan eventos) y, antes de cada ping, revisa
+     *  que la conexión no esté colgada (ver revisarSalud). */
     public void iniciarPing() {
         planificador.cada(30_000, () -> {
+            try { revisarSalud(); }
+            catch (RuntimeException ex) { log("socket: no se pudo revisar la salud: " + causa(ex)); }   // una excepción cancelaría la tarea periódica para siempre
             Canal c = canal;
             if (c != null && conectado) { try { c.ping(); } catch (Exception ignored) { } }
         });
+    }
+
+    /**
+     * Conexión colgada (DEUDA, fila 88): «conectada» pero sin ningún mensaje ni pong en 10 min (p. ej. la red cambió y
+     * el otro lado ya no existe, sin que llegue ningún cierre). Se trata como una caída: se cierra el canal y se
+     * programa la reconexión de siempre; al volver a conectar, la app hace su barrido de reparación (trasCaida).
+     */
+    void revisarSalud() {
+        long mio;
+        Canal c;
+        synchronized (candado) {
+            if (!conectado || reloj.ahoraMs() - ultimoMsgMs < 10 * 60_000) return;
+            mio = intento;
+            conectado = false;
+            huboCaida = true;
+            c = canal;
+            canal = null;
+        }
+        log("socket: ni mensajes ni pong en 10 min: conexión colgada, se reconecta");
+        if (c != null) { try { c.cerrar("colgado"); } catch (Exception ignored) { } }
+        programarReconexion(mio);
     }
 
     /** Conecta (o reconecta) con estos ids; vacío: cierra (y ninguna reconexión vuelve a abrir); si no cambian y está conectado, no hace nada. */
@@ -201,6 +227,10 @@ public final class SocketVivo {
                         catch (Exception ex) { log("socket: mensaje no entendido: " + causa(ex)); }
                     }
                 }
+            }
+            @Override public void pong() {
+                synchronized (candado) { if (mio != intento) return; }   // el pong de una conexión vieja no cuenta
+                ultimoMsgMs = reloj.ahoraMs();
             }
             @Override public void cerrado(Canal c, int codigo, String motivo) {
                 if (!caida()) return;   // un cierre viejo o pedido por nosotros (cerrar) no es una caída
@@ -288,6 +318,7 @@ public final class SocketVivo {
         }
         @Override public void onOpen(WebSocket ws) { r.abierto(canal(ws)); ws.request(1); }
         @Override public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last) { r.texto(data, last); ws.request(1); return null; }
+        @Override public CompletionStage<?> onPong(WebSocket ws, ByteBuffer message) { r.pong(); ws.request(1); return null; }
         @Override public CompletionStage<?> onClose(WebSocket ws, int code, String reason) { r.cerrado(canal(ws), code, reason); return null; }
         @Override public void onError(WebSocket ws, Throwable error) { r.error(error); }
     }

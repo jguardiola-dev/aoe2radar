@@ -483,6 +483,73 @@ class SocketVivoTest {
         assertTrue(socket.sano());
     }
 
+    // ===== 11. conexión colgada (fila 88) =====
+
+    @Test void unPongMantieneSanaLaConexionAunqueNoLleguenMensajes() {
+        conectarNuevo(Set.of(1L));
+        reloj.avanzar(9 * 60_000L);
+        conector.ultima().receptor().pong();
+        reloj.avanzar(9 * 60_000L);   // 18 min sin textos, pero con un pong hace 9
+        assertTrue(socket.sano());
+    }
+
+    @Test void elPongDeUnaConexionViejaNoCuenta() {
+        conectarNuevo(Set.of(1L));
+        ConectorFalso.Llamada vieja = conector.ultima();
+        socket.sincronizar(Set.of(2L));
+        completar(conector.ultima());
+        reloj.avanzar(9 * 60_000L);
+        vieja.receptor().pong();
+        reloj.avanzar(2 * 60_000L);
+        assertFalse(socket.sano(), "solo cuenta el pong de la conexión vigente");
+    }
+
+    @Test void colgadaDiezMinutosSeCierraYSeProgramaLaReconexion() {
+        socket.iniciarPing();
+        CanalFalso c = conectarNuevo(Set.of(1L));
+        reloj.avanzar(10 * 60_000L);
+        planificador.periodicas.get(0).r().run();
+        assertFalse(socket.conectado());
+        assertEquals(List.of("colgado"), c.cierres);
+        assertEquals(0, c.pings, "a una conexión colgada ya no se le hace ping");
+        assertEquals(1, planificador.diferidas.size(), "reconexión programada");
+        planificador.diferidas.get(0).ejecutar();
+        completar(conector.ultima());
+        assertEquals(List.of(false, true), oyente.conectados, "al volver, avisa de la caída para que la app repare");
+        assertTrue(socket.sano(), "al reabrir, la salud se cuenta desde ahora");
+    }
+
+    @Test void otroTickConLaReconexionPendienteNoCierraNiReprogramaOtraVez() {
+        socket.iniciarPing();
+        CanalFalso c = conectarNuevo(Set.of(1L));
+        reloj.avanzar(10 * 60_000L);
+        planificador.periodicas.get(0).r().run();
+        reloj.avanzar(30_000L);
+        planificador.periodicas.get(0).r().run();
+        assertEquals(List.of("colgado"), c.cierres);
+        assertEquals(1, planificador.diferidas.size());
+    }
+
+    @Test void sanaNoSeTocaYElPingSigue() {
+        socket.iniciarPing();
+        CanalFalso c = conectarNuevo(Set.of(1L));
+        reloj.avanzar(10 * 60_000L - 1);
+        planificador.periodicas.get(0).r().run();
+        assertTrue(socket.conectado());
+        assertTrue(c.cierres.isEmpty());
+        assertEquals(1, c.pings);
+        assertTrue(planificador.diferidas.isEmpty());
+    }
+
+    @Test void elCierreQueLlegaTrasDarlaPorColgadaNoProgramaOtraReconexion() {
+        socket.iniciarPing();
+        CanalFalso c = conectarNuevo(Set.of(1L));
+        reloj.avanzar(10 * 60_000L);
+        planificador.periodicas.get(0).r().run();
+        conector.ultima().receptor().cerrado(c, 1000, "colgado");   // el transporte confirma el cierre después
+        assertEquals(1, planificador.diferidas.stream().filter(PlanificadorFalso.TareaFalsa::pendiente).count());
+    }
+
     @Test void sanoDejaDeSerloALosDiezMinutosJustos() {
         // frontera estricta: reloj.ahoraMs() - ultimoMsgMs < 10*60_000, no <=
         conectarNuevo(Set.of(1L));
