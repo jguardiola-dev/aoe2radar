@@ -141,10 +141,10 @@ public final class CaraACaraDialogo {
     /** Fija el cruce con este rival (lo usa el aviso «Mi partida», tras abrir el diálogo). */
     public void fijarRival(long rivalPid, String rivalNombre) { fijar(rivalPid, rivalNombre); }
 
-    /** Abre (o reabre) el diálogo para el perfil actualmente abierto en Perfil. Sin historial cargado, avisa en el estado general y no abre nada. */
+    /** Abre (o reabre) el diálogo para el perfil actualmente abierto en Perfil. Sin historial cargado, avisa en el estado del perfil (F1) y no abre nada. */
     public void mostrar() {
         long pid = view.actPid;
-        if (pid <= 0 || view.actividadCache.get(pid) == null) { view.anfitrion.mostrarEstadoGlobal(t("Abre primero un perfil con historial cargado.", "Open a profile with its history loaded first.")); return; }
+        if (pid <= 0 || view.actividadCache.get(pid) == null) { view.avisar(t("Abre primero un perfil con historial cargado.", "Open a profile with its history loaded first.")); return; }
         if (dialogo != null) { dialogo.dispose(); dialogo = null; }
         dialogo = new JDialog(ventana, t("Cara a cara · ", "Head-to-head · ") + view.actNombre, Dialog.ModalityType.MODELESS);
         JPanel norte = new JPanel(new BorderLayout(8, 4));

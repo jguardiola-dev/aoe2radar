@@ -569,6 +569,18 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actMostrarCuerpo(false);
     }
 
+    /**
+     * F1 (1.3): un aviso del perfil. La barra de estado de la ventana está oculta mientras Perfil está abierto (a
+     * propósito desde la 1.1: Navegador.actualizarControlesTabla, «los mensajes de estado, solo donde se usan»),
+     * así que el mensaje va a la etiqueta propia del perfil (actEstado), como hacen Ratings, Civ Stats y Tech
+     * tree; también se deja en la barra general, que es donde estará al volver a Partidas. De paquete: lo usa
+     * también CaraACaraDialogo. Solo en el EDT.
+     */
+    void avisar(String texto) {
+        actEstado.setText(texto);
+        anfitrion.mostrarEstadoGlobal(texto);
+    }
+
     private void actMostrarCuerpo(boolean hay) {
         if (hay) actPista.setText(t("Selecciona un jugador en la watchlist, clic derecho → «Perfil completo…», o escribe un nick arriba.", "Select a player in the watchlist, right-click → \u201CFull profile…\u201D, or type a nick above."));
         actPista.setVisible(!hay);
@@ -584,7 +596,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         int r = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(actividadPanel), pnl, t("Rango de fechas", "Date range"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (r != JOptionPane.OK_OPTION) return false;
         try { actDesde = LocalDate.parse(d1.getText().trim()); actHasta = LocalDate.parse(d2.getText().trim()); if (actHasta.isBefore(actDesde)) { LocalDate x = actDesde; actDesde = actHasta; actHasta = x; } return true; }
-        catch (Exception ex) { anfitrion.mostrarEstadoGlobal(t("Fecha no válida: usa AAAA-MM-DD.", "Invalid date: use YYYY-MM-DD.")); return false; }
+        catch (Exception ex) { avisar(t("Fecha no válida: usa AAAA-MM-DD.", "Invalid date: use YYYY-MM-DD.")); return false; }
     }
 
     private boolean enPeriodo(Match m) {
@@ -672,7 +684,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     @Override public void hoyError(String mensaje) {
         actHoyBtn.setEnabled(true); actHoyBtn.setText(t("Actualizar hoy", "Update today"));
-        anfitrion.mostrarEstadoGlobal(t("No se pudo actualizar: ", "Couldn't update: ") + mensaje);
+        avisar(t("No se pudo actualizar: ", "Couldn't update: ") + mensaje);
     }
 
     @Override public void masProgreso(Actividad parcialA, int maxPaginas) {
@@ -814,7 +826,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     /** «Todas las partidas»: vuelca el año completo del perfil en la pestaña Partidas. */
     private void verHistorialEnTabla(long pid, String nombre) {
         Actividad a = actividadCache.get(pid);
-        if (a == null || a.partidas().isEmpty()) { anfitrion.mostrarEstadoGlobal(t("Sin historial cargado para este perfil.", "No history loaded for this profile.")); return; }
+        if (a == null || a.partidas().isEmpty()) { avisar(t("Sin historial cargado para este perfil.", "No history loaded for this profile.")); return; }
         List<Match> todas = new ArrayList<>(a.partidas());
         for (Match m : todas) if (m.refId == 0) m.refId = pid;
         anfitrion.cargarPartidasEnTabla(todas, new Player(pid, nombre, "", 0));

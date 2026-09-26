@@ -82,6 +82,32 @@ class PerfilViewTest {
 
     static FichaPerfil ficha(String pais, int elo) { return new FichaPerfil(Map.of("rm_1v1", new int[]{ elo, 10, elo, 5, 5 }), pais, "", 10); }
 
+    /** F1 (1.3): la barra de estado de la ventana está oculta con Perfil abierto; el fallo de «Actualizar hoy» tiene
+     *  que verse en la etiqueta propia del perfil (antes el botón volvía a «Actualizar hoy» sin decir nada). */
+    @Test void errorDeActualizarHoySeVeEnElEstadoDelPerfil() throws Exception {
+        String[] estado = new String[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L;
+            v.hoyError("HTTP 429");
+            estado[0] = v.actEstado.getText();
+        });
+        assertEquals("No se pudo actualizar: HTTP 429", estado[0]);
+        assertEquals(List.of("No se pudo actualizar: HTTP 429"), anfitrion.estadosGlobales, "y también en la barra general, como antes");
+    }
+
+    /** F1: «Cara a cara…» sin historial cargado avisaba solo en la barra oculta: no pasaba nada a la vista. */
+    @Test void caraACaraSinHistorialAvisaEnElEstadoDelPerfil() throws Exception {
+        String[] estado = new String[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L;   // sin actividad en caché
+            new CaraACaraDialogo(null, v).mostrar();
+            estado[0] = v.actEstado.getText();
+        });
+        assertEquals("Abre primero un perfil con historial cargado.", estado[0]);
+    }
+
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la
      *  cabecera que ya estaba pintada no se sustituye por «Sin datos de perfil». */
     @Test void actualizarHoySinFichaNoBorraLaCabecera() throws Exception {
