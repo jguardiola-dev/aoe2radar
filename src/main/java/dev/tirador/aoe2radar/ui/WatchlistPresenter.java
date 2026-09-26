@@ -2,8 +2,10 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.Match;
+import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.service.Campanas;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.Familias;
 import dev.tirador.aoe2radar.service.FiltroLista;
@@ -74,6 +76,10 @@ public final class WatchlistPresenter {
         boolean mostrarEloWatch();
         /** El enlace con Partidas, leído de la vista en CADA uso (los tests lo cambian después de construir). */
         WatchlistView.EnlacePartidas enlace();
+        /** Las campanas (service.Campanas), leídas de la vista en CADA uso, por el mismo motivo que enlace(). */
+        Campanas campanas();
+        /** Pinta el botón de la campana según esté encendida o no la de la vista actual. */
+        void refrescarCampanaBtn();
     }
 
     private final Pantalla pantalla;
@@ -120,13 +126,28 @@ public final class WatchlistPresenter {
     final Set<Long> eloDelSnapshot = java.util.concurrent.ConcurrentHashMap.newKeySet();
     final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
 
+    // ----- campanas y avisos -----
+    private final Tareas tareas;
+    private final WatchlistView.Anfitrion anfitrion;
+    private final MenusJugador menus;
+    private final Navegacion navegacion;
+    /** id de vista → jugadores vigilados: la MISMA instancia que la vista (la lee el hilo del socket y Live now). */
+    private final Map<String, Set<Long>> campanaIds;
+
     /** topPais/topClan/paises: los de la vista (calculados al construirla, con el idioma ya fijado), no otros. */
     WatchlistPresenter(Pantalla pantalla, List<Player> todosJugadores, Path playersFile,
                        String topPais, String topClan, PaisItem[] paises,
                        BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg,
                        FormService formaService, Map<Long, Integer> gamesWatch,
-                       ProfileService perfiles, EstadoVivo vivo, Map<Long, Integer> eloWatch, List<Player> topLadder) {
+                       ProfileService perfiles, EstadoVivo vivo, Map<Long, Integer> eloWatch, List<Player> topLadder,
+                       Tareas tareas, WatchlistView.Anfitrion anfitrion, MenusJugador menus, Navegacion navegacion,
+                       Map<String, Set<Long>> campanaIds) {
         this.pantalla = pantalla;
+        this.tareas = tareas;
+        this.anfitrion = anfitrion;
+        this.menus = menus;
+        this.navegacion = navegacion;
+        this.campanaIds = campanaIds;
         this.todosJugadores = todosJugadores;
         this.perfiles = perfiles;
         this.vivo = vivo;
@@ -220,6 +241,90 @@ public final class WatchlistPresenter {
         pantalla.refrescarWatchlist();
         pantalla.indicadoresVivos();
     }
+
+    // ===== Campanas: aviso cuando alguien de una vista marcada entra en partida =========================
+
+    public boolean campanaContiene(long pid) { return pantalla.campanas().campanaContiene(pid, campanaIds); }
+
+    /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, pais y clan. */
+    public void refrescarCampanas() {
+        Set<String> s = pantalla.campanas().campanas();
+        if (s.isEmpty()) {
+            campanaIds.clear();
+            // F11 de la 1.3: al apagar la última campana, el socket también deja de vigilar esa lista (antes solo
+            // se vaciaba campanaIds y el socket seguía con los ids viejos). Conjunto MUTABLE: el anfitrión le suma
+            // el top de Live now, si está abierto.
+            anfitrion.actualizarSocketExtra(new HashSet<>());
+            tareas.enUi(pantalla.enlace()::sincronizarSocket);
+            return;
+        }
+        // Copia de todosJugadores AQUÍ, en el EDT (refrescarCampanas siempre se llama desde él: botón de campana,
+        // Timer de Swing, arranque): mismo riesgo que la fila 106 si el hilo de fondo recorriera la lista de
+        // verdad mientras el EDT la muta (altas, bajas, rebuildGrupos...).
+        List<Player> jugadoresAhora = new ArrayList<>(todosJugadores);
+        tareas.enFondo("campanas", () -> {   // con Tareas.SWING: new Thread(..., "campanas").start(), como antes
+            Map<String, Set<Long>> nuevo = pantalla.campanas().calcularCampanaIds(s, jugadoresAhora);
+            // fila 107 de DEUDA: retainAll+putAll en vez de clear+putAll, para que campanaIds nunca quede vacio
+            // a medias mientras otro hilo (el socket) lo lee con tocaAvisar/campanaContiene.
+            campanaIds.keySet().retainAll(nuevo.keySet());
+            campanaIds.putAll(nuevo);
+            Set<Long> todos = new HashSet<>(); for (Set<Long> x : nuevo.values()) todos.addAll(x);
+            anfitrion.actualizarSocketExtra(todos);
+            tareas.enUi(pantalla.enlace()::sincronizarSocket);
+        });
+    }
+
+    /** «Mi partida»: si el que entra en partida soy yo (mi_pid), aviso con el rival (bandera, ELO, civ) y accesos a su perfil y al cara a cara. */
+    public void avisarMiPartida(long pid, Match m) {
+        if (!pantalla.campanas().tocaAvisarMiPartida(pid, m)) return;
+        log("mi partida: el socket dice que mi partida " + m.id + " ha empezado (" + m.map + ", " + m.mode + ")");
+        MatchPlayer yo0 = null; for (MatchPlayer p : m.players) if (p.id == pid) yo0 = p;
+        if (yo0 == null) return;
+        final MatchPlayer yo = yo0;
+        List<MatchPlayer> rivales = new ArrayList<>(); for (MatchPlayer p : m.players) if (p.team != yo.team) rivales.add(p);
+        StringBuilder txt = new StringBuilder("\u25CF " + t("Tu partida ha empezado", "Your game has started") + " \u00B7 " + (m.map == null ? "" : m.map) + " \u00B7 " + dev.tirador.aoe2radar.service.ReglasPartida.modoCorto(m) + " \u00B7 " + t("vs ", "vs "));
+        for (int i = 0; i < rivales.size(); i++) { MatchPlayer r = rivales.get(i); if (i > 0) txt.append(", "); txt.append(anfitrion.nombreVisible(r.id, r.name)); Integer e1 = menus.elo1v1Conocido(r.id); if (e1 == null && r.rating != null) e1 = r.rating; if (e1 != null) txt.append(" (").append(e1).append(")"); if (r.civ != null) txt.append(" ").append(r.civ); }
+        final MatchPlayer rival = rivales.isEmpty() ? null : rivales.get(0);
+        List<Object[]> fichas = new ArrayList<>(); for (MatchPlayer r : rivales) { Integer e1 = menus.elo1v1Conocido(r.id); if (e1 == null) e1 = r.rating; fichas.add(new Object[]{ r.id, anfitrion.nombreVisible(r.id, r.name) + (r.civ != null ? "  ·  " + r.civ : ""), e1 }); }
+        final String txtSup = "● " + t("Tu partida empieza", "Your game starts") + " · " + (m.map == null ? "" : m.map) + " · " + dev.tirador.aoe2radar.service.ReglasPartida.modoCorto(m);
+        tareas.enUi(() -> {
+            anfitrion.mostrarSuperposicion(txtSup, fichas, 60_000);   // sobre el juego, mientras carga
+            anfitrion.mostrarToast(txt.toString(), m.id);
+            if (rival != null && rival.id > 0) {   // accesos rápidos en el propio aviso
+                anfitrion.agregarAccionesToast(
+                        () -> navegacion.abrirPerfilEnPestana(rival.id, anfitrion.nombreVisible(rival.id, rival.name)),
+                        () -> anfitrion.abrirPerfilYCaraACara(pid, leerConfig("mi_nombre", anfitrion.nombreVisible(pid, yo.name)), rival.id, anfitrion.nombreVisible(rival.id, rival.name)));
+            }
+        });
+    }
+
+    /** Alguien vigilado entra en partida: si está en una lista con campana, aviso (toast dentro de la app; Windows si está minimizada).
+     *  El nombre y el texto se construyen DENTRO del invokeLater (fila 106 de DEUDA): nombreDe recorre
+     *  todosJugadores/topLadder, que se leen y escriben desde el EDT (rebuildGrupos, altas, bajas...); llamarlo
+     *  desde un hilo de fondo (vigilarTop/vigilarVivos) podía toparse con un ConcurrentModificationException. */
+    public void avisarSiCampana(long pid, Match m) {
+        if (!pantalla.campanas().tocaAvisar(pid, m, campanaIds)) return;
+        tareas.enUi(() -> {
+            String nombre = anfitrion.nombreVisible(pid, anfitrion.ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : anfitrion.ahoraNombre(pid));
+            String resumen = pantalla.enlace().resumenVivo(m, pid);
+            String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " \u00B7 " + resumen : "");
+            anfitrion.mostrarToast(texto, m.id);   // solo dentro de la app: nada de notificaciones de Windows
+        });
+    }
+
+    /** ¿Está encendida la campana de la vista que se mira ahora? */
+    boolean campanaActiva() { return pantalla.campanas().campanas().contains(idVistaCampana()); }
+
+    /** El botón de la campana: la enciende o la apaga para la vista actual, recalcula y lo dice en el estado. */
+    void alternarCampana() {
+        String id = idVistaCampana();
+        boolean activo = pantalla.campanas().alternar(id);
+        pantalla.refrescarCampanaBtn();
+        refrescarCampanas();
+        pantalla.estado(activo ? t("Avisos activados para «", "Alerts on for \u201C") + nombreVistaCampana() + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
+    }
+
+    private String nombreDe(long pid) { for (Player p : todosJugadores) if (p.id() == pid) return p.name(); for (Player p : topLadder) if (p.id() == pid) return p.name(); return String.valueOf(pid); }
 
     // ===== Lista visible: filtro, familias y conteos ======================================================
 

@@ -1,9 +1,13 @@
 package dev.tirador.aoe2radar.ui;
 
+import dev.tirador.aoe2radar.api.ApiClient;
+import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.service.Campanas;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.VistaInicial;
 import dev.tirador.aoe2radar.util.Config;
@@ -40,6 +44,9 @@ class WatchlistPresenterTest {
         String clan;
         boolean soloVivos, mostrarElo = true;
         WatchlistView.EnlacePartidas enlace = new WatchlistViewTest.EnlaceFalso();
+        Campanas campanas;
+        @Override public Campanas campanas() { return campanas; }
+        @Override public void refrescarCampanaBtn() { llamadas.add("campanaBtn"); }
         final List<String> llamadas = new ArrayList<>();
         @Override public boolean soloVivosMarcado() { return soloVivos; }
         @Override public boolean mostrarEloWatch() { return mostrarElo; }
@@ -82,6 +89,20 @@ class WatchlistPresenterTest {
     List<Player> topLadder;
     /** Un EstadoVivo propio (no el del sistema): quién juega, sin compartir estado con otros tests. */
     EstadoVivo vivo;
+    WatchlistViewTest.AnfitrionFalso anfitrion;
+    Map<String, Set<Long>> campanaIds;
+    /** La config de las campanas (la de Campanas: campanas, mi_pid...). */
+    Map<String, String> cfgCampanas;
+    /** Lo que el presentador manda al EDT (tareas.enUi) se guarda aquí y se ejecuta a mano: así se ve qué va en el EDT. */
+    final List<Runnable> enUi = new ArrayList<>();
+    final List<String> hilos = new ArrayList<>();
+    final Tareas tareas = new Tareas() {
+        @Override public void enFondo(String nombre, Runnable trabajo) { hilos.add(nombre); trabajo.run(); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { hilos.add(nombre + "(demonio)"); trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { hilos.add(nombre + "(minima)"); trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { enUi.add(trabajo); }
+    };
+    private void correrEdt() { List<Runnable> r = new ArrayList<>(enUi); enUi.clear(); r.forEach(Runnable::run); }
     PantallaFalsa pantalla;
     List<Player> jugadores;
     Map<String, String> cfg;
@@ -106,13 +127,19 @@ class WatchlistPresenterTest {
         eloWatch = new HashMap<>();
         topLadder = new ArrayList<>();
         vivo = new EstadoVivo(new RelojFalso());
+        anfitrion = new WatchlistViewTest.AnfitrionFalso();
+        campanaIds = new java.util.concurrent.ConcurrentHashMap<>();
+        cfgCampanas = new HashMap<>();
+        pantalla.campanas = new Campanas(new CompanionApi(new ApiClient(new WatchlistViewTest.ThrottleSinFreno(), new WatchlistViewTest.TransporteNuncaLlamado(), s -> { }, () -> false)),
+                (k, def) -> cfgCampanas.getOrDefault(k, def), cfgCampanas::put, nombre -> false);
         p = nuevo(tmp.resolve("players.txt"));
     }
 
     private WatchlistPresenter nuevo(Path playersFile) {
         return new WatchlistPresenter(pantalla, jugadores, playersFile, TOP_PAIS, TOP_CLAN, paises,
                 (k, def) -> cfg.getOrDefault(k, def), cfg::put, forma, gamesWatch,
-                new WatchlistViewTest.ProfileServiceFalso(), vivo, eloWatch, topLadder);
+                new WatchlistViewTest.ProfileServiceFalso(), vivo, eloWatch, topLadder,
+                tareas, anfitrion, new WatchlistViewTest.MenusFalso(), new WatchlistViewTest.NavegacionFalsa(), campanaIds);
     }
 
     @AfterEach void restaurar() throws Exception {
@@ -443,6 +470,76 @@ class WatchlistPresenterTest {
         p.ponerEloFresco(1L, 1520);
         assertEquals(1520, p.eloParaResta(1L));
         assertTrue(p.eloDelSnapshot.isEmpty());
+    }
+
+    // ===== campanas y avisos ============================================================================================
+
+    @Test void refrescarCampanas_calculaEnFondoYSincronizaEnElEdt() {
+        jugadores.addAll(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Pros")));
+        pantalla.campanas.guardarCampanas(new java.util.LinkedHashSet<>(List.of("grupo|Amigos")));
+        campanaIds.put("grupo|Viejo", Set.of(9L));
+        p.refrescarCampanas();
+        assertEquals(List.of("campanas"), hilos, "el cálculo va en el hilo «campanas»");
+        assertEquals(Map.of("grupo|Amigos", Set.of(1L)), campanaIds, "retainAll+putAll: la vista sin campana sale");
+        assertEquals(List.of(Set.of(1L, -1L)), anfitrion.socketExtra, "al socket, los vigilados (más lo de Live now)");
+        assertEquals(1, enUi.size(), "sincronizarSocket, en el EDT");
+        assertTrue(p.campanaContiene(1L));
+        assertFalse(p.campanaContiene(2L));
+    }
+
+    @Test void refrescarCampanas_sinCampanasVaciaYAvisaAlSocket() {
+        campanaIds.put("grupo|Viejo", Set.of(9L));
+        p.refrescarCampanas();
+        assertTrue(campanaIds.isEmpty());
+        assertEquals(List.of(), hilos, "sin campanas no hay hilo");
+        assertEquals(List.of(Set.of(-1L)), anfitrion.socketExtra);
+        assertEquals(1, enUi.size());
+    }
+
+    @Test void alternarCampana_enciendeApagaYLoDice() {
+        pantalla.grupo = "Amigos";
+        assertFalse(p.campanaActiva());
+        p.alternarCampana();
+        assertTrue(p.campanaActiva());
+        assertEquals(List.of("campanaBtn", "estado:Avisos activados para «Amigos»: te avisaré cuando alguien entre en partida."), pantalla.llamadas);
+        pantalla.llamadas.clear();
+        p.alternarCampana();
+        assertFalse(p.campanaActiva());
+        assertEquals(List.of("campanaBtn", "estado:Avisos apagados para esta lista."), pantalla.llamadas);
+    }
+
+    @Test void avisarSiCampana_textoEnElEdtYUnaVezPorPartida() {
+        jugadores.add(new Player(1L, "Ana", "G"));
+        topLadder.add(new Player(4L, "Cuatro", WatchlistView.TOP_LADDER));
+        campanaIds.put("grupo|G", Set.of(1L, 4L));
+        Match m = new Match();
+        m.id = 5L;
+        p.avisarSiCampana(1L, m);
+        p.avisarSiCampana(1L, m);
+        p.avisarSiCampana(4L, m);
+        p.avisarSiCampana(2L, m);
+        assertEquals(List.of(), anfitrion.avisos, "nada fuera del EDT");
+        correrEdt();
+        assertEquals(List.of("toast:● Ana ha empezado una partida · resumen#5", "toast:● Cuatro ha empezado una partida · resumen#5"), anfitrion.avisos,
+                "el nombre sale de la Watchlist o del top cargado");
+    }
+
+    @Test void avisarMiPartida_rivalesFichasYAccesos() {
+        cfgCampanas.put("mi_pid", "5");
+        Match mm = new Match();
+        mm.id = 88L; mm.map = "Arena";
+        MatchPlayer yo = new MatchPlayer(); yo.id = 5L; yo.name = "Yo"; yo.team = 1;
+        MatchPlayer r1 = new MatchPlayer(); r1.id = 6L; r1.name = "Riv"; r1.team = 2; r1.rating = 1500; r1.civ = "Franks";
+        MatchPlayer r2 = new MatchPlayer(); r2.id = 7L; r2.name = "Dos"; r2.team = 2;
+        mm.players.addAll(List.of(yo, r1, r2));
+        p.avisarMiPartida(6L, mm);
+        assertTrue(enUi.isEmpty(), "no soy yo: nada");
+        p.avisarMiPartida(5L, mm);
+        p.avisarMiPartida(5L, mm);   // la misma partida: una vez
+        correrEdt();
+        String modo = dev.tirador.aoe2radar.service.ReglasPartida.modoCorto(mm);
+        assertEquals(List.of("superposicion:● Tu partida empieza · Arena · " + modo + " [6|Riv  ·  Franks|1500] [7|Dos|null] 60000",
+                "toast:● Tu partida ha empezado · Arena · " + modo + " · vs Riv (1500) Franks, Dos#88", "acciones"), anfitrion.avisos);
     }
 
     // ===== forma reciente ===============================================================================================

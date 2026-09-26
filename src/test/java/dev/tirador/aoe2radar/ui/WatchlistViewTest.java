@@ -158,8 +158,9 @@ class WatchlistViewTest {
         @Override public void espectar(Player p) { espectarYCa.add("espectar"); }
         @Override public java.nio.file.Path rutaCaptureAge() { return null; }
         @Override public void lanzarCaptureAge(java.nio.file.Path rec) { espectarYCa.add("ca"); }
-        @Override public void mostrarToast(String texto, long matchId) { }
-        @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) { }
+        final List<String> avisos = new ArrayList<>();   // toasts, superposiciones y botones del toast, en orden
+        @Override public void mostrarToast(String texto, long matchId) { avisos.add("toast:" + texto + "#" + matchId); }
+        @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) { avisos.add("acciones"); }
         @Override public void abrirPerfilYCaraACara(long pid, String miNombre, long rivalId, String rivalNombre) { }
         @Override public Object[] tarjetaPerfilCache(long pid) { return null; }
         @Override public void tarjetaPerfilGuardar(long pid, Object[] valor) { }
@@ -171,7 +172,11 @@ class WatchlistViewTest {
         @Override public PaginaPartidas paginaApi(long pid, int pagina, int porPagina) { return null; }
         @Override public void reiniciarThrottleDirectos() { }
         @Override public void vigilarTwitchDirectos() { }
-        @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { }
+        @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) {
+            StringBuilder f = new StringBuilder();
+            for (Object[] x : fichas) f.append(" [").append(x[0]).append("|").append(x[1]).append("|").append(x[2]).append("]");
+            avisos.add("superposicion:" + texto + f + " " + ms);
+        }
         final List<Set<Long>> socketExtra = new ArrayList<>();
         @Override public void actualizarSocketExtra(Set<Long> ids) { ids.add(-1L); socketExtra.add(ids); }   // como el real: le suma el top de Live now (el set debe ser mutable)
         @Override public String ahoraNombre(long pid) { return String.valueOf(pid); }
@@ -779,6 +784,45 @@ class WatchlistViewTest {
 
         assertTrue(invocado.get(), "el hook debía dispararse: avisarSiCampana sí llega a leer todosJugadores");
         assertFalse(fueraDelEdt.get(), "todosJugadores no debe recorrerse fuera del EDT (tampoco tras el invokeLater)");
+    }
+
+    /** Caracterización (antes de pasar las campanas a WatchlistPresenter): el texto del aviso de campana (una vez por
+     *  partida) y el de «Tu partida ha empezado» (superposición, toast y sus dos accesos), ya en el EDT. */
+    @Test void avisos_campanaYMiPartida() throws Exception {
+        todosJugadores.add(new Player(1L, "Ana", "G"));
+        java.lang.reflect.Field campo = WatchlistView.class.getDeclaredField("campanaIds");
+        campo.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Set<Long>> campanaIds = (Map<String, Set<Long>>) campo.get(watchlist);
+        campanaIds.put("grupo|G", Set.of(1L));
+        assertTrue(watchlist.campanaContiene(1L));
+        assertFalse(watchlist.campanaContiene(2L));
+        Match m = new Match();
+        m.id = 77L;
+        watchlist.avisarSiCampana(1L, m);
+        watchlist.avisarSiCampana(1L, m);   // la misma partida: un solo aviso
+        watchlist.avisarSiCampana(2L, m);   // sin campana
+        javax.swing.SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(List.of("toast:● Ana ha empezado una partida · resumen#77"), anfitrion.avisos);
+
+        anfitrion.avisos.clear();
+        Map<String, String> cfgC = new HashMap<>(Map.of("mi_pid", "5"));
+        Campanas conMiPid = new Campanas(new CompanionApi(new ApiClient(new ThrottleSinFreno(), new TransporteNuncaLlamado(), s -> { }, () -> false)),
+                (k, def) -> cfgC.getOrDefault(k, def), cfgC::put, nombre -> false);
+        java.lang.reflect.Field campoCampanas = WatchlistView.class.getDeclaredField("campanas");
+        campoCampanas.setAccessible(true);
+        campoCampanas.set(watchlist, conMiPid);
+        Match mm = new Match();
+        mm.id = 88L; mm.map = "Arena";
+        MatchPlayer yo = new MatchPlayer(); yo.id = 5L; yo.name = "Yo"; yo.team = 1;
+        MatchPlayer rival = new MatchPlayer(); rival.id = 6L; rival.name = "Riv"; rival.team = 2; rival.rating = 1500; rival.civ = "Franks";
+        mm.players.add(yo); mm.players.add(rival);
+        watchlist.avisarMiPartida(6L, mm);   // no soy yo
+        watchlist.avisarMiPartida(5L, mm);
+        javax.swing.SwingUtilities.invokeAndWait(() -> { });
+        String modo = dev.tirador.aoe2radar.service.ReglasPartida.modoCorto(mm);
+        assertEquals(List.of("superposicion:● Tu partida empieza · Arena · " + modo + " [6|Riv  ·  Franks|1500] 60000",
+                "toast:● Tu partida ha empezado · Arena · " + modo + " · vs Riv (1500) Franks#88", "acciones"), anfitrion.avisos);
     }
 
     // ===== refrescarCampanas: campanaIds nunca se ve vacío a medias (fila 107 de DEUDA) =========================

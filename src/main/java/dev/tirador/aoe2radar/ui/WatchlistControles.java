@@ -178,7 +178,7 @@ final class WatchlistControles {
         grupoFila.add(gruposBtn);
         wv.campanaBtn = new JToggleButton(wv.anfitrion.iconoVista("campana"));
         wv.campanaBtn.setFocusable(false); wv.campanaBtn.setMargin(new Insets(2, 5, 2, 5)); wv.campanaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        wv.campanaBtn.addActionListener(e -> alternarCampana());
+        wv.campanaBtn.addActionListener(e -> wv.presenter.alternarCampana());
         grupoFila.add(wv.campanaBtn);
         wv.topNCombo = new JComboBox<>(new String[]{ "Top 25", "Top 50", "Top 100" });
         wv.topNCombo.setToolTipText(t("Cuántos jugadores enseñan Top ladder y Top país", "How many players Top ladder and Top country show"));
@@ -364,22 +364,15 @@ final class WatchlistControles {
         });
     }
 
-    private void refrescarCampanaBtn() {
+    void refrescarCampanaBtn() {
         if (wv.campanaBtn == null) return;
-        boolean on = wv.campanas.campanas().contains(wv.presenter.idVistaCampana());
+        boolean on = wv.presenter.campanaActiva();
         wv.campanaBtn.setSelected(on);
         wv.campanaBtn.setForeground(on ? (temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)) : UIManager.getColor("Button.foreground"));
         wv.campanaBtn.setToolTipText(on ? t("Avisos activados para esta lista: te avisa cuando alguien de aquí entre en partida (clic para apagar)", "Alerts on for this list: you get a notice when someone here starts a game (click to turn off)")
                 : t("Activar para recibir un aviso cuando alguien de esta lista entre en partida", "Turn on to get a notice when someone in this list starts a game"));
     }
 
-    private void alternarCampana() {
-        String id = wv.presenter.idVistaCampana();
-        boolean activo = wv.campanas.alternar(id);
-        refrescarCampanaBtn();
-        wv.refrescarCampanas();
-        wv.status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + wv.presenter.nombreVistaCampana() + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
-    }
 
     private void refrescarClanesGuardados() {
         if (wv.clanesGuardadosCombo == null) return;
