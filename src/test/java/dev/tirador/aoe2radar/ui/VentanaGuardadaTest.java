@@ -98,6 +98,24 @@ class VentanaGuardadaTest {
     }
 
     @Test
+    void minimizarNoOlvidaQueEstabaMaximizada() throws Exception {
+        // F8 (revisión 1.3): «Iniciar minimizada» + ventana maximizada. El estado debe conservar los dos bits.
+        Files.writeString(CONFIG_FILE, "ventana_max=true\n");
+        SwingUtilities.invokeAndWait(() -> {
+            JFrame f = new JFrame();
+            try {
+                VentanaGuardada.aplicar(f);
+                VentanaGuardada.minimizar(f);
+                assertEquals(JFrame.ICONIFIED, f.getExtendedState() & JFrame.ICONIFIED, "minimizada");
+                assertEquals(JFrame.MAXIMIZED_BOTH, f.getExtendedState() & JFrame.MAXIMIZED_BOTH,
+                        "y al restaurarla vuelve maximizada");
+            } finally {
+                f.dispose();
+            }
+        });
+    }
+
+    @Test
     void guardarEscribeDivisorBoundsYNoMaximizado() throws Exception {
         SwingUtilities.invokeAndWait(() -> {
             JFrame f = new JFrame();

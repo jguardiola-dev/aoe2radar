@@ -16,6 +16,7 @@ import dev.tirador.aoe2radar.app.Servicios;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.Espectar;
 import dev.tirador.aoe2radar.ui.TemaApp;
+import dev.tirador.aoe2radar.ui.VentanaGuardada;
 import dev.tirador.aoe2radar.ui.WatchlistView;
 
 import javax.swing.*;
@@ -72,7 +73,7 @@ final class AccionesVentana {
             v.watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER);   // la app abre en ★
             v.mostrarDirectos(true);                    // …con los Directos a la vista, no una tabla vacía
             if (Boolean.parseBoolean(leerConfig("inicio_min", "false")))
-                v.setExtendedState(JFrame.ICONIFIED);
+                VentanaGuardada.minimizar(v);   // F8 (1.3): sin olvidar si estaba maximizada
         });
         final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no

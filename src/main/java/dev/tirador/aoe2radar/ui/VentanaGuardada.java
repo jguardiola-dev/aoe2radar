@@ -46,6 +46,13 @@ public final class VentanaGuardada {
         } catch (Exception ignored) { }
     }
 
+    /** «Iniciar minimizada» (arreglo F8 de la revisión 1.3): minimiza SIN borrar el maximizado que puso
+     *  {@link #aplicar}. Con setExtendedState(ICONIFIED) a secas, la ventana volvía de la barra de tareas en tamaño
+     *  normal y al cerrar se guardaba ventana_max=false. */
+    public static void minimizar(JFrame ventana) {
+        ventana.setExtendedState(ventana.getExtendedState() | JFrame.ICONIFIED);
+    }
+
     /** Guarda el divisor (si existe), el estado maximizado y, si no está maximizada, los bounds. */
     public static void guardar(JFrame ventana, JSplitPane splitPrincipal) {
         if (splitPrincipal != null)
