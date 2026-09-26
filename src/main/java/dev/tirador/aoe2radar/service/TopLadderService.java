@@ -76,15 +76,11 @@ public final class TopLadderService {
 
     /**
      * Como cargarTopLadder: prueba rm_1v1 y, si no trae nada, el ladder de equipos (id "3"), hasta topN filas. Aprende
-     * país y canal de paso (cache.Paises/Canales), como la 1.1. Va a la red.
+     * país y canal de paso (cache.Paises/Canales), como la 1.1. Va a la red, SIEMPRE de ahora (clasificacionFresca, sin
+     * la caché por URL): el top enseña el ELO de ahora y se sella como recién cargado; lo que evita repetir llamadas es
+     * su propia memoria de 10 min (topFresco), no la caché (revisión del lote API de la 1.3, B1).
      */
-    public ResultadoTop cargarTop(String pais, int topN) { return cargarTop(pais, topN, false); }
-
-    /**
-     * Como cargarTop(pais, topN); con forzar (el botón de recarga, cambiar top N o país, y la recarga de cada 15 min del
-     * vigilante), la clasificación se pide de ahora mismo (clasificacionFresca), sin pasar por la caché por URL.
-     */
-    public ResultadoTop cargarTop(String pais, int topN, boolean forzar) {
+    public ResultadoTop cargarTop(String pais, int topN) {
         avisarSiUi("TopLadderService.cargarTop");
         List<FilaTop> out = new ArrayList<>();
         Map<Long, Integer> racha = new HashMap<>();
@@ -92,7 +88,7 @@ public final class TopLadderService {
         Map<Long, Integer> partidas = new HashMap<>();
         for (String id : new String[]{ "rm_1v1", "3" }) {
             try {
-                for (FilaClasificacion f : (forzar ? ladder.clasificacionFresca(id, 1, 100, pais) : ladder.clasificacion(id, 1, 100, pais)).filas()) {
+                for (FilaClasificacion f : ladder.clasificacionFresca(id, 1, 100, pais).filas()) {
                     long pid = f.pid();
                     int rating = f.rating() != null ? f.rating() : -1;
                     String name = String.valueOf(f.nombre());

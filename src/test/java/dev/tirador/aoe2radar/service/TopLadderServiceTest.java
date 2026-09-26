@@ -411,16 +411,18 @@ class TopLadderServiceTest {
 
     // ===================== cargarTop con la caché por URL: forzar va a la red (plan API de la 1.3) =====================
 
-    @Test void cargarTop_forzado_seSaltaLaCachePorUrl() {
+    /** B1 de la revisión: el top ★ (global y país) se pide siempre de ahora; si viniera de la caché (≤14 min), se
+     *  sellaría como recién cargado y su ELO podría llegar a ~27 min de antigüedad. */
+    @Test void cargarTop_siempreSeSaltaLaCachePorUrl() throws Exception {
         CompanionApi conCache = CompanionApi.conCache(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false), reloj);
         TopLadderService s = new TopLadderService(conCache, conCache, reloj, pausa, PAUSA_MS);
         java.util.function.LongSupplier alLadder = () -> red.pedidas.stream().filter(u -> u.contains("/leaderboards/")).count();
         s.cargarTop(null, 50);            // sin filas: prueba rm_1v1 y luego «3», las dos a la red
-        long primera = alLadder.getAsLong();
-        assertEquals(2, primera);
-        s.cargarTop(null, 50, false);     // sin forzar (entrar en ★ con el top viejo): vale lo guardado
-        assertEquals(primera, alLadder.getAsLong());
-        s.cargarTop(null, 50, true);      // botón, top N, país o la recarga de 15 min: de ahora
-        assertEquals(primera + 2, alLadder.getAsLong());
+        assertEquals(2, alLadder.getAsLong());
+        conCache.clasificacion("rm_1v1", 1, 100, null);   // y quedan guardadas: otra pantalla las aprovecha
+        assertEquals(2, alLadder.getAsLong());
+        s.cargarTop(null, 50);            // pero el top vuelve a la red
+        s.cargarTop("es", 50);            // también el de un país
+        assertEquals(6, alLadder.getAsLong());
     }
 }

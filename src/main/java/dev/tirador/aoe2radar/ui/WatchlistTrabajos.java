@@ -175,7 +175,7 @@ final class WatchlistTrabajos {
                 + (nombrePais != null ? t(" de ", " of ") + nombrePais : t(" del ladder…", " of the ladder…")));
         new SwingWorker<TopLadderService.ResultadoTop, Void>() {
             @Override protected TopLadderService.ResultadoTop doInBackground() {
-                return wv.topLadderService.cargarTop(pais, topN, forzar);   // forzar: de ahora, sin la caché por URL
+                return wv.topLadderService.cargarTop(pais, topN);   // siempre de ahora, sin la caché por URL (B1)
             }
             @Override protected void done() {
                 wv.cargandoTop = false;

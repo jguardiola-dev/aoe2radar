@@ -16,7 +16,7 @@ public interface FuenteLadder {
     Clasificacion clasificacion(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException;
 
     /** Como clasificacion(…), pero de ahora mismo: si la fuente guarda respuestas (CompanionApi.conCache), esta se la
-     *  salta. Para lo que el usuario pide «forzar». Por defecto (una fuente sin caché), lo mismo que clasificacion. */
+     *  salta. Para lo que debe ser de ahora (el top ★ de la watchlist). Por defecto (una fuente sin caché), lo mismo que clasificacion. */
     default Clasificacion clasificacionFresca(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
         return clasificacion(id, pagina, porPagina, pais);
     }
