@@ -183,7 +183,7 @@ final class WatchlistControles {
         wv.topNCombo = new JComboBox<>(new String[]{ "Top 25", "Top 50", "Top 100" });
         wv.topNCombo.setToolTipText(t("Cuántos jugadores enseñan Top ladder y Top país", "How many players Top ladder and Top country show"));
         wv.topNCombo.setSelectedIndex(Math.max(0, Arrays.asList("25", "50", "100").indexOf(leerConfig("top_n", "50"))));
-        wv.topNCombo.addActionListener(e -> { if (wv.rellenandoTopN) return; String n = new String[]{ "25", "50", "100" }[Math.max(0, wv.topNCombo.getSelectedIndex())]; if (n.equals(leerConfig("top_n", "50"))) return; guardarConfig("top_n", n); if (wv.modoTop() && !wv.modoClan()) { wv.topCargado = 0; wv.cargarTopLadder(true); } });
+        wv.topNCombo.addActionListener(e -> { if (wv.rellenandoTopN) return; String n = new String[]{ "25", "50", "100" }[Math.max(0, wv.topNCombo.getSelectedIndex())]; if (n.equals(leerConfig("top_n", "50"))) return; guardarConfig("top_n", n); if (wv.modoTop() && !wv.modoClan()) { wv.presenter.top.topCargado = 0; wv.cargarTopLadder(true); } });
         wv.topNCombo.setVisible(false);
         grupoFila.add(wv.topNCombo);
         wv.addJugBtn = new JButton(t("+ Añadir jugador", "+ Add player"));

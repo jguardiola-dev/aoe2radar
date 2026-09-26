@@ -80,7 +80,7 @@ final class WatchlistLista {
                     boolean vivo = WatchlistView.VIVO.jugando(p.id())
                             || (marca != 'H' && wv.presenter.vivoFamilia.getOrDefault(p.id(), false));
                     Integer elo = wv.eloWatch.get(p.id());
-                    Integer rank = wv.modoTop() ? wv.rankTop.get(p.id()) : null;
+                    Integer rank = wv.modoTop() ? wv.presenter.top.rankTop.get(p.id()) : null;
                     String punto = vivo ? "<font color='#" + colorVivoHex() + "'>\u25CF</font>" : "";
                     String col1 = rank != null ? "<font color='gray'>" + rank + ".</font>"
                             : marca == 'P' ? "\u25B8" : marca == 'E' ? "\u25BE" : "";

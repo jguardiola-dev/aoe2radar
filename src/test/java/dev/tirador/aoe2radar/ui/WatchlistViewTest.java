@@ -953,28 +953,52 @@ class WatchlistViewTest {
      *  ★ Top ladder antes de 10 min daba por fresca la lista del clan y enseñaba a sus miembros como el top. */
     @Test void aplicarTopClan_dejaSuFirmaYElLadderSeRecarga() {
         watchlist.rebuildGrupos();
-        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
-        watchlist.topFirma = "global";
-        watchlist.topCargado = new RelojFalso().ahora;   // el ladder se cargó ahora mismo (reloj del TopLadderService del test)
+        watchlist.presenter.top.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.presenter.top.topFirma = "global";
+        watchlist.presenter.top.topCargado = new RelojFalso().ahora;   // el ladder se cargó ahora mismo (reloj del TopLadderService del test)
         sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
 
-        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+        watchlist.presenter.top.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
 
-        assertEquals(List.of(9L), watchlist.topLadder.stream().map(Player::id).toList());
-        assertFalse(watchlist.topLadderService.topFresco(false, "global", watchlist.topFirma, !watchlist.topLadder.isEmpty(), watchlist.topCargado),
+        assertEquals(List.of(9L), watchlist.presenter.top.topLadder.stream().map(Player::id).toList());
+        assertFalse(watchlist.presenter.top.servicio.topFresco(false, "global", watchlist.presenter.top.topFirma, !watchlist.presenter.top.topLadder.isEmpty(), watchlist.presenter.top.topCargado),
                 "con la lista del clan puesta, volver a ★ Top ladder tiene que recargar");
+    }
+
+    /** Caracterización (antes de pasar el top a WatchlistPresenter): con el top fresco (misma firma, menos de 10 min),
+     *  cargarTopLadder no recarga: pinta lo que hay y solo intenta vigilar (aquí, dentro del anti-solape de 45 s). */
+    @Test void cargarTopLadder_topFrescoNoRecarga() {
+        watchlist.rebuildGrupos();
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+        watchlist.presenter.top.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.presenter.top.topFirma = "global";
+        watchlist.presenter.top.topCargado = new RelojFalso().ahora;
+        watchlist.presenter.top.ultimoTopMs = System.currentTimeMillis();   // vigilarTop: dentro de los 45 s, no sale a la red
+        assertFalse(watchlist.topLadderVacio());
+        assertEquals(new RelojFalso().ahora, watchlist.topCargadoMs());
+        watchlist.cargarTopLadder(false);
+        assertFalse(watchlist.presenter.top.cargandoTop, "fresco: sin carga");
+        assertFalse(watchlist.presenter.top.vigilandoTop, "anti-solape: sin vigilancia");
+        assertEquals(List.of(1L), watchlist.topLadderSnapshot().stream().map(Player::id).toList());
+        assertEquals(1, playersModel.size(), "pinta el top que ya había");
+    }
+
+    @Test void cargarTopClan_sinTagLoPide() {
+        watchlist.clanField.setText("  ");
+        watchlist.cargarTopClan();
+        assertEquals("Escribe el tag del clan (p. ej. R1).", watchlist.status.getText());
     }
 
     @Test void aplicarTopClan_siElUsuarioYaSalioDelClanNoPinta() {
         watchlist.rebuildGrupos();
-        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
-        watchlist.topFirma = "global";
+        watchlist.presenter.top.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.presenter.top.topFirma = "global";
         sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
 
-        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+        watchlist.presenter.top.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
 
-        assertEquals(List.of(1L), watchlist.topLadder.stream().map(Player::id).toList(), "el top ladder ya pintado se queda");
-        assertEquals("global", watchlist.topFirma);
+        assertEquals(List.of(1L), watchlist.presenter.top.topLadder.stream().map(Player::id).toList(), "el top ladder ya pintado se queda");
+        assertEquals("global", watchlist.presenter.top.topFirma);
     }
 
     /** F12 de la revisión 1.3: la racha salía con «V»/«D» también con la app en inglés. */

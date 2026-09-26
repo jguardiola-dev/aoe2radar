@@ -12,6 +12,7 @@ import dev.tirador.aoe2radar.service.FiltroLista;
 import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.ProfileService;
+import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.service.VistaInicial;
 
 import java.nio.file.Path;
@@ -56,8 +57,11 @@ public final class WatchlistPresenter {
         void actualizarBotonesModo();
         /** ★ Top clan con el campo vacío: lo rellena con el último clan cargado (config clan_tag). */
         void rellenarClanSiVacio();
-        void cargarTopClan();
         void cargarTopLadder(boolean forzar);
+        /** Vigila los vivos del top cargado (SwingWorker de la vista, con el anti-solape de WatchlistTop). */
+        void vigilarTop();
+        /** El top no carga ni hay caché: el aviso modal (solo la primera vez por sesión, lo decide WatchlistTop). */
+        void avisarTopCaido(String texto);
         /** Reconstruye la lista visible (aplicarFiltroGrupo). */
         void refrescarFiltro();
         /** Barrido de vivos/ELO de los visibles que aún no se han mirado (refrescarWatchlist). */
@@ -82,9 +86,10 @@ public final class WatchlistPresenter {
         void refrescarCampanaBtn();
     }
 
-    private final Pantalla pantalla;
-    private final String topPais, topClan;
-    private final PaisItem[] paises;
+    final Pantalla pantalla;
+    private final String topPais;
+    final String topClan;
+    final PaisItem[] paises;
     private final BiFunction<String, String, String> leerCfg;
     private final BiConsumer<String, String> guardarCfg;
     /** La lista de seguidos: la MISMA instancia que la ventana (y Ratings, Live now, Perfil...). */
@@ -98,7 +103,7 @@ public final class WatchlistPresenter {
     // ----- forma reciente -----
     private final FormService formaService;
     /** El «partidas jugadas» que conoce la app (la MISMA instancia que la ventana): lo lee FormService.porResta. */
-    private final Map<Long, Integer> gamesWatch;
+    final Map<Long, Integer> gamesWatch;
     static final Map<Long, Integer> TOP_STREAK = new java.util.concurrent.ConcurrentHashMap<>();   // racha del ladder (+3 / -2)
     static final Map<Long, int[]> TOP_LAST10 = new java.util.concurrent.ConcurrentHashMap<>();   // {ganadas, perdidas} de las últimas 10
     final Map<Long, Forma> forma24 = new java.util.concurrent.ConcurrentHashMap<>();
@@ -110,11 +115,11 @@ public final class WatchlistPresenter {
 
     // ----- lista visible, familias y ELO -----
     private final ProfileService perfiles;
-    private final EstadoVivo vivo;
+    final EstadoVivo vivo;
     /** El ELO conocido de cada jugador: la MISMA instancia que la ventana (Ratings, Live now, Perfil la leen). */
-    private final Map<Long, Integer> eloWatch;
-    /** El top cargado (ladder, país o clan): lo crea la vista; misma instancia y mismo monitor (topLadderSnapshot). */
-    final List<Player> topLadder;
+    final Map<Long, Integer> eloWatch;
+    /** El top (★ ladder, país, clan): su estado y su carga, en una pieza aparte por tamaño (ver WatchlistTop). */
+    final WatchlistTop top;
     private final FiltroLista filtroLista;   // qué fila se ve y en qué orden (sin Swing)
     final Set<Long> vinculosExpandidos = new HashSet<>();
     final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
@@ -127,8 +132,8 @@ public final class WatchlistPresenter {
     final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
 
     // ----- campanas y avisos -----
-    private final Tareas tareas;
-    private final WatchlistView.Anfitrion anfitrion;
+    final Tareas tareas;
+    final WatchlistView.Anfitrion anfitrion;
     private final MenusJugador menus;
     private final Navegacion navegacion;
     /** id de vista → jugadores vigilados: la MISMA instancia que la vista (la lee el hilo del socket y Live now). */
@@ -139,7 +144,8 @@ public final class WatchlistPresenter {
                        String topPais, String topClan, PaisItem[] paises,
                        BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg,
                        FormService formaService, Map<Long, Integer> gamesWatch,
-                       ProfileService perfiles, EstadoVivo vivo, Map<Long, Integer> eloWatch, List<Player> topLadder,
+                       ProfileService perfiles, EstadoVivo vivo, Map<Long, Integer> eloWatch,
+                       TopLadderService topLadderService, Path topCache,
                        Tareas tareas, WatchlistView.Anfitrion anfitrion, MenusJugador menus, Navegacion navegacion,
                        Map<String, Set<Long>> campanaIds) {
         this.pantalla = pantalla;
@@ -153,7 +159,7 @@ public final class WatchlistPresenter {
         this.vivo = vivo;
         this.filtroLista = new FiltroLista(vivo);
         this.eloWatch = eloWatch;
-        this.topLadder = topLadder;
+        this.top = new WatchlistTop(this, topLadderService, topCache);
         this.formaService = formaService;
         this.gamesWatch = gamesWatch;
         this.topPais = topPais; this.topClan = topClan; this.paises = paises;
@@ -226,7 +232,7 @@ public final class WatchlistPresenter {
             guardarCfg.accept("grupo_activo", sel);
             pantalla.actualizarBotonesModo();
             pantalla.rellenarClanSiVacio();
-            pantalla.cargarTopClan();
+            top.cargarTopClan();
             return;
         }
         if (sel.equals(WatchlistView.TOP_LADDER) || sel.equals(topPais)) {
@@ -324,7 +330,7 @@ public final class WatchlistPresenter {
         pantalla.estado(activo ? t("Avisos activados para «", "Alerts on for \u201C") + nombreVistaCampana() + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
     }
 
-    private String nombreDe(long pid) { for (Player p : todosJugadores) if (p.id() == pid) return p.name(); for (Player p : topLadder) if (p.id() == pid) return p.name(); return String.valueOf(pid); }
+    private String nombreDe(long pid) { for (Player p : todosJugadores) if (p.id() == pid) return p.name(); for (Player p : top.topLadder) if (p.id() == pid) return p.name(); return String.valueOf(pid); }
 
     // ===== Lista visible: filtro, familias y conteos ======================================================
 
@@ -340,7 +346,7 @@ public final class WatchlistPresenter {
         boolean porForma = formaVisible && ordenCfg.startsWith("forma");
         boolean formaAsc = "forma_asc".equals(ordenCfg);   // ascendente = los que más bajan, arriba
         final Map<Long, Forma> fa = formaActiva();
-        FiltroLista.Resultado res = filtroLista.filtrar(todosJugadores, topLadder, modoTop(), g, soloVivos,
+        FiltroLista.Resultado res = filtroLista.filtrar(todosJugadores, top.topLadder, modoTop(), g, soloVivos,
                 porForma, formaAsc, porElo, fa, eloWatch, vinculosExpandidos);
         marcaFila.clear();
         marcaFila.putAll(res.marcaFila());
@@ -413,7 +419,7 @@ public final class WatchlistPresenter {
     int vivosEnAmbito() {
         String g = grupoActivo();
         int nAmbito = 0;
-        for (Player p : (modoTop() ? topLadder : todosJugadores))
+        for (Player p : (modoTop() ? top.topLadder : todosJugadores))
             if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && vivo.jugando(p.id())) nAmbito++;
         return nAmbito;
     }
@@ -454,7 +460,7 @@ public final class WatchlistPresenter {
         if (eloDelSnapshot.isEmpty()) return;
         Set<Long> presentes = new HashSet<>();
         for (Player p : todosJugadores) presentes.add(p.id());
-        for (Player p : topLadder) presentes.add(p.id());
+        for (Player p : top.topLadder) presentes.add(p.id());
         for (Long pid : new ArrayList<>(eloDelSnapshot))
             if (!presentes.contains(pid)) { eloDelSnapshot.remove(pid); watchBarridos.remove(pid); }
     }

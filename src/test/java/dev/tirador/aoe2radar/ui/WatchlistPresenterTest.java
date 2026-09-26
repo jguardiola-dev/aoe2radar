@@ -9,6 +9,7 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.service.Campanas;
 import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.service.VistaInicial;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.RelojFalso;
@@ -56,8 +57,9 @@ class WatchlistPresenterTest {
         @Override public String clanEscrito() { return clan; }
         @Override public void actualizarBotonesModo() { llamadas.add("botones"); }
         @Override public void rellenarClanSiVacio() { llamadas.add("rellenarClan"); }
-        @Override public void cargarTopClan() { llamadas.add("topClan"); }
         @Override public void cargarTopLadder(boolean forzar) { llamadas.add("topLadder:" + forzar); }
+        @Override public void vigilarTop() { llamadas.add("vigilarTop"); }
+        @Override public void avisarTopCaido(String texto) { llamadas.add("avisoTop:" + texto); }
         @Override public void refrescarFiltro() { llamadas.add("filtro"); }
         @Override public void refrescarWatchlist() { llamadas.add("barrido"); }
         @Override public void indicadoresVivos() { llamadas.add("indicadores"); }
@@ -96,8 +98,10 @@ class WatchlistPresenterTest {
     /** Lo que el presentador manda al EDT (tareas.enUi) se guarda aquí y se ejecuta a mano: así se ve qué va en el EDT. */
     final List<Runnable> enUi = new ArrayList<>();
     final List<String> hilos = new ArrayList<>();
+    /** false: enFondo solo apunta el hilo (para lo que en la app iría a la red, p. ej. «top-clan»). */
+    boolean correrFondo = true;
     final Tareas tareas = new Tareas() {
-        @Override public void enFondo(String nombre, Runnable trabajo) { hilos.add(nombre); trabajo.run(); }
+        @Override public void enFondo(String nombre, Runnable trabajo) { hilos.add(nombre); if (correrFondo) trabajo.run(); }
         @Override public void enFondoDemonio(String nombre, Runnable trabajo) { hilos.add(nombre + "(demonio)"); trabajo.run(); }
         @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { hilos.add(nombre + "(minima)"); trabajo.run(); }
         @Override public void enUi(Runnable trabajo) { enUi.add(trabajo); }
@@ -125,7 +129,6 @@ class WatchlistPresenterTest {
         forma = new FormaFalsa();
         gamesWatch = new HashMap<>();
         eloWatch = new HashMap<>();
-        topLadder = new ArrayList<>();
         vivo = new EstadoVivo(new RelojFalso());
         anfitrion = new WatchlistViewTest.AnfitrionFalso();
         campanaIds = new java.util.concurrent.ConcurrentHashMap<>();
@@ -133,12 +136,20 @@ class WatchlistPresenterTest {
         pantalla.campanas = new Campanas(new CompanionApi(new ApiClient(new WatchlistViewTest.ThrottleSinFreno(), new WatchlistViewTest.TransporteNuncaLlamado(), s -> { }, () -> false)),
                 (k, def) -> cfgCampanas.getOrDefault(k, def), cfgCampanas::put, nombre -> false);
         p = nuevo(tmp.resolve("players.txt"));
+        topLadder = p.top.topLadder;
+    }
+
+    /** El reloj del TopLadderService (topFresco): la hora de «ahora» para los 10 min del top. */
+    final RelojFalso reloj = new RelojFalso();
+    private static CompanionApi companion() {
+        return new CompanionApi(new ApiClient(new WatchlistViewTest.ThrottleSinFreno(), new WatchlistViewTest.TransporteNuncaLlamado(), s -> { }, () -> false));
     }
 
     private WatchlistPresenter nuevo(Path playersFile) {
         return new WatchlistPresenter(pantalla, jugadores, playersFile, TOP_PAIS, TOP_CLAN, paises,
                 (k, def) -> cfg.getOrDefault(k, def), cfg::put, forma, gamesWatch,
-                new WatchlistViewTest.ProfileServiceFalso(), vivo, eloWatch, topLadder,
+                new WatchlistViewTest.ProfileServiceFalso(), vivo, eloWatch,
+                new TopLadderService(companion(), companion(), reloj, ms -> { }, 300), tmp.resolve("top_cache.txt"),
                 tareas, anfitrion, new WatchlistViewTest.MenusFalso(), new WatchlistViewTest.NavegacionFalsa(), campanaIds);
     }
 
@@ -229,9 +240,12 @@ class WatchlistPresenterTest {
 
     @Test void grupoElegido_topClan() {
         pantalla.grupo = TOP_CLAN;
+        pantalla.clan = "R1";
+        correrFondo = false;
         p.grupoElegido();
         assertEquals(TOP_CLAN, cfg.get("grupo_activo"));
-        assertEquals(List.of("botones", "rellenarClan", "topClan"), pantalla.llamadas);
+        assertEquals(List.of("botones", "rellenarClan", "estado:Descargando la lista de clanes…"), pantalla.llamadas);
+        assertEquals(List.of("top-clan"), hilos, "el clan se pide en el hilo «top-clan»");
     }
 
     @Test void grupoElegido_topLadderYPais() {
@@ -470,6 +484,126 @@ class WatchlistPresenterTest {
         p.ponerEloFresco(1L, 1520);
         assertEquals(1520, p.eloParaResta(1L));
         assertTrue(p.eloDelSnapshot.isEmpty());
+    }
+
+    // ===== el top (WatchlistTop) ========================================================================================
+
+    private static TopLadderService.ResultadoTop resultado(TopLadderService.FilaTop... filas) {
+        return new TopLadderService.ResultadoTop(List.of(filas), Map.of(1L, 3), Map.of(1L, new int[]{ 6, 4 }), Map.of(1L, 250));
+    }
+
+    @Test void top_cargaYCache() {
+        pantalla.grupo = TOP_PAIS;
+        p.paisActual = new PaisItem("Francia", "fr");
+        cfg.clear();
+        WatchlistTop.Carga c = p.top.prepararCarga(false);
+        assertNotNull(c);
+        assertEquals("fr", c.pais()); assertEquals("fr", c.firma()); assertEquals("Francia", c.nombrePais());
+        assertTrue(p.top.cargandoTop);
+        assertNull(p.top.prepararCarga(false), "ya cargando: nada");
+        assertTrue(pantalla.llamadas.get(0).startsWith("estado:Cargando el top "), pantalla.llamadas.toString());
+        pantalla.llamadas.clear();
+        p.top.cargaTerminada();
+        eloDeAnocheDe(1L);
+        p.top.aplicarCarga(resultado(new TopLadderService.FilaTop(1L, "Uno", 2100, 555L), new TopLadderService.FilaTop(2L, "Dos", 2000, 0L)), c);
+        assertEquals(List.of(1L, 2L), ids(topLadder));
+        assertEquals(2, p.top.rankTop.get(2L));
+        assertEquals(2100, eloWatch.get(1L));
+        assertTrue(p.eloDelSnapshot.isEmpty(), "el ELO del leaderboard es fresco");
+        assertEquals(250, gamesWatch.get(1L));
+        assertEquals(3, WatchlistPresenter.TOP_STREAK.get(1L));
+        assertEquals("fr", p.top.topFirma);
+        assertEquals(List.of("filtro", "indicadores", "estado:Top 2 de Francia cargado. Los puntos rojos llegan en segundos…", "vigilarTop"), pantalla.llamadas);
+        assertTrue(Files.exists(tmp.resolve("top_cache.txt")), "guarda la caché de respaldo");
+
+        // el siguiente viene vacío (servicio caído): tira de la caché de esa misma vista
+        pantalla.llamadas.clear();
+        topLadder.clear();
+        p.top.aplicarCarga(resultado(), c);
+        assertEquals(List.of(1L, 2L), ids(topLadder), "de la caché");
+        assertEquals(List.of("filtro", "indicadores"), pantalla.llamadas.subList(0, 2));
+        assertTrue(pantalla.llamadas.get(2).startsWith("estado:El servicio de datos no responde"), pantalla.llamadas.toString());
+        WatchlistPresenter.TOP_STREAK.remove(1L); WatchlistPresenter.TOP_LAST10.remove(1L);
+    }
+
+    private void eloDeAnocheDe(long pid) { p.ponerEloDeAnoche(pid, 1); }
+
+    @Test void top_caidoSinCache_avisaUnaSolaVez() {
+        pantalla.grupo = WatchlistView.TOP_LADDER;
+        WatchlistTop.Carga c = new WatchlistTop.Carga(null, "global", 50, null);
+        p.top.aplicarCarga(resultado(), c);
+        p.top.aplicarCarga(resultado(), c);
+        long avisos = pantalla.llamadas.stream().filter(x -> x.startsWith("avisoTop:")).count();
+        assertEquals(1, avisos, "el aviso modal, solo la primera vez por sesión");
+        assertTrue(pantalla.llamadas.get(pantalla.llamadas.size() - 1).startsWith("estado:No se pudo cargar el top"));
+        WatchlistPresenter.TOP_STREAK.remove(1L); WatchlistPresenter.TOP_LAST10.remove(1L);
+    }
+
+    @Test void top_siElUsuarioCambioDeVistaNoPinta() {
+        pantalla.grupo = TOP_CLAN;   // la carga era del ladder; mientras, pasó a ★ Top clan
+        p.top.aplicarCarga(resultado(new TopLadderService.FilaTop(1L, "Uno", 2100, 555L)), new WatchlistTop.Carga(null, "global", 50, null));
+        assertTrue(topLadder.isEmpty());
+        assertEquals(250, gamesWatch.get(1L), "las partidas se aprenden igual");
+        assertEquals(List.of(), pantalla.llamadas);
+        WatchlistPresenter.TOP_STREAK.remove(1L); WatchlistPresenter.TOP_LAST10.remove(1L);
+    }
+
+    @Test void top_frescoNoRecargaYErrorAlEstado() {
+        pantalla.grupo = WatchlistView.TOP_LADDER;
+        topLadder.add(new Player(1L, "Uno", WatchlistView.TOP_LADDER));
+        p.top.topFirma = "global";
+        p.top.topCargado = reloj.ahora;
+        assertNull(p.top.prepararCarga(false));
+        assertFalse(p.top.cargandoTop);
+        assertEquals(List.of("filtro", "indicadores", "vigilarTop"), pantalla.llamadas);
+        pantalla.llamadas.clear();
+        p.top.errorCarga(new java.io.IOException("x"));
+        assertTrue(pantalla.llamadas.get(0).startsWith("estado:Error cargando el top: "));
+    }
+
+    @Test void top_clan() {
+        pantalla.grupo = TOP_CLAN;
+        pantalla.clan = " ";
+        p.top.cargarTopClan();
+        assertEquals(List.of("estado:Escribe el tag del clan (p. ej. R1)."), pantalla.llamadas);
+        assertEquals(List.of(), hilos);
+        pantalla.llamadas.clear();
+        p.top.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+        assertEquals(List.of(9L), ids(topLadder));
+        assertEquals(TOP_CLAN, topLadder.get(0).grupo());
+        assertNull(p.eloParaResta(9L), "el resumen diario del clan es ELO de anoche");
+        assertEquals("clan|r1", p.top.topFirma);
+        assertEquals(List.of("filtro", "indicadores", "estado:Clan R1: 1 jugadores en el ladder 1v1 (resumen diario)."), pantalla.llamadas);
+        pantalla.llamadas.clear();
+        p.top.aplicarTopClan("R1", new TopLadderService.ResultadoClan("sin red", List.of()));
+        assertEquals(List.of("estado:No se pudo cargar la lista de clanes: sin red"), pantalla.llamadas);
+    }
+
+    @Test void top_vigilancia() {
+        assertNull(p.top.prepararVigilancia(), "sin top: nada");
+        topLadder.addAll(List.of(new Player(1L, "Uno", "T"), new Player(2L, "Dos", "T"), new Player(3L, "Tres", "T")));
+        List<Player> top = p.top.prepararVigilancia();
+        assertEquals(3, top.size());
+        assertNotSame(topLadder, top, "una copia");
+        assertTrue(p.top.vigilandoTop);
+        assertNull(p.top.prepararVigilancia(), "ya vigilando");
+        p.top.vigilanciaTerminada();
+        assertNull(p.top.prepararVigilancia(), "anti-solape de 45 s");
+        vivo.marcarJugando(2L, 20L);
+        vivo.marcarJugando(3L, 30L);
+        p.top.aplicarVigilancia(top, new TopLadderService.ResultadoVigilancia(Map.of(1L, 10L), Set.of(1L, 2L)));
+        assertTrue(vivo.jugando(1L));
+        assertFalse(vivo.jugando(2L), "verificado y sin partida: fuera");
+        assertTrue(vivo.jugando(3L), "no verificado (lote fallido): ni quitar ni poner");
+        assertEquals(List.of("indicadores"), pantalla.llamadas);
+        assertEquals(Set.of(1L, 2L), p.top.topVerificados);
+    }
+
+    @Test void top_snapshotEsUnaCopia() {
+        topLadder.add(new Player(1L, "Uno", "T"));
+        List<Player> s = p.top.snapshot();
+        topLadder.clear();
+        assertEquals(1, s.size());
     }
 
     // ===== campanas y avisos ============================================================================================

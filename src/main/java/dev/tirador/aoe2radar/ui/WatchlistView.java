@@ -162,7 +162,6 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     final Window ventana;
     final ProfileService perfiles;
     final dev.tirador.aoe2radar.service.BusquedaPerfiles busqueda;
-    final TopLadderService topLadderService;
     final FormService formaService;
     final Campanas campanas;
     final BarridoVivos barridoVivos;
@@ -244,23 +243,12 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     JPanel parPais;
     boolean rearmandoPais;
 
-    String topFirma = "";
-    final Map<Long, Integer> rankTop = new HashMap<>();
     JComboBox<String> topNCombo; boolean rellenandoTopN; JButton addJugBtn;
     JPanel parClan, parClanGuardados; JTextField clanField; JPopupMenu clanPopup;
     JComboBox<String> clanesGuardadosCombo; JButton clanEstrella; boolean rellenandoClanes;
 
-    final List<Player> topLadder = new ArrayList<>();
-    final Map<Long, Long> lastTop = new HashMap<>();   // pid -> última partida (ms), del leaderboard
-    long topCargado;
-    volatile boolean cargandoTop, vigilandoTop;
-    final Path topCache;
     final long pausaMs;
     final int perPage;
-    /** El «río» de Top ladder usa este throttle propio (independiente del de Twitch, ver ui.DirectosPresenter). */
-    long ultimoTopMs;
-    boolean avisoTopMostrado;   // el popup del top caído: solo la primera vez por sesión
-    final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     // ----- forma reciente (el estado vive en WatchlistPresenter) -----
     /** ¿Se ve la columna Forma? La consulta playersList.getToolTipText (queda en la ventana: playersList es suyo). */
@@ -330,7 +318,7 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
                   JPanel sujetosPanel, Path playersFile, Path topCache, long pausaMs, int perPage,
                   BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg) {
         this.leerCfg = leerCfg; this.guardarCfg = guardarCfg;
-        this.ventana = ventana; this.perfiles = perfiles; this.busqueda = busqueda; this.topLadderService = topLadderService;
+        this.ventana = ventana; this.perfiles = perfiles; this.busqueda = busqueda;
         this.formaService = formaService; this.campanas = campanas; this.barridoVivos = barridoVivos; this.eloSesion = eloSesion;
         this.menus = menus; this.dialogos = dialogos; this.navegacion = navegacion;
         this.tareas = tareas; this.enlacePartidas = enlacePartidas; this.anfitrion = anfitrion;
@@ -340,9 +328,8 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         this.sujetosPanel = sujetosPanel;
         this.pausaMs = pausaMs; this.perPage = perPage;
         this.presenter = new WatchlistPresenter(this, todosJugadores, playersFile, TOP_PAIS, TOP_CLAN, PAISES, leerCfg, guardarCfg,
-                formaService, gamesWatch, perfiles, VIVO, eloWatch, topLadder,
+                formaService, gamesWatch, perfiles, VIVO, eloWatch, topLadderService, topCache,
                 tareas, anfitrion, menus, navegacion, campanaIds);
-        this.topCache = topCache;
         construirPanel();
     }
 
@@ -390,13 +377,13 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     public String paisSel() { return presenter.paisSel(); }
 
     /** ¿El top ladder/país/clan está vacío? Lo consulta el temporizador de vigilancia (cromo, arrancar()). */
-    public boolean topLadderVacio() { return topLadder.isEmpty(); }
+    public boolean topLadderVacio() { return presenter.top.topLadder.isEmpty(); }
     /** Cuándo se cargó el top por última vez (epoch ms); 0 = nunca. */
-    public long topCargadoMs() { return topCargado; }
+    public long topCargadoMs() { return presenter.top.topCargado; }
     /** Fuerza la próxima carga del top a ir a la red (config Top N cambiado desde el menú). */
-    public void forzarRecargaTop() { topCargado = 0; cargarTopLadder(true); }
+    public void forzarRecargaTop() { presenter.top.topCargado = 0; cargarTopLadder(true); }
     /** Copia del top actual (ladder/país/clan): la consulta sincronizarSocket (cromo) para vigilar también el top. */
-    public List<Player> topLadderSnapshot() { synchronized (topLadder) { return new ArrayList<>(topLadder); } }
+    public List<Player> topLadderSnapshot() { return presenter.top.snapshot(); }
 
     // ----- Forma reciente (±ELO en una ventana de horas; 1v1 ranked) --------------
 
@@ -425,9 +412,9 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     /** El tag de clan escrito ahora mismo en el campo (Top clan); "" si no hay campo o está vacío. */
     public String clanBuscado() { return presenter.clanBuscado(); }
 
-    @Override public void cargarTopClan() { trabajos.cargarTopClan(); }
-    public void cargarTopLadder(boolean forzar) { trabajos.cargarTopLadder(forzar); }
-    public void vigilarTop() { trabajos.vigilarTop(); }
+    void cargarTopClan() { presenter.top.cargarTopClan(); }
+    @Override public void cargarTopLadder(boolean forzar) { trabajos.cargarTopLadder(forzar); }
+    @Override public void vigilarTop() { trabajos.vigilarTop(); }
 
 
     // ===== Grupos ========================================================================================
@@ -530,6 +517,10 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     @Override public EnlacePartidas enlace() { return enlacePartidas; }
     @Override public Campanas campanas() { return campanas; }
     @Override public void refrescarCampanaBtn() { controles.refrescarCampanaBtn(); }
+    @Override public void avisarTopCaido(String texto) {
+        javax.swing.JOptionPane.showMessageDialog(ventana, texto, t("Servicio no disponible", "Service unavailable"),
+                javax.swing.JOptionPane.WARNING_MESSAGE);
+    }
 
     void crearGrupoDialog() { dialogosLista.crearGrupoDialog(); }
 

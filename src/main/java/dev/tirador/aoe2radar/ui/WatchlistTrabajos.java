@@ -1,30 +1,26 @@
 package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Match;
-import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.BarridoVivos;
 import dev.tirador.aoe2radar.service.TopLadderService;
 
 import javax.swing.JOptionPane;
-import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
-import static dev.tirador.aoe2radar.util.Config.guardarConfig;
-import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
- * Los trabajos en segundo plano de la Watchlist: forma reciente, top clan, top ladder/país (con su caché
- * de respaldo) y los barridos de vivos (refrescarWatchlist, vigilarVivos, vigilarTop). Sale de WatchlistView
- * tal cual en la 1.3: cada SwingWorker y cada Thread con su nombre, su publish/process y su done(). El
- * estado (topLadder, rankTop, topCargado, cargandoTop...) sigue en la fachada: aquí solo vive el código.
- * Hilos: doInBackground y "top-clan" hacen la red; process/done/invokeLater vuelven al EDT.
+ * Los trabajos en segundo plano de la Watchlist: forma reciente, top ladder/país y los barridos de vivos
+ * (refrescarWatchlist, vigilarVivos, vigilarTop). Sale de WatchlistView tal cual en la 1.3: cada SwingWorker con
+ * su publish/process y su done(). Desde la fase 5 son el TRANSPORTE: el estado (el top, la forma, las marcas) y
+ * las decisiones (qué pedir, cómo aplicarlo) viven en WatchlistPresenter y su pieza WatchlistTop; aquí quedan el
+ * hilo, el publish/process, el get() y el done(). El top de un clan va por el hilo "top-clan" de WatchlistTop.
+ * Hilos: doInBackground hace la red; process/done vuelven al EDT.
  */
 final class WatchlistTrabajos {
 
@@ -93,201 +89,55 @@ final class WatchlistTrabajos {
         return v;
     }
 
-    // ----- «★ Top clan»: una vista más de la watchlist -----
-    void cargarTopClan() {
-        String tag = wv.clanField == null ? "" : wv.clanField.getText().trim();
-        if (tag.isEmpty()) { wv.status.setText(t("Escribe el tag del clan (p. ej. R1).", "Type the clan tag (e.g. R1).")); return; }
-        wv.status.setText(wv.anfitrion.clanesVacios() ? t("Descargando la lista de clanes…", "Downloading the clan list…") : t("Cargando el clan…", "Loading the clan…"));
-        new Thread(() -> {
-            TopLadderService.ResultadoClan res = wv.topLadderService.topClan(tag);
-            SwingUtilities.invokeLater(() -> aplicarTopClan(tag, res));
-        }, "top-clan").start();
+    // ----- ★ Top ladder / ★ Top país: el estado y las decisiones viven en WatchlistTop (pieza del presentador) -----
+
+    /** Carga el top N del leaderboard (nick, ELO, última partida) sin tocar players.txt, con caché de 10 min, y
+     *  dispara un barrido de vivos. El SwingWorker es el transporte: qué pedir y cómo aplicarlo, WatchlistTop. */
+    public void cargarTopLadder(boolean forzar) {
+        WatchlistTop top = wv.presenter.top;
+        WatchlistTop.Carga carga = top.prepararCarga(forzar);
+        if (carga == null) return;   // ya cargando, o fresco (ya pintado)
+        new SwingWorker<TopLadderService.ResultadoTop, Void>() {
+            @Override protected TopLadderService.ResultadoTop doInBackground() {
+                return top.cargar(carga);   // siempre de ahora, sin la caché por URL (B1)
+            }
+            @Override protected void done() {
+                top.cargaTerminada();
+                try {
+                    TopLadderService.ResultadoTop res = get();
+                    top.aplicarCarga(res, carga);
+                } catch (Exception ex) {
+                    top.errorCarga(ex);
+                }
+            }
+        }.execute();
     }
 
-    /** El resultado de cargarTopClan, ya en el EDT. F1 de la revisión 1.3: el clan comparte topLadder/rankTop con
-     *  ★ Top ladder y ★ Top país, así que 1) deja su propia firma (antes la de «global» seguía puesta y, al volver al
-     *  ladder antes de 10 min, topFresco daba por buena la lista del clan) y 2) no pinta si el usuario ya salió de
-     *  ★ Top clan mientras cargaba (como cargarTopLadder, que ya lo miraba). */
-    void aplicarTopClan(String tag, TopLadderService.ResultadoClan res) {
-        if (res.error() != null) { wv.status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
-        if (!wv.modoClan()) return;   // el usuario cambió de vista mientras cargaba: no pintar encima
-        wv.topFirma = WatchlistPresenter.firmaClan(tag);
-        wv.topLadder.clear();
-        wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
-        wv.lastTop.clear(); wv.rankTop.clear();
-        for (TopLadderService.FilaClan f : res.miembros()) {
-            wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
-            wv.presenter.ponerEloDeAnoche(f.pid(), f.rating());   // resumen diario de sfr-data: ELO de anoche (F5)
-            wv.rankTop.put(f.pid(), wv.topLadder.size());
-        }
-        guardarConfig("clan_tag", tag);
-        wv.aplicarFiltroGrupo();
-        wv.actualizarIndicadoresVivos();
-        wv.status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
-                : t("Clan ", "Clan ") + tag + ": " + res.miembros().size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
+    /** Vivos del top: el río global de partidas en curso como motor (1-2
+     *  llamadas), consulta a los «calientes» si el río no trae en-curso, y
+     *  verificación individual presupuestada de los que se apagan. */
+    public void vigilarTop() {
+        WatchlistTop topW = wv.presenter.top;
+        List<Player> top = topW.prepararVigilancia();
+        if (top == null) return;   // ya vigilando, sin top o dentro de los 45 s
+        new SwingWorker<TopLadderService.ResultadoVigilancia, Void>() {
+            @Override protected TopLadderService.ResultadoVigilancia doInBackground() {
+                return topW.vigilar(top);
+            }
+            @Override protected void done() {
+                topW.vigilanciaTerminada();
+                try {
+                    TopLadderService.ResultadoVigilancia r = get();
+                    topW.aplicarVigilancia(top, r);
+                } catch (Exception ignored) { }
+            }
+        }.execute();
     }
 
     /** Barrido de la Watchlist al abrir: para cada seguido, una consulta ligera
      *  que detecta partida en curso (finished vacío) y su ELO actual (rating de
      *  su último 1v1 terminado). Solo toca la lista, nunca la tabla: los
      *  resultados de las partidas siguen sin verse. */
-    /** Carga el top N del leaderboard (nick, ELO, última partida) sin tocar
-     *  players.txt, con caché de 10 min, y dispara un barrido de vivos. */
-    public void cargarTopLadder(boolean forzar) {
-        if (wv.cargandoTop) return;
-        String pais = wv.modoPais() ? wv.paisSel() : null;
-        String firma = pais == null ? "global" : pais;
-        if (wv.topLadderService.topFresco(forzar, firma, wv.topFirma, !wv.topLadder.isEmpty(), wv.topCargado)) {
-            wv.aplicarFiltroGrupo();
-            wv.actualizarIndicadoresVivos();
-            vigilarTop();
-            return;
-        }
-        wv.cargandoTop = true;
-        int topN = Integer.parseInt(leerConfig("top_n", "50"));
-        String nombrePais = null;
-        if (pais != null) for (PaisItem pi : wv.PAISES) if (pi.code().equals(pais)) { nombrePais = pi.nombre(); break; }
-        final String nombrePaisF = nombrePais;
-        wv.status.setText(t("Cargando el top ", "Loading the top ") + topN
-                + (nombrePais != null ? t(" de ", " of ") + nombrePais : t(" del ladder…", " of the ladder…")));
-        new SwingWorker<TopLadderService.ResultadoTop, Void>() {
-            @Override protected TopLadderService.ResultadoTop doInBackground() {
-                return wv.topLadderService.cargarTop(pais, topN);   // siempre de ahora, sin la caché por URL (B1)
-            }
-            @Override protected void done() {
-                wv.cargandoTop = false;
-                try {
-                    TopLadderService.ResultadoTop res = get();
-                    WatchlistPresenter.TOP_STREAK.putAll(res.racha());
-                    WatchlistPresenter.TOP_LAST10.putAll(res.ultimas10());
-                    wv.gamesWatch.putAll(res.partidas());   // como en la 1.1: se aprenden siempre, aunque el usuario haya cambiado de vista
-                    if (wv.modoClan() || !wv.modoTop()) return;   // mientras cargaba, el usuario cambió de vista: no pintar encima
-                    if (res.filas().isEmpty()) {
-                        if (cargarTopCache(firma)) {
-                            wv.topFirma = firma;
-                            wv.aplicarFiltroGrupo();
-                            wv.actualizarIndicadoresVivos();
-                            long horasCache = Math.max(1, (System.currentTimeMillis() - wv.topCargado) / 3600_000L);
-                            wv.status.setText(t("El servicio de datos no responde (¿bloqueo de red? p. ej. LaLiga/Cloudflare). Mostrando el top de hace ~",
-                                    "The data service isn't responding (network block? e.g. LaLiga/Cloudflare). Showing the top from ~")
-                                    + horasCache + t(" h. Reintento automático cada ", " h ago. Auto-retrying every ") + minutosReintento() + " min.");
-                        } else {
-                            if (!wv.avisoTopMostrado) {
-                                wv.avisoTopMostrado = true;
-                                JOptionPane.showMessageDialog(wv.ventana,
-                                        t("No se pudo cargar el top del ladder.\n\nCausa probable: el servicio de datos está caído o bloqueado\n(p. ej. LaLiga/Cloudflare en días de fútbol en España).\n\nLa app reintenta sola cada ",
-                                          "Couldn't load the ladder top.\n\nLikely cause: the data service is down or blocked\n(e.g. LaLiga/Cloudflare on football days in Spain).\n\nThe app retries on its own every ")
-                                          + minutosReintento() + t(" min — no hace falta hacer nada.", " min — nothing to do."),
-                                        t("Servicio no disponible", "Service unavailable"),
-                                        JOptionPane.WARNING_MESSAGE);
-                            }
-                            wv.status.setText(t("No se pudo cargar el top (¿servicio caído o bloqueado? p. ej. LaLiga/Cloudflare en días de fútbol). Reintento automático cada ",
-                                    "Couldn't load the top (service down or blocked? e.g. LaLiga/Cloudflare on match days). Auto-retrying every ") + minutosReintento() + " min.");
-                        }
-                        return;
-                    }
-                    wv.topLadder.clear();
-                    wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
-                    wv.lastTop.clear();
-                    wv.rankTop.clear();
-                    for (TopLadderService.FilaTop f : res.filas()) {
-                        wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-                        wv.presenter.ponerEloFresco(f.pid(), f.rating());   // del leaderboard: fresco (F5)
-                        wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
-                        wv.rankTop.put(f.pid(), wv.topLadder.size());
-                    }
-                    wv.topCargado = System.currentTimeMillis();
-                    wv.topFirma = firma;
-                    guardarTopCache(firma);
-                    wv.aplicarFiltroGrupo();
-                    wv.actualizarIndicadoresVivos();
-                    wv.status.setText(t("Top ", "Top ") + wv.topLadder.size()
-                            + (nombrePaisF != null ? t(" de ", " of ") + nombrePaisF : t(" del ladder", " of the ladder"))
-                            + t(" cargado. Los puntos rojos llegan en segundos…",
-                                " loaded. Red dots arriving in seconds…"));
-                    vigilarTop();
-                } catch (Exception ex) {
-                    wv.status.setText(t("Error cargando el top: ", "Error loading the top: ") + causa(ex));
-                }
-            }
-        }.execute();
-    }
-
-    /** Cada cuánto reintenta el vigilante un top caído: en cada ronda de vigilancia (Configuración → Vigilancia de
-     *  vivos, 1 min por defecto), no «cada 2 min» como decían los textos de la 1.1 (F12 de la revisión 1.3). */
-    private static int minutosReintento() { return dev.tirador.aoe2radar.service.EnlaceVivo.tickMs() / 60_000; }
-
-    private void guardarTopCache(String firma) {
-        List<TopLadderService.FilaCache> filas = new ArrayList<>();
-        for (Player p : wv.topLadder)
-            filas.add(new TopLadderService.FilaCache(p.id(), p.name(), wv.eloWatch.getOrDefault(p.id(), 0), wv.lastTop.getOrDefault(p.id(), 0L)));
-        wv.topLadderService.guardarCache(wv.topCache, firma, wv.topCargado, filas);
-    }
-
-    /** Restaura el último top guardado si es de la misma vista. Devuelve éxito. */
-    private boolean cargarTopCache(String firma) {
-        TopLadderService.TopCache cache = wv.topLadderService.cargarCache(wv.topCache, firma);
-        if (cache == null) return false;
-        wv.topLadder.clear();
-        wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
-        wv.lastTop.clear();
-        wv.rankTop.clear();
-        for (TopLadderService.FilaCache f : cache.filas()) {
-            wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-            if (f.elo() > 0) wv.presenter.ponerEloFresco(f.pid(), f.elo());   // del leaderboard, aunque de caché (F5)
-            wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
-            wv.rankTop.put(f.pid(), wv.topLadder.size());
-        }
-        wv.topCargado = cache.cargadoMs();
-        return !wv.topLadder.isEmpty();
-    }
-
-    /** Vivos del top: el río global de partidas en curso como motor, consulta a los «calientes» y verificación
-     *  individual presupuestada de los que se apagan. */
-    /** Vivos del top: el río global de partidas en curso como motor (1-2
-     *  llamadas), consulta a los «calientes» si el río no trae en-curso, y
-     *  verificación individual presupuestada de los que se apagan. */
-    public void vigilarTop() {
-        if (wv.vigilandoTop || wv.topLadder.isEmpty()) return;
-        if (System.currentTimeMillis() - wv.ultimoTopMs < 45_000) return;   // anti-solape: un barrido por tick
-        wv.ultimoTopMs = System.currentTimeMillis();
-        wv.vigilandoTop = true;
-        List<Player> top = new ArrayList<>(wv.topLadder);
-        new SwingWorker<TopLadderService.ResultadoVigilancia, Void>() {
-            @Override protected TopLadderService.ResultadoVigilancia doInBackground() {
-                return wv.topLadderService.vigilarTop(top, WatchlistView.VIVO::jugando, WatchlistView.VIVO::matchDe,
-                        (pid, m) -> {   // el lote: alguien aparece en curso. avisarSiCampana se llama desde este hilo de
-                            // fondo, pero ya es segura (fila 106 de DEUDA): construye nombre/texto dentro de un invokeLater.
-                            WatchlistView.VIVO.ponerInfo(pid, wv.enlacePartidas.resumenVivo(m, pid));
-                            if (!WatchlistView.VIVO.jugando(pid)) wv.avisarSiCampana(pid, m);   // nuevo en partida desde el último barrido
-                            WatchlistView.VIVO.guardarPartida(pid, m);
-                        },
-                        (pid, m) -> WatchlistView.VIVO.ponerInfo(pid, wv.enlacePartidas.resumenVivo(m, pid)));   // la confirmación individual
-            }
-            @Override protected void done() {
-                wv.vigilandoTop = false;
-                wv.anfitrion.vigilarTwitchDirectos();   // el río acaba de enseñar canales: ahora sí, el cruce
-                try {
-                    TopLadderService.ResultadoVigilancia r = get();
-                    wv.topVerificados.clear();
-                    wv.topVerificados.addAll(r.verificados());
-                    Map<Long, Long> vivos = r.resultado();
-                    for (Player p : top) {
-                        if (!wv.topVerificados.contains(p.id())) continue;   // lote fallido: ni quitar ni poner
-                        Long v = vivos.get(p.id());
-                        if (v != null) WatchlistView.VIVO.marcarJugando(p.id(), v);
-                        else { WatchlistView.VIVO.marcarFuera(p.id()); }   // el REST manda al quitar
-                    }
-                    // fila 109 de DEUDA: aquí había un "terminadasRio" que nunca se rellenaba (nada de este
-                    // método añadía partidas a esa lista); el bloque que lo consumía no actuaba nunca, así que
-                    // el resultado real siempre era el repintado simple. Se borra el muerto, no el comportamiento.
-                    wv.enlacePartidas.repintarTabla();
-                    wv.actualizarIndicadoresVivos();
-                } catch (Exception ignored) { }
-            }
-        }.execute();
-    }
-
     public void refrescarWatchlist() {
         if (wv.modoTop()) return;   // el top se alimenta del leaderboard y del río
         List<Player> objetivo = new ArrayList<>();
