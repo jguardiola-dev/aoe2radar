@@ -35,6 +35,10 @@ public final class Log {
     public static final DateTimeFormatter LOG_F =
             DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());
 
+    /** Lo que pasó al preparar la carpeta de datos (migración a %APPDATA%…): Sistema no puede llamar a Log mientras
+     *  calcula LOG_FILE, así que lo deja apuntado y se escribe aquí, ya con LOG_FILE y LOG_F listos. */
+    static { String aviso = Sistema.avisoCarpetaDatos(); if (aviso != null) log(aviso); }
+
     /** Escribe en consola y en descargas.log (junto a players.txt). */
     public static synchronized void log(String linea) {
         String l = LOG_F.format(Instant.now()) + "  " + linea;
