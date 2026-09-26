@@ -163,10 +163,13 @@ class LiveNowPresenterTest {
         pantalla.fuente = fuente;
         buscador.falla = new RuntimeException("sin red");
         presenter.refrescar(false);
-        // «Consultando…» inicial + un intento de progreso por cada uno de los tres primeros lotes; el cuarto ni se intenta
-        assertEquals(4, pantalla.estados.size());
+        // «Consultando…» inicial + un intento de progreso por cada uno de los tres primeros lotes; el cuarto ni se intenta.
+        // Desde la 1.3 (F7), un quinto: el aviso de que el barrido quedó incompleto (antes solo iba al log).
+        assertEquals(5, pantalla.estados.size());
+        assertTrue(pantalla.estados.get(4).startsWith(dev.tirador.aoe2radar.util.I18n.t("Barrido incompleto", "Incomplete sweep")), pantalla.estados.get(4));
         assertEquals(3, buscador.llamadas);
         assertTrue(presenter.enCursoSnapshot().isEmpty());
+        assertEquals(0, presenter.ultimaMs(), "un barrido cortado no cuenta como hecho (F7)");
     }
 
     @Test void refrescar_pestanaCerrada_noLlegaAPedirNingunLote() {
@@ -175,6 +178,69 @@ class LiveNowPresenterTest {
         presenter.refrescar(false);
         assertEquals(1, pantalla.cargarFuenteLiveLlamadas);   // la fuente sí se carga (no depende de «abierta»)
         assertEquals(0, buscador.llamadas);                   // pero el barrido por lotes se corta antes del primero
+        assertEquals(0, presenter.ultimaMs(), "y no cuenta como hecho: al abrir la pestaña se barre de verdad (F7)");
+    }
+
+    // ----- barrido y cambios durante el barrido (revisión 1.3, F7) --------------------------
+
+    /** El fondo, en el acto; lo del EDT, a una cola que el test vacía cuando quiere (como el EDT de verdad, que lo
+     *  ejecuta «después»): así se ve el estado que queda entre el final de un barrido y lo que programó para el EDT. */
+    static final class TareasUiAplazada implements Tareas {
+        final List<Runnable> pendientesUi = new ArrayList<>();
+        @Override public void enFondo(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { pendientesUi.add(trabajo); }
+        void vaciarUi() { while (!pendientesUi.isEmpty()) pendientesUi.remove(0).run(); }
+    }
+
+    @Test void refrescar_cambioDeFuenteDuranteElBarrido_descartaLaViejaYBarreLaNueva() {
+        TareasUiAplazada tareas = new TareasUiAplazada();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla, new EstadoVivo(Reloj.SISTEMA));
+        pantalla.fuente = List.<Object[]>of(ficha(901L, "Viejo", 2500, 1, "es"));
+        buscador.resultado = List.of(matchEnCurso(9901L, 901L), matchTerminado(9903L, 901L));
+        buscador.alPedir = () -> {   // en mitad del primer barrido, el usuario cambia de fuente (cambiarFuenteLive)
+            buscador.alPedir = null;
+            pantalla.fuente = List.<Object[]>of(ficha(902L, "Nuevo", 1500, 3, "es"));
+            p.reiniciarFuente();
+            p.refrescar(true);
+        };
+        p.refrescar(true);
+        // el barrido viejo acabó: no ha escrito nada suyo bajo la fuente nueva (antes: sus tarjetas y «barrido hace 0 min»)
+        assertFalse(p.enCursoSnapshot().containsKey(901L), "sin partidas de la fuente anterior bajo el título nuevo");
+        assertTrue(p.terminadasVigentes().isEmpty(), "ni terminadas de la fuente anterior");
+        assertEquals(0, p.ultimaMs());
+        tareas.vaciarUi();   // el EDT: relanza el forzado que llegó durante el barrido
+        assertEquals(List.of(902L), p.topSnapshot().stream().map(f -> (Long) f[0]).toList(), "la fuente que se ve es la nueva");
+        assertEquals(2, pantalla.cargarFuenteLiveLlamadas, "la nueva se cargó al acabar el barrido viejo");
+        assertTrue(p.ultimaMs() > 0, "y su barrido sí cuenta");
+    }
+
+    @Test void refrescar_forzadoDuranteUnBarrido_seRepiteAlAcabar() {
+        TareasAplazadas tareas = new TareasAplazadas();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla, new EstadoVivo(Reloj.SISTEMA));
+        pantalla.fuente = List.<Object[]>of(ficha(911L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        p.refrescar(true);   // «Actualizar» (o un cambio de fuente) con el barrido en marcha
+        assertEquals(1, tareas.pendientesFondo.size());
+        tareas.pendientesFondo.get(0).run();   // acaba el primero…
+        assertEquals(2, tareas.pendientesFondo.size(), "…y el forzado que llegó entretanto se lanza entonces");
+    }
+
+    @Test void refrescar_cortadoAlCerrarLaPestana_noCuentaComoHechoYConservaLoNoConsultado() {
+        List<Object[]> fuente = new ArrayList<>();
+        for (long i = 1; i <= 20; i++) fuente.add(ficha(920 + i, "J" + i, 1000, (int) i, "es"));   // 2 lotes de 15
+        pantalla.fuente = fuente;
+        Match delSegundoLote = matchEnCurso(9940L, 940L);
+        buscador.resultado = List.of(delSegundoLote);
+        presenter.refrescar(true);   // barrido completo: 940 en partida
+        assertTrue(presenter.enCursoSnapshot().containsKey(940L));
+        presenter.fijarUltimaMs(1234L);
+        buscador.resultado = List.of();
+        buscador.alPedir = () -> pantalla.abierta = false;   // se cierra la pestaña tras el primer lote
+        presenter.refrescar(true);
+        assertEquals(1234L, presenter.ultimaMs(), "cortado: no se apunta como barrido hecho");
+        assertEquals(delSegundoLote, presenter.enCursoSnapshot().get(940L), "a 940 no se le consultó: se queda como estaba");
     }
 
     @Test void refrescar_fallaLaFuente_avisaElErrorYNoRompe() {
