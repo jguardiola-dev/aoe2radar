@@ -15,7 +15,12 @@ techtree  Datos de aoe2techtree (data.json, árboles por civ, cadenas por idioma
           Misma capa que sfrdata: fuente externa de datos precalculados. Los iconos (ImageIcon) son de ui.
 cache     CacheService: cachés en memoria y disco con TTL, una sola implementación para todas.
 service   Reglas de negocio: ProfileService (perfil = shard + «Actualizar hoy»), LiveService (Live now: barrido +
-          socket + fantasmas), FormService (forma por resta + fallback), RecService (descargas/enviar al juego),
+          socket + fantasmas), EnlaceVivo (protocolo del socket de partidas en vivo sobre api.SocketVivo: salud
+          de la conexión —revisarSalud cierra y reconecta si pasan 10 min sin mensajes ni pong— y la regla del
+          «fantasma»: desde la decisión de Jorge del 2026-09-26, un matchRemoved del companion ya NO saca a
+          nadie; solo lo hace una comprobación confirmada por la API, finished, con reintento hasta 3 h),
+          FormService (forma por resta + fallback), RecService (descargas/enviar al juego, con RecService.recSana
+          decidiendo si la copia en disco vale o hay que volver a bajarla),
           WatchlistService (grupos, tops, clanes: repartido en ListaSeguidos, Familias, FiltroLista, BarridoVivos,
           TopLadderService, Campanas, AnotacionesService + api.SteamApi; su estado pasa a AppState en la fase 3),
           StatsService (civ stats), Throttle (freno + cortacircuitos),
@@ -32,12 +37,17 @@ app       Main (arranque, tema, wiring) y Servicios (la raíz de composición: c
           desde el constructor) y las clases Cableado*/AccionesVentana, que hacen ese cableado y las acciones
           de «abrir algo»; viven en el paquete raíz (no en app ni en ui) para leer los campos de la ventana sin
           volverlos public.
-util      Json, t() (i18n), formatos, Log.
+util      Json, t() (i18n), formatos, Log, Reloj (inyectable), Archivos (escritura atómica con respaldo: escribe
+          a un temporal y mueve con ATOMIC_MOVE; si el move falla —p. ej. Windows con el destino abierto—
+          escribe directo, como en la 1.1, en vez de perder el dato).
 ```
 Regla de dependencia: cada capa solo conoce las de dentro. `ui` conoce `service` y `model`; `service` conoce
 `api`, `sfrdata`, `techtree`, `cache`, `model`; `api`, `sfrdata` y `techtree` conocen `cache` (guardan en ella lo que
 descargan), `model` y `util`, y `sfrdata`/`techtree` además `api` (transporte HTTP y freno); `cache` conoce `model` y `util`; `util` lo puede usar cualquiera y no conoce a nadie (salvo
-`model` si hiciera falta); `model` no conoce a nadie. Si una flecha va hacia fuera, está mal.
+`model` si hiciera falta); `model` no conoce a nadie. Si una flecha va hacia fuera, está mal. Además, ninguna
+clase de `ui` importa `java.net` (la red va siempre por `service`/`api`). `tools/capas.py` audita las dos cosas
+por import (cero excepciones a mano) y lo lanza `verificar.ps1`; el paquete raíz (`SpoilerFreeRecs`/`Cableado*`/
+`AccionesVentana`) no lo audita el script, porque es la composición de la ventana, no una capa.
 
 ## Contratos clave (interfaces)
 - `ApiClient`: `List<Match> matches(List<Long> pids, int page, int perPage)`, `Profile profile(long pid)`,
@@ -74,18 +84,39 @@ Aquí se unifican las tres cachés y los tres sitios donde hoy se decide «¿lla
 servicio tiene tests y ningún `httpText` vive fuera de `api`.
 
 **Fase 3 · Vistas y presentadores.** Pestaña a pestaña, como «estrangulador»: cada pestaña sale ENTERA de
-`SpoilerFreeRecs.java` a su vista + presentador y su código se borra del original. Hecho cuando ninguna clase
-de `ui` importa `java.net` ni conoce `ApiClient`, y `SpoilerFreeRecs.java` queda como la ventana (`JFrame`) de
-menos de 300 líneas, con el cableado en `Cableado*`/`AccionesVentana` y el arranque en `app.Main`/`app.Servicios`.
-Tras la tanda 4 (oleada B + pasada final), `SpoilerFreeRecs.java` está en 297 líneas.
+`SpoilerFreeRecs.java` a su vista + presentador (patrón Presentador/Pantalla/Anfitrion/Tareas, detallado en
+[docs/README_TECNICO.md](README_TECNICO.md#cómo-se-añade-una-vista-nueva-patrón-vista--presentador)) y su
+código se borra del original. Hecho cuando ninguna clase de `ui` importa `java.net` ni conoce `ApiClient`, y
+`SpoilerFreeRecs.java` queda como la ventana (`JFrame`) de menos de 300 líneas, con el cableado en
+`Cableado*`/`AccionesVentana` y el arranque en `app.Main`/`app.Servicios`.
+**Cerrada** (tanda 4, oleada B + pasada final, y su cierre de deuda en fase 4): `SpoilerFreeRecs.java` en 299
+líneas; todas las vistas viven en `ui`, con `Cableado*`/`AccionesVentana` en el paquete raíz.
 
 **Fase 4 · Cierre.** Deuda anotada resuelta o descartada con motivo, `README` técnico, jpackage desde Maven,
-release 1.2.
+release 1.2. Resuelta o descartada casi toda la deuda de `DEUDA.md` (con motivo, fecha 2026-09-26); quedan
+abiertas unas pocas filas de bajo riesgo (prioridad `baja`/`media`) y la fila 137 (partir `WatchlistView`/
+`PartidasView`), aplazada a la 1.2.x por decisión de Jorge. El empaquetado con `jpackage` ya existe como perfil
+Maven (`-Pempaquetar`, ver README_TECNICO.md); falta la release 1.2 en sí.
 
 ## Decisiones cerradas (no reabrir)
 Civ Stats en una sola página; forma solo como dato de ELO (sin W-L); listas del perfil a 5; Live now sin scroll
 horizontal; sin tarjetas flotantes; «nocturno primero» (sfr-data antes que API); perfil sin llamadas al abrir y
 «Actualizar hoy» explícito; freno 1 req/s; cortacircuitos 429; aviso de Microsoft y créditos tal como están.
+
+Decisiones de Jorge del 2026-09-26 (cierre de la deuda de fase 4):
+1. Países y tops («★ Top país», «★ Top clan») en el idioma de la app, no siempre en español; con migración de
+   `grupo_activo` y de las campanas guardadas para que sigan casando en el otro idioma.
+2. El aviso de pausa por la API (429) muestra la cuenta atrás («Esperando a la API (N s): la API pide calma…»)
+   en Buscar y Twitch.
+3. El socket ya no se cree el aviso «partida quitada» (`matchRemoved`); solo cuenta «terminada» (`finished`),
+   confirmada por la API.
+4. «Enviar al juego» usa la rec ya descargada si parece sana (tamaño > 0 y abre como zip); si no, descarga.
+5. Mover UN jugador de grupo conserva su vínculo de familia, igual que mover varios.
+6. «Solo vivos» con una familia plegada la muestra si juega CUALQUIERA de sus miembros, no solo la cabeza.
+7. El clic derecho en las listas del perfil siempre ofrece «Abrir perfil en pestaña nueva» en una fila de jugador.
+8. «Añadir jugador» busca primero en local y luego en la API, con el mismo formato de fila que los demás buscadores.
+9. Partir `WatchlistView`/`PartidasView` (fila 137 de DEUDA) se aplaza a la 1.2.x; la ventana (`SpoilerFreeRecs.java`)
+   sí se parte a menos de 300 líneas ya en la fase 3/4.
 
 ## Deuda conocida al empezar
 - ~~Mapas `vivoWatch`/`vivoInfo` escritos desde hilos de fondo y leídos en el EDT~~ (resuelto en la fase 2: service.EstadoVivo).

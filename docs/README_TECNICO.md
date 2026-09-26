@@ -29,9 +29,14 @@ Dos maneras de pasar la batería, según cuánto tiempo tengas y si puedes ceder
 | Comando | Qué hace | Cuándo usarlo |
 |---|---|---|
 | `.\verificar.ps1 -Rapido` | Compila, la regla de capas (`tools\capas.py`) y todos los tests salvo el harness de capturas. Sin pantalla. | Mientras iteras, antes de cada commit pequeño. |
-| `.\verificar.ps1` | Lo mismo + el harness completo (`RegresionCapturas`): abre la app y compara ~23 capturas píxel a píxel. Avisa con pitido y una ventanita antes de empezar y al acabar: no toques el ratón en el monitor principal mientras corre (~1 min). | Al cerrar un grupo de 2-3 commits, y siempre antes de cambiar de paquete o de fase. |
+| `.\verificar.ps1` | Lo mismo + el harness completo (`RegresionCapturas`): abre la app y compara sus 29 capturas píxel a píxel. Avisa con pitido y una ventanita antes de empezar y al acabar: no toques el ratón en el monitor principal mientras corre (~1 min). | Al cerrar un grupo de 2-3 commits, y siempre antes de cambiar de paquete o de fase. |
 
-Si el harness sale rojo, no se ajusta la captura: es un bug y se investiga (regla de CLAUDE.md).
+Si el harness sale rojo, no se ajusta la captura: es un bug y se investiga (regla de CLAUDE.md). Antes de cada
+foto, `asegurarTamanoRaiz` mide el tamaño real de la ventana (JRootPane) en esta máquina y lo usa como
+referencia (no una constante fija): si no coincide (p. ej. el marco de Windows cambia unos píxeles), reajusta y
+reintenta una vez antes de fallar de verdad. Si la primera foto sale negra, `AvisoHarness.logonUiActivo` mira
+si la pantalla de bloqueo de Windows (`LogonUI.exe`) está entre los procesos, solo para hacer el mensaje de
+error más claro; nunca decide ella sola que la sesión está bloqueada.
 
 ## Empaquetar (perfil Maven `empaquetar`)
 El build normal (`mvn test`, `mvn package`) no genera el `.exe`: eso vive en un perfil aparte que **no se
@@ -63,7 +68,7 @@ Tabla resumida; el detalle de qué conoce cada capa y los contratos clave está 
 | Paquete | Qué vive ahí |
 |---|---|
 | `model` | Datos puros (`Match`, `Player`, `Forma`…). Sin Swing, sin red. |
-| `util` | `Json`, `t()` (i18n), formatos, `Log`, `Identidad`, `Config`. |
+| `util` | `Json`, `t()` (i18n), formatos, `Log`, `Identidad`, `Config`, `Reloj`, `Archivos` (escritura atómica). |
 | `api` | Cliente del companion: REST + websocket. Solo transporte y parseo. |
 | `sfrdata` | Cliente de `sfr-data` (shards, elo, muestra, civstats, ladder), con caché en disco. |
 | `techtree` | Datos de aoe2techtree, con caché en disco y ETag. |

@@ -83,7 +83,10 @@ public final class EnlaceVivo {
     public void iniciarPing() { socketVivo.iniciarPing(); }
     public void cerrar() { socketVivo.cerrar(); }
 
-    /** Conecta (o reconecta) con los ids visibles; si no cambian y el socket está sano, no hace nada. */
+    /** Conecta (o reconecta) con los ids visibles; si no cambian y el socket está sano, no hace nada. La
+     *  comprobación mira {@code conectado()}, no un {@code sano()} aparte: SocketVivo.revisarSalud (tarea de
+     *  ping, cada 30 s) ya baja conectado a false en cuanto pasan 10 min sin mensajes ni pong, así que
+     *  «conectado» puede tardar hasta esos 30 s en reflejar una conexión colgada. */
     public void sincronizarSocket() {
         Set<Long> ids = new LinkedHashSet<>();
         ids.addAll(vistas.idsWatchlist());

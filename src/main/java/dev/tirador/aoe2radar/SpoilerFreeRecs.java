@@ -2,10 +2,10 @@
 // (watchlist, partidas, techTree...) y llama al cableado en orden desde el constructor. La lógica
 // vive fuera: servicios y arranque en app.Servicios/app.Main, la composición de la ventana en las
 // clases Cableado*/AccionesVentana (mismo paquete, para leer estos campos sin volverlos public), y
-// cada vista en ui/ apoyada en service/. Historial de desarrollo: CHANGELOG.md.
+// cada vista en ui/ apoyada en service/. Historial de desarrollo: histórico de git (sin CHANGELOG).
 //
 // Creado por Jorge «12Tirador» Guardiola · twitch.tv/12tirador · Licencia MIT. Créditos completos
-// (aoe2companion, aoe2insights, Twitch, FlatLaf, aoe2techtree, CaptureAge) en el README.
+// y aviso de Microsoft en el diálogo Acerca de (ui.AcercaDe).
 
 package dev.tirador.aoe2radar;
 
@@ -187,7 +187,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // Desplazamiento con la rueda pulsada (como Chrome) y vuelta arriba al cambiar de vista: ver ui.AutoScroll; el Anfitrion vive en CableadoCromo.autoScroll.
     final AutoScroll autoScroll = CableadoCromo.autoScroll(this);   // paquete, no private: AccionesVentana lo instala
 
-    // TECH TREE (árbol, ficha, banda de winrate): ui.TechTreeView; cromo compartido en ui.Navegador; splitPrincipal se crea en montarVentana.
+    // TECH TREE (árbol, ficha, banda de winrate): ui.TechTreeView; cromo compartido en ui.Navegador; splitPrincipal se crea en CableadoCromo.montarVentana.
     TechTreeView techTree;
 
     /** Abre el panel (plegando la watchlist) y, si se pide, en una civ concreta. El cromo vive en ui.Navegador. */
@@ -221,7 +221,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final WatchlistView watchlist;
 
     // El cromo de navegación (pestañas, historial, esqueleto de los abrir*): ui.Navegador/ui.AppState; la ventana implementa Navegacion delegando en él.
-    // Se crea al principio del constructor (necesita sus botones para construirBarraSuperior); conectarVistas lo completa con el resto y el split.
+    // Se crea al principio del constructor (necesita sus botones para CableadoCromo.construirBarraSuperior); conectarVistas lo completa con el resto y el split. Recibe partidas porque ese campo ya está construido (field initializer, antes del cuerpo del constructor); watchlist llega después, en el cuerpo (CableadoWatchlist.construir).
     final dev.tirador.aoe2radar.ui.Navegador navegador;
 
     public SpoilerFreeRecs(String temaInicial) {   // visible para app.Main (main() construye la ventana desde fuera del paquete)
@@ -291,7 +291,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             Servicios::dormir, PAUSA_MS);
 
     // La pestaña «Partidas»: ui.PartidasView/Presenter y CableadoPartidas (el cableado). Se construye aquí, en el mismo punto de siempre: antes de
-    // configurarVentana y de crear la Watchlist, para que sus botones existan cuando construirBarraSuperior los necesite.
+    // CableadoCromo.configurarVentana y de crear la Watchlist, para que sus botones existan cuando construirBarraSuperior los necesite.
     final dev.tirador.aoe2radar.ui.PartidasView partidas = CableadoPartidas.construir(this);
 
     // Persistencia/tabla (aplicarOrdenColumnas/guardarColumnas/MatchesTableModel): en ui.PartidasView. HTTP (avisarPausa429, cargarControl, la cadena

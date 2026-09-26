@@ -16,11 +16,12 @@ import static dev.tirador.aoe2radar.util.I18n.t;
  *
  * <p>Se construye en dos tiempos. {@code partidas} llega ya en el constructor: es un inicializador de campo de
  * la ventana (se crea antes de que corra el cuerpo del constructor, como {@code status}), así que está listo
- * antes incluso de {@code configurarVentana()}. El resto de vistas ({@code watchlist}, {@code perfil},
+ * antes incluso de {@code CableadoCromo.configurarVentana()}. El resto de vistas ({@code watchlist}, {@code perfil},
  * {@code liveNow}, {@code techTree}, {@code ratings}, {@code civStats}, {@code directos}) y {@code centroCards}/
  * {@code splitPrincipal} llegan tarde de verdad: {@code watchlist} se asigna en el cuerpo del constructor
- * (después de {@code configurarVentana}), y las demás las crea {@code construirCentro}/{@code montarVentana},
- * que corren después de que {@code construirBarraSuperior} ya haya pedido los botones de pestaña. Por eso
+ * (después de {@code configurarVentana}), y las demás las crea {@code CableadoCentro.construirCentro}/
+ * {@code CableadoCromo.montarVentana}, que corren después de que {@code CableadoCromo.construirBarraSuperior} ya
+ * haya pedido los botones de pestaña. Por eso
  * {@link #conectarVistas} las enchufa aparte, justo después de {@code montarVentana}. Nada síncrono las usa
  * antes: {@code abrirLadder}/{@code abrirCivStats}/etc. solo se disparan por un clic de botón o por
  * {@code irA}, siempre después de que el constructor de la ventana haya terminado del todo — el mismo truco de
@@ -65,8 +66,8 @@ public final class Navegador implements Navegacion {
         estado.agregarOyente(this::actualizarBotonesHistorial);
     }
 
-    /** Enchufa el resto de vistas y el contenedor de cards, que la ventana crea tarde (construirCentro/
-     *  montarVentana, después de construirBarraSuperior): ver el javadoc de la clase para el porqué. */
+    /** Enchufa el resto de vistas y el contenedor de cards, que la ventana crea tarde (CableadoCentro.construirCentro/
+     *  CableadoCromo.montarVentana, después de CableadoCromo.construirBarraSuperior): ver el javadoc de la clase para el porqué. */
     public void conectarVistas(WatchlistView watchlist, PerfilView perfil, LiveNowView liveNow,
             TechTreeView techTree, RatingsView ratings, CivStatsView civStats, DirectosView directos,
             JPanel centroCards, JSplitPane splitPrincipal) {
@@ -296,8 +297,8 @@ public final class Navegador implements Navegacion {
     }
 
     /** La barra de pestañas (Partidas/Twitch/Live now/Perfil/Ratings/Civ Stats/Tech tree) y las flechas de
-     *  atrás/adelante: mismo panel, mismo orden y mismos listeners que en la 1.1; construirBarraSuperior la
-     *  llama justo donde antes se construía el bloque inline. */
+     *  atrás/adelante: mismo panel, mismo orden y mismos listeners que en la 1.1; CableadoCromo.construirBarraSuperior
+     *  la llama justo donde antes se construía el bloque inline. */
     public JPanel construirFilaVistas() {
         JPanel filaVistas = new JPanel(new WrapLayout(FlowLayout.LEFT, 2, 0));
         atrasBtn = new JButton("\u2190");

@@ -571,7 +571,7 @@ public final class PartidasView {
         });
     }
 
-    /** Las cards «tabla»/«guia» de la zona central de Partidas. La ventana la llama donde antes montaba
+    /** Las cards «tabla»/«guia» de la zona central de Partidas. CableadoCentro la llama donde antes montaba
      *  recsCards dentro de construirCentro, justo antes de crear Directos. */
     public void construirCards() {
         recsCards = new JPanel(new java.awt.CardLayout());
@@ -595,8 +595,8 @@ public final class PartidasView {
         mostrarGuiaVacia(true);
     }
 
-    /** Los botones de descarga/carpeta/perfil de la franja inferior. La ventana la llama donde antes montaba
-     *  btns1/btns2 dentro de construirBarraInferior, y coloca lo que devuelve en el NORTE de «bottom». */
+    /** Los botones de descarga/carpeta/perfil de la franja inferior. CableadoCromo.construirBarraInferior la
+     *  llama donde antes montaba btns1/btns2, y coloca lo que devuelve en el NORTE de «bottom». */
     public JPanel construirBotonesInferiores() {
         JButton abrir  = new JButton(t("Abrir carpeta recs descargadas", "Open downloaded recs folder"));
         JButton vaciar = new JButton(t("Vaciar recs", "Empty recs folder"));

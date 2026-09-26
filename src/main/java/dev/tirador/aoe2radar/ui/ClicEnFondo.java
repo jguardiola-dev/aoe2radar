@@ -30,8 +30,8 @@ import java.awt.event.MouseEvent;
 
 /**
  * Clic en cualquier fondo de la ventana (que no sea un control) = quitar la selección de la
- * Watchlist, como el Explorador de Windows. Sale de SpoilerFreeRecs.montarVentana (el listener
- * AWT global, registrado una sola vez) y de esFondoDeseleccionable: qué cuenta como "fondo"
+ * Watchlist, como el Explorador de Windows. Sale de lo que era SpoilerFreeRecs.montarVentana (hoy
+ * CableadoCromo.montarVentana; el listener AWT global, registrado una sola vez) y de esFondoDeseleccionable: qué cuenta como "fondo"
  * mezcla excepciones de varias vistas (tabla de partidas, directos, ratings, la cabecera de la
  * watchlist, "Partidas de:"), así que se piden a {@link Anfitrion} en vez de conocerlas por nombre.
  */

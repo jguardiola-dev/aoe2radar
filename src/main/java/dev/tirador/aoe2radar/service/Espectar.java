@@ -10,7 +10,8 @@ import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * Espectar una partida en curso: la parte sin Swing de SpoilerFreeRecs.espectarPartida/espectarVerificando/
- * lanzarCaptureAge (fase 3, tanda 4, Z4). El protocolo aoe2de://, buscar la ruta de CaptureAge y lanzar el
+ * lanzarCaptureAge (fase 3, tanda 4, Z4; esos tres métodos ya no existen ahí, ver AccionesVentana). El protocolo
+ * aoe2de://, buscar la ruta de CaptureAge y lanzar el
  * proceso, y la verificación por red (service.LiveService) viven aquí; los textos de estado, el toast y el
  * diálogo de confirmación (ui.ConfirmacionEspectar) se quedan en la ventana, que solo traduce el resultado a
  * un texto.

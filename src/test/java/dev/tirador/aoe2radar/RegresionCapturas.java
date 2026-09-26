@@ -300,7 +300,7 @@ class RegresionCapturas {
         for (MatchPlayer p : jugadores) m.players.add(p);
         return m;
     }
-    /** configBtn es una variable LOCAL de construirBarraSuperior (no un campo de la ventana): se busca por su
+    /** configBtn es una variable LOCAL de CableadoCromo.construirBarraSuperior (no un campo de la ventana): se busca por su
      *  texto en el árbol de componentes en vez de exponerlo como campo (la tarea prohíbe tocar src/main). */
     static JButton buscarBoton(Container raiz, String texto) {
         for (Component c : raiz.getComponents()) {
