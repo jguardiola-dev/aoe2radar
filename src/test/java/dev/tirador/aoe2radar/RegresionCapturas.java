@@ -188,9 +188,14 @@ class RegresionCapturas {
      * de 7 px (izquierda, derecha, abajo) y Robot captaría el escritorio que hay detrás.
      * ignorar: componentes con datos en directo (se excluyen de la comparación), más la última fila de píxeles.
      */
+    /** Tamaño esperado del JRootPane con la ventana en setSize(1500, 950) en esta máquina (fila 138): el marco
+     *  de Windows se come parte de esos 1500x950 (barra de título, bordes). */
+    static final Dimension TAMANO_RAIZ_ESPERADO = new Dimension(1486, 943);
+
     static void foto(String nombre) throws Exception { foto(nombre, () -> new JComponent[0]); }
     static void foto(String nombre, java.util.function.Supplier<JComponent[]> ignorar) throws Exception {
         SpoilerFreeRecs app = app();
+        asegurarTamanoRaiz(app);
         // Hasta INTENTOS fotos separadas 1 s: un panel de Windows o un repintado tardío desaparecen en el siguiente
         // intento; un cambio real del código no, y sigue en rojo. Las que necesitan reintento se listan al final.
         ComparadorCapturas.Resultado res = null;
@@ -231,6 +236,26 @@ class RegresionCapturas {
         fotos++;
         if (!res.ok()) FALLOS.add(res.nombre() + ": " + res.detalle());
         else if (intento > 1) REINTENTADAS.add(res.nombre() + " (intento " + intento + ")");
+    }
+
+    /**
+     * Fila 138: si algo dejó la ventana con otro tamaño que el de arranque (un diálogo modal, un cambio de DPI,
+     * una restauración tardía…), la foto saldría recortada o con márgenes distintos a la referencia sin que el
+     * código haya cambiado, y el diff sería confuso. Se comprueba ANTES de cada foto; si no es el esperado, se
+     * reajusta igual que al arrancar (setSize 1500x950 en el EDT + validate + una espera corta) y se reintenta
+     * una vez; si sigue mal, se falla aquí con un mensaje claro en vez de comparar una foto que ya se sabe distinta.
+     */
+    static void asegurarTamanoRaiz(SpoilerFreeRecs app) throws Exception {
+        for (int intento = 0; intento < 2; intento++) {
+            Dimension[] actual = new Dimension[1];
+            SwingUtilities.invokeAndWait(() -> actual[0] = app.getRootPane().getSize());
+            if (actual[0].equals(TAMANO_RAIZ_ESPERADO)) return;
+            if (intento > 0)
+                throw new IllegalStateException("la ventana del harness mide " + actual[0] + " y no " + TAMANO_RAIZ_ESPERADO
+                        + " tras reajustarla: revisa el escalado/DPI de esta máquina antes de seguir");
+            SwingUtilities.invokeAndWait(() -> { app.setSize(1500, 950); app.setLocation(0, 0); app.validate(); });
+            Thread.sleep(300);
+        }
     }
 
     /** Lo que la app cree de la watchlist en el momento de la foto (diagnóstico de shot_menu y compañía). En el EDT. */
