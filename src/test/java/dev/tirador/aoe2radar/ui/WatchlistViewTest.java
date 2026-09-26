@@ -840,6 +840,29 @@ class WatchlistViewTest {
         assertEquals(List.of("R1"), watchlist.clanesGuardados());
     }
 
+    /** Revisor 1.3: un ELO fresco escrito desde fuera (ponerEloWatch de las vinculadas) quita la marca de «de anoche». */
+    @Test void ponerEloFresco_quitaLaMarcaDeAnoche() {
+        watchlist.ponerEloDeAnoche(8L, 1400);
+        assertNull(WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+        watchlist.ponerEloFresco(8L, 1450);
+        assertEquals(1450, WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+    }
+
+    /** Revisor 1.3: la marca no se acumula: quien sale de la Watchlist y del top la pierde (y se volverá a barrer si
+     *  vuelve); quien sigue en la lista la conserva. */
+    @Test void podarEloDelSnapshot_soloQuedanLosPresentes() {
+        todosJugadores.add(new Player(1L, "Uno", "Amigos"));
+        watchlist.ponerEloDeAnoche(1L, 1500);
+        watchlist.ponerEloDeAnoche(2L, 1600);   // ya no está en ninguna lista
+        watchlist.watchBarridos.add(1L); watchlist.watchBarridos.add(2L);
+
+        watchlist.aplicarFiltroGrupo();
+
+        assertEquals(Set.of(1L), watchlist.eloDelSnapshot);
+        assertTrue(watchlist.watchBarridos.contains(1L));
+        assertFalse(watchlist.watchBarridos.contains(2L), "si vuelve a la Watchlist, se barre y se vuelve a marcar");
+    }
+
     @Test void sugerenciaCaducada_siElTextoCambio() {
         assertTrue(WatchlistView.sugerenciaCaducada("tirador", "otra cosa"));
         assertFalse(WatchlistView.sugerenciaCaducada("tirador", "tirador "));   // el trim es parte del criterio

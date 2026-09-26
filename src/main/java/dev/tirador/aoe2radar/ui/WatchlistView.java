@@ -452,6 +452,35 @@ public final class WatchlistView {
         return delSnapshot.contains(pid) ? null : eloWatch.get(pid);
     }
 
+    // Orden de escritura (revisor 1.3): el hilo de «Ver forma» lee primero la marca y luego el ELO (eloParaResta). Para
+    // que nunca vea «sin marca + ELO de anoche» (resta 0, el fallo F5), todo cambio pasa por «marcado»: un ELO de anoche
+    // se marca ANTES de escribirlo; uno fresco se escribe ANTES de quitar la marca. En la ventana intermedia, como mucho,
+    // la forma va por la vía exacta (una llamada de más), nunca por una resta falsa.
+
+    /** Un ELO fresco (API, leaderboard): primero el valor, después se quita la marca de «de anoche». */
+    public void ponerEloFresco(long pid, int elo) {
+        eloWatch.put(pid, elo);
+        eloDelSnapshot.remove(pid);
+    }
+
+    /** Un ELO de anoche (snapshot nocturno, resumen diario del clan): primero la marca, después el valor. */
+    void ponerEloDeAnoche(long pid, int elo) {
+        eloDelSnapshot.add(pid);
+        eloWatch.put(pid, elo);
+    }
+
+    /** Poda de eloDelSnapshot (revisor 1.3): quien ya no está ni en la Watchlist ni en el top/clan cargado pierde la
+     *  marca, y también su «ya barrido» (watchBarridos): su ELO de anoche sigue en eloWatch (lo comparten otras
+     *  vistas), así que si vuelve a la Watchlist se barre otra vez y la marca se pone de nuevo. En el EDT. */
+    void podarEloDelSnapshot() {
+        if (eloDelSnapshot.isEmpty()) return;
+        Set<Long> presentes = new HashSet<>();
+        for (Player p : todosJugadores) presentes.add(p.id());
+        for (Player p : topLadder) presentes.add(p.id());
+        for (Long pid : new ArrayList<>(eloDelSnapshot))
+            if (!presentes.contains(pid)) { eloDelSnapshot.remove(pid); watchBarridos.remove(pid); }
+    }
+
     public void apagarForma() { trabajos.apagarForma(); }
     void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) { trabajos.cargarForma(objetivo, horas, alTerminar); }
     List<Player> objetivoForma() { return trabajos.objetivoForma(); }
@@ -783,6 +812,7 @@ public final class WatchlistView {
 
     /** Reconstruye la lista visible con el grupo activo («Todos» = todos). */
     public void aplicarFiltroGrupo() {
+        podarEloDelSnapshot();   // tras cambiar el top o quitar a alguien, la marca de «ELO de anoche» no se acumula
         String g = grupoActivo();
         boolean soloVivos = soloVivosBtn != null && soloVivosBtn.isSelected();
         boolean porElo = mostrarEloWatch && "elo".equals(leerConfig("orden_watch", "elo"));
