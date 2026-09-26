@@ -189,7 +189,9 @@ public final class EnlaceVivo {
             List<Long> candidatos = new ArrayList<>();
             for (MatchPlayer mp : m.players) {
                 if (!ids.contains(mp.id)) continue;
-                if (m.finished != null) { vivo.apuntarTerminada(m.id); vivo.marcarFuera(mp.id); vistas.liveEvento(mp.id, m, true); cambio = true; }
+                // terminada: solo sale si esta era su partida (un final tardío de una vieja no le saca de la nueva, F8);
+                // Live now la apunta en «Terminadas» igual y solo la quita de «en curso» si era esa
+                if (m.finished != null) { vivo.apuntarTerminada(m.id); vivo.marcarFueraDe(mp.id, m.id); vistas.liveEvento(mp.id, m, true); cambio = true; }
                 // en curso DE VERDAD: empezada (no un lobby), sin terminar y hace menos de 3 h
                 else if (candidatoSocket(m, Instant.now()) && !vivo.terminada(m.id) && !Long.valueOf(m.id).equals(vivo.matchDe(mp.id))) candidatos.add(mp.id);
             }

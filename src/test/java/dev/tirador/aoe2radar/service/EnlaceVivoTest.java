@@ -149,6 +149,17 @@ class EnlaceVivoTest {
         assertTrue(vivo.terminada(555));
     }
 
+    /** Revisión 1.3, F8: el final tardío de la partida A no saca al jugador de la partida B en la que ya está. */
+    @Test void finalTardioDeUnaPartidaViejaNoSacaDeLaNueva() {
+        vivo.marcarJugando(7, 556);   // ya está en B
+        Match a = partida(555, 7);
+        a.finished = Instant.now();
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchUpdated", a)), Set.of(7L));
+        assertEquals(556L, vivo.matchDe(7), "sigue en B");
+        assertTrue(vivo.terminada(555), "A sí queda apuntada como terminada");
+        assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos, "Live now la recibe igual (a «Terminadas»)");
+    }
+
     // Decisión de Jorge (fase 4): matchRemoved solo saca a los jugadores si la API confirma que la partida terminó,
     // y se le pregunta 3 min después (antes la API aún no lo sabe). comprobarQuitada se llama a mano: es lo que hace
     // el hilo «socket-quitada» cuando vence la espera.

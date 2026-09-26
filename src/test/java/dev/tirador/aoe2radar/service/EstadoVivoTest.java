@@ -384,4 +384,27 @@ class EstadoVivoTest {
         assertEquals(HORA, e.finMs(1));
         assertEquals(HORA, e.finMs(2));
     }
+
+    // ===== revisión 1.3, F8: el final de una partida vieja no saca de la nueva =====
+
+    @Test void marcarFueraDeSoloSacaSiEstabaEnEsaPartidaOEnNinguna() {
+        EstadoVivo e = new EstadoVivo(reloj());
+        e.marcarJugando(1, 556);
+        assertFalse(e.marcarFueraDe(1, 555), "está en 556: el final de 555 no le saca");
+        assertEquals(556L, e.matchDe(1));
+        assertNull(e.finMs(1), "ni apunta un fin falso (EloSesion)");
+        assertTrue(e.marcarFueraDe(1, 556));
+        assertFalse(e.jugando(1));
+        assertTrue(e.marcarFueraDe(2, 555), "no estaba en ninguna: como marcarFuera");
+    }
+
+    @Test void soltarPartidaDeSoloSueltaEsaPartida() {
+        EstadoVivo e = new EstadoVivo(reloj());
+        Match b = new Match(); b.id = 556;
+        e.guardarPartida(1, b);
+        assertNull(e.soltarPartidaDe(1, 555), "guarda 556: la de 555 no la suelta");
+        assertSame(b, e.partida(1));
+        assertSame(b, e.soltarPartidaDe(1, 556));
+        assertNull(e.partida(1));
+    }
 }

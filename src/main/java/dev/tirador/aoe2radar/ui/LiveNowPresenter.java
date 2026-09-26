@@ -263,11 +263,13 @@ public final class LiveNowPresenter {
     public void liveEvento(long pid, Match m, boolean terminada) {
         if (ficha(pid) == null) return;
         if (terminada) {
-            Match viva = estadoVivo.soltarPartida(pid);
+            // con la partida que terminó, solo se suelta/quita si es la actual de pid: un final tardío de una partida
+            // vieja no le saca de la nueva (revisión 1.3, F8); sin partida (null), como antes
+            Match viva = m != null ? estadoVivo.soltarPartidaDe(pid, m.id) : estadoVivo.soltarPartida(pid);
             Match fin = m != null ? m : viva;
             // con la hora de fin real si se sabe (la da la API, revisión 1.3, F5), como el barrido; si no, la de ahora
             if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, fin.finished != null ? fin.finished.toEpochMilli() : System.currentTimeMillis() }); }
-            synchronized (ahoraEnCurso) { ahoraEnCurso.remove(pid); }
+            synchronized (ahoraEnCurso) { Match actual = ahoraEnCurso.get(pid); if (m == null || actual == null || actual.id == m.id) ahoraEnCurso.remove(pid); }
         } else if (m != null) {
             estadoVivo.guardarPartida(pid, m);
             synchronized (ahoraEnCurso) { ahoraEnCurso.put(pid, m); }

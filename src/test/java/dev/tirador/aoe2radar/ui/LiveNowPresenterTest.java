@@ -302,6 +302,20 @@ class LiveNowPresenterTest {
         assertEquals(fin.finished.toEpochMilli(), (Long) x[1]);
     }
 
+    /** Revisión 1.3, F8: el final tardío de la partida A no quita de «en curso» la partida B en la que ya está. */
+    @Test void liveEvento_finalTardioDeUnaPartidaVieja_noQuitaLaNueva() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(621L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        Match b = matchEnCurso(9322L, 621L);
+        p.liveEvento(621L, b, false);           // B empieza
+        p.liveEvento(621L, matchTerminado(9321L, 621L), true);   // llega tarde el final de A
+        assertEquals(b, p.enCursoSnapshot().get(621L), "sigue en B");
+        assertEquals(b, vivo.partida(621L), "y EstadoVivo conserva B");
+        assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9321L), "A, a «Terminadas»");
+    }
+
     @Test void liveEvento_noRepintaSiLaPantallaNoLoPermite() {
         pantalla.fuente = List.<Object[]>of(ficha(701L, "Uno", 1500, 10, "es"));
         presenter.refrescar(false);
