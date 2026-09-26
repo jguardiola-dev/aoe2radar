@@ -12,6 +12,8 @@ import dev.tirador.aoe2radar.ui.ClicEnFondo;
 import dev.tirador.aoe2radar.ui.MenuConfiguracion;
 import dev.tirador.aoe2radar.ui.MiPartidaPanel;
 import dev.tirador.aoe2radar.ui.Tareas;
+import dev.tirador.aoe2radar.ui.TemaApp;
+import dev.tirador.aoe2radar.ui.VentanaGuardada;
 import dev.tirador.aoe2radar.ui.VentanaPrincipalAjustes;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Reloj;
@@ -42,7 +44,7 @@ import java.util.Set;
 
 /** El «cromo» de la ventana principal: ajustes del JFrame, barra superior (pestañas de vistas aparte, en
  *  ui.Navegador; aquí el resto: ventana de horas, el menú «Configuración ▾» y su esquina «Mi perfil»), barra
- *  inferior, el montaje final (split Watchlist/resto y el filtro global de clics) y tres piezas de cableado
+ *  inferior, el montaje final (split Watchlist/resto y el filtro global de clics) y cuatro piezas de cableado
  *  que se inyectan como inicializadores de campo (barraEstadoAnfitrion, autoScroll, enlaceVivo, miPartida).
  *  Métodos static que reciben la ventana ({@code v}): esta clase no tiene estado propio, solo construye piezas
  *  de Swing que leen y escriben campos de SpoilerFreeRecs. Vive en el paquete raíz (no en ui) para poder leer
@@ -56,7 +58,7 @@ final class CableadoCromo {
     // configuración de ventana, no construcción de paneles.
     static void configurarVentana(SpoilerFreeRecs v) {
         VentanaPrincipalAjustes.configurar(v, v.logo, new VentanaPrincipalAjustes.Anfitrion() {
-            @Override public void alCerrar() { v.guardarVentana(); v.enlaceVivo.cerrar(); }
+            @Override public void alCerrar() { VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar(); }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
         });
     }
@@ -91,8 +93,8 @@ final class CableadoCromo {
         v.menuConfiguracion = new MenuConfiguracion(temaInicial, v.autoSgItem, CONTROL_SERVICE, new MenuConfiguracion.Anfitrion() {
             @Override public Component padre() { return v; }
             @Override public void estado(String texto) { v.status.setText(texto); }
-            @Override public void aplicarTema(String tema) { SpoilerFreeRecs.aplicarTema(tema, v); }
-            @Override public void abrirUrl(String url) { v.abrirUrl(url); }
+            @Override public void aplicarTema(String tema) { TemaApp.aplicarTema(tema, v); }
+            @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
             @Override public void mostrarNuevaVersion(String etiqueta) {
                 if (v.actualizarBtn != null) { v.actualizarBtn.setText(etiqueta); v.actualizarBtn.setVisible(true); }
             }
@@ -108,8 +110,8 @@ final class CableadoCromo {
             @Override public Path elegirCarpetaSavegame() { return v.partidas.elegirSavegameManual(); }
             @Override public void refiltrarPartidas() { v.partidas.applyFilters(); }
             @Override public boolean hayCarpetaSavegame() { return v.partidas.obtenerSavegame(true) != null; }
-            @Override public void mostrarMiPerfil() { v.abrirMiPerfil(); }
-            @Override public void cambiarCuentaPropia() { v.preguntarMiNick(); }
+            @Override public void mostrarMiPerfil() { v.miPartida.abrirMiPerfil(); }
+            @Override public void cambiarCuentaPropia() { v.miPartida.preguntarMiNick(); }
             @Override public void mostrarAcercaDe() { v.showAbout(); }
         });
         JPanel esquina = v.menuConfiguracion.esquina();
@@ -203,10 +205,10 @@ final class CableadoCromo {
             @Override public void pararOperacion() { stopOperacion = true; }
             @Override public void renovarHttp() { HTTP = nuevoHttp(); }
             @Override public void continuarBuscando() { v.partidas.buscarAleatorias(true); }
-            @Override public void abrirTwitch() { v.abrirTwitch(); }
-            @Override public void abrirDonacion() { v.abrirDonacion(); }
-            @Override public void abrirUrl(String url) { v.abrirUrl(url); }
-            @Override public void espectarPartida(long matchId) { v.espectarPartida(matchId); }
+            @Override public void abrirTwitch() { AccionesVentana.abrirTwitch(v); }
+            @Override public void abrirDonacion() { AccionesVentana.abrirDonacion(v); }
+            @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
+            @Override public void espectarPartida(long matchId) { AccionesVentana.espectarPartida(v, matchId); }
         };
     }
 
@@ -214,8 +216,8 @@ final class CableadoCromo {
      *  arriba al cambiar de vista). */
     static AutoScroll autoScroll(SpoilerFreeRecs v) {
         return new AutoScroll(new AutoScroll.Anfitrion() {
-            @Override public void atras() { if (!v.perfil.h2hAtrasSiProcede()) v.volverAtras(); }
-            @Override public void adelante() { v.irAdelante(); }
+            @Override public void atras() { if (!v.perfil.h2hAtrasSiProcede()) v.navegador.volverAtras(); }
+            @Override public void adelante() { v.navegador.irAdelante(); }
         });
     }
 
@@ -256,11 +258,11 @@ final class CableadoCromo {
      *  hilo ("log-juego", "lobby-oficial", "mi-perfil"). */
     static MiPartidaPanel miPartida(SpoilerFreeRecs v) {
         return new MiPartidaPanel(
-                new MiPartidaServiceJuego(v::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
+                new MiPartidaServiceJuego(v.menus::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
                 Tareas.SWING, v, v, new MiPartidaPanel.Anfitrion() {
                     @Override public List<String[]> buscarPerfiles(String nick) { return Servicios.buscarPerfiles(nick); }
                     @Override public void mostrarEstado(String texto) { v.status.setText(texto); }
-                    @Override public void sincronizarSocket() { v.sincronizarSocket(); }
+                    @Override public void sincronizarSocket() { v.enlaceVivo.sincronizarSocket(); }
                 });
     }
 }
