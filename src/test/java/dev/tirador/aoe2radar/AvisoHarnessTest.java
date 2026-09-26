@@ -1,6 +1,9 @@
 package dev.tirador.aoe2radar;
 
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -31,5 +34,26 @@ class AvisoHarnessTest {
         assertTrue(AvisoHarness.salidaTasklistTieneLogonUi("LogonUI.exe                  12345 Console                    1     52.140 KB"));
         assertFalse(AvisoHarness.salidaTasklistTieneLogonUi("INFO: No tasks are running which match the specified criteria."));
         assertFalse(AvisoHarness.salidaTasklistTieneLogonUi(null));
+    }
+
+    @AfterEach void restaurarRespaldoDePitido() {
+        AvisoHarness.forzarFalloAudioParaTest = false;
+        AvisoHarness.respaldoBeepParaTest = () -> java.awt.Toolkit.getDefaultToolkit().beep();
+    }
+
+    /** Fila 144 de DEUDA: empezar() puede llegar desde un @BeforeAll, ANTES de arrancar la app; el respaldo
+     *  Toolkit.beep() inicializaría AWT ahí, algo que el harness prohíbe. Se fuerza el fallo de audio (sin tocar
+     *  hardware de verdad) y se sustituye el respaldo por un espía: sin conRespaldo (como empezar()) no debe
+     *  llamarlo nunca; con conRespaldo (como terminar()) sí. */
+    @Test void sinRespaldoNuncaLlamaAlPitidoDelSistemaConRespaldoSiempre() throws Exception {
+        AtomicBoolean llamado = new AtomicBoolean(false);
+        AvisoHarness.respaldoBeepParaTest = () -> llamado.set(true);
+        AvisoHarness.forzarFalloAudioParaTest = true;
+
+        AvisoHarness.tono(440, 10, false);
+        assertFalse(llamado.get(), "empezar() no debe llamar a Toolkit.beep(): inicializaría AWT antes de la app");
+
+        AvisoHarness.tono(440, 10, true);
+        assertTrue(llamado.get(), "terminar() sí puede usar el respaldo: la app ya arrancó");
     }
 }

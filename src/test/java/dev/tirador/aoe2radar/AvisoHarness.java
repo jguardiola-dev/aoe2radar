@@ -53,14 +53,19 @@ final class AvisoHarness {
     }
 
     static void empezar(Path base) {
-        tono(440, 180);
+        // sin respaldo (false): empezar() puede llegar desde un @BeforeAll ANTES de arrancar la app, y
+        // Toolkit.getDefaultToolkit().beep() inicializa AWT. Eso es justo lo que RegresionCapturas.correr()
+        // prohíbe (ver el comentario de logonUiActivo): sin tarjeta de sonido, mejor sin pitido que adelantar
+        // AWT y arriesgarse a cambiar el escalado de iconos de las capturas.
+        tono(440, 180, false);
         cartelRojo = cartel(base, "NO TOQUES EL RATÓN · harness en marcha", "rojo", 0);
     }
 
     static void terminar(Path base) {
         if (cartelRojo != null) cartelRojo.destroy();
-        tono(523, 120);
-        tono(784, 160);
+        // aquí sí: termina cuando la app ya arrancó y AWT ya está inicializado, así que el respaldo no adelanta nada.
+        tono(523, 120, true);
+        tono(784, 160, true);
         cartel(base, "YA PUEDES USAR EL RATÓN", "verde", 6);
     }
 
@@ -76,9 +81,22 @@ final class AvisoHarness {
         }
     }
 
-    /** Un tono puro de hz durante ms (como [console]::Beep, pero desde Java: no depende de tener consola). */
-    private static void tono(int hz, int ms) {
+    /** Solo para pruebas: si es true, tono() salta la tarjeta de sonido real y fuerza el camino de fallo, como si
+     *  no hubiera audio, sin depender de que la máquina de verdad tenga o no tarjeta de sonido. */
+    static boolean forzarFalloAudioParaTest = false;
+
+    /** Solo para pruebas: sustituye el pitido de respaldo del sistema, para comprobar si se llama sin tocar AWT de
+     *  verdad. Por defecto es el respaldo real. */
+    static Runnable respaldoBeepParaTest = () -> java.awt.Toolkit.getDefaultToolkit().beep();
+
+    /** Un tono puro de hz durante ms (como [console]::Beep, pero desde Java: no depende de tener consola).
+     *  conRespaldo=false (empezar(), antes de arrancar la app): sin tarjeta de sonido, sin pitido — nunca
+     *  Toolkit.beep(), que inicializaría AWT. conRespaldo=true (terminar(), con la app ya arrancada): sí. */
+    // Package-private (no private): AvisoHarnessTest, en el mismo paquete, la llama directo para probar
+    // conRespaldo sin reflexión (mismo patrón que otros campos de test de esta clase).
+    static void tono(int hz, int ms, boolean conRespaldo) {
         try {
+            if (forzarFalloAudioParaTest) throw new javax.sound.sampled.LineUnavailableException("forzado para test");
             AudioFormat f = new AudioFormat(44_100, 8, 1, true, false);
             try (SourceDataLine l = AudioSystem.getSourceDataLine(f)) {
                 l.open(f);
@@ -89,7 +107,7 @@ final class AvisoHarness {
                 l.drain();
             }
         } catch (Exception e) {
-            java.awt.Toolkit.getDefaultToolkit().beep();   // sin tarjeta de sonido utilizable: al menos el pitido del sistema
+            if (conRespaldo) respaldoBeepParaTest.run();   // sin tarjeta de sonido utilizable: al menos el pitido del sistema
             System.out.println("AVISO: pitido del harness sin tono (" + e.getMessage() + ")");
         }
     }

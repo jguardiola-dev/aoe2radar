@@ -111,9 +111,17 @@ public final class TechTreePresenter {
             Map<String, Object> arbol;
             try { arbol = tt.arbol(civ); }
             catch (Exception ex) { tareas.enUi(() -> pantalla.errorArbol(civ, causa(ex))); return; }
-            // los iconos de esta civ, a memoria ANTES de pintar: el árbol sale entero de golpe
-            for (Object o : arr(arbol.get("units_techs"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")), px - 4); }
-            for (Object o : arr(arbol.get("buildings"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono("Building", lng(n.get("picture_index")), 26); }
+            // los iconos de esta civ, a memoria ANTES de pintar: el árbol sale entero de golpe. Los tamaños
+            // (celda-6 para el nodo/la celda del edificio en la rejilla, 34 fijo para la cabecera del edificio)
+            // son los MISMOS que pide el pintado (TechTreeView.ttPintarArbol): antes no coincidían (px-4 y 26)
+            // y la caché nunca acertaba (revisor, fila 145 de DEUDA).
+            for (Object o : arr(arbol.get("units_techs"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")), TechTreeView.ttTamanoIconoCelda(px)); }
+            for (Object o : arr(arbol.get("buildings"))) {
+                Map<String, Object> n = obj(o);
+                long pic = lng(n.get("picture_index"));
+                pantalla.precalentarIcono("Building", pic, TechTreeView.ttTamanoIconoCelda(px));   // icono en su celda de la rejilla
+                pantalla.precalentarIcono("Building", pic, TechTreeView.TT_ICONO_CABECERA_EDIFICIO);   // icono grande de la cabecera
+            }
             Map<String, Object> arbolListo = arbol;
             tareas.enUi(() -> { if (civ.equals(civEnCurso)) pantalla.arbolListo(civ, arbolListo); });   // ya se pidió otra civ: esta llegó tarde
         });

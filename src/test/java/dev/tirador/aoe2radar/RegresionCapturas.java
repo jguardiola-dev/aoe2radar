@@ -322,6 +322,19 @@ class RegresionCapturas {
         return null;
     }
 
+    /** buscaNick (el campo de "Buscar jugador por nick" de la Watchlist) es privado: no se toca src/main solo para
+     *  exponerlo al harness (misma regla que buscarBoton). Se identifica por su tooltip, único en la ventana; se
+     *  admite más de un prefijo (revisor: la app puede arrancar en otro idioma que el que fijó guardarConfig si
+     *  algo cambia antes, así que se comprueban es/en en vez de asumir uno solo). */
+    static JTextField buscarCampoPorTooltip(Container raiz, String... prefijosTooltip) {
+        for (Component c : raiz.getComponents()) {
+            if (c instanceof JTextField tf && tf.getToolTipText() != null)
+                for (String prefijo : prefijosTooltip) if (tf.getToolTipText().startsWith(prefijo)) return tf;
+            if (c instanceof Container hijo) { JTextField r = buscarCampoPorTooltip(hijo, prefijosTooltip); if (r != null) return r; }
+        }
+        return null;
+    }
+
     static void correr() throws Exception {
         SpoilerFreeRecs.main(new String[0]);
         for (int i = 0; i < 60 && app() == null; i++) Thread.sleep(250);
@@ -342,6 +355,28 @@ class RegresionCapturas {
         Paises.PAIS_DE.put(1L, "es"); Paises.PAIS_DE.put(2L, "es"); Paises.PAIS_DE.put(3L, "ar"); Paises.PAIS_DE.put(4L, "de");
         SwingUtilities.invokeAndWait(() -> { app.watchlist.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
         Thread.sleep(400);
+        // Fila 131 de DEUDA: el resumen «N jugadores · M jugando» llega con el siguiente repintado de
+        // indicadores, no al momento de añadir jugadores: esperar (con tope) a que ya diga el total de los 3
+        // recién añadidos, en vez de arriesgarse a fotografiar el «0 jugadores» inicial de vez en cuando.
+        String[] resumenWatchTxt = { null };
+        boolean resumenListo = false;
+        for (int i = 0; i < 40; i++) {
+            SwingUtilities.invokeAndWait(() -> resumenWatchTxt[0] = app.watchlist.resumenWatch.getText());
+            if (resumenWatchTxt[0] != null && resumenWatchTxt[0].startsWith("3 ")) { resumenListo = true; break; }
+            Thread.sleep(100);
+        }
+        if (!resumenListo) System.out.println("AVISO: el resumen de la Watchlist no llegó a \"3 …\" en 4 s (sigue en \""
+                + resumenWatchTxt[0] + "\"): shot_watchlist puede salir con el conteo antiguo");
+        // Fila 131 de DEUDA: buscaNick tiene el foco nada más abrir la Watchlist (vista de arranque) y su
+        // cursor parpadea; la foto salía distinta según en qué fase del parpadeo cayera. Solo en el harness
+        // (nunca en la app): caret transparente y sin parpadeo, así la foto no depende del instante.
+        JTextField buscaNick = buscarCampoPorTooltip(app.getContentPane(), "Escribe un nick y pulsa Enter", "Type a nick and press Enter");
+        if (buscaNick != null) {
+            JTextField campo = buscaNick;
+            SwingUtilities.invokeAndWait(() -> { campo.setCaretColor(new Color(0, 0, 0, 0)); campo.getCaret().setBlinkRate(0); });
+        } else {
+            System.out.println("AVISO: no se encontró buscaNick (campo de búsqueda de la Watchlist): shot_watchlist puede salir con el cursor parpadeando");
+        }
         // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar.
         // Se ignora la fila de cabecera entera (padre de directosContador), no solo sus etiquetas: el ancho de
         // «N espectadores · Actualizado hh:mm:ss» desplaza el desplegable Idioma y el botón Refrescar.

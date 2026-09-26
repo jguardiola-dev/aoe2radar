@@ -71,6 +71,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 
@@ -141,10 +142,30 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     private final Anfitrion anfitrion;
     private final EnlaceCivStats enlaceCivStats;
     private final TechTreePresenter presenter;
+    private final Tareas tareas;
 
     /** Icono (ImageIcon: tipo Swing) ya escalado, de memoria; vive aquí porque la caché de la 1.1 era estática pero
-     *  con una única ventana por app el resultado es el mismo (ver docs/DEUDA.md, fase 3, cachés de iconos de estático a instancia). */
-    private final Map<String, ImageIcon> ttIconos = new ConcurrentHashMap<>();
+     *  con una única ventana por app el resultado es el mismo (ver docs/DEUDA.md, fase 3, cachés de iconos de estático a instancia).
+     *  Package-private (no private): TechTreeViewTest, en este mismo paquete, comprueba que el pintado no la
+     *  rellena leyendo disco en el EDT (fila 145 de DEUDA). */
+    final Map<String, ImageIcon> ttIconos = new ConcurrentHashMap<>();
+
+    /** Claves (tipo/id@px) de ttIconos con una carga de disco ya pedida en un hilo de fondo (ttIconoPintado):
+     *  evita pedir la misma carga dos veces mientras la primera sigue en marcha. */
+    private final Set<String> ttPendientesDisco = ConcurrentHashMap.newKeySet();
+
+    /** Claves (tipo/id@px) que ttIconoPintado ya comprobó y NO están en disco (revisor, fila 145: sin esto,
+     *  cada repintado del árbol volvía a pedir la misma carga de fondo -- que volvía a fallar y a repintar --
+     *  bucle sin fin mientras la pestaña estuviera visible). Se limpia en iconosActualizados(): ahí es cuando la
+     *  cola de red de verdad pudo haber traído algo nuevo, así que merece la pena reintentar. */
+    private final Set<String> ttAusentes = ConcurrentHashMap.newKeySet();
+
+    /** Coalesce de repintados de ttIconoPintado (revisor, fila 145: con varias cargas de fondo terminando casi a
+     *  la vez -- típico si la precarga falló su tamaño y todo el árbol tira del respaldo -- cada una pedía SU
+     *  propio ttPintarDeNuevo, uno por icono). Solo la primera que lo pone a true programa un repintado; las que
+     *  llegan mientras ese repintado sigue sin correr no programan otro (sus iconos ya estarán en caché cuando
+     *  corra el que sí se programó). */
+    private final java.util.concurrent.atomic.AtomicBoolean ttRepintadoPendiente = new java.util.concurrent.atomic.AtomicBoolean();
 
     JPanel techTreePanel, ttArbolPanel, ttFichaCards;
     JEditorPane ttFichaCiv;
@@ -175,7 +196,16 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     static final String[] TT_EDADES_EN = { "Dark Age", "Feudal Age", "Castle Age", "Imperial Age" };
     static final int TT_VGAP = 12;  // hueco vertical entre filas: por él corren las líneas de mejora (milicia → hombre de armas…)
     static final int TT_CAB = 66;   // la tarjeta del edificio (icono grande y nombre); el edificio en sí va además en su fila de edad, como en la web
+    /** Tamaño (px) fijo del icono grande de la cabecera de un edificio (cab/bicCab): no depende del tamaño de celda. */
+    static final int TT_ICONO_CABECERA_EDIFICIO = 34;
     int ttCeldaActual = 40;
+
+    /** Tamaño (px) del icono de un nodo (Unit/Tech) o de un edificio EN SU CELDA de la rejilla: el que cambia con
+     *  el tamaño de celda. Compartida con la precarga (TechTreePresenter.pedirArbol llama a esta misma función
+     *  antes de lanzar el hilo, con el mismo celdaPx que luego usa el pintado): antes precalentarIcono guardaba a
+     *  px-4 y las celdas pedían px-6, así que la caché nunca acertaba y el respaldo de disco (ttIconoPintado) era
+     *  el camino normal en vez de la excepción (hallazgo del revisor, fila 145). */
+    static int ttTamanoIconoCelda(int celdaPx) { return celdaPx - 6; }
 
     public TechTreeView(Window ventana, TechTreeService tt, StatsService stats, FiltroStats filtroStats, Listas listas,
                          Navegacion navegacion, Tareas tareas, Anfitrion anfitrion, EnlaceCivStats enlaceCivStats) {
@@ -186,6 +216,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         this.listas = listas;
         this.anfitrion = anfitrion;
         this.enlaceCivStats = enlaceCivStats;
+        this.tareas = tareas;
         this.presenter = new TechTreePresenter(tt, stats, filtroStats, tareas, this, anfitrion, enlaceCivStats);
         construirPanelTechTree();
     }
@@ -298,7 +329,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
 
     @Override public void precalentarIcono(String tipo, long id, int px) { ttIcono(tipo, id, px); }
 
-    @Override public void iconosActualizados() { ttPintarDeNuevo(); }
+    @Override public void iconosActualizados() { ttAusentes.clear(); ttPintarDeNuevo(); }
 
     @Override public void estadoWr(String texto) { ttWrEstado.setText(texto); }
 
@@ -333,6 +364,37 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         }
         presenter.pedirIcono("img/" + tipo + "/" + id + ".png");
         return null;
+    }
+
+    /**
+     * Como ttIcono, pero para el PINTADO (EDT): fila 145 de DEUDA. La precarga (precalentarIcono) ya deja casi
+     * todo en ttIconos antes de pintar, en el hilo techtree-civ; pero si falla (primera apertura sin tamaño de
+     * visor todavía, o llega tarde) ttIcono leería el disco aquí mismo, en el EDT. Este método NUNCA toca disco:
+     * si no está en caché, pide la carga en un hilo de fondo (una sola vez por clave, con ttPendientesDisco) y
+     * devuelve null para que el llamador pinte la celda sin icono por ahora.
+     * <p>Solo repinta (ttPintarDeNuevo) si esa carga de fondo SÍ encontró el icono: si no está ni en disco, se
+     * marca en ttAusentes y no se repinta ni se vuelve a pedir en el siguiente pintado (hallazgo del revisor:
+     * repintar siempre volvía a fallar la caché y a pedir otro hilo, sin fin, mientras la pestaña estuviera
+     * visible). Cuando SÍ llega algo por la cola de red, iconosActualizados() limpia ttAusentes y ahí se reintenta.
+     */
+    ImageIcon ttIconoPintado(String tipo, long id, int px) {
+        String clave = tipo + "/" + id + "@" + px;
+        ImageIcon ic = ttIconos.get(clave);
+        if (ic != null) return ic;
+        if (ttAusentes.contains(clave)) return null;
+        if (ttPendientesDisco.add(clave)) {
+            tareas.enFondo("techtree-icono-disco", () -> {
+                ImageIcon cargado;
+                try { cargado = ttIcono(tipo, id, px); } finally { ttPendientesDisco.remove(clave); }
+                if (cargado != null) ttPedirRepintadoCoalescido(); else ttAusentes.add(clave);
+            });
+        }
+        return null;
+    }
+
+    /** Programa UN repintado del árbol (ttPintarDeNuevo) si no hay ya uno pendiente: ver ttRepintadoPendiente. */
+    private void ttPedirRepintadoCoalescido() {
+        if (ttRepintadoPendiente.compareAndSet(false, true)) tareas.enUi(() -> { ttRepintadoPendiente.set(false); ttPintarDeNuevo(); });
     }
 
     /** La descripción del juego (efecto de la tecnología, uso de la unidad…): cadena LanguageNameId + 21000,
@@ -726,8 +788,8 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
             columna.setMaximumSize(new Dimension(anchoCol + 12, TT_CAB + 2 + 8 * (TT_CELDA + TT_VGAP)));
             columna.setAlignmentY(Component.TOP_ALIGNMENT);   // todas las columnas arrancan arriba: filas alineadas con las edades
             // cabecera del edificio: icono + nombre a todo el ancho de la columna
-            ImageIcon bic = ttIcono("Building", bPic, TT_CELDA - 6);
-            ImageIcon bicCab = ttIcono("Building", bPic, 34);
+            ImageIcon bic = ttIconoPintado("Building", bPic, ttTamanoIconoCelda(TT_CELDA));
+            ImageIcon bicCab = ttIconoPintado("Building", bPic, TT_ICONO_CABECERA_EDIFICIO);
             JLabel cab = new JLabel() {
                 @Override protected void paintComponent(Graphics g) {   // fondo de placa debajo del icono y el nombre
                     Graphics2D g2 = (Graphics2D) g.create();
@@ -788,7 +850,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
                         long nid = lng(n.get("node_id")), pic = lng(n.get("picture_index"));
                         boolean disp = !"NotAvailable".equals(String.valueOf(n.get("node_status")));
                         String nombre = tt.nombre(n.get("name_string_id"));
-                        ImageIcon ic = ttIcono(tipo, pic, TT_CELDA - 6);
+                        ImageIcon ic = ttIconoPintado(tipo, pic, ttTamanoIconoCelda(TT_CELDA));
                         if (ic != null) l.setIcon(disp ? ic : new ImageIcon(TechTreeArbol.imagenApagada(ic.getImage())));
                         else if (!disp) { l.setText("\u00D7"); l.setForeground(gris); }
                         l.setToolTipText(ttTooltip(tipo, nid, nombre, disp));
