@@ -99,7 +99,7 @@ Microsoft, usando recursos de Age of Empires II; no está avalado ni afiliado po
 
 ### Licencia
 
-El código de aoe2radar es software libre bajo licencia MIT.
+El código de aoe2radar es software libre bajo licencia MIT: ver [LICENSE](LICENSE).
 
 ### Para desarrolladores
 
@@ -216,7 +216,7 @@ Rules" using assets from Age of Empires II, and it is not endorsed by or affilia
 
 ### License
 
-aoe2radar's source code is free software under the MIT license.
+aoe2radar's source code is free software under the MIT license: see [LICENSE](LICENSE).
 
 ### For developers
 

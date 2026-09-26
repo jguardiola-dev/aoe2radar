@@ -1,7 +1,7 @@
 # aoe2radar — README técnico
 
 ## Qué es
-App de escritorio Windows para Age of Empires II DE: recomendaciones sin spoilers, Live now, perfiles,
+App de escritorio Windows para Age of Empires II DE: recs (grabaciones de partidas) sin spoilers, Live now, perfiles,
 ratings, civ stats y tech tree. Java 21 + Swing + FlatLaf. Los datos vienen de la API de aoe2companion
 (REST + websocket) y de aoe2techtree; el repo `sfr-data` precalcula resúmenes nocturnos y perfiles.
 
