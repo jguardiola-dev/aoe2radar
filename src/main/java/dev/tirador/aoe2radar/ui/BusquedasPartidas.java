@@ -42,9 +42,9 @@ import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
  */
 final class BusquedasPartidas {
 
-    /** Estado del último fetchMatches: los escribe su doInBackground y los lee su done() (solo esta clase). */
-    volatile boolean topeAlcanzado;
-    volatile int fallosFetch;
+    /** La búsqueda que canceló la × de «Partidas de:» (PartidasView.cerrarBusqueda): su done() no pisa «Búsqueda
+     *  cerrada.» con «Búsqueda detenida.». Por identidad, así no hace falta desarmarlo. Solo en el EDT. */
+    SwingWorker<?, ?> cerradaPorLaCruz;
 
     private final PartidasView vista;
 
@@ -285,7 +285,6 @@ final class BusquedasPartidas {
         PartidasView.SUJETOS.clear();
         vista.filtroSujetos.clear();
         if (vista.rivalField != null && !vista.rivalField.getText().isEmpty()) vista.rivalField.setText("");
-        fallosFetch = 0;
         vista.mostrarGuiaVacia(false);
         vista.taparResultados();
         for (Player px : tracked) PartidasView.SUJETOS.add(px.id());
@@ -302,52 +301,18 @@ final class BusquedasPartidas {
         final long miSerial = vista.anfitrion.operacionActual();
         int hours = vista.enlaceWatchlist.horasVentana();
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
-        SwingWorker<List<Match>, String> fw = new SwingWorker<>() {
-            final Set<Long> exitosos = new HashSet<>();
-            @Override protected List<Match> doInBackground() {
+        SwingWorker<Recorrido, String> fw = new SwingWorker<>() {
+            @Override protected Recorrido doInBackground() {
                 vista.anfitrion.anotarHiloOperacion();
-                Map<Long, Match> unicos = new LinkedHashMap<>();
-                topeAlcanzado = false;
-                final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
-                for (Player pl : tracked) {
-                    if (isCancelled()) break;
-                    boolean fallo = false;
-                    for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
-                        if (isCancelled()) break;
-                        publish(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
-                        boolean seguir = false;
-                        try {
-                            Iterable<Match> leidas = vista.anfitrion.paginaDePartidas(pl.id(), pagina, vista.perPage);
-                            int n = 0; Instant masAntigua = null;
-                            for (Match m : leidas) {
-                                if (m == null) continue;
-                                n++;
-                                Instant ref = m.finished != null ? m.finished : m.started;
-                                if (ref != null && (masAntigua == null || ref.isBefore(masAntigua))) masAntigua = ref;
-                                if (m.finished == null && !vista.anfitrion.enCursoReal(m)) continue;
-                                if (m.finished != null && m.finished.isBefore(cutoff)) continue;
-                                unicos.putIfAbsent(m.id, m);
-                            }
-                            seguir = n >= vista.perPage && masAntigua != null && masAntigua.isAfter(cutoff);
-                            if (seguir && pagina == MAX_PAGINAS) topeAlcanzado = true;
-                            if (unicos.size() >= MAX_TOTAL) { topeAlcanzado = true; seguir = false; }
-                            Thread.sleep(vista.pausaMs);
-                        } catch (Exception ex) {
-                            fallo = true;
-                            if (isCancelled() || ex instanceof InterruptedException) break;
-                            fallosFetch++;
-                            publish(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
-                        }
-                        if (!seguir) break;
-                    }
-                    if (!isCancelled() && !fallo) exitosos.add(pl.id());
-                    if (unicos.size() >= MAX_TOTAL) break;
-                }
-                List<Match> lista = new ArrayList<>(unicos.values());
-                lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
-                return lista;
+                // Detener (el del botón, el de la barra de estado o la × de «Partidas de:») corta el recorrido
+                // ENTERO, no solo la página en curso (revisión 1.3, general F4 / watchlist F6).
+                return recorrer(tracked, cutoff, vista.perPage, vista.pausaMs, vista.anfitrion::paginaDePartidas,
+                        vista.anfitrion::enCursoReal, () -> isCancelled() || vista.anfitrion.detenido(), this::publish);
             }
-            @Override protected void process(List<String> msgs) { vista.anfitrion.estado(msgs.get(msgs.size() - 1)); }
+            @Override protected void process(List<String> msgs) {
+                if (isCancelled()) return;   // un «Consultando…» tardío no tapa «Búsqueda cerrada.»/«detenida.»
+                vista.anfitrion.estado(msgs.get(msgs.size() - 1));
+            }
             @Override protected void done() {
                 if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) { log("buscar #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual()); vista.fetchWorker = null; return; }
                 vista.fetchWorker = null;
@@ -358,11 +323,23 @@ final class BusquedasPartidas {
                 vista.gteBtn.setEnabled(true);
                 vista.anfitrion.trabajando(false);
                 if (isCancelled()) {
-                    vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));
+                    // Cancelada por la × de «Partidas de:»: el estado final es su «Búsqueda cerrada.», no este.
+                    if (cerradaPorLaCruz != this) vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));
                     return;
                 }
                 try {
-                    List<Match> res = get();
+                    Recorrido r = get();
+                    if (r.detenida()) {
+                        // Lo leído hasta el corte está incompleto: no se presenta como si fuera la búsqueda entera
+                        // (misma salida que el botón «Detener»: la tabla anterior se queda como estaba).
+                        log("buscar #" + miSerial + ": detenida; " + r.lista().size() + " partidas leídas hasta el corte, descartadas");
+                        vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));
+                        return;
+                    }
+                    List<Match> res = r.lista();
+                    final boolean topeAlcanzado = r.topeAlcanzado();
+                    final int fallosFetch = r.fallos();
+                    final Set<Long> exitosos = r.exitosos();
                     vista.anfitrion.aprenderCatalogos(res);
                     List<Long> idsTracked = new ArrayList<>();
                     for (Player pl : tracked) idsTracked.add(pl.id());
@@ -393,5 +370,64 @@ final class BusquedasPartidas {
         };
         vista.fetchWorker = fw;
         fw.execute();
+    }
+
+    /** Una página de partidas de un jugador (en la app, Anfitrion.paginaDePartidas: la red). */
+    interface Paginador { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
+
+    /** Lo que deja el recorrido de fetchMatches: las partidas (la más reciente primero), si se tocó el tope, cuántos
+     *  jugadores fallaron, quiénes respondieron entero y si se detuvo a medias (entonces la lista está incompleta). */
+    record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida) { }
+
+    /** El doInBackground de fetchMatches, sin Swing (para poder probarlo): páginas por jugador hasta la ventana,
+     *  tope 6 páginas / 600 partidas. {@code parar} se mira antes de cada jugador, antes de cada página y al fallar
+     *  una: si dice que sí, el recorrido acaba entero y vuelve con {@code detenida}. */
+    static Recorrido recorrer(List<Player> tracked, Instant cutoff, int perPage, long pausaMs, Paginador paginas,
+                              java.util.function.Predicate<Match> enCursoReal, java.util.function.BooleanSupplier parar,
+                              java.util.function.Consumer<String> progreso) {
+        Map<Long, Match> unicos = new LinkedHashMap<>();
+        Set<Long> exitosos = new HashSet<>();
+        boolean topeAlcanzado = false, detenida = false;
+        int fallos = 0;
+        final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
+        for (Player pl : tracked) {
+            if (parar.getAsBoolean()) { detenida = true; break; }
+            boolean fallo = false;
+            for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
+                if (parar.getAsBoolean()) { detenida = true; break; }
+                progreso.accept(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
+                boolean seguir = false;
+                try {
+                    Iterable<Match> leidas = paginas.pagina(pl.id(), pagina, perPage);
+                    int n = 0; Instant masAntigua = null;
+                    for (Match m : leidas) {
+                        if (m == null) continue;
+                        n++;
+                        Instant ref = m.finished != null ? m.finished : m.started;
+                        if (ref != null && (masAntigua == null || ref.isBefore(masAntigua))) masAntigua = ref;
+                        if (m.finished == null && !enCursoReal.test(m)) continue;
+                        if (m.finished != null && m.finished.isBefore(cutoff)) continue;
+                        unicos.putIfAbsent(m.id, m);
+                    }
+                    seguir = n >= perPage && masAntigua != null && masAntigua.isAfter(cutoff);
+                    if (seguir && pagina == MAX_PAGINAS) topeAlcanzado = true;
+                    if (unicos.size() >= MAX_TOTAL) { topeAlcanzado = true; seguir = false; }
+                    Thread.sleep(pausaMs);
+                } catch (Exception ex) {
+                    fallo = true;
+                    if (parar.getAsBoolean()) { detenida = true; break; }   // el freno cortó la espera: se para todo
+                    if (ex instanceof InterruptedException) break;
+                    fallos++;
+                    progreso.accept(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
+                }
+                if (!seguir) break;
+            }
+            if (detenida) break;
+            if (!fallo) exitosos.add(pl.id());
+            if (unicos.size() >= MAX_TOTAL) break;
+        }
+        List<Match> lista = new ArrayList<>(unicos.values());
+        lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
+        return new Recorrido(lista, topeAlcanzado, fallos, exitosos, detenida);
     }
 }
