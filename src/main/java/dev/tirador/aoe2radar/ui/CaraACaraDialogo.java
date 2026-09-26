@@ -60,6 +60,7 @@ import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoCiv;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoMapa;
 import static dev.tirador.aoe2radar.ui.Componentes.colorHex;
+import static dev.tirador.aoe2radar.util.Formato.dec1;
 import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
 import static dev.tirador.aoe2radar.util.Formato.miles;
 import static dev.tirador.aoe2radar.util.Formato.pct1;
@@ -422,7 +423,7 @@ public final class CaraACaraDialogo {
         double meses = primero == null || ultimo == null ? 1 : Math.max(1, Duration.between(primero, ultimo).toDays() / 30.0);
         java.time.format.DateTimeFormatter fmt = java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy", "en".equals(IDIOMA) ? Locale.ENGLISH : Locale.forLanguageTag("es-ES"));
         JPanel fila1 = new JPanel(new GridLayout(1, 0, 8, 0)); fila1.setOpaque(false); fila1.setAlignmentX(0f); fila1.setMaximumSize(new Dimension(Integer.MAX_VALUE, 62));
-        fila1.add(view.listas.tarjeta(t("Partidas", "Games"), miles(cruce.size()), (sinRes > 0 ? sinRes + t(" sin resultado · ", " without result · ") : "") + String.format(Locale.ROOT, "%.1f", cruce.size() / meses).replace('.', ',') + t(" al mes", " per month")));
+        fila1.add(view.listas.tarjeta(t("Partidas", "Games"), miles(cruce.size()), (sinRes > 0 ? sinRes + t(" sin resultado · ", " without result · ") : "") + dec1(cruce.size() / meses) + t(" al mes", " per month")));
         fila1.add(view.listas.tarjeta(t("Balance", "Record"), w + "-" + l, conRes > 0 ? pct1(100.0 * w / conRes) + t(" para ", " for ") + nombreAbierto : t("sin resultados", "no results")));
         fila1.add(view.listas.tarjeta(t("Forma", "Form"), ultimos.isEmpty() ? "-" : formaHtml(ultimos), t("últimas ", "last ") + ultimos.size() + t(", la más reciente a la izquierda", ", most recent on the left")));
         fila1.add(view.listas.tarjeta(t("Racha actual", "Current streak"), rachaActual == 0 ? "-" : String.valueOf(rachaActual), rachaActual == 0 ? "" : (rachaGana ? t("seguidas de ", "in a row for ") + nombreAbierto : t("seguidas de ", "in a row for ") + rivalNombre)));

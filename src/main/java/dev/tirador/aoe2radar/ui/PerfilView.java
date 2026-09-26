@@ -1061,7 +1061,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         for (Component c : actChips.getComponents()) if (c instanceof JLabel l && "forma".equals(l.getName())) actChips.remove(l);
         if (f10 > 0) {
             String forma = fW + "-" + fL + " · " + (fDiff >= 0 ? "+" : "") + fDiff + (fDiff > 0 ? " \u25B2" : fDiff < 0 ? " \u25BC" : "")
-                    + (fRacha >= 2 ? " · " + t("racha ", "streak ") + fRacha + (Boolean.TRUE.equals(fRachaGana) ? "V" : "D") : "");
+                    + (fRacha >= 2 ? " · " + t("racha ", "streak ") + fRacha + letraRacha(Boolean.TRUE.equals(fRachaGana)) : "");
             JLabel lf = chipPerfil(t("Últimas ", "Last ") + f10 + ("*".equals(actModo) ? "" : " · " + actModo), escapeHtml(forma), t("Las partidas más recientes con resultado, en el modo elegido", "The most recent games with a result, in the chosen mode"));
             lf.setName("forma");
             actChips.add(lf);
@@ -1140,6 +1140,9 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         if (ficha != null && lb != null && ficha.ladders().get(lb) instanceof int[] v && v[0] > 0) return v[0];
         return propia;
     }
+
+    /** La letra de la racha del chip de forma: V/D en español, W/L en inglés (las de la tabla de rivales). Pura. */
+    static String letraRacha(boolean gana) { return gana ? t("V", "W") : t("D", "L"); }
 
     /** El ladder de la ficha que corresponde a un modo de partida; null si la ficha no tiene ese ladder (Death Match). */
     static String ladderDeModo(String modo) {
