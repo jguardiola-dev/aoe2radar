@@ -50,6 +50,13 @@ public interface AzarService {
     boolean tramoAgotado();
 
     /**
+     * True si la última tirada de buscarAleatorias salió entera de la muestra nocturna (partidas de ayer, sin mirar
+     * la ventana de horas). La vista lo avisa en el mensaje de estado (decisión de Jorge, 1.3). Se consulta después
+     * de que buscarAleatorias termine.
+     */
+    boolean deMuestra();
+
+    /**
      * El titular de una partida del azar: con filtro de civ, quien LA JUGÓ (si ambos, el de más ELO entre los que
      * cumplen); sin filtro, el de más ELO de la partida como siempre. Pura: no toca red ni caché de sesión.
      */

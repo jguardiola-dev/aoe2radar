@@ -299,8 +299,13 @@ public final class PartidasPresenter {
     }
 
     /** «Al azar por ELO» con resultado. Con menos de 10, dice si el tramo se agotó (entonces {@code tramoAgotado} se
-     *  consulta, y solo entonces, como antes) o si repetirla continúa donde lo dejó. */
-    public static String mensajeAzar(int n, int lo, int hi, int horas, java.util.function.BooleanSupplier tramoAgotado) {
+     *  consulta, y solo entonces, como antes) o si repetirla continúa donde lo dejó. Si salió de la muestra nocturna
+     *  ({@code deMuestra}: ventana de 24 h o más), avisa de que son partidas de ayer en vez de «últimas N h», sin esos
+     *  consejos, que son del muestreo por la API (decisión de Jorge, 1.3). */
+    public static String mensajeAzar(int n, int lo, int hi, int horas, boolean deMuestra, java.util.function.BooleanSupplier tramoAgotado) {
+        if (deMuestra)
+            return n + t(" partidas 1v1 al azar, ELO ", " random 1v1s, ELO ") + lo + "–" + hi
+                    + t(", partidas de ayer (muestra nocturna).", ", yesterday's games (nightly sample).");
         String extra = "";
         if (n < 10 && tramoAgotado.getAsBoolean())
             extra = t(" No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",

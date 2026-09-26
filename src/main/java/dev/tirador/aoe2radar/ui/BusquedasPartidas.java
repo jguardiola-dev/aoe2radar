@@ -149,7 +149,7 @@ final class BusquedasPartidas {
                     vista.enlaceWatchlist.limpiarSeleccion();
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(PartidasPresenter.mensajeAzar(res.size(), lo, hi, hours, vista.azarService::tramoAgotado));
+                    vista.anfitrion.estado(PartidasPresenter.mensajeAzar(res.size(), lo, hi, hours, vista.azarService.deMuestra(), vista.azarService::tramoAgotado));
                 } catch (Exception ex) {
                     vista.anfitrion.estado(vista.anfitrion.detenido() ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("al azar por ELO: ERROR " + causa(ex));

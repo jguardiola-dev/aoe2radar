@@ -256,6 +256,7 @@ class AzarServiceCompanionTest {
         List<Match> res = s.buscarAleatorias(1000, 2000, null, null, 48, 1, cutoff, 1, m -> { });
         assertEquals(5, res.size());
         assertEquals(0, red.totalLlamadas());
+        assertTrue(s.deMuestra(), "la tirada salió de la muestra nocturna: la vista lo avisa");
     }
 
     @Test void buscarAleatorias_conMenosDe24Horas_ignoraLaMuestraAunqueHayaDeSobra() throws Exception {
@@ -274,6 +275,7 @@ class AzarServiceCompanionTest {
         Instant cutoff = Instant.now().minus(Duration.ofHours(1));
         s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 1, m -> { });   // hours=1 < 24
         assertEquals(0, llamadasMuestra.get(), "con menos de 24 h no se consulta la muestra nocturna");
+        assertFalse(s.deMuestra(), "sin muestra, la tirada no se anuncia como de ayer");
     }
 
     // ================================================================================================

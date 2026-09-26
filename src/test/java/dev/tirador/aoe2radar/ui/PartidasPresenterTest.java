@@ -380,13 +380,23 @@ class PartidasPresenterTest {
         assertEquals("Búsqueda detenida.  4 encontradas hasta el corte, aplicadas.", PartidasPresenter.mensajeAzarDetenido(4));
         assertEquals("Nada en 1800–1900 en las últimas 36 h. Detalle del muestreo en descargas.log.", PartidasPresenter.mensajeAzarNada(1800, 1900, 36));
         assertEquals("3 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h. Repite la búsqueda: continúa donde lo dejó.",
-                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, () -> false));
+                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, false, () -> false));
         assertEquals("3 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h. No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
-                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, () -> true));
+                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, false, () -> true));
         int[] consultas = { 0 };
         assertEquals("10 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h.",
-                PartidasPresenter.mensajeAzar(10, 1800, 1900, 36, () -> { consultas[0]++; return true; }));
+                PartidasPresenter.mensajeAzar(10, 1800, 1900, 36, false, () -> { consultas[0]++; return true; }));
         assertEquals(0, consultas[0], "con 10 no se pregunta si el tramo se agotó");
+    }
+
+    @Test void mensajeAzar_deLaMuestraNocturna_avisaDeQueSonPartidasDeAyer() {
+        int[] consultas = { 0 };
+        assertEquals("6 partidas 1v1 al azar, ELO 1800–1900, partidas de ayer (muestra nocturna).",
+                PartidasPresenter.mensajeAzar(6, 1800, 1900, 36, true, () -> { consultas[0]++; return true; }));
+        assertEquals(0, consultas[0], "de la muestra, ni «tramo agotado» ni «repite»: son consejos del muestreo por la API");
+        IDIOMA = "en";
+        assertEquals("6 random 1v1s, ELO 1800–1900, yesterday's games (nightly sample).",
+                PartidasPresenter.mensajeAzar(6, 1800, 1900, 36, true, () -> false));
     }
 
     @Test void mensajesDeGuessTheElo() {

@@ -78,6 +78,7 @@ public final class AzarServiceCompanion implements AzarService {
     private final Map<Long, Match> cacheAzar = new HashMap<>();      // partidas ya descargadas del API
     private final Map<Long, Long> perfilVistoAzar = new HashMap<>(); // perfil -> última consulta (TTL 10 min)
     private volatile boolean azarTramoAgotado;
+    private volatile boolean azarDeMuestra;   // la última tirada salió de la muestra nocturna (ver deMuestra())
     private final Set<Long> azarEnsenadas = new HashSet<>();
 
     public AzarServiceCompanion(CompanionApi companion, Function<String, String> claveCivDeNombre,
@@ -97,9 +98,10 @@ public final class AzarServiceCompanion implements AzarService {
         Hilos.avisarSiUi("AzarService.buscarAleatorias");
         hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
         Random rnd = new Random();
+        azarDeMuestra = false;
         if (hours >= 24) {   // la muestra nocturna cubre «ayer»: si da para una tanda, cero llamadas
             List<Match> deMuestra = azarDesdeMuestra(lo, hi, mapaSel, civSel, rnd);
-            if (deMuestra.size() >= 5) { for (Match m : deMuestra) { m.azar = true; AzarService.ajustarRefAzar(m, civSel); } return deMuestra; }
+            if (deMuestra.size() >= 5) { for (Match m : deMuestra) { m.azar = true; AzarService.ajustarRefAzar(m, civSel); } azarDeMuestra = true; return deMuestra; }
         }
         long ahora = System.currentTimeMillis();
         String firmaRango = lo + "|" + hi;
@@ -327,6 +329,11 @@ public final class AzarServiceCompanion implements AzarService {
     @Override
     public boolean tramoAgotado() {
         return azarTramoAgotado;
+    }
+
+    @Override
+    public boolean deMuestra() {
+        return azarDeMuestra;
     }
 
     /** Partida de la muestra → Match (jugadores con nombre, civ, rating y resultado; sin revelar nada en pantalla hasta que se pida). */
