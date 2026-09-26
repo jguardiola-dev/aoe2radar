@@ -31,7 +31,19 @@ final class AvisoHarness {
      * en su comentario de correr()).
      */
     static boolean logonUiActivo() {
+        // ProcessHandle no ve el comando de los procesos de SYSTEM (LogonUI lo es) sin elevar: devuelve vacío.
+        // tasklist sí ve el nombre de la imagen. ProcessHandle queda de respaldo (p. ej. si tasklist no existe).
+        try {
+            Process p = new ProcessBuilder("tasklist", "/NH", "/FI", "IMAGENAME eq LogonUI.exe").redirectErrorStream(true).start();
+            String salida = new String(p.getInputStream().readAllBytes(), java.nio.charset.Charset.defaultCharset());
+            if (p.waitFor(5, java.util.concurrent.TimeUnit.SECONDS) && salidaTasklistTieneLogonUi(salida)) return true;
+        } catch (Exception ignored) { }
         return ProcessHandle.allProcesses().anyMatch(ph -> esComandoLogonUi(ph.info().command().orElse("")));
+    }
+
+    /** ¿La salida de «tasklist /FI "IMAGENAME eq LogonUI.exe"» lista el proceso? (sin él, tasklist dice «INFO: …»). */
+    static boolean salidaTasklistTieneLogonUi(String salida) {
+        return salida != null && salida.toLowerCase(java.util.Locale.ROOT).contains("logonui.exe");
     }
 
     /** La parte sin ProcessHandle, para poder probarla sin procesos de verdad: ¿este camino de comando es el de LogonUI.exe? */

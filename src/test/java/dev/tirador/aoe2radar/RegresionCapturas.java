@@ -238,11 +238,23 @@ class RegresionCapturas {
                 throw new IllegalStateException("La pantalla está bloqueada: desbloquéala y repite el harness."
                         + (logonUi ? " (LogonUI activo)" : ""));
             res = comparador.comparar(nombre.replaceFirst("\\.png$", ""), img, zonas);
+            // La pantalla de bloqueo con fondo (Windows Spotlight) no es negra: Robot fotografía el paisaje. Si la
+            // PRIMERA foto no se parece en nada a su referencia y LogonUI está vivo AHORA, es la sesión bloqueada.
+            // Ninguna de las dos señales basta sola (LogonUI puede vivir por otra sesión; un fallo grande puede ser
+            // un bug de verdad): juntas, sí.
+            if (fotos == 0 && pareceBloqueada(res.fraccion(), AvisoHarness.logonUiActivo()))
+                throw new IllegalStateException("La pantalla está bloqueada: desbloquéala y repite el harness. (LogonUI activo; la primera foto es "
+                        + String.format("%.0f", res.fraccion() * 100) + " % distinta)");
             System.out.println("foto " + nombre + " intento " + intento + " · " + (res.ok() ? "ok" : "FALLA") + " · " + res.detalle() + " · " + estado[0]);
         }
         fotos++;
         if (!res.ok()) FALLOS.add(res.nombre() + ": " + res.detalle());
         else if (intento > 1) REINTENTADAS.add(res.nombre() + " (intento " + intento + ")");
+    }
+
+    /** Primera foto distinta en más de la mitad de sus píxeles con LogonUI vivo: la sesión está bloqueada. */
+    static boolean pareceBloqueada(double fraccionDistinta, boolean logonUiActivo) {
+        return logonUiActivo && fraccionDistinta > 0.5;
     }
 
     /** ¿La imagen es negro puro (0x000000) en todos los píxeles? La app en tema oscuro nunca lo es de verdad. */

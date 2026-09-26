@@ -27,4 +27,9 @@ class AvisoHarnessTest {
         assertFalse(AvisoHarness.esComandoLogonUi(null));
         assertFalse(AvisoHarness.esComandoLogonUi(""));
     }
+    @Test void laSalidaDeTasklistConLogonUiLoDetectaYSinElNo() {
+        assertTrue(AvisoHarness.salidaTasklistTieneLogonUi("LogonUI.exe                  12345 Console                    1     52.140 KB"));
+        assertFalse(AvisoHarness.salidaTasklistTieneLogonUi("INFO: No tasks are running which match the specified criteria."));
+        assertFalse(AvisoHarness.salidaTasklistTieneLogonUi(null));
+    }
 }

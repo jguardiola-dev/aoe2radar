@@ -32,6 +32,12 @@ class RegresionCapturasTest {
         assertFalse(RegresionCapturas.todaNegra(imagen(new Color(2, 2, 2))));
     }
 
+    @Test void pareceBloqueadaSoloConLogonUiYUnaPrimeraFotoMuyDistinta() {
+        assertTrue(RegresionCapturas.pareceBloqueada(0.88, true), "fondo de la pantalla de bloqueo + LogonUI");
+        assertFalse(RegresionCapturas.pareceBloqueada(0.88, false), "sin LogonUI, un fallo grande es un fallo de verdad");
+        assertFalse(RegresionCapturas.pareceBloqueada(0.02, true), "LogonUI de otra sesión y la foto casi igual: no");
+    }
+
     @Test void todaNegraConUnSoloPixelNoNegroDaFalse() {
         BufferedImage img = imagen(Color.BLACK);
         img.setRGB(49, 49, Color.WHITE.getRGB());
