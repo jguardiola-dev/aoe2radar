@@ -40,7 +40,10 @@ public final class Archivos {
                 try (var out = Files.newOutputStream(destino)) { escritor.accept(out); }
             }
         } finally {
-            Files.deleteIfExists(tmp);
+            // si esto lanzara sin capturar, taparía el éxito o la excepción de arriba (el finally manda): un .tmp
+            // huérfano que no se pudo borrar es basura tolerable, no motivo para perder ese resultado (el que se
+            // acumulen si la app se corta a media escritura queda anotado en DEUDA, no se arregla aquí).
+            try { Files.deleteIfExists(tmp); } catch (IOException ex) { log("archivos: no se pudo borrar " + tmp + ": " + causa(ex)); }
         }
     }
 

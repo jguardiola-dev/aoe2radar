@@ -10,9 +10,11 @@ import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * statsAsegurar sin red: SfrDataClient con una descarga falsa, una de ellas bloqueada a propósito para reproducir
@@ -59,12 +61,12 @@ class CivStatsTest {
         hiloA.setDaemon(true);   // si algo falla antes de soltar el latch, no se cuelga la JVM al final del test
         hiloA.start();
         try {
-            aEntroALaRed.await();   // A ya vio el hueco vacío y está "descargando"
+            assertTrue(aEntroALaRed.await(5, TimeUnit.SECONDS), "A ya vio el hueco vacío y está \"descargando\"");
             CivStats.statsAsegurar(sfrB, VENTANA, false);   // B ve el mismo hueco vacío y termina antes
             assertEquals("B", CivStats.VENTANAS_STATS.get(VENTANA).etiqueta());
         } finally {
             dejarSalirA.countDown();   // suelta a A pase lo que pase arriba, para no dejarlo esperando para siempre
-            hiloA.join();
+            hiloA.join(5000);
         }
 
         assertEquals("B", CivStats.VENTANAS_STATS.get(VENTANA).etiqueta(),
