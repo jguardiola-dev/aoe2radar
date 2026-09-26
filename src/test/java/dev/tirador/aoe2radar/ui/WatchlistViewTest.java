@@ -714,6 +714,28 @@ class WatchlistViewTest {
         assertEquals("global", watchlist.topFirma);
     }
 
+    /** F12 de la revisión 1.3: la racha salía con «V»/«D» también con la app en inglés. */
+    @Test void formaLarga_rachaTraducida() {
+        Forma f = new Forma(25, 3, 0, 3, true, 3);
+        IDIOMA = "en";
+        assertTrue(WatchlistView.formaLarga(f).endsWith("3W"), WatchlistView.formaLarga(f));
+        IDIOMA = "es";
+        assertTrue(WatchlistView.formaLarga(f).endsWith("3V"), WatchlistView.formaLarga(f));
+    }
+
+    /** F12 de la revisión 1.3: el aviso de campana enseñaba el id interno («★pais es», «grupo Amigos»). */
+    @Test void nombreVistaCampana_esElNombreQueVeElUsuario() {
+        IDIOMA = "en";
+        WatchlistView w = nuevaInstancia();
+        w.grupoCombo.addItem("Amigos");
+        w.grupoCombo.addItem("★ Country top");
+        sinListeners(() -> w.grupoCombo.setSelectedItem("Amigos"), w.grupoCombo);
+        assertEquals("Amigos", w.nombreVistaCampana(), "ni «grupo» ni «|»: el nombre del grupo, tal cual");
+        w.paisActual = new PaisItem("Spain", "es");
+        sinListeners(() -> w.grupoCombo.setSelectedItem("★ Country top"), w.grupoCombo);
+        assertEquals("★ Country top · Spain", w.nombreVistaCampana());
+    }
+
     @Test void sugerenciaCaducada_siElTextoCambio() {
         assertTrue(WatchlistView.sugerenciaCaducada("tirador", "otra cosa"));
         assertFalse(WatchlistView.sugerenciaCaducada("tirador", "tirador "));   // el trim es parte del criterio

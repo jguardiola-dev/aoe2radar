@@ -194,18 +194,19 @@ final class WatchlistTrabajos {
                             long horasCache = Math.max(1, (System.currentTimeMillis() - wv.topCargado) / 3600_000L);
                             wv.status.setText(t("El servicio de datos no responde (¿bloqueo de red? p. ej. LaLiga/Cloudflare). Mostrando el top de hace ~",
                                     "The data service isn't responding (network block? e.g. LaLiga/Cloudflare). Showing the top from ~")
-                                    + horasCache + t(" h. Reintento automático cada 2 min.", " h ago. Auto-retrying every 2 min."));
+                                    + horasCache + t(" h. Reintento automático cada ", " h ago. Auto-retrying every ") + minutosReintento() + " min.");
                         } else {
                             if (!wv.avisoTopMostrado) {
                                 wv.avisoTopMostrado = true;
                                 JOptionPane.showMessageDialog(wv.ventana,
-                                        t("No se pudo cargar el top del ladder.\n\nCausa probable: el servicio de datos está caído o bloqueado\n(p. ej. LaLiga/Cloudflare en días de fútbol en España).\n\nLa app reintenta sola cada 2 minutos — no hace falta hacer nada.",
-                                          "Couldn't load the ladder top.\n\nLikely cause: the data service is down or blocked\n(e.g. LaLiga/Cloudflare on football days in Spain).\n\nThe app retries every 2 minutes on its own — nothing to do."),
+                                        t("No se pudo cargar el top del ladder.\n\nCausa probable: el servicio de datos está caído o bloqueado\n(p. ej. LaLiga/Cloudflare en días de fútbol en España).\n\nLa app reintenta sola cada ",
+                                          "Couldn't load the ladder top.\n\nLikely cause: the data service is down or blocked\n(e.g. LaLiga/Cloudflare on football days in Spain).\n\nThe app retries on its own every ")
+                                          + minutosReintento() + t(" min — no hace falta hacer nada.", " min — nothing to do."),
                                         t("Servicio no disponible", "Service unavailable"),
                                         JOptionPane.WARNING_MESSAGE);
                             }
-                            wv.status.setText(t("No se pudo cargar el top (¿servicio caído o bloqueado? p. ej. LaLiga/Cloudflare en días de fútbol). Reintento automático cada 2 min.",
-                                    "Couldn't load the top (service down or blocked? e.g. LaLiga/Cloudflare on match days). Auto-retrying every 2 min."));
+                            wv.status.setText(t("No se pudo cargar el top (¿servicio caído o bloqueado? p. ej. LaLiga/Cloudflare en días de fútbol). Reintento automático cada ",
+                                    "Couldn't load the top (service down or blocked? e.g. LaLiga/Cloudflare on match days). Auto-retrying every ") + minutosReintento() + " min.");
                         }
                         return;
                     }
@@ -236,6 +237,10 @@ final class WatchlistTrabajos {
             }
         }.execute();
     }
+
+    /** Cada cuánto reintenta el vigilante un top caído: en cada ronda de vigilancia (Configuración → Vigilancia de
+     *  vivos, 1 min por defecto), no «cada 2 min» como decían los textos de la 1.1 (F12 de la revisión 1.3). */
+    private static int minutosReintento() { return dev.tirador.aoe2radar.service.EnlaceVivo.tickMs() / 60_000; }
 
     private void guardarTopCache(String firma) {
         List<TopLadderService.FilaCache> filas = new ArrayList<>();

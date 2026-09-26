@@ -59,7 +59,7 @@ final class WatchlistLista {
         wv.playersList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) { wv.enlacePartidas.applyFilters(); wv.anfitrion.seleccionCambiada(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
         });
-        wv.delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
+        wv.delBtn = new JButton(t("Quitar de la Watchlist", "Remove from Watchlist"));   // quita de la Watchlist, no solo del grupo (F12 1.3)
 
         wv.playersList.addMouseListener(new MouseAdapter() {   // botón central sobre un jugador: su perfil en pestaña nueva
             @Override public void mousePressed(MouseEvent e) {

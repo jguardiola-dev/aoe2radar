@@ -140,7 +140,7 @@ final class WatchlistMenu {
                 nuevoGM.addActionListener(a -> { String g = wv.elegirGrupoDialog(selW.size() + t(" jugadores", " players")); if (g != null) wv.moverVarios(selW, g); });
                 moverVarios.add(nuevoGM);
                 menu.add(moverVarios);
-                JMenuItem quitarVarios = new JMenuItem(t("Quitar los ", "Remove the ") + selW.size() + t(" seleccionados del grupo", " selected from the group"));
+                JMenuItem quitarVarios = new JMenuItem(t("Quitar los ", "Remove the ") + selW.size() + t(" seleccionados de la Watchlist", " selected from the Watchlist"));
                 quitarVarios.addActionListener(a -> {
                     Set<Long> ids = new HashSet<>(); for (Player x : selW) ids.add(x.id());
                     wv.todosJugadores.removeIf(x -> ids.contains(x.id()));

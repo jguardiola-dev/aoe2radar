@@ -404,7 +404,7 @@ public final class WatchlistView {
 
     static String formaLarga(Forma f) {
         if (f.partidas() == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
-        String r = f.racha() >= 2 ? " \u00B7 " + t("racha ", "streak ") + f.racha() + (f.rachaGana() ? "V" : "D") : "";
+        String r = f.racha() >= 2 ? " \u00B7 " + t("racha ", "streak ") + f.racha() + (f.rachaGana() ? t("V", "W") : t("D", "L")) : "";
         return f.w() + "-" + f.l() + " \u00B7 " + (f.diff() >= 0 ? "+" : "") + f.diff() + r;
     }
 
@@ -456,6 +456,15 @@ public final class WatchlistView {
         if (modoPais()) return "\u2605pais|" + paisSel();
         if (modoTop()) return "\u2605ladder";
         return "grupo|" + String.valueOf(grupoCombo.getSelectedItem());
+    }
+
+    /** El nombre de la vista actual tal como lo ve el usuario, para el texto de la campana: «★ Top país · España»,
+     *  «★ Top clan · R1», «★ Top ladder», «Todos» o el nombre del grupo. Antes se enseñaba el id interno de
+     *  idVistaCampana («★pais es», «grupo Amigos»: «grupo» en español también con la app en inglés). */
+    String nombreVistaCampana() {
+        if (modoClan()) return TOP_CLAN + " \u00B7 " + clanBuscado();
+        if (modoPais()) return TOP_PAIS + " \u00B7 " + (paisActual != null ? paisActual.nombre() : paisSel().toUpperCase(Locale.ROOT));
+        return String.valueOf(grupoCombo.getSelectedItem());
     }
 
     public boolean campanaContiene(long pid) { return campanas.campanaContiene(pid, campanaIds); }
@@ -630,7 +639,7 @@ public final class WatchlistView {
     void moverVarios(List<Player> lista, String g) {
         int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
         savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-        status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + "\u00bb.");
+        status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + t("\u00bb.", "\u201D."));
     }
 
     public String elegirGrupoDialog(String nombreJugador) { return dialogosLista.elegirGrupoDialog(nombreJugador); }

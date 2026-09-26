@@ -88,7 +88,7 @@ final class WatchlistDialogos {
         renombrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
             if (sel == null || sel.equalsIgnoreCase(WatchlistView.GRUPO_GENERAL)) return;
-            String n = JOptionPane.showInputDialog(wv.ventana, t("Nuevo nombre para «", "New name for “") + sel + "»:",
+            String n = JOptionPane.showInputDialog(wv.ventana, t("Nuevo nombre para «", "New name for “") + sel + t("»:", "”:"),
                     t("Renombrar grupo", "Rename group"), JOptionPane.PLAIN_MESSAGE);
             if (n != null && !n.isBlank()) { wv.renombrarGrupo(sel, WatchlistView.limpiarGrupo(n)); recargar.run(); }
         });
@@ -133,7 +133,7 @@ final class WatchlistDialogos {
         wv.rebuildGrupos();
         wv.aplicarFiltroGrupo();
         wv.refrescarWatchlist();
-        wv.status.setText(nuevos.size() + t(" jugadores añadidos a «", " players added to \u201C") + g + "\u00bb.");
+        wv.status.setText(nuevos.size() + t(" jugadores añadidos a «", " players added to \u201C") + g + t("\u00bb.", "\u201D."));
         if (nuevos.isEmpty()) return;
         int r = JOptionPane.showConfirmDialog(wv.ventana,
                 t("¿Buscar las cuentas vinculadas de los ", "Look up the linked accounts of the ") + nuevos.size()
@@ -172,7 +172,7 @@ final class WatchlistDialogos {
                 if (miSerial != wv.anfitrion.opSerial()) return;
                 wv.anfitrion.trabajando(false);
                 wv.savePlayers(); wv.rebuildGrupos(); wv.aplicarFiltroGrupo(); wv.refrescarWatchlist();
-                wv.status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + "\u00bb.");
+                wv.status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + t("\u00bb.", "\u201D."));
             }
         }.execute();
     }
@@ -269,7 +269,7 @@ final class WatchlistDialogos {
                 wv.aplicarFiltroGrupo();
                 wv.refrescarWatchlist();
                 wv.status.setText(nuevas.size() + t(" cuentas vinculadas añadidas a «", " linked accounts added to “")
-                        + grupo + "\u00bb.");
+                        + grupo + t("\u00bb.", "\u201D."));
             }
         }.execute();
     }

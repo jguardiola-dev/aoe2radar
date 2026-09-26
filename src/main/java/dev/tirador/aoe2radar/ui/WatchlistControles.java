@@ -395,7 +395,7 @@ final class WatchlistControles {
         boolean activo = wv.campanas.alternar(id);
         refrescarCampanaBtn();
         wv.refrescarCampanas();
-        wv.status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + id.replace("\u2605", "\u2605 ").replace("|", " ") + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
+        wv.status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + wv.nombreVistaCampana() + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
     }
 
     private void refrescarClanesGuardados() {
