@@ -177,4 +177,24 @@ class SfrDataClientTest {
         sfr.versionado("https://otra/", "shard-0002.json.gz", "base-1", 120);
         assertEquals("https://otra/shard-0002.json.gz", red.pedidas.get(0).url());
     }
+
+    // ----- escritura atómica (fila 70 de DEUDA): a un ".tmp" y luego Files.move -----
+
+    @Test void diarioNoDejaUnTmpBasuraDeUnCorteAnterior() throws Exception {
+        Path tmp = dir.resolve("perfiles_shards/elo_ayer.json.gz.tmp");
+        Files.createDirectories(tmp.getParent());
+        Files.writeString(tmp, "basura de un corte a medias");
+        assertEquals("release", txt(sfr.diario("elo_ayer.json.gz", 45)));
+        assertEquals("release", Files.readString(dir.resolve("perfiles_shards/elo_ayer.json.gz")));
+        assertFalse(Files.exists(tmp), "la escritura atomica no deja basura de un corte anterior");
+    }
+
+    @Test void versionadoNoDejaUnTmpBasuraDeUnCorteAnterior() throws Exception {
+        Path tmp = dir.resolve("perfiles_shards/shard-0009.json.gz.tmp");
+        Files.createDirectories(tmp.getParent());
+        Files.writeString(tmp, "basura");
+        assertEquals("release", txt(sfr.versionado("shard-0009.json.gz", "2026-09-24", 120)));
+        assertFalse(Files.exists(tmp), "la escritura atomica no deja basura de un corte anterior");
+        assertEquals("2026-09-24", Files.readString(dir.resolve("perfiles_shards/shard-0009.json.gz.v")));
+    }
 }

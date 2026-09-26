@@ -6,6 +6,7 @@ import dev.tirador.aoe2radar.cache.Caducidad;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.FileTime;
 import java.time.Duration;
 import java.util.function.Supplier;
@@ -61,6 +62,18 @@ public final class SfrDataClient {
         this.red = red; this.etags = etags; this.cache = cache; this.baseRelease = baseRelease;
     }
 
+    /**
+     * Escribe destino de forma atómica: a un ".tmp" (mismo directorio) y luego {@code Files.move} con ATOMIC_MOVE.
+     * Si la app se corta a mitad de una descarga, el archivo real (el que lee el resto de la app) nunca queda a
+     * medio escribir: o sigue con la copia de antes, o ya tiene la nueva entera (fila 70 de DEUDA).
+     */
+    private static void escribirAtomico(Path destino, byte[] datos) throws IOException {
+        Files.createDirectories(destino.getParent());
+        Path tmp = destino.resolveSibling(destino.getFileName() + ".tmp");
+        Files.write(tmp, datos);
+        Files.move(tmp, destino, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+    }
+
     /** Un archivo de la rama «data», con caché de 6 h y ETag; .gz se descomprime al leer. */
     public byte[] datos(String nombre) throws Exception {
         Path local = dir.resolve(nombre);
@@ -88,7 +101,7 @@ public final class SfrDataClient {
         Path f = dirRelease.resolve(nombre);
         try { if (cache.archivoFresco(f, caducidad)) return Files.readAllBytes(f); } catch (IOException ignored) { }
         byte[] raw = red.bytes(baseRelease.get() + nombre, timeoutS);
-        try { Files.createDirectories(dirRelease); Files.write(f, raw); } catch (IOException ignored) { }
+        try { escribirAtomico(f, raw); } catch (IOException ignored) { }
         return raw;
     }
 
@@ -98,6 +111,15 @@ public final class SfrDataClient {
      */
     public void olvidarDiario(String nombre) {
         try { Files.deleteIfExists(dirRelease.resolve(nombre)); } catch (IOException ex) { log("sfr-data: no se pudo borrar " + nombre + ": " + causa(ex)); }
+    }
+
+    /**
+     * Borra la copia en disco de un archivo de versionado() y su marca ".v": quien lo leyó no pudo entenderlo. Sin
+     * esto, un paquete roto valdría hasta que cambiara la versión, y cada intento releería la misma basura.
+     */
+    public void olvidarVersionado(String nombre) {
+        try { Files.deleteIfExists(dirRelease.resolve(nombre)); Files.deleteIfExists(dirRelease.resolve(nombre + ".v")); }
+        catch (IOException ex) { log("sfr-data: no se pudo borrar " + nombre + ": " + causa(ex)); }
     }
 
     /** Hora (ms) de la copia en disco de un archivo de diario(), o ahora si no se puede leer (no se llegó a guardar). */
@@ -116,7 +138,7 @@ public final class SfrDataClient {
         Path f = dirRelease.resolve(nombre), marca = dirRelease.resolve(nombre + ".v");
         try { if (Files.exists(f) && Files.exists(marca) && version.equals(Files.readString(marca).trim())) return Files.readAllBytes(f); } catch (IOException ignored) { }
         byte[] raw = red.bytes(base + nombre, timeoutS);
-        try { Files.createDirectories(dirRelease); Files.write(f, raw); Files.writeString(marca, version); } catch (IOException ex) { log("perfiles: caché: " + causa(ex)); }
+        try { escribirAtomico(f, raw); escribirAtomico(marca, version.getBytes(java.nio.charset.StandardCharsets.UTF_8)); } catch (IOException ex) { log("perfiles: caché: " + causa(ex)); }
         return raw;
     }
 }
