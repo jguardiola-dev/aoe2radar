@@ -149,6 +149,20 @@ public final class ListaSeguidos {
     }
 
     /**
+     * Los grupos donde se puede fichar o mover a alguien: General, los de los jugadores y los de la config, en ese
+     * orden y sin distinguir mayúsculas (si un nombre llega con mayúsculas distintas, sobrevive el primero: «General»
+     * y, después, el del jugador antes que el de config). Sin efectos: no escribe config (a diferencia de
+     * calcularGrupos). Un solo sitio para lo que antes se repetía en ocho bloques de la Watchlist (DEUDA fila 134).
+     */
+    public Set<String> gruposDisponibles(List<Player> jugadores) {
+        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        gs.add(grupoGeneral);
+        for (Player x : jugadores) gs.add(x.grupo());
+        gs.addAll(gruposConfig());
+        return gs;
+    }
+
+    /**
      * El conjunto ordenado de grupos a mostrar (los de los jugadores + los de la config), y de paso persiste
      * la config sin los que ya no tienen jugadores Y no son «General» (un grupo creado no se esfuma al vaciarse).
      * El JComboBox lo rellena quien llama (rebuildGrupos): aquí solo el cálculo y la config.

@@ -58,7 +58,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 
@@ -386,15 +385,10 @@ public final class WatchlistView {
         left.setPreferredSize(new Dimension(280, 0));
     }
 
-    /** Grupos donde se puede fichar a alguien: «General», los grupos con gente ahora mismo y los guardados en
-     *  config (idéntico al bloque que arma menuContextualWatchlist/menuDeJugador/mostrarVinculadas). */
-    public Set<String> gruposParaFichar() {
-        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        gs.add(GRUPO_GENERAL);
-        for (Player x : todosJugadores) gs.add(x.grupo());
-        gs.addAll(gruposConfig());
-        return gs;
-    }
+    /** Grupos donde se puede fichar o mover a alguien: «General», los grupos con gente ahora mismo y los guardados
+     *  en config (service.ListaSeguidos.gruposDisponibles). Es el único sitio que los calcula: menú contextual,
+     *  diálogos, esGrupoDeUsuario y, vía la ventana, DialogosJugador y MenusJugadorSwing (DEUDA fila 134). */
+    public Set<String> gruposDisponibles() { return listaSeguidos.gruposDisponibles(todosJugadores); }
 
     public boolean enZonaForma(Point p) {
         int wL = playersList.getWidth() - 22, elo = anchoCeldaElo(wL);
@@ -646,22 +640,13 @@ public final class WatchlistView {
 
     public void ficharVarios(List<Player> lista, String g) { dialogosLista.ficharVarios(lista, g); }
 
-    // visible para esGrupoDeUsuario (y para el menú "mover a grupo")
-    Set<String> gruposExistentes() {
-        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        gs.add(GRUPO_GENERAL);
-        for (Player x : todosJugadores) gs.add(x.grupo());
-        gs.addAll(gruposConfig());
-        return gs;
-    }
-
     /**
      * ¿"nombre" es un grupo de verdad (General, uno con jugadores dentro o uno registrado en config), no un
      * texto que solo coincide por casualidad con "Todos"/"All"? Lo usa Campanas (inyectado desde
      * SpoilerFreeRecs) para no traducir la campana de un grupo que el usuario llamó, por ejemplo, "All": esa
      * campana es la de ESE grupo, no la del pseudogrupo "todos los jugadores".
      */
-    public boolean esGrupoDeUsuario(String nombre) { return gruposExistentes().contains(nombre); }
+    public boolean esGrupoDeUsuario(String nombre) { return gruposDisponibles().contains(nombre); }
 
     void moverVarios(List<Player> lista, String g) {
         int n = listaSeguidos.moverVarios(todosJugadores, lista, g);

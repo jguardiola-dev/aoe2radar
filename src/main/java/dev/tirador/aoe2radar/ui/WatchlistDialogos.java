@@ -21,7 +21,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Log.causa;
@@ -67,11 +66,7 @@ final class WatchlistDialogos {
         DefaultListModel<String> modelo = new DefaultListModel<>();
         Runnable recargar = () -> {
             modelo.clear();
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            gs.add(WatchlistView.GRUPO_GENERAL);
-            gs.addAll(wv.gruposConfig());
-            for (Player p : wv.todosJugadores) gs.add(p.grupo());
-            for (String g : gs) modelo.addElement(g);
+            for (String g : wv.gruposDisponibles()) modelo.addElement(g);
         };
         recargar.run();
         JList<String> lista = new JList<>(modelo);
@@ -178,10 +173,7 @@ final class WatchlistDialogos {
 
     /** Pregunta a qué grupo fichar (preseleccionado el activo), con «Nuevo grupo…». null = cancelado. */
     public String elegirGrupoDialog(String nombreJugador) {
-        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        gs.add(WatchlistView.GRUPO_GENERAL);
-        for (Player x : wv.todosJugadores) gs.add(x.grupo());
-        gs.addAll(wv.gruposConfig());
+        Set<String> gs = wv.gruposDisponibles();
         String nuevoO = t("+ Nuevo grupo\u2026", "+ New group\u2026");
         List<String> ops = new ArrayList<>(gs);
         ops.add(nuevoO);
@@ -284,7 +276,7 @@ final class WatchlistDialogos {
             wv.enlacePartidas.fijarObjetivo(pl, wv.vistaActualId());
             wv.playersList.clearSelection(); wv.aplicarFiltroGrupo(); wv.enlacePartidas.mostrarDirectos(false); wv.enlacePartidas.fetchMatches();
         } else if (r0 == 2) {
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.add(WatchlistView.GRUPO_GENERAL); for (Player x : wv.todosJugadores) gs.add(x.grupo()); gs.addAll(wv.gruposConfig());
+            Set<String> gs = wv.gruposDisponibles();
             Object g = JOptionPane.showInputDialog(wv.ventana, t("Grupo:", "Group:"), t("Añadir a la watchlist", "Add to the watchlist"), JOptionPane.PLAIN_MESSAGE, null, gs.toArray(), wv.grupoDestino());
             if (g != null) wv.ficharDesdeTop(new Player(pid, nombre, String.valueOf(g)), String.valueOf(g));
         }

@@ -247,6 +247,18 @@ class ListaSeguidosTest {
         assertEquals("Todos", cfg.get("grupo_activo"));
     }
 
+    /** DEUDA fila 134: el único cálculo de «grupos donde fichar». General + jugadores + config; con mayúsculas
+     *  distintas sobrevive el primero (General, luego el del jugador, luego el de config); no escribe config. */
+    @Test void gruposDisponibles_generalJugadoresYConfigSinEscribir() {
+        cfg.put("grupos", "amigos,Torneo");
+        List<Player> jugadores = List.of(new Player(1L, "Ana", "Amigos"), new Player(2L, "Bob", "general"));
+
+        Set<String> gs = svc.gruposDisponibles(jugadores);
+
+        assertEquals(List.of("Amigos", GENERAL, "Torneo"), new ArrayList<>(gs));
+        assertEquals("amigos,Torneo", cfg.get("grupos"), "consultar no persiste nada (calcularGrupos sí)");
+    }
+
     /** F2 de la revisión 1.3: renombrar o borrar un grupo deshacía las familias (Player de 3 argumentos, vínculo 0). */
     @Test void renombrarGrupo_conservaElVinculoDeFamilia() {
         List<Player> jugadores = new ArrayList<>(List.of(

@@ -413,13 +413,13 @@ class WatchlistViewTest {
     /** Caracterización (DEUDA fila 134, antes de unificar los TreeSet de grupos): el conjunto de grupos para fichar es
      *  General + los de los jugadores + los de config, sin distinguir mayúsculas; cuando el mismo nombre llega con
      *  mayúsculas distintas, sobrevive el primero que entra: «General» siempre, y el del jugador antes que el de config. */
-    @Test void gruposParaFichar_caracterizacionDeMayusculas() {
+    @Test void gruposDisponibles_caracterizacionDeMayusculas() {
         cfg.put("grupos", "amigos,Torneo");
         todosJugadores.add(new Player(1L, "Uno", "Amigos"));
         todosJugadores.add(new Player(2L, "Dos", "general"));
         todosJugadores.add(new Player(3L, "Tres", "PROS"));
         todosJugadores.add(new Player(4L, "Cuatro", "pros"));
-        assertEquals(List.of("Amigos", "General", "PROS", "Torneo"), new ArrayList<>(watchlist.gruposParaFichar()));
+        assertEquals(List.of("Amigos", "General", "PROS", "Torneo"), new ArrayList<>(watchlist.gruposDisponibles()));
     }
 
     // ===== grupos / filtro =====================================================================================

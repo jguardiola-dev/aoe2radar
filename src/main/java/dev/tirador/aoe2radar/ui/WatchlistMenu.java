@@ -18,7 +18,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
-import java.util.TreeSet;
 
 import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -92,10 +91,7 @@ final class WatchlistMenu {
                 menu.add(quitarW);
             } else {
                 JMenu anadir = new JMenu(t("Añadir a mi watchlist", "Add to my watchlist"));
-                Set<String> gsTop = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-                gsTop.add(WatchlistView.GRUPO_GENERAL);
-                for (Player x : wv.todosJugadores) gsTop.add(x.grupo());
-                gsTop.addAll(wv.gruposConfig());
+                Set<String> gsTop = wv.gruposDisponibles();
                 for (String g : gsTop) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> wv.ficharDesdeTop(p, g)); anadir.add(it); }
                 anadir.addSeparator();
                 JMenuItem nuevoGT = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
@@ -115,10 +111,7 @@ final class WatchlistMenu {
             }
         } else {
             JMenu mover = new JMenu(t("Mover a grupo", "Move to group"));
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            gs.add(WatchlistView.GRUPO_GENERAL);
-            gs.addAll(wv.gruposConfig());
-            for (Player x : wv.todosJugadores) gs.add(x.grupo());
+            Set<String> gs = wv.gruposDisponibles();
             for (String g : gs) { if (g.equalsIgnoreCase(p.grupo())) continue; JMenuItem it = new JMenuItem(g); it.addActionListener(a -> wv.moverJugador(p, g)); mover.add(it); }
             JMenuItem nuevoG = new JMenuItem(t("Nuevo grupo…", "New group…"));
             nuevoG.addActionListener(a -> {
@@ -134,7 +127,7 @@ final class WatchlistMenu {
             List<Player> selW = wv.playersList.getSelectedValuesList();
             if (selW.size() > 1 && selW.contains(p)) {   // varios seleccionados: mover o quitar de golpe
                 JMenu moverVarios = new JMenu(t("Mover los ", "Move the ") + selW.size() + t(" seleccionados a", " selected to"));
-                for (String g : wv.gruposExistentes()) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> wv.moverVarios(selW, g)); moverVarios.add(it); }
+                for (String g : wv.gruposDisponibles()) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> wv.moverVarios(selW, g)); moverVarios.add(it); }
                 moverVarios.addSeparator();
                 JMenuItem nuevoGM = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
                 nuevoGM.addActionListener(a -> { String g = wv.elegirGrupoDialog(selW.size() + t(" jugadores", " players")); if (g != null) wv.moverVarios(selW, g); });
@@ -179,7 +172,7 @@ final class WatchlistMenu {
         JMenuItem perfN = new JMenuItem(t("Perfil en pestaña nueva", "Profile in a new tab")); perfN.addActionListener(a -> wv.navegacion.abrirPerfilEnPestana(mp.id, nombre)); sub.add(perfN);
         if (!wv.containsPlayerId(mp.id)) {
             JMenu anadir = new JMenu(t("Añadir a mi watchlist", "Add to my watchlist"));
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.add(WatchlistView.GRUPO_GENERAL); for (Player x : wv.todosJugadores) gs.add(x.grupo()); gs.addAll(wv.gruposConfig());
+            Set<String> gs = wv.gruposDisponibles();
             for (String g : gs) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> wv.ficharDesdeTop(new Player(mp.id, mp.name, g), g)); anadir.add(it); }
             sub.add(anadir);
         }
