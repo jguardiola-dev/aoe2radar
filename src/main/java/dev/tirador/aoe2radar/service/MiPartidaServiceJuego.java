@@ -92,8 +92,8 @@ public final class MiPartidaServiceJuego implements MiPartidaService {
     /**
      * synchronized (fila 132 de DEUDA): el tick de 2s (MiPartidaPresenter) lanza un hilo «log-juego» nuevo en
      * cada llamada, sin esperar al anterior; si una lectura tarda más de 2s, dos hilos podrían tocar a la vez
-     * logActual/logPos/logUltimaFase/ultimoAvisoMs/ultimoDiagMs. Con el método sincronizado, la segunda llamada
-     * simplemente espera a que termine la primera (mismo resultado que hoy: nunca hay más de una a la vez).
+     * logActual/logPos/logUltimaFase/ultimoAvisoMs/ultimoDiagMs. A partir de ahora nunca hay más de una lectura
+     * a la vez; una lectura colgada hace que los ticks esperen en el monitor.
      */
     @Override
     public synchronized boolean leerLogJuego() {

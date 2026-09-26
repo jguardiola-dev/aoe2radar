@@ -62,6 +62,8 @@ public interface ProfileService {
     /**
      * Las cuentas hermanas conocidas en la sesión por haber consultado vinculadas (de este perfil o de otro de su
      * familia): id → nombre («—» si se conoció desde la otra punta). null si ninguna. Sin red.
+     * <p>El mapa devuelto se puede leer desde otro hilo mientras se escribe (es un ConcurrentHashMap): quien
+     * llama no necesita copiarlo ni sincronizarlo por su cuenta (ver DEUDA fila 79, PerfilesCompanion).
      */
     Map<Long, String> familia(long pid);
 
