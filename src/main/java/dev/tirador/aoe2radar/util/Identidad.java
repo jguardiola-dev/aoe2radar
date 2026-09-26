@@ -4,7 +4,7 @@ public final class Identidad {
     private Identidad() {}
 
     // ----- Identidad / autoría ----------------------------------------------
-    public static final String VERSION        = "1.1";
+    public static final String VERSION        = "1.2";
     public static final String NOMBRE         = "aoe2radar";   // nombre del producto (la clase sigue llamándose SpoilerFreeRecs)
     public static final String AUTOR          = "12Tirador";
     public static final String CLAN           = "R1";

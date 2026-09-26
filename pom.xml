@@ -90,7 +90,7 @@
       <id>empaquetar</id>
       <properties>
         <!-- Sincronizar a mano con Identidad.VERSION hasta que la fase 4 automatice el release. -->
-        <jpackage.appVersion>1.1</jpackage.appVersion>
+        <jpackage.appVersion>1.2</jpackage.appVersion>
         <jpackage.vendor>12Tirador</jpackage.vendor>
         <jpackage.entrada>${project.build.directory}/jpackage-input</jpackage.entrada>
       </properties>
