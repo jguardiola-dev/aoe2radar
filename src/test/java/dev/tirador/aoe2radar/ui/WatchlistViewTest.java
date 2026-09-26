@@ -154,9 +154,10 @@ class WatchlistViewTest {
         @Override public boolean detenerOperacion() { return false; }
         @Override public void dormir(long ms) { }
         @Override public void abrirUrl(String url) { }
-        @Override public void espectar(Player p) { }
+        final List<String> espectarYCa = new ArrayList<>();   // el orden de «lanzar CaptureAge» y «espectar»
+        @Override public void espectar(Player p) { espectarYCa.add("espectar"); }
         @Override public java.nio.file.Path rutaCaptureAge() { return null; }
-        @Override public void lanzarCaptureAge(java.nio.file.Path rec) { }
+        @Override public void lanzarCaptureAge(java.nio.file.Path rec) { espectarYCa.add("ca"); }
         @Override public void mostrarToast(String texto, long matchId) { }
         @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) { }
         @Override public void abrirPerfilYCaraACara(long pid, String miNombre, long rivalId, String rivalNombre) { }
@@ -817,6 +818,26 @@ class WatchlistViewTest {
         w.paisActual = new PaisItem("Spain", "es");
         sinListeners(() -> w.grupoCombo.setSelectedItem("★ Country top"), w.grupoCombo);
         assertEquals("★ Country top · Spain", w.nombreVistaCampana());
+    }
+
+    /** Revisión 1.3 (dudoso confirmado): con «Usar CaptureAge», espectar ya lanza CA; el menú no debe lanzarlo otra vez. */
+    @Test void espectarConCaptureAge_unSoloLanzamiento() {
+        Player p = new Player(5L, "Cinco", WatchlistView.GRUPO_GENERAL);
+        watchlist.menuLista.espectarConCaptureAge(p);
+        assertEquals(List.of("ca", "espectar"), anfitrion.espectarYCa, "sin la casilla, lo lanza el menú, como siempre");
+
+        anfitrion.espectarYCa.clear();
+        cfg.put("usar_ca", "true");
+        watchlist.menuLista.espectarConCaptureAge(p);
+        assertEquals(List.of("espectar"), anfitrion.espectarYCa, "con la casilla, solo lo lanza espectar (tras verificar)");
+    }
+
+    /** Revisor 1.3: «Guardar clan» escribía clanes_guardados con util.Config y la vista lo lee de la config inyectada. */
+    @Test void guardarClan_escribeEnLaMismaConfigQueLee() {
+        watchlist.clanField.setText("R1");
+        watchlist.clanEstrella.doClick();
+        assertEquals("R1", cfg.get("clanes_guardados"));
+        assertEquals(List.of("R1"), watchlist.clanesGuardados());
     }
 
     @Test void sugerenciaCaducada_siElTextoCambio() {

@@ -50,7 +50,7 @@ final class WatchlistMenu {
             menu.add(esp);
             if (wv.anfitrion.rutaCaptureAge() != null) {
                 JMenuItem espCa = new JMenuItem(t("Espectar con CaptureAge", "Spectate with CaptureAge"));
-                espCa.addActionListener(a -> { wv.anfitrion.lanzarCaptureAge(null); wv.anfitrion.espectar(p); });
+                espCa.addActionListener(a -> espectarConCaptureAge(p));
                 menu.add(espCa);
             }
             MatchPlayer yo = null; if (m != null) for (MatchPlayer mp : m.players) if (mp.id == pid) yo = mp;
@@ -159,6 +159,14 @@ final class WatchlistMenu {
         nicks.addActionListener(a -> wv.dialogos.nicksAnteriores(pid, p.name()));
         menu.add(nicks);
         menu.show(wv.playersList, e.getX(), e.getY());
+    }
+
+    /** «Espectar con CaptureAge»: lanza CA y especta. Con «Usar CaptureAge» activado, espectar ya lo lanza él mismo
+     *  (AccionesVentana.espectarPartida, tras verificar la partida): aquí no se lanza otra vez (revisión 1.3: salían dos
+     *  CaptureAge; mismo arreglo que MenuPartida.espectarConCaptureAge). Sin la casilla, este es el único lanzamiento. */
+    void espectarConCaptureAge(Player p) {
+        if (!Boolean.parseBoolean(wv.leerCfg.apply("usar_ca", "false"))) wv.anfitrion.lanzarCaptureAge(null);
+        wv.anfitrion.espectar(p);
     }
 
     /** Un jugador de la partida en curso, como submenú: perfil, pestaña nueva, añadir a la watchlist. */

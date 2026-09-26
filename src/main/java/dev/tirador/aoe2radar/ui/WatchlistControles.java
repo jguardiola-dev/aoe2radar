@@ -322,7 +322,7 @@ final class WatchlistControles {
             if (tag.isEmpty()) return;
             List<String> l = wv.clanesGuardados();
             if (l.removeIf(x -> x.equalsIgnoreCase(tag))) wv.status.setText(t("Clan quitado de guardados: ", "Clan removed from saved: ") + tag); else { l.add(tag); wv.status.setText(t("Clan guardado: ", "Clan saved: ") + tag); }
-            guardarConfig("clanes_guardados", String.join(",", l));
+            wv.guardarCfg.accept("clanes_guardados", String.join(",", l));   // la misma config que lee wv.clanesGuardados()
             refrescarClanesGuardados();
         });
         wv.parClan.add(wv.clanEstrella, BorderLayout.EAST);
