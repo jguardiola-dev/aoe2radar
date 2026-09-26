@@ -86,8 +86,9 @@ public final class FranjaAviso extends JPanel {
         if (getParent() != null) { getParent().revalidate(); getParent().repaint(); }
     }
 
-    /** Lo que se pinta: como mucho MAX_LINEAS líneas de MAX_CARACTERES; si sobra algo, «…». Una línea va como texto
-     *  plano (el JLabel la recorta solo si no cabe); dos, como HTML escapado. */
+    /** Lo que se pinta: como mucho MAX_LINEAS líneas de MAX_CARACTERES; si sobra algo, «…». Siempre como HTML
+     *  escapado, también con una sola línea: el mensaje viene de fuera y uno que empezara por «<html>» no debe
+     *  interpretarse como HTML (el JLabel lo haría con texto plano). */
     static String textoFranja(String mensaje) {
         String[] lineas = mensaje.strip().split("\\R");
         int n = Math.min(lineas.length, MAX_LINEAS);
@@ -97,16 +98,14 @@ public final class FranjaAviso extends JPanel {
             ver[i] = l.length() > MAX_CARACTERES ? l.substring(0, MAX_CARACTERES - 1).stripTrailing() + "…" : l;
         }
         if (lineas.length > MAX_LINEAS && !ver[n - 1].endsWith("…")) ver[n - 1] += " …";
-        if (n == 1) return ver[0];
         StringBuilder sb = new StringBuilder("<html>");
         for (int i = 0; i < n; i++) sb.append(i > 0 ? "<br>" : "").append(escapar(ver[i]));
         return sb.append("</html>").toString();
     }
 
-    /** El mensaje entero, para el tooltip (con sus saltos de línea). */
+    /** El mensaje entero, para el tooltip (con sus saltos de línea), escapado siempre por lo mismo que textoFranja. */
     static String tooltip(String mensaje) {
         String[] lineas = mensaje.strip().split("\\R");
-        if (lineas.length == 1) return lineas[0];
         StringBuilder sb = new StringBuilder("<html>");
         for (int i = 0; i < lineas.length; i++) sb.append(i > 0 ? "<br>" : "").append(escapar(lineas[i]));
         return sb.append("</html>").toString();

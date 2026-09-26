@@ -54,6 +54,8 @@ public final class ManejadorExcepciones implements Thread.UncaughtExceptionHandl
             synchronized (this) {
                 long ahora = reloj.ahoraMs();
                 if (inicioMinuto == Long.MIN_VALUE || ahora - inicioMinuto >= MINUTO_MS || ahora < inicioMinuto) {
+                    // El resumen de las omitidas se escribe aquí, al abrirse un minuto nuevo, así que solo sale si
+                    // llega otra excepción después: si no llega ninguna más, esas omitidas no se anotan nunca.
                     if (omitidas > 0)
                         resumen = "excepción no capturada: " + omitidas + " más en el minuto anterior, sin escribir (tope de " + maxPorMinuto + ")";
                     inicioMinuto = ahora;

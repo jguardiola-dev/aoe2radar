@@ -41,8 +41,8 @@ class FranjaAvisoTest {
             FranjaAviso f = new FranjaAviso();
             f.mostrar("Mantenimiento esta noche", () -> marcado[0]++);
             assertTrue(f.isVisible());
-            assertEquals("Mantenimiento esta noche", f.texto.getText());
-            assertEquals("Mantenimiento esta noche", f.texto.getToolTipText());
+            assertEquals("<html>Mantenimiento esta noche</html>", f.texto.getText());
+            assertEquals("<html>Mantenimiento esta noche</html>", f.texto.getToolTipText());
             assertEquals(0, marcado[0], "enseñarla no la marca como vista: solo la ×");
             f.cerrarBtn.doClick();
             assertFalse(f.isVisible());
@@ -75,7 +75,7 @@ class FranjaAvisoTest {
             f.mostrar("Viejo", () -> marcadoA[0]++);
             f.mostrar("Nuevo", () -> marcadoB[0]++);
             assertTrue(f.isVisible());
-            assertEquals("Nuevo", f.texto.getText());
+            assertEquals("<html>Nuevo</html>", f.texto.getText());
             f.cerrarBtn.doClick();
             assertEquals(0, marcadoA[0], "el sustituido no se llegó a cerrar: no se marca");
             assertEquals(1, marcadoB[0]);
@@ -93,15 +93,23 @@ class FranjaAvisoTest {
     @Test void largoSeRecortaADosLineasConElEnteroEnElTooltip() {
         String larga = "x".repeat(FranjaAviso.MAX_CARACTERES + 40);
         String una = FranjaAviso.textoFranja(larga);
-        assertEquals(FranjaAviso.MAX_CARACTERES, una.length());
-        assertTrue(una.endsWith("…"));
-        assertEquals(larga, FranjaAviso.tooltip(larga));
+        assertEquals("<html>" + "x".repeat(FranjaAviso.MAX_CARACTERES - 1) + "…</html>", una);
+        assertEquals("<html>" + larga + "</html>", FranjaAviso.tooltip(larga));
 
         String tres = "uno <b>\ndos & más\ntres";
         String html = FranjaAviso.textoFranja(tres);
         assertEquals("<html>uno &lt;b&gt;<br>dos &amp; más …</html>", html, "dos líneas, escapadas, y «…» por la que falta");
         assertEquals("<html>uno &lt;b&gt;<br>dos &amp; más<br>tres</html>", FranjaAviso.tooltip(tres));
-        assertEquals("corto", FranjaAviso.textoFranja("corto"));
+        assertEquals("<html>corto</html>", FranjaAviso.textoFranja("corto"));
+    }
+
+    @Test void unaSolaLineaQueEmpiezaPorHtmlNoSeInterpreta() {
+        // revisión: con una sola línea el texto iba tal cual y el JLabel lo habría pintado como HTML
+        String trampa = "<html><b>Actualiza ya</b> <a href='x'>aquí</a>";
+        String esperado = "<html>&lt;html&gt;&lt;b&gt;Actualiza ya&lt;/b&gt; &lt;a href='x'&gt;aquí&lt;/a&gt;</html>";
+        assertEquals(esperado, FranjaAviso.textoFranja(trampa));
+        assertEquals(esperado, FranjaAviso.tooltip(trampa));
+        assertEquals("<html>a &amp; b</html>", FranjaAviso.textoFranja("a & b"));
     }
 
     @Test void elGranateCambiaConElTema() {
