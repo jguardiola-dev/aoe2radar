@@ -23,6 +23,9 @@ public final class Paises {
      *  en hilos aparte, dos disparos del Timer no deben escribir el archivo al mismo tiempo. Paquete, no privado:
      *  PaisesTest lo usa para forzar el camino de «ya hay uno en marcha». */
     static final AtomicBoolean GUARDANDO = new AtomicBoolean(false);
+    /** ¿Terminó la carga inicial de paises.txt? Hasta entonces, guardarAlCerrar no escribe: guardaría un mapa a
+     *  medias encima del archivo completo. Paquete: PaisesTest lo fija. */
+    static volatile boolean paisesCargados;
 
     public static void aprenderPais(long pid, Object pais) {
         if (pid <= 0 || pais == null) return;
@@ -41,7 +44,28 @@ public final class Paises {
                 try { PAIS_DE.put(Long.parseLong(linea.substring(0, i).trim()), linea.substring(i + 1).trim()); } catch (NumberFormatException ignored) { }
             }
         } catch (Exception ex) { log("paises: " + causa(ex)); }
+        finally { paisesCargados = true; }
     }
+
+    /** Los países aprendidos desde el último guardado de 60 s (arreglo F13 de la revisión 1.3): la ventana lo llama
+     *  al cerrarse. Guarda en un hilo aparte y espera como mucho maxMs, para no retener el cierre. Si el guardado
+     *  del Timer está en marcha, espera a que acabe y guarda lo que falte. Sin la carga inicial terminada, no hace
+     *  nada. */
+    public static void guardarAlCerrar(long maxMs) {
+        if (!paisesCargados || !paisesSucios) return;
+        long fin = System.currentTimeMillis() + maxMs;
+        Thread t = new Thread(() -> {
+            while (GUARDANDO.get() && System.currentTimeMillis() < fin) {
+                try { Thread.sleep(20); } catch (InterruptedException e) { return; }
+            }
+            guardarPaises();
+        }, "paises-cierre");
+        t.setDaemon(true);
+        t.start();
+        try { t.join(Math.max(1, fin - System.currentTimeMillis())); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+
     public static void guardarPaises() {
         if (!paisesSucios) return;
         if (!GUARDANDO.compareAndSet(false, true)) return;   // ya hay un guardado en marcha: este disparo se salta

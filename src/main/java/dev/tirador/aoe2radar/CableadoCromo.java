@@ -1,6 +1,7 @@
 package dev.tirador.aoe2radar;
 
 import dev.tirador.aoe2radar.app.Servicios;
+import dev.tirador.aoe2radar.cache.Paises;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.EnlaceVivo;
@@ -58,7 +59,10 @@ final class CableadoCromo {
     // configuración de ventana, no construcción de paneles.
     static void configurarVentana(SpoilerFreeRecs v) {
         VentanaPrincipalAjustes.configurar(v, v.logo, new VentanaPrincipalAjustes.Anfitrion() {
-            @Override public void alCerrar() { VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar(); }
+            @Override public void alCerrar() {
+                VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar();
+                Paises.guardarAlCerrar(2000);   // F13 (1.3): los países del último minuto; retiene el cierre 2 s como mucho
+            }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
         });
         // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
