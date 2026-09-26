@@ -489,11 +489,9 @@ public final class PartidasView {
     // ======================================================================
 
     public void cerrarBusqueda() {
-        // La × con una búsqueda en marcha la cancela de verdad: antes solo cortaba la espera del freno y la tabla
-        // volvía a llenarse al terminar (revisión 1.3, watchlist F6). Su done() (que llega después, en el EDT)
-        // apaga el progreso y repone los botones, pero deja el estado en «Búsqueda cerrada.».
-        SwingWorker<?, ?> enCurso = fetchWorker;
-        if (enCurso != null) { anfitrion.pararOperacion(); busquedas.cerradaPorLaCruz = enCurso; enCurso.cancel(true); }
+        // La × con una búsqueda en marcha la suelta y la cancela (revisión 1.3, watchlist F6): ver
+        // BusquedasPartidas.soltarPorLaCruz. Después se vacía la tabla y el estado queda en «Búsqueda cerrada.».
+        busquedas.soltarPorLaCruz();
         all.clear();
         view.clear();
         tableModel.fireTableDataChanged();

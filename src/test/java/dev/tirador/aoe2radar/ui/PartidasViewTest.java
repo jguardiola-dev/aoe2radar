@@ -288,6 +288,30 @@ class PartidasViewTest {
         assertFalse(anfitrion.pedidas.contains(B.id()), "tras la × no se consulta a nadie más");
     }
 
+    @Test void cruzDePartidasDe_conElDoneEnCola_laTablaNoVuelveALlenarse() throws Exception {
+        // La carrera: doInBackground ya terminó y su done() espera en la cola del EDT cuando se pulsa la ×.
+        // cancel(true) ya no puede nada; si fetchWorker siguiera apuntando a ella, su done() volvería a llenar la tabla.
+        enlace.jugadores.add(A);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> List.of(partida(pid, A, fin));
+        enEdt(() -> {
+            vista.fetchMatches(vista.fetchBtn);
+            javax.swing.SwingWorker<?, ?> w = vista.fetchWorker;
+            long tope = System.currentTimeMillis() + 5000;
+            while (!w.isDone() && System.currentTimeMillis() < tope) Thread.onSpinWait();   // el EDT está ocupado: done() queda en cola
+            assertTrue(w.isDone(), "doInBackground terminó");
+            vista.cerrarBusqueda();
+            assertNull(vista.fetchWorker);
+            assertTrue(vista.fetchBtn.isEnabled() && vista.azarBtn.isEnabled() && vista.gteBtn.isEnabled(), "la × repone los botones");
+            assertFalse(anfitrion.progreso, "y apaga el progreso de la búsqueda");
+        });
+        asentar();   // ahora corre el done() que estaba en cola
+        enEdt(() -> {
+            assertTrue(vista.all.isEmpty(), "el done() en cola no vuelve a llenar la tabla tras la ×");
+            assertEquals("Búsqueda cerrada.", anfitrion.estado, "estados: " + anfitrion.estados);
+        });
+    }
+
     // ----- watchlist F8: pedir las partidas de otro jugador con una búsqueda en marcha -----
 
     @Test void otraBusquedaConUnaEnMarcha_cancelaLaAnteriorYBuscaAlNuevo() throws Exception {
