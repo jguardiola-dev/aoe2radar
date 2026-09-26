@@ -169,8 +169,8 @@ public final class BarraEstado {
         oeste.add(progreso);
         detenerDescBtn = new JButton(t("Detener", "Stop"));
         detenerDescBtn.setVisible(false);
-        detenerDescBtn.setToolTipText(t("Detiene la operación en curso: descargas, azar o Guess the ELO (cada petición muere sola a los 25 s).",
-                "Stops the running operation: downloads, random or Guess the ELO (each request self-terminates at 25 s)."));
+        detenerDescBtn.setToolTipText(t("Detiene la operación en curso: descargas, azar o Guess the ELO (cada petición muere sola a los 15 s).",
+                "Stops the running operation: downloads, random or Guess the ELO (each request self-terminates at 15 s)."));
         detenerDescBtn.addActionListener(e -> {
             log("detener pulsado (op #" + opSerial + ")");
             anfitrion.pararOperacion();

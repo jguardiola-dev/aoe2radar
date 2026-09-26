@@ -276,6 +276,19 @@ class BarraEstadoTest {
         cerrar(b, ventana);
     }
 
+    @Test void tooltipDeDetenerDiceElTimeoutReal() throws Exception {
+        // F14 (revisión 1.3): el tooltip decía 25 s; el timeout de api.Http es 15 s, como dice el propio estado.
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            String tip = b.detenerDescBtn.getToolTipText();
+            assertTrue(tip.contains("15 s"), tip);
+            assertFalse(tip.contains("25 s"), tip);
+        });
+        cerrar(b, ventana);
+    }
+
     // ----- mensaje de control.json (F10 de la revisión 1.3) -----
 
     @Test void avisoDeControlConLaVentanaALaVistaSeEnsenaYSeMarcaVisto() throws Exception {

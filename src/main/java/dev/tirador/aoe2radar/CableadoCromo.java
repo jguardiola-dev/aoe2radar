@@ -81,9 +81,9 @@ final class CableadoCromo {
         JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));   // fija: nada salta de sitio
         v.unidadCombo.setSelectedIndex(Math.max(0, Math.min(2, Integer.parseInt(leerConfig("ventana_unidad", "0")))));
         v.unidadCombo.setFocusable(false);
-        v.unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 año)", "Unit of the search window (up to 1 year)"));
-        v.hoursSpinner.setToolTipText(t("Ventana de búsqueda: hasta 1 año. Las ventanas largas piden más páginas por jugador (tope: 300 partidas/jugador, se avisa).",
-                "Search window: up to 1 year. Long windows fetch more pages per player (cap: 300 games/player, you get a warning)."));
+        v.unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 semana)", "Unit of the search window (up to 1 week)"));
+        v.hoursSpinner.setToolTipText(t("Ventana de búsqueda: hasta 1 semana. Las ventanas largas piden más páginas por jugador (tope: 300 partidas/jugador, se avisa).",
+                "Search window: up to 1 week. Long windows fetch more pages per player (cap: 300 games/player, you get a warning)."));
         v.unidadCombo.addActionListener(e -> {
             guardarConfig("ventana_unidad", String.valueOf(v.unidadCombo.getSelectedIndex()));
             int u = v.unidadCombo.getSelectedIndex(), max = u == 0 ? 24 : u == 1 ? 7 : 1;   // el techo, en la unidad elegida: 24 h, 7 días o 1 semana
