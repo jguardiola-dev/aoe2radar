@@ -44,6 +44,9 @@ public final class EnlaceVivo {
         Set<Long> idsSocketExtra();
         /** Avisa a Live now de un evento de pid (no hace nada si Live now no existe aún). */
         void liveEvento(long pid, Match m, boolean terminada);
+        /** Quiénes tiene Live now «en partida» en matchId (lo vio su barrido, aunque nadie los marcara en EstadoVivo);
+         *  vacío si nadie o si Live now no existe aún. Sin red; seguro desde cualquier hilo (revisión 1.3, F1). */
+        List<Long> jugadoresLiveNow(long matchId);
         /** Campanita: avisa si pid está en una vista marcada. */
         void avisarSiCampana(long pid, Match m);
         /** «Mi partida»: avisa si pid es el propio jugador vigilado. */
@@ -134,8 +137,10 @@ public final class EnlaceVivo {
         boolean sigue = false;
         try {
             List<Long> pids = vivo.jugadoresDe(matchId);
-            if (pids.isEmpty()) return;   // ya salieron entretanto (un matchUpdated con finished o el barrido)
-            LiveService.Comprobacion c = live.comprobar(pids.get(0), matchId, 5);
+            // los que solo vio el barrido de Live now (no están marcados en EstadoVivo): también salen (revisión 1.3, F1)
+            List<Long> soloLive = new ArrayList<>(vistas.jugadoresLiveNow(matchId)); soloLive.removeAll(pids);
+            if (pids.isEmpty() && soloLive.isEmpty()) return;   // ya salieron entretanto (un matchUpdated con finished o el barrido)
+            LiveService.Comprobacion c = live.comprobar(!pids.isEmpty() ? pids.get(0) : soloLive.get(0), matchId, 5);
             if (c.error() != null) log("socket: no se pudo comprobar la partida quitada " + matchId + ": " + causa(c.error()));
             if (c.veredicto() == LiveService.Veredicto.VIVA) {
                 log("socket: matchRemoved de la partida " + matchId + ", pero la API la ve en curso: se mantiene y se mira en 3 min");
@@ -157,7 +162,11 @@ public final class EnlaceVivo {
                 fuera = vivo.quitarPartida(matchId);
             }
             boolean cambio = false;
-            for (long pid : fuera) { vistas.liveEvento(pid, null, true); cambio = true; }
+            // TERMINADA: la partida que devolvió la API, con su hora de fin (si no, Live now pintaba «hace 0 min» hasta
+            // que caducaba a las 2 h). Sin datos: null, como antes (Live now usa la que guardó al empezar). Revisión 1.3, F5.
+            Match fin = c.veredicto() == LiveService.Veredicto.TERMINADA ? c.partida() : null;
+            for (long pid : fuera) { vistas.liveEvento(pid, fin, true); cambio = true; }
+            for (long pid : soloLive) vistas.liveEvento(pid, fin, true);   // F1: solo Live now los tenía (sin repetir: se quitaron los marcados arriba)
             if (cambio) vistas.avisarTrasCambio();
         } finally {
             if (!sigue) quitadasEnVuelo.remove(matchId);
@@ -172,7 +181,9 @@ public final class EnlaceVivo {
                 // Decisión de Jorge (fase 4): «partida quitada» (matchRemoved) no basta para darla por terminada; el
                 // companion lo manda también con partidas que siguen en juego. Solo cuenta «terminada»: la API decide.
                 // Se pregunta más tarde, no al momento: la API tarda unos 2 min en marcar finished (ver ESPERA_QUITADA_MS).
-                if (!vivo.jugadoresDe(q.matchId()).isEmpty() && quitadasEnVuelo.add(q.matchId())) {
+                // También si solo la tiene Live now (la vio su barrido; nadie la marcó en EstadoVivo): si no, su tarjeta
+                // se quedaba «en partida» para siempre con el socket vivo (revisión 1.3, F1).
+                if ((!vivo.jugadoresDe(q.matchId()).isEmpty() || !vistas.jugadoresLiveNow(q.matchId()).isEmpty()) && quitadasEnVuelo.add(q.matchId())) {
                     try { programarQuitada(q.matchId(), 1); }
                     catch (RuntimeException ex) { quitadasEnVuelo.remove(q.matchId()); throw ex; }
                 }
@@ -186,7 +197,9 @@ public final class EnlaceVivo {
             List<Long> candidatos = new ArrayList<>();
             for (MatchPlayer mp : m.players) {
                 if (!ids.contains(mp.id)) continue;
-                if (m.finished != null) { vivo.apuntarTerminada(m.id); vivo.marcarFuera(mp.id); vistas.liveEvento(mp.id, m, true); cambio = true; }
+                // terminada: solo sale si esta era su partida (un final tardío de una vieja no le saca de la nueva, F8);
+                // Live now la apunta en «Terminadas» igual y solo la quita de «en curso» si era esa
+                if (m.finished != null) { vivo.apuntarTerminada(m.id); vivo.marcarFueraDe(mp.id, m.id); vistas.liveEvento(mp.id, m, true); cambio = true; }
                 // en curso DE VERDAD: empezada (no un lobby), sin terminar y hace menos de 3 h
                 else if (candidatoSocket(m, Instant.now()) && !vivo.terminada(m.id) && !Long.valueOf(m.id).equals(vivo.matchDe(mp.id))) candidatos.add(mp.id);
             }

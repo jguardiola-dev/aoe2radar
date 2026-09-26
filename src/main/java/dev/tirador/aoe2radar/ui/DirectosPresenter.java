@@ -66,15 +66,23 @@ public final class DirectosPresenter {
      * DESPUÉS de pasar las dos guardas, como hacía la 1.1 (leía playersModel ya dentro de vigilarTwitch, tras los
      * "return" de anti-solape y throttle): así una llamada que se descarta no paga ni el coste de mirar la lista.
      */
-    public void vigilarTwitch(Supplier<List<Player>> visibles) {
+    public void vigilarTwitch(Supplier<List<Player>> visibles) { vigilarTwitch(visibles, List::of); }
+
+    /**
+     * Como vigilarTwitch(visibles), y además cruza a otrosVigilados (demás grupos, fuente de Live now) con el listado
+     * global, sin llamadas extra (ver TwitchService.barrer(visibles, otros)): así «Solo con Twitch» y el TW de Live now
+     * no dependen del grupo abierto en la watchlist (revisión 1.3, F10). Las dos listas se leen tras las guardas.
+     */
+    public void vigilarTwitch(Supplier<List<Player>> visibles, Supplier<List<Player>> otrosVigilados) {
         if (vigilandoTwitch) return;
         if (System.currentTimeMillis() - ultimoTwitchMs < (long) (170_000 * twitchService.multiplicador())) return;
         ultimoTwitchMs = System.currentTimeMillis();
         vigilandoTwitch = true;
         List<Player> lista = visibles.get();
+        List<Player> otros = otrosVigilados.get();
         tareas.enFondoDemonio("twitch-vigilar", () -> {
             TwitchService.Resultado[] resultado = new TwitchService.Resultado[1];
-            try { resultado[0] = twitchService.barrer(lista); } catch (Exception ignored) { }
+            try { resultado[0] = twitchService.barrer(lista, otros); } catch (Exception ignored) { }
             tareas.enUi(() -> {
                 vigilandoTwitch = false;
                 TwitchService.Resultado r = resultado[0];

@@ -75,7 +75,14 @@ public final class LiveNowPresenter {
      *  Set que la ventana usa en refrescarCampanas y en el bloque del socket (Campanas se queda allí). */
     private final Set<Long> socketExtra;
     private long ahoraTopMs, ahoraUltimaMs;
-    private boolean ahoraCargando;
+    /** ¿Hay un barrido en marcha? y ¿alguien pidió uno forzado mientras tanto? Los dos, bajo {@code candadoCarga}:
+     *  así el barrido que acaba y la petición que llega no se cruzan (revisión 1.3, F7). */
+    private volatile boolean ahoraCargando;
+    private boolean repetir;
+    private final Object candadoCarga = new Object();
+    /** Sube con cada cambio de fuente (reiniciarFuente). Un barrido que empezó con otra generación no escribe nada:
+     *  era de la fuente anterior (revisión 1.3, F7). */
+    private volatile int generacion;
 
     /** El EstadoVivo se inyecta (DEUDA, fila 125): en la app, LiveNowView pasa EstadoVivo.SISTEMA explícitamente;
      *  en los tests, cada uno puede traer el suyo y no compartir el singleton de toda la app entre pruebas. */
@@ -97,12 +104,28 @@ public final class LiveNowPresenter {
         return null;
     }
 
+    /** ¿La ficha {pid, nombre, rating, rango, país} tiene puesto en el ladder 1v1? Rango 0 = sin puesto: la fuente
+     *  «Grupo» no lo sabe (Campanas.cargarFuenteLive pone 0). Sin puesto no se pinta «#0» (revisión 1.3, F3). */
+    public static boolean conPuesto(Object[] ficha) { return ficha != null && (Integer) ficha[3] > 0; }
+
+    /** ¿La ficha está entre los «hasta» primeros del ladder 1v1? Sin puesto (rango 0) nunca: si no, un grupo entero
+     *  pasaba por «top 50 vs top 50» y por el filtro «Solo top contra top» (revisión 1.3, F3). */
+    public static boolean enTop(Object[] ficha, int hasta) { return conPuesto(ficha) && (Integer) ficha[3] <= hasta; }
+
     public long ultimaMs() { return ahoraUltimaMs; }
 
     public boolean cargando() { return ahoraCargando; }
 
     /** Copia de la fuente actual (para pintar sin tener el candado cogido mientras se construyen las tarjetas). */
     public List<Object[]> topSnapshot() { synchronized (ahoraTop) { return new ArrayList<>(ahoraTop); } }
+
+    /** Quiénes están «en partida» en matchId según Live now (vacío si nadie). Bajo el candado de ahoraEnCurso: seguro
+     *  desde cualquier hilo (lo llama el socket, revisión 1.3, F1). */
+    public List<Long> jugadoresEn(long matchId) {
+        List<Long> en = new ArrayList<>();
+        synchronized (ahoraEnCurso) { for (Map.Entry<Long, Match> e : ahoraEnCurso.entrySet()) if (e.getValue() != null && e.getValue().id == matchId) en.add(e.getKey()); }
+        return en;
+    }
 
     /** Copia de las partidas en curso ahora mismo. */
     public Map<Long, Match> enCursoSnapshot() { synchronized (ahoraEnCurso) { return new HashMap<>(ahoraEnCurso); } }
@@ -133,8 +156,10 @@ public final class LiveNowPresenter {
     public void fijarUltimaMs(long ms) { ahoraUltimaMs = ms; }
 
     /** Al cambiar de fuente (top/país/clan/grupo, cambiarFuenteLive de la 1.1): se olvida todo lo cargado, para
-     *  que el próximo {@link #refrescar} pida la lista entera y el barrido completo. */
+     *  que el próximo {@link #refrescar} pida la lista entera y el barrido completo. La generación sube ANTES de
+     *  vaciar: un barrido de la fuente anterior que aún esté en marcha ya no escribirá encima (F7). */
     public void reiniciarFuente() {
+        generacion++;   // solo se llama desde el EDT (cambiarFuenteLive): no hay dos escritores
         synchronized (ahoraTop) { ahoraTop.clear(); }
         synchronized (ahoraEnCurso) { ahoraEnCurso.clear(); }
         synchronized (liveTerminadas) { liveTerminadas.clear(); }
@@ -145,17 +170,27 @@ public final class LiveNowPresenter {
      * Carga la fuente (si tiene más de 30 min), comprueba por lotes de 15 quién está en partida y suscribe esos
      * ids al socket. Igual que ahoraRefrescar de la 1.1: el hilo se llama "live-now", y el circuito se corta a
      * los tres lotes fallidos seguidos.
+     * <p>Revisión 1.3, F7: (1) un refrescar forzado que llega con otro barrido en marcha (cambio de fuente,
+     * «Actualizar», reconexión del socket) no se pierde: se repite al acabar, desde el EDT. (2) Si la fuente cambió
+     * durante el barrido, su resultado se descarta entero. (3) Un barrido cortado (pestaña cerrada, tres lotes
+     * fallidos) o con algún lote fallido no cuenta como hecho: no se apunta su hora, y las partidas de los jugadores
+     * que no se pudieron consultar se conservan como estaban (igual que vigilarTop ante un lote fallido).
      */
     public void refrescar(boolean forzar) {
-        if (ahoraCargando) return;
-        if (!forzar && System.currentTimeMillis() - ahoraUltimaMs < 60_000 && !ahoraTop.isEmpty()) { pantalla.pintar(); return; }
-        ahoraCargando = true;
+        boolean soloPintar;
+        synchronized (candadoCarga) {
+            if (ahoraCargando) { if (forzar) repetir = true; return; }
+            soloPintar = !forzar && System.currentTimeMillis() - ahoraUltimaMs < 60_000 && !ahoraTop.isEmpty();
+            if (!soloPintar) ahoraCargando = true;
+        }
+        if (soloPintar) { pantalla.pintar(); return; }
         pantalla.estado(t("Consultando…", "Checking…"));
+        final int gen = generacion;
         tareas.enFondo("live-now", () -> {
             try {
                 if (ahoraTop.isEmpty() || System.currentTimeMillis() - ahoraTopMs > 30 * 60_000L) {
                     List<Object[]> top = pantalla.cargarFuenteLive();
-                    synchronized (ahoraTop) { ahoraTop.clear(); ahoraTop.addAll(top); }
+                    synchronized (ahoraTop) { if (gen != generacion) return; ahoraTop.clear(); ahoraTop.addAll(top); }   // la fuente cambió mientras se cargaba: no se escribe
                     ahoraTopMs = System.currentTimeMillis();
                     Set<Long> ids = new HashSet<>(); for (Object[] f : top) ids.add((Long) f[0]);
                     socketExtra.removeIf(id -> !ids.contains(id) && !pantalla.campanaContiene(id));
@@ -165,8 +200,15 @@ public final class LiveNowPresenter {
                 Map<Long, Match> vivos = new HashMap<>();
                 List<Object[]> top; synchronized (ahoraTop) { top = new ArrayList<>(ahoraTop); }
                 final int LOTE = 15; int fallosSeguidos = 0;
+                Set<Long> sinDatos = new HashSet<>();   // pids de lotes fallidos o que no se llegaron a consultar (F7)
+                boolean cortadoPorFallos = false;
                 for (int d = 0; d < top.size(); d += LOTE) {
-                    if (!pantalla.abierta() || fallosSeguidos >= 3) { if (fallosSeguidos >= 3) log("live: tres lotes fallidos seguidos: barrido abortado hasta el próximo"); break; }
+                    if (gen != generacion) return;   // otra fuente: este barrido ya no sirve (el forzado que la trajo se repite al acabar)
+                    if (!pantalla.abierta() || fallosSeguidos >= 3) {
+                        if (fallosSeguidos >= 3) { log("live: tres lotes fallidos seguidos: barrido abortado hasta el próximo"); cortadoPorFallos = true; }
+                        for (Object[] f : top.subList(d, top.size())) sinDatos.add((Long) f[0]);
+                        break;
+                    }
                     List<Object[]> lote = top.subList(d, Math.min(d + LOTE, top.size()));
                     StringBuilder csv = new StringBuilder(); Set<Long> ids = new HashSet<>();
                     for (Object[] f : lote) { if (csv.length() > 0) csv.append(','); csv.append((Long) f[0]); ids.add((Long) f[0]); }
@@ -175,10 +217,10 @@ public final class LiveNowPresenter {
                         for (Match m : leidas) {
                             if (m == null) continue;
                             if (enCursoReal(m)) { for (MatchPlayer mp : m.players) if (ids.contains(mp.id) && !vivos.containsKey(mp.id)) vivos.put(mp.id, m); }
-                            else if (m.finished != null && m.finished.isAfter(Instant.now().minus(Duration.ofHours(2)))) { synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(m.id, new Object[]{ m, m.finished.toEpochMilli() }); } }
+                            else if (m.finished != null && m.finished.isAfter(Instant.now().minus(Duration.ofHours(2)))) { synchronized (liveTerminadas) { if (gen == generacion) liveTerminadas.putIfAbsent(m.id, new Object[]{ m, m.finished.toEpochMilli() }); } }
                         }
                         fallosSeguidos = 0;
-                    } catch (Exception ex) { fallosSeguidos++; log("live: lote " + (d / LOTE + 1) + ": " + causa(ex)); }
+                    } catch (Exception ex) { fallosSeguidos++; sinDatos.addAll(ids); log("live: lote " + (d / LOTE + 1) + ": " + causa(ex)); }
                     final int hechos = Math.min(d + LOTE, top.size());
                     final int totalTop = top.size();
                     tareas.enUi(() -> pantalla.estado(t("Consultando… ", "Checking… ") + hechos + " / " + totalTop));
@@ -187,17 +229,37 @@ public final class LiveNowPresenter {
                 // anidados en este orden (liveTerminadas → ahoraEnCurso → EstadoVivo, que es hoja): nadie los coge al revés
                 synchronized (liveTerminadas) {
                     synchronized (ahoraEnCurso) {
+                        if (gen != generacion) return;   // la fuente cambió en el último momento: nada de esto es suyo (F7)
                         vivos.values().removeIf(m -> liveTerminadas.containsKey(m.id) || estadoVivo.terminada(m.id));
-                        ahoraEnCurso.clear(); ahoraEnCurso.putAll(vivos);
+                        // se fusiona, no se sustituye (revisión 1.3, F2): la foto del barrido es de antes; una partida
+                        // que el socket confirmó entretanto (EstadoVivo la tiene como la de ese jugador y no terminó)
+                        // se queda, aunque su lote ya se hubiera consultado. El socket no la volvería a mandar. Y los
+                        // que no se pudieron consultar (F7) se quedan como estaban: no hay dato nuevo que los quite.
+                        ahoraEnCurso.entrySet().removeIf(en -> !sinDatos.contains(en.getKey()) && !sigueSegunSocket(en.getKey(), en.getValue()));
+                        vivos.keySet().removeAll(ahoraEnCurso.keySet());   // para esos jugadores, el socket es más reciente que la foto
+                        ahoraEnCurso.putAll(vivos);
+                        if (sinDatos.isEmpty()) ahoraUltimaMs = System.currentTimeMillis();   // F7: cortado o con huecos no cuenta como hecho
                     }
                 }
                 for (Map.Entry<Long, Match> en : vivos.entrySet()) estadoVivo.guardarPartida(en.getKey(), en.getValue());
-                ahoraUltimaMs = System.currentTimeMillis();
                 tareas.enUi(pantalla::pintar);
+                if (cortadoPorFallos) tareas.enUi(() -> pantalla.estado(t("Barrido incompleto: la API no respondió tres veces seguidas. Pulsa «Actualizar» para reintentar.",
+                        "Incomplete sweep: the API didn't answer three times in a row. Press “Refresh” to retry.")));
             } catch (Exception ex) {
                 tareas.enUi(() -> pantalla.estado(t("No se pudo consultar: ", "Couldn't check: ") + causa(ex)));
-            } finally { ahoraCargando = false; }
+            } finally {
+                boolean otra;
+                synchronized (candadoCarga) { ahoraCargando = false; otra = repetir; repetir = false; }
+                if (otra) tareas.enUi(() -> refrescar(true));   // F7: lo que se pidió durante el barrido, desde el EDT
+            }
         });
+    }
+
+    /** ¿La partida m de pid (de ahoraEnCurso) sigue en curso según el socket? Sí si EstadoVivo tiene a pid en esa misma
+     *  partida y nadie la dio por terminada. Se llama con liveTerminadas y ahoraEnCurso cogidos (EstadoVivo es hoja). */
+    private boolean sigueSegunSocket(long pid, Match m) {
+        return m != null && Long.valueOf(m.id).equals(estadoVivo.matchDe(pid))
+                && !liveTerminadas.containsKey(m.id) && !estadoVivo.terminada(m.id);
     }
 
     /**
@@ -209,10 +271,13 @@ public final class LiveNowPresenter {
     public void liveEvento(long pid, Match m, boolean terminada) {
         if (ficha(pid) == null) return;
         if (terminada) {
-            Match viva = estadoVivo.soltarPartida(pid);
+            // con la partida que terminó, solo se suelta/quita si es la actual de pid: un final tardío de una partida
+            // vieja no le saca de la nueva (revisión 1.3, F8); sin partida (null), como antes
+            Match viva = m != null ? estadoVivo.soltarPartidaDe(pid, m.id) : estadoVivo.soltarPartida(pid);
             Match fin = m != null ? m : viva;
-            if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, System.currentTimeMillis() }); }
-            synchronized (ahoraEnCurso) { ahoraEnCurso.remove(pid); }
+            // con la hora de fin real si se sabe (la da la API, revisión 1.3, F5), como el barrido; si no, la de ahora
+            if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, fin.finished != null ? fin.finished.toEpochMilli() : System.currentTimeMillis() }); }
+            synchronized (ahoraEnCurso) { Match actual = ahoraEnCurso.get(pid); if (m == null || actual == null || actual.id == m.id) ahoraEnCurso.remove(pid); }
         } else if (m != null) {
             estadoVivo.guardarPartida(pid, m);
             synchronized (ahoraEnCurso) { ahoraEnCurso.put(pid, m); }

@@ -94,6 +94,17 @@ public final class EstadoVivo {
         rival.remove(pid);
     }
 
+    /**
+     * Como marcarFuera, pero solo si pid está en la partida matchId o en ninguna: el final tardío de una partida vieja
+     * no le saca de la nueva (revisión 1.3, F8). Una sola operación bajo el candado. Devuelve si le sacó (o no estaba).
+     */
+    public synchronized boolean marcarFueraDe(long pid, long matchId) {
+        Long actual = matchDe.get(pid);
+        if (actual != null && actual != matchId) return false;
+        marcarFuera(pid);
+        return true;
+    }
+
     /** Quiénes están ahora marcados como jugando la partida matchId (vacío si nadie). No cambia nada. */
     public synchronized List<Long> jugadoresDe(long matchId) {
         List<Long> en = new ArrayList<>();
@@ -120,6 +131,13 @@ public final class EstadoVivo {
 
     /** Suelta la partida completa de pid y la devuelve (null si no había). */
     public synchronized Match soltarPartida(long pid) { return partida.remove(pid); }
+
+    /** Como soltarPartida, pero solo si la guardada es la partida matchId (o no hay ninguna): el final de una partida
+     *  vieja no suelta la nueva (revisión 1.3, F8). Devuelve la que soltó, o null. */
+    public synchronized Match soltarPartidaDe(long pid, long matchId) {
+        Match m = partida.get(pid);
+        return m != null && m.id != matchId ? null : partida.remove(pid);
+    }
 
     /**
      * Lo que la 1.1 hacía de paso en resumenVivo: si la partida está en curso de verdad, la guarda y apunta «visto

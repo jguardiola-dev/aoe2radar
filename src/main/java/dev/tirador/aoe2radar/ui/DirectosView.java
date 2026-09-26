@@ -57,6 +57,9 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
     public interface Anfitrion {
         /** Los jugadores visibles de la watchlist ahora mismo (playersModel de la 1.1): a quién cruzar contra Twitch. */
         List<Player> visibles();
+        /** Los demás vigilados (todos los grupos de la watchlist y la fuente de Live now): el TW de Live now y «Solo con
+         *  Twitch» no deben depender del grupo abierto (revisión 1.3, F10). Solo se cruzan con su canal conocido. */
+        List<Player> otrosVigilados();
         /** Repinta la lista de la watchlist (para que se vea el badge de Twitch tras un barrido). */
         void repintarLista();
         /** Mensaje de la barra de estado general de la ventana. */
@@ -124,13 +127,14 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         vigilarTwitch();   // refresco de cortesía al abrir
     }
 
-    /** Cruza el listado global de Twitch con la watchlist visible (botón «Refrescar», F5, el río del top…). */
-    public void vigilarTwitch() { presenter.vigilarTwitch(anfitrion::visibles); }
+    /** Cruza el listado global de Twitch con la watchlist visible, respetando el ritmo de 170 s (al abrir, el río del top…). */
+    public void vigilarTwitch() { presenter.vigilarTwitch(anfitrion::visibles, anfitrion::otrosVigilados); }
 
     /** El conjunto de jugadores vigilado cambió (nuevo top/país/clan): su barrido de Twitch se hace en el acto. */
     public void reiniciarThrottle() { presenter.reiniciarThrottle(); }
 
-    /** F5: fuerza el barrido saltándose el throttle, igual que la 1.1. */
+    /** F5 y el botón «Refrescar»: fuerzan el barrido saltándose el throttle (el botón, desde la 1.3: antes se
+     *  ignoraba en silencio si el último barrido tenía menos de 170 s). */
     public void refrescarForzado() { presenter.reiniciarThrottle(); vigilarTwitch(); }
 
     // ===== Construcción del panel =========================================================
@@ -199,7 +203,7 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         });
         arriba.add(idiomaDirCombo);
         JButton refrescarDir = new JButton(t("Refrescar", "Refresh"));
-        refrescarDir.addActionListener(e -> vigilarTwitch());
+        refrescarDir.addActionListener(e -> refrescarForzado());   // como F5: el botón no respeta el ritmo de 170 s (sí el freno global y el anti-solape)
         arriba.add(refrescarDir);
         JLabel ayudaDir = new JLabel(t("Clic en el nombre de un canal = abrir su directo en Twitch.",
                 "Click a channel name to open its Twitch stream."));
@@ -282,6 +286,11 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         idiomaDirCombo.addItem(t("Todos", "All"));
         for (String c : idiomas) { codigosIdiomaDir.add(c); idiomaDirCombo.addItem(nombreIdioma(c)); }
         int sel = codigosIdiomaDir.indexOf(idiomaSel);
+        if (sel < 0 && !idiomaSel.isBlank()) {   // el idioma guardado sin canales hoy: sigue elegido, con «(0)», y el combo explica la tabla vacía
+            codigosIdiomaDir.add(idiomaSel);
+            idiomaDirCombo.addItem(nombreIdioma(idiomaSel) + " (0)");
+            sel = codigosIdiomaDir.size() - 1;
+        }
         if (sel >= 0) idiomaDirCombo.setSelectedIndex(sel + 1);
         rearmandoIdiomas = false;
         modeloDirectos.setRowCount(0);

@@ -50,6 +50,11 @@ final class CableadoCentro {
                 for (int i = 0; i < v.playersModel.size(); i++) out.add(v.playersModel.get(i));
                 return out;
             }
+            @Override public List<Player> otrosVigilados() {   // copia en el EDT: el barrido va en otro hilo (F10)
+                List<Player> out = new ArrayList<>(v.todosJugadores);
+                if (v.liveNow != null) for (Object[] f : v.liveNow.topSnapshot()) out.add(new Player((Long) f[0], String.valueOf(f[1]), ""));
+                return out;
+            }
             @Override public void repintarLista() { v.playersList.repaint(); }
             @Override public void estado(String texto) { v.status.setText(texto); }
             @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }

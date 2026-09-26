@@ -253,6 +253,7 @@ final class CableadoCromo {
             }
             @Override public Set<Long> idsSocketExtra() { return v.liveNow != null ? v.liveNow.socketExtra : Set.of(); }
             @Override public void liveEvento(long pid, Match m, boolean terminada) { if (v.liveNow != null) v.liveNow.liveEvento(pid, m, terminada); }
+            @Override public List<Long> jugadoresLiveNow(long matchId) { return v.liveNow != null ? v.liveNow.jugadoresEnPartida(matchId) : List.of(); }
             @Override public void avisarSiCampana(long pid, Match m) { v.watchlist.avisarSiCampana(pid, m); }
             @Override public void avisarMiPartida(long pid, Match m) { v.watchlist.avisarMiPartida(pid, m); }
             @Override public void avisarTrasCambio() {
