@@ -1092,10 +1092,32 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     /** ELO actual del ladder que corresponde a un modo (de la ficha del perfil); si no hay ficha, el de la partida más reciente más su diferencia. */
     private long eloActualLadder(String modo, long[] masReciente) {
-        String lb = modo == null ? null : (modo.toLowerCase(Locale.ROOT).contains("empire") || modo.toLowerCase(Locale.ROOT).startsWith("ew")) ? (modo.contains("1v1") ? "ew_1v1" : "ew_team") : modo.contains("1v1") ? "rm_1v1" : "rm_team";
-        FichaPerfil perfil = perfiles.fichaConocida(actPid);
-        if (perfil != null && lb != null && perfil.ladders().get(lb) instanceof int[] v && v[0] > 0) return v[0];
-        return masReciente[1] + masReciente[2];
+        return anclaGraficaElo(modo, masReciente, perfiles.fichaConocida(actPid), actHasta, LocalDate.now(ZoneId.systemDefault()));
+    }
+
+    /**
+     * F6 (1.3): el ELO en el que termina la gráfica (el de después de la partida más reciente de la serie).
+     * El ELO de hoy de la ficha solo vale si la serie llega hasta hoy y el modo tiene ladder en la ficha; si no, se
+     * ancla en la propia partida más reciente (su rating más su diferencia):
+     * <ul><li>Death Match: la ficha no trae ladder de DM (antes se usaba el de RM y la escala salía desplazada);</li>
+     * <li>un «Rango de fechas…» que termina antes de hoy: la curva debe acabar en el ELO de entonces, no en el de hoy.</li></ul>
+     * masReciente = {inicio ms, rating, diferencia}. Pura: la prueba PerfilViewTest.
+     */
+    static long anclaGraficaElo(String modo, long[] masReciente, FichaPerfil ficha, LocalDate hasta, LocalDate hoy) {
+        long propia = masReciente[1] + masReciente[2];
+        if (hasta != null && hasta.isBefore(hoy)) return propia;
+        String lb = ladderDeModo(modo);
+        if (ficha != null && lb != null && ficha.ladders().get(lb) instanceof int[] v && v[0] > 0) return v[0];
+        return propia;
+    }
+
+    /** El ladder de la ficha que corresponde a un modo de partida; null si la ficha no tiene ese ladder (Death Match). */
+    static String ladderDeModo(String modo) {
+        if (modo == null) return null;
+        String m = modo.toLowerCase(Locale.ROOT);
+        if (m.contains("death") || m.startsWith("dm")) return null;   // F6: sin ladder de DM en la ficha
+        if (m.contains("empire") || m.startsWith("ew")) return modo.contains("1v1") ? "ew_1v1" : "ew_team";
+        return modo.contains("1v1") ? "rm_1v1" : "rm_team";
     }
 
     /** Lista «nombre · barra por partidas · WR» ordenada por partidas; solo entradas con ACT_MIN partidas. Package-private: la usa también CaraACaraDialogo. */

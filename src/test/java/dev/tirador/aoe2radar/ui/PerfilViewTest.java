@@ -202,6 +202,34 @@ class PerfilViewTest {
         assertEquals("Al día · sin partidas nuevas", texto[1]);
     }
 
+    /** F6 (1.3): la gráfica de «1v1 Death Match» no se ancla en el ELO de RM 1v1 de la ficha (no hay ladder de DM):
+     *  termina en el ELO de su partida más reciente. */
+    @Test void graficaDeDeathMatchSeAnclaEnSuUltimaPartida() {
+        java.time.LocalDate hoy = java.time.LocalDate.of(2026, 9, 26);
+        long[] ultima = { 0L, 1300L, 12L };
+        assertEquals(1312L, PerfilView.anclaGraficaElo("1v1 Death Match", ultima, ficha("es", 1900), null, hoy));
+        assertEquals(1900L, PerfilView.anclaGraficaElo("1v1 Random Map", ultima, ficha("es", 1900), null, hoy), "RM sigue anclado en la ficha");
+        assertEquals(1312L, PerfilView.anclaGraficaElo("1v1 Random Map", ultima, null, null, hoy), "sin ficha, la partida más reciente");
+    }
+
+    /** F6: con un «Rango de fechas…» que termina antes de hoy, la curva acaba en el ELO de entonces, no en el de hoy. */
+    @Test void graficaDeUnPeriodoPasadoSeAnclaEnSuUltimaPartida() {
+        java.time.LocalDate hoy = java.time.LocalDate.of(2026, 9, 26);
+        long[] ultima = { 0L, 1700L, -15L };
+        assertEquals(1685L, PerfilView.anclaGraficaElo("1v1 Random Map", ultima, ficha("es", 1900), hoy.minusDays(60), hoy));
+        assertEquals(1900L, PerfilView.anclaGraficaElo("1v1 Random Map", ultima, ficha("es", 1900), hoy, hoy), "un rango que acaba hoy sí usa la ficha");
+    }
+
+    @Test void ladderDeModo() {
+        assertEquals("rm_1v1", PerfilView.ladderDeModo("1v1 Random Map"));
+        assertEquals("rm_team", PerfilView.ladderDeModo("Team Random Map"));
+        assertEquals("ew_1v1", PerfilView.ladderDeModo("1v1 Empire Wars"));
+        assertEquals("ew_team", PerfilView.ladderDeModo("Team Empire Wars"));
+        assertEquals(null, PerfilView.ladderDeModo("1v1 Death Match"));
+        assertEquals(null, PerfilView.ladderDeModo("Team Death Match"));
+        assertEquals(null, PerfilView.ladderDeModo(null));
+    }
+
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la
      *  cabecera que ya estaba pintada no se sustituye por «Sin datos de perfil». */
     @Test void actualizarHoySinFichaNoBorraLaCabecera() throws Exception {
