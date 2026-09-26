@@ -32,7 +32,8 @@ class CaraACaraPresenterTest {
          *  de verdad (línea ~110: {@code nombre.isBlank() ? nombreSiFalta : nombre}) — la Actividad se guarda con
          *  el nombreSiFalta que llegó. false (por defecto): se devuelve el anioSfr ya preparado, tal cual. */
         boolean paqueteSinNombre;
-        @Override public FichaPerfil ficha(long pid) { return ficha; }
+        int fichaLlamadas;
+        @Override public FichaPerfil ficha(long pid) { fichaLlamadas++; return ficha; }
         @Override public FichaPerfil fichaConocida(long pid) { return ficha; }
         @Override public Integer elo1v1(long pid) { return null; }
         @Override public List<Perfil.Vinculada> vinculadas(long pid) { return List.of(); }
@@ -158,6 +159,25 @@ class CaraACaraPresenterTest {
         presenter.pedirAnioRival(9L, "", () -> true, arF -> { });
         assertEquals("#9", perfiles.ultimoNombreSiFalta);
         assertEquals("#9", actividadCache.get(9L).nombre());
+    }
+
+    /** F7 (2): reordenar una lista del diálogo repinta el cruce entero; un rival que no está en sfr-data no se
+     *  vuelve a buscar en cada repintado de la sesión. */
+    @Test void rival_fuera_de_sfr_data_no_se_vuelve_a_leer() {
+        perfiles.anioSfr = null;
+        Actividad[] pintado = { new Actividad(0, "", List.of(), false, 0, 0) };
+        presenter.pedirAnioRival(9L, "Yo", () -> true, arF -> pintado[0] = arF);
+        presenter.pedirAnioRival(9L, "Yo", () -> true, arF -> pintado[0] = arF);
+        assertEquals(1, perfiles.anioSfrLlamadas);
+        assertNull(pintado[0], "sigue pintando «no está en sfr-data»");
+    }
+
+    /** F7 (2): una ficha que no se pudo pedir no se vuelve a pedir en cada repintado. */
+    @Test void ficha_fallida_no_se_vuelve_a_pedir() {
+        perfiles.ficha = null;
+        presenter.pedirFicha(3L, p -> { });
+        presenter.pedirFicha(3L, p -> { });
+        assertEquals(1, perfiles.fichaLlamadas);
     }
 
     @Test void pedir_ficha_pinta_siempre_sin_comprobar_caducidad() {
