@@ -178,10 +178,6 @@ public final class WatchlistView {
         void seleccionCambiada();
         /** ¿La partida sigue realmente en curso? (cache.Vivos.enCursoReal, ui no puede importar cache). */
         boolean enCursoReal(Match m);
-        /** api.CompanionApi, que ui no puede importar: búsqueda de perfiles por nick. Ya no lo usa addPlayerDialog
-         *  (decisión 8, DEUDA fila 112: delega en service.BusquedaPerfiles, como el resto de buscadores); queda
-         *  sin llamadores en WatchlistView. No se borra aquí: su implementación vive en SpoilerFreeRecs.java. */
-        List<dev.tirador.aoe2radar.model.PerfilEncontrado> buscarPerfilesApi(String q) throws Exception;
         /** api.CompanionApi.perfil/pagina, solo para la tarjeta de hover (hoy inerte). */
         Perfil perfilApi(long pid) throws Exception;
         dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception;

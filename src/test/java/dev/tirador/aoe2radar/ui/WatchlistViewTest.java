@@ -11,7 +11,6 @@ import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
-import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.AnotacionesService;
 import dev.tirador.aoe2radar.service.BarridoVivos;
@@ -167,7 +166,6 @@ class WatchlistViewTest {
         @Override public javax.swing.Icon iconoVista(String tipo) { return null; }
         @Override public void seleccionCambiada() { }
         @Override public boolean enCursoReal(Match m) { return false; }
-        @Override public List<PerfilEncontrado> buscarPerfilesApi(String q) { return List.of(); }
         @Override public Perfil perfilApi(long pid) { return null; }
         @Override public PaginaPartidas paginaApi(long pid, int pagina, int porPagina) { return null; }
         @Override public void reiniciarThrottleDirectos() { }
