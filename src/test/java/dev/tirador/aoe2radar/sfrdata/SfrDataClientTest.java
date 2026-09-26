@@ -79,6 +79,16 @@ class SfrDataClientTest {
         assertEquals("e2", etags.leer("ladder.json"));
     }
 
+    /** General F5: la copia nueva sustituye a la vieja entera (atómica); el enlace duro «espejo» conserva la vieja. */
+    @Test void datosGuardaLaCopiaNuevaDeFormaAtomica() throws Exception {
+        Path f = copia("ladder.json", "viejo", 7 * HORA);
+        Path espejo = dir.resolve("espejo.json");
+        Files.createLink(espejo, f);
+        assertEquals("nuevo", txt(sfr.datos("ladder.json")));
+        assertEquals("nuevo", Files.readString(f));
+        assertEquals("viejo", Files.readString(espejo), "no se escribió encima del archivo viejo");
+    }
+
     @Test void datosConCopiaFrescaNoPideNada() throws Exception {
         copia("ladder.json", "guardado", 6 * HORA - 1);
         assertEquals("guardado", txt(sfr.datos("ladder.json")));

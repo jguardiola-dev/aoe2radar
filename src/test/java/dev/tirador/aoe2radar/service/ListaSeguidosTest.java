@@ -140,6 +140,30 @@ class ListaSeguidosTest {
         assertEquals(List.of("1;Ana;General", "2;Bob;Amigos;5"), lineas);
     }
 
+    /**
+     * General F5: guardar es atómico (se escribe a un temporal y se sustituye el archivo entero), así un corte a mitad
+     * nunca deja un players.txt truncado. Se nota con un enlace duro: escribir encima (el Files.write de antes)
+     * cambia también el «espejo», que comparte los datos; sustituir el archivo deja el espejo con la versión vieja.
+     */
+    @Test void guardar_esAtomico_sustituyeElArchivoEnVezDeEscribirEncima() throws IOException {
+        Files.writeString(playersFile, "9;Vieja;General" + System.lineSeparator());
+        Path espejo = tempDir.resolve("espejo.txt");
+        Files.createLink(espejo, playersFile);
+
+        assertNull(svc.guardar(List.of(new Player(1L, "Ana", GENERAL, 0L))));
+
+        assertEquals(List.of("1;Ana;General"), Files.readAllLines(playersFile, StandardCharsets.UTF_8));
+        assertEquals("9;Vieja;General" + System.lineSeparator(), Files.readString(espejo), "no se escribió encima del archivo viejo");
+    }
+
+    @Test void guardar_mismosBytesQueElFilesWriteDeAntes() throws IOException {
+        List<Player> jugadores = List.of(new Player(1L, "Ána", GENERAL, 0L), new Player(2L, "Bob", "Amigos", 5L));
+        Path antes = tempDir.resolve("antes.txt");
+        Files.write(antes, List.of("1;Ána;General", "2;Bob;Amigos;5"), StandardCharsets.UTF_8);
+        assertNull(svc.guardar(jugadores));
+        assertEquals(-1L, Files.mismatch(antes, playersFile));
+    }
+
     @Test void cargar_idNoNumerico_conservaLoYaLeido() throws IOException {
         Files.write(playersFile, List.of(
                 "1;Ana;Amigos",

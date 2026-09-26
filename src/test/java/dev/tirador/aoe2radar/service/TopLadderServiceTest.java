@@ -220,6 +220,19 @@ class TopLadderServiceTest {
         assertEquals(filas, leida.filas());
     }
 
+    /** General F5: la caché se sustituye entera (atómica); el enlace duro «espejo» conserva la versión vieja. Mismos bytes que antes. */
+    @Test void guardarCache_esAtomicoYConLosMismosBytes(@TempDir Path dir) throws java.io.IOException {
+        Path cache = dir.resolve("top_cache.txt");
+        java.nio.file.Files.writeString(cache, "vieja");
+        Path espejo = dir.resolve("espejo.txt");
+        java.nio.file.Files.createLink(espejo, cache);
+        nuevo().guardarCache(cache, "global", HORA, List.of(new TopLadderService.FilaCache(1L, "Ána", 2000, HORA)));
+        assertEquals("vieja", java.nio.file.Files.readString(espejo), "no se escribió encima del archivo viejo");
+        Path antes = dir.resolve("antes.txt");
+        java.nio.file.Files.write(antes, List.of("global|" + HORA, "1;Ána;2000;" + HORA), java.nio.charset.StandardCharsets.UTF_8);
+        assertEquals(-1L, java.nio.file.Files.mismatch(antes, cache));
+    }
+
     @Test void cargarCache_conFirmaDistintaDaNull(@TempDir Path dir) {
         Path cache = dir.resolve("top_cache.txt");
         TopLadderService s = nuevo();

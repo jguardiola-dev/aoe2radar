@@ -12,6 +12,7 @@ import java.util.Map;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.util.Archivos;
 import dev.tirador.aoe2radar.util.Json;
 
 import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
@@ -66,7 +67,8 @@ public final class HistorialDisco {
                 b.append("]}");
             }
             b.append("]}");
-            Files.writeString(PERFILES_DIR.resolve(a.pid() + ".json"), b.toString(), StandardCharsets.UTF_8);
+            // atómica (util.Archivos): un cierre a mitad no deja un historial truncado que luego no se pueda leer
+            Archivos.escribirAtomico(PERFILES_DIR.resolve(a.pid() + ".json"), b.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ex) { log("perfil: no se pudo guardar " + a.pid() + ": " + causa(ex)); }
     }
 
