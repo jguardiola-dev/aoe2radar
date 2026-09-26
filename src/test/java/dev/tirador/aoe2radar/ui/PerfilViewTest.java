@@ -410,4 +410,15 @@ class PerfilViewTest {
         assertEquals("ES  ·  10 partidas en total", sub[0]);
         assertEquals(sub[0], sub[1], "la cabecera sigue siendo la de antes");
     }
+
+    /** v13_textos 14: la letra de la racha del chip de forma iba fija en español («racha 3V» también en inglés). */
+    @Test void laLetraDeLaRachaSigueElIdioma() {
+        String antes = dev.tirador.aoe2radar.util.I18n.IDIOMA;
+        try {
+            dev.tirador.aoe2radar.util.I18n.IDIOMA = "es";
+            assertEquals("V", PerfilView.letraRacha(true)); assertEquals("D", PerfilView.letraRacha(false));
+            dev.tirador.aoe2radar.util.I18n.IDIOMA = "en";
+            assertEquals("W", PerfilView.letraRacha(true)); assertEquals("L", PerfilView.letraRacha(false));
+        } finally { dev.tirador.aoe2radar.util.I18n.IDIOMA = antes; }
+    }
 }

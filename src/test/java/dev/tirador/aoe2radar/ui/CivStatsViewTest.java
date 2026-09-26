@@ -1,6 +1,7 @@
 package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.CivAgg;
+import dev.tirador.aoe2radar.model.Matchup;
 import dev.tirador.aoe2radar.model.Tendencias;
 import dev.tirador.aoe2radar.model.VentanaStats;
 import dev.tirador.aoe2radar.service.StatsService;
@@ -15,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 
 import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
@@ -25,9 +27,13 @@ class CivStatsViewTest {
 
     /** Tres civs en cualquier mapa/tramo; dos mapas con partidas de sobra. */
     static final class StatsFalso implements StatsService {
-        final VentanaStats v = new VentanaStats("30", "2026-08-25", "2026-09-23", 30, "", List.of("0-800", "800-1000"),
+        final VentanaStats v;
+        StatsFalso() { this(List.of()); }
+        StatsFalso(List<Matchup> matchups) {
+            v = new VentanaStats("30", "2026-08-25", "2026-09-23", 30, "", List.of("0-800", "800-1000"),
                 Map.of("rm_1v1", Map.of("partidas", 3000)), Map.of("rm_arabia", "Arabia", "rm_arena", "Arena"),
-                Map.of("rm_1v1", Map.of("rm_arabia", 2000, "rm_arena", 1000)), List.of(), List.of());
+                Map.of("rm_1v1", Map.of("rm_arabia", 2000, "rm_arena", 1000)), List.of(), matchups);
+        }
         @Override public String asegurar(String ventana, boolean conTendencias) { return null; }
         @Override public VentanaStats ventana(String clave) { return v; }
         @Override public boolean tieneVentana(String clave) { return true; }
@@ -60,12 +66,42 @@ class CivStatsViewTest {
     @BeforeEach @AfterEach
     void limpiarConfig() throws Exception { Files.deleteIfExists(CONFIG_FILE); }
 
-    private static CivStatsView vista(FiltroStats filtro) {
-        return new CivStatsView(new StatsFalso(), filtro, new Listas(null, b -> { }), new NavegacionFalsa(), Tareas.EN_LINEA, null, () -> { });
+    private static CivStatsView vista(FiltroStats filtro) { return vista(filtro, new StatsFalso()); }
+
+    private static CivStatsView vista(FiltroStats filtro, StatsFalso stats) {
+        return new CivStatsView(stats, filtro, new Listas(null, b -> { }), new NavegacionFalsa(), Tareas.EN_LINEA, null, () -> { });
     }
 
-    /** D2 (1.3): los matchups de sfr-data no traen mapa; con un mapa elegido, el título de la matriz dice que es de
-     *  todos los mapas (antes la tabla era de Arabia y la matriz de todos, sin avisar). Sin mapa, el título de siempre. */
+    /** D2 (1.3): con «matchups_mapa» (sfr-data 1.5.4), la matriz de un mapa usa sus filas y el título no avisa; un
+     *  mapa sin filas propias (arena aquí) vuelve al agregado de todos los mapas y el título lo dice. */
+    @Test void laMatrizFiltraPorMapaSiHayFilasDeEseMapa() throws Exception {
+        FiltroStats filtro = new FiltroStats("rm_1v1", "30", "*", "*");
+        StatsFalso stats = new StatsFalso(List.of(
+                new Matchup("rm_1v1", "*", "0-800", "aztecs", "franks", 100, 40),
+                new Matchup("rm_1v1", "rm_arabia", "0-800", "aztecs", "franks", 30, 21)));
+        String[] titulo = new String[3];
+        int[][] celda = new int[3][];
+        SwingUtilities.invokeAndWait(() -> {
+            CivStatsView cs = vista(filtro, stats);
+            cs.filtrosCambiados(false);
+            titulo[0] = cs.stTituloMatriz.getText(); celda[0] = cs.stMatriz.celdas.get("aztecs|franks");
+            cs.stMapaCombo.setSelectedIndex(1);   // Arabia: tiene filas propias
+            titulo[1] = cs.stTituloMatriz.getText(); celda[1] = cs.stMatriz.celdas.get("aztecs|franks");
+            cs.stMapaCombo.setSelectedIndex(2);   // Arena: sin filas, agregado + aviso
+            titulo[2] = cs.stTituloMatriz.getText(); celda[2] = cs.stMatriz.celdas.get("aztecs|franks");
+        });
+        assertEquals("rm_arena", filtro.mapa());
+        assertEquals("Matchups (civ de la fila contra civ de la columna)  ⓘ", titulo[0]);
+        assertArrayEquals(new int[]{ 100, 40 }, celda[0], "sin mapa: el agregado");
+        assertEquals("Matchups (civ de la fila contra civ de la columna)  ⓘ", titulo[1]);
+        assertArrayEquals(new int[]{ 30, 21 }, celda[1], "Arabia: solo sus filas");
+        assertEquals("Matchups (civ de la fila contra civ de la columna) · todos los mapas  ⓘ", titulo[2]);
+        assertArrayEquals(new int[]{ 100, 40 }, celda[2], "Arena sin filas: el agregado");
+    }
+
+    /** D2 (1.3): datos sin matchups por mapa (sfr-data anterior a 1.5.4); con un mapa elegido, el título de la matriz
+     *  dice que es de todos los mapas (antes la tabla era de Arabia y la matriz de todos, sin avisar). Sin mapa, el
+     *  título de siempre. */
     @Test void conUnMapaElegidoLaMatrizAvisaDeQueEsDeTodosLosMapas() throws Exception {
         FiltroStats filtro = new FiltroStats("rm_1v1", "30", "*", "*");
         String[] titulo = new String[2];

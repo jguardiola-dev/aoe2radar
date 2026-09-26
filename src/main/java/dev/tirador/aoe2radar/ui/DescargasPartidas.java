@@ -112,11 +112,11 @@ final class DescargasPartidas {
         return p;
     }
 
-    /** Enviar al juego: copia lo que ya está sano en disco y descarga+envía lo que falte (decisión de Jorge,
-     *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
     /** Hay un «Enviar al juego» mirando cabeceras o copiando (hasta que empieza la descarga de lo que falte). EDT. */
     boolean enviando;
 
+    /** Enviar al juego: copia lo que ya está sano en disco y descarga+envía lo que falte (decisión de Jorge,
+     *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
     public void enviarInteligente(List<Match> objetivo) {
         if (enviando) {   // un segundo clic mientras el primero sigue: no dos copias a la vez sobre el mismo savegame
             vista.anfitrion.estado(t("Ya se está enviando al juego: espera a que acabe.", "Already sending to the game: wait for it to finish."));
@@ -163,7 +163,15 @@ final class DescargasPartidas {
      *  faltaba, para que siga yendo después de la copia, como antes. */
     void enviarASavegame(List<Match> objetivo, Runnable despues) {
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); if (despues != null) despues.run(); return; }
-        Path sg = obtenerSavegame(true);   // puede abrir diálogos: en el EDT
+        Path sg;
+        try {
+            sg = obtenerSavegame(true);   // puede abrir diálogos: en el EDT
+        } catch (RuntimeException ex) {   // p. ej. InvalidPathException con una ruta rara en config: sin esto, «enviando» se quedaba puesto
+            log("enviar al juego: ERROR con la carpeta savegame: " + causa(ex));
+            vista.anfitrion.estado("Error: " + causa(ex));
+            if (despues != null) despues.run();
+            return;
+        }
         if (sg == null) { vista.anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); if (despues != null) despues.run(); return; }
         final List<Match> lista = new ArrayList<>(objetivo);
         final Function<Match, Path> destino = vista.anfitrion::destino;
