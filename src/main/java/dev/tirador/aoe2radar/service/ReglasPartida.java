@@ -134,16 +134,16 @@ public final class ReglasPartida {
                 for (MatchPlayer p : m.players) { if (p.id == pid) yo = p; else riv = p; }
                 if (riv == null) return null;
                 String civs = (yo != null && yo.civ != null && riv.civ != null)
-                        ? " (" + yo.civ + "–" + riv.civ + ")" : "";
+                        ? " (" + yo.civ + "\u2013" + riv.civ + ")" : "";
                 return "vs " + riv.name + (riv.rating != null ? " " + riv.rating : "") + civs
-                        + (m.map == null || m.map.isBlank() ? "" : " · " + m.map);
+                        + (m.map == null || m.map.isBlank() ? "" : " \u00B7 " + m.map);
             }
             Map<Integer, Integer> porEquipo = new TreeMap<>();
             for (MatchPlayer p : m.players) porEquipo.merge(p.team, 1, Integer::sum);
             StringBuilder sb = new StringBuilder("TG ");
             boolean pr = true;
             for (int n : porEquipo.values()) { if (!pr) sb.append('v'); sb.append(n); pr = false; }
-            return sb + (m.map == null || m.map.isBlank() ? "" : " · " + m.map);
+            return sb + (m.map == null || m.map.isBlank() ? "" : " \u00B7 " + m.map);
         } catch (Exception e) { return null; }
     }
 

@@ -146,7 +146,6 @@ import static dev.tirador.aoe2radar.cache.Paises.guardarPaises;
 import static dev.tirador.aoe2radar.cache.Paises.paisDe;
 import static dev.tirador.aoe2radar.cache.RecsDisco.RECS_DIR;
 import static dev.tirador.aoe2radar.cache.RecsDisco.destino;
-import static dev.tirador.aoe2radar.cache.Vivos.candidatoSocket;
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
 import static dev.tirador.aoe2radar.service.Aleatorio.esRankedRM;
 import static dev.tirador.aoe2radar.service.CalculoStats.MIN_PARTIDAS_CIV;
@@ -797,7 +796,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
         @Override public List<Long> idsTodosJugadores() {
             List<Long> ids = new ArrayList<>();
-            for (Player p : todosJugadores) ids.add(p.id());      // todos los grupos, no solo la vista actual: así cambiar de pestaña no reconecta el socket (y no se pierden eventos en el hueco)
+            for (Player p : todosJugadores) ids.add(p.id());
             return ids;
         }
         @Override public List<Long> idsTopLadder() {
@@ -805,7 +804,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             for (Player p : watchlist.topLadderSnapshot()) ids.add(p.id());
             return ids;
         }
-        @Override public Set<Long> idsSocketExtra() { return liveNow != null ? liveNow.socketExtra : Set.of(); }   // Live now abierto y vistas con campana: también se vigilan aunque no estén a la vista
+        @Override public Set<Long> idsSocketExtra() { return liveNow != null ? liveNow.socketExtra : Set.of(); }
         @Override public void liveEvento(long pid, Match m, boolean terminada) { if (liveNow != null) liveNow.liveEvento(pid, m, terminada); }
         @Override public void avisarSiCampana(long pid, Match m) { watchlist.avisarSiCampana(pid, m); }
         @Override public void avisarMiPartida(long pid, Match m) { watchlist.avisarMiPartida(pid, m); }
@@ -813,7 +812,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             SwingUtilities.invokeLater(() -> { watchlist.actualizarIndicadoresVivos(); watchlist.refrescarAlturasWatch(); playersList.repaint(); partidas.table.repaint(); });
         }
         @Override public void refrescarLiveNowSiAbierta() {
-            if (liveNow != null && liveNow.ahoraAbierta) SwingUtilities.invokeLater(() -> liveNow.refrescar(true));   // tras una caída, un barrido para reparar el estado
+            if (liveNow != null && liveNow.ahoraAbierta) SwingUtilities.invokeLater(() -> liveNow.refrescar(true));
         }
     });
     long ultimoResyncMs;
@@ -856,11 +855,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 }
             });
         }, "actualizaciones").start();
-    }
-
-    static int tickMs() {
-        try { return Math.max(1, Integer.parseInt(leerConfig("tick_min", "1"))) * 60_000; }
-        catch (Exception e) { return 60_000; }
     }
 
     /** Poner/quitar/leer alias y notas, con la persistencia inyectada (service.AnotacionesService): un solo estado
@@ -1682,13 +1676,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Espectar en el juego (protocolo aoe2de://), CaptureAge de acompañante y la verificación por red antes
      *  de lanzar: la parte sin Swing vive en service.Espectar (fase 3, tanda 4, Z4). */
-    final Espectar ESPECTAR = new Espectar(LIVE);
+    final Espectar espectar = new Espectar(LIVE);
 
     /** Lanza CaptureAge — con una rec (la reproduce con su overlay) o sin argumentos (modo acompañante: se
      *  engancha al juego al espectar). Buscar la ruta y arrancar el proceso viven en service.Espectar (fase 3,
      *  tanda 4, Z4); aquí solo queda traducir el resultado al texto de estado. */
     void lanzarCaptureAge(Path rec) {
-        Espectar.ResultadoCaptureAge r = ESPECTAR.lanzarCaptureAge();
+        Espectar.ResultadoCaptureAge r = espectar.lanzarCaptureAge();
         switch (r.estado()) {
             case RUTA_AUSENTE -> status.setText(t("No encuentro CaptureAge: fija su ruta en Configuración → Cambiar ruta de CaptureAge…",
                     "Can't find CaptureAge: set its path in Settings → Change CaptureAge path…"));
@@ -1706,15 +1700,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     void espectarPartida(long matchId) {
         log("espectar: lanzando aoe2de://1/" + matchId);
         try {
-            ESPECTAR.espectarPartida(matchId);
+            espectar.espectarPartida(matchId);
             boolean caListo = rutaCaptureAge() != null;
             if (usarCA() && caListo) lanzarCaptureAge(null);
             String pista = (!usarCA() && caListo)
                     ? t(" (Configuración → «Usar CaptureAge» lo lanzaría también)",
-                        " (Settings → “Use CaptureAge” would launch it too)")
+                        " (Settings → \u201CUse CaptureAge\u201D would launch it too)")
                     : "";
-            status.setText(t("Abriendo AoE2 para espectar… Si estaba cerrado tardará; si la partida termina antes de entrar, el juego dirá «Invalid match ID».",
-                    "Opening AoE2 to spectate… If it was closed it takes a while; if the game ends before you join, AoE2 will show \"Invalid match ID\".") + pista);
+            status.setText(t("Abriendo AoE2 para espectar\u2026 Si estaba cerrado tardará; si la partida termina antes de entrar, el juego dirá «Invalid match ID».",
+                    "Opening AoE2 to spectate\u2026 If it was closed it takes a while; if the game ends before you join, AoE2 will show \"Invalid match ID\".") + pista);
         } catch (Exception ex) {
             status.setText(t("No se pudo abrir el juego: ", "Couldn't open the game: ") + causa(ex));
         }
@@ -1726,7 +1720,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     void espectarVerificando(long profileId, long matchId) {
         status.setText(t("Comprobando que la partida sigue en curso…", "Checking the game is still live…"));
         new SwingWorker<Boolean, Void>() {
-            @Override protected Boolean doInBackground() { return ESPECTAR.viva(profileId, matchId, PER_PAGE); }
+            @Override protected Boolean doInBackground() { return espectar.viva(profileId, matchId, PER_PAGE); }
             @Override protected void done() {
                 Boolean viva;
                 try { viva = get(); } catch (Exception e) { viva = null; }
