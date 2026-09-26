@@ -337,9 +337,9 @@ public final class CivStatsView {
         stFilaTend = filaTend;
         cuerpo.add(filaTend);
         cuerpo.add(Box.createVerticalStrut(10));
-        stTituloMatriz = tituloSeccion(t("Matchups (civ de la fila contra civ de la columna)", "Matchups (row civ against column civ)"),
-                t("Solo en modos 1v1. Cada celda es el winrate de la civ de la fila cuando se enfrenta a la de la columna: verde si gana, rojo si pierde; más intenso cuanto más lejos del 50 %. Gris: menos de 20 partidas. Pasa el ratón para ver la cifra y clica el nombre de una fila para seleccionar esa civ.",
-                "1v1 modes only. Each cell is the row civ's win rate when facing the column civ: green if it wins, red if it loses; stronger the further from 50%. Grey: fewer than 20 games. Hover for the figure and click a row name to select that civ."));
+        stTituloMatriz = tituloSeccion(tituloMatriz("*"),
+                t("Solo en modos 1v1. Cada celda es el winrate de la civ de la fila cuando se enfrenta a la de la columna: verde si gana, rojo si pierde; más intenso cuanto más lejos del 50 %. Gris: menos de 20 partidas. Pasa el ratón para ver la cifra y clica el nombre de una fila para seleccionar esa civ. Los datos no traen matchups por mapa: con un mapa elegido, la matriz sigue siendo de todos los mapas.",
+                "1v1 modes only. Each cell is the row civ's win rate when facing the column civ: green if it wins, red if it loses; stronger the further from 50%. Grey: fewer than 20 games. Hover for the figure and click a row name to select that civ. The data has no per-map matchups: with a map chosen, the matrix is still for all maps."));
         stTituloMatriz.setAlignmentX(0f);
         JPanel filaMatriz = new JPanel(new BorderLayout(8, 0));
         filaMatriz.setAlignmentX(0f); filaMatriz.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
@@ -571,16 +571,28 @@ public final class CivStatsView {
         ajustarFilasCivStats();
         stTendencias.datos(porPick.subList(0, Math.min(5, porPick.size())));
         boolean unoContraUno = filtroStats.modo().endsWith("_1v1");
+        stTituloMatriz.setText(tituloMatriz(filtroStats.mapa()) + "  \u24D8");   // D2: con un mapa elegido, avisa de que la matriz es de todos
         stTituloMatriz.setVisible(unoContraUno); stMatriz.setVisible(unoContraUno);
         if (unoContraUno) stMatriz.datos(v, lista);
         stEstado.setText(t("Resumen del ", "Summary of ") + v.hasta() + (partidas < POCAS_PARTIDAS ? "  ·  " + t("pocas partidas con estos filtros: prueba 90 o 365 días", "few games with these filters: try 90 or 365 days") : ""));
         civStatsPanel.revalidate(); civStatsPanel.repaint();
     }
 
+    /**
+     * D2 (1.3, decisión de Jorge: la matriz debería filtrar por mapa). Los matchups que publica sfr-data
+     * (civstats/ventanas/v*.json.gz, campo "matchups") son filas [modo, tramo, civA, civB, n, winsA]: no traen
+     * mapa, así que la matriz no puede filtrar. Mientras build_data.py no los publique por mapa, el título lo
+     * dice cuando hay un mapa elegido. Pura: la prueba CivStatsViewTest.
+     */
+    static String tituloMatriz(String mapa) {
+        String base = t("Matchups (civ de la fila contra civ de la columna)", "Matchups (row civ against column civ)");
+        return mapa == null || "*".equals(mapa) ? base : base + " · " + t("todos los mapas", "all maps");
+    }
+
     /** La matriz de matchups en una ventana a pantalla completa, con celdas grandes y scroll. */
     public void mostrarMatrizGrande() {
         if (stMatriz == null || stMatriz.civs.isEmpty()) return;
-        JDialog d = new JDialog(ventana, t("Matchups · ", "Matchups · ") + modoNombre(filtroStats.modo()) + " · " + tramoNombre(filtroStats.tramo()) + " · " + ventanaNombre(filtroStats.ventana()), JDialog.ModalityType.MODELESS);
+        JDialog d = new JDialog(ventana, t("Matchups · ", "Matchups · ") + modoNombre(filtroStats.modo()) + " · " + tramoNombre(filtroStats.tramo()) + " · " + ventanaNombre(filtroStats.ventana()) + ("*".equals(filtroStats.mapa()) ? "" : " · " + t("todos los mapas", "all maps")), JDialog.ModalityType.MODELESS);
         MatrizPanel grande = new MatrizPanel();
         grande.copiarDe(stMatriz);
         Rectangle pantalla = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();

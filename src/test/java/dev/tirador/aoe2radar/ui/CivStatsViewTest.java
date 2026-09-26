@@ -64,6 +64,22 @@ class CivStatsViewTest {
         return new CivStatsView(new StatsFalso(), filtro, new Listas(null, b -> { }), new NavegacionFalsa(), Tareas.EN_LINEA, null, () -> { });
     }
 
+    /** D2 (1.3): los matchups de sfr-data no traen mapa; con un mapa elegido, el título de la matriz dice que es de
+     *  todos los mapas (antes la tabla era de Arabia y la matriz de todos, sin avisar). Sin mapa, el título de siempre. */
+    @Test void conUnMapaElegidoLaMatrizAvisaDeQueEsDeTodosLosMapas() throws Exception {
+        FiltroStats filtro = new FiltroStats("rm_1v1", "30", "*", "*");
+        String[] titulo = new String[2];
+        SwingUtilities.invokeAndWait(() -> {
+            CivStatsView cs = vista(filtro);
+            cs.filtrosCambiados(false);
+            titulo[0] = cs.stTituloMatriz.getText();
+            cs.stMapaCombo.setSelectedIndex(1);
+            titulo[1] = cs.stTituloMatriz.getText();
+        });
+        assertEquals("Matchups (civ de la fila contra civ de la columna)  ⓘ", titulo[0]);
+        assertEquals("Matchups (civ de la fila contra civ de la columna) · todos los mapas  ⓘ", titulo[1]);
+    }
+
     /** F3 (revisión 1.3): con una civ seleccionada en la tabla, cambiar el mapa (o el tramo) repinta la tabla
      *  (setRowCount(0) + filas nuevas). La civ debe seguir seleccionada: solo el cambio de modo la borra a propósito. */
     @Test void cambiarDeMapaConservaLaCivSeleccionada() throws Exception {
