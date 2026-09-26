@@ -65,7 +65,7 @@ final class AccionesVentana {
         // ni retrasa el resto del arranque), se limpian los de más de un día en las carpetas donde escribirAtomico
         // escribe: la de trabajo (config.properties) y sfrdata (paises.txt, perfiles_shards).
         Thread hiloLimpiarTemporales = new Thread(() -> {
-            limpiarTemporales(Path.of("."), "config.properties", Duration.ofDays(1));
+            limpiarTemporales(dev.tirador.aoe2radar.util.Config.CONFIG_FILE.toAbsolutePath().getParent(), "config.properties", Duration.ofDays(1));   // la carpeta de datos (junto al exe si está empaquetada), no el directorio de trabajo
             limpiarTemporales(LADDER_DIR, "paises.txt", Duration.ofDays(1));
             limpiarTemporales(LADDER_DIR.resolve("perfiles_shards"), "", Duration.ofDays(1));
         }, "limpiar-temporales");

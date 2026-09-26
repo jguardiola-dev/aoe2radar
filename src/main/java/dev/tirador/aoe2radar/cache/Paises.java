@@ -52,7 +52,7 @@ public final class Paises {
      *  del Timer está en marcha, espera a que acabe y guarda lo que falte. Sin la carga inicial terminada, no hace
      *  nada. */
     public static void guardarAlCerrar(long maxMs) {
-        if (!paisesCargados || !paisesSucios) return;
+        if (!paisesCargados || (!paisesSucios && !GUARDANDO.get())) return;   // si el Timer está escribiendo, se le espera: si no, System.exit lo cortaría
         long fin = System.currentTimeMillis() + maxMs;
         Thread t = new Thread(() -> {
             while (GUARDANDO.get() && System.currentTimeMillis() < fin) {
