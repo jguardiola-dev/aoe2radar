@@ -29,7 +29,9 @@ public final class RecsDisco {
      *  Ref+Aliado-vs-Rival1+Rival2_Mapa_dd-MM_HH.mm.aoe2record
      *  La misma partida siempre genera el mismo nombre (re-descargar sobrescribe). */
     public static Path destino(Match m) {
-        if (m.gte > 0) return RECS_DIR.resolve("Guess the ELO " + m.id + ".aoe2record");
+        // Guess the ELO: el archivo lleva el NÚMERO de la tanda (el que anuncia la barra de estado y lee
+        // maxGteEnDisco), nunca el id de la partida (dejaría buscar el resultado y hacía saltar la numeración).
+        if (m.gte > 0) return RECS_DIR.resolve("Guess the ELO " + m.gte + ".aoe2record");
         String hora = DateTimeFormatter.ofPattern("dd-MM_HH.mm")
                 .withZone(ZoneId.systemDefault()).format(m.finished);
 
@@ -58,16 +60,23 @@ public final class RecsDisco {
         return RECS_DIR.resolve(nombre);
     }
 
+    /** Techo de un número de tanda creíble: hasta la 1.2 el archivo llevaba el id de la partida (cientos de
+     *  millones), y esos archivos viejos no deben seguir marcando la numeración. */
+    static final int MAX_NUMERO_GTE = 100_000;
+
     /** Mayor número «Guess the ELO N» ya usado en ./recs, para continuar la
      *  numeración sin sobrescribir tandas anteriores. */
-    public static int maxGteEnDisco() {
+    public static int maxGteEnDisco() { return maxGteEnDisco(RECS_DIR); }
+
+    static int maxGteEnDisco(Path dir) {
         int max = 0;
-        try (var st = Files.list(RECS_DIR)) {
+        try (var st = Files.list(dir)) {
             for (Path p : st.toList()) {
                 String n = p.getFileName().toString();
                 if (n.startsWith("Guess the ELO ") && n.endsWith(".aoe2record")) {
                     try {
-                        max = Math.max(max, Integer.parseInt(n.substring(14, n.length() - 11).trim()));
+                        int k = Integer.parseInt(n.substring(14, n.length() - 11).trim());
+                        if (k <= MAX_NUMERO_GTE) max = Math.max(max, k);   // un id de partida (archivo de la 1.2) no cuenta
                     } catch (NumberFormatException ignored) {}
                 }
             }

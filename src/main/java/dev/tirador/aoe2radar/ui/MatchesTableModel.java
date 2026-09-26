@@ -41,7 +41,7 @@ public final class MatchesTableModel extends AbstractTableModel {
             case 7 -> !m.estado.isBlank() ? m.estado
                       : m.enJuego ? t("✓✓ en juego", "✓✓ in game")
                       : m.enDisco ? t("✓ en disco", "✓ on disk")
-                      : (m.povsConRec() > 0 ? m.povsConRec() + " POV" : "¿?");
+                      : (m.povsConRec() > 0 ? m.povsConRec() + " POV" : t("¿?", "?"));
             default -> "";
         };
     }

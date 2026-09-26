@@ -242,7 +242,7 @@ public final class PartidasView {
      *  el botón «Buscar partidas» y, a continuación, «Al azar por ELO…»/«Guess the ELO!». La ventana la llama
      *  justo donde antes seguía construyendo fila1 a mano (después de «Últimas N horas»). */
     public void agregarFilaConsulta(JPanel fila1) {
-        fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
+        fetchBtn.addActionListener(e -> busquedas.alternar(fetchBtn));   // el botón (y Enter) alterna Buscar/Detener
         modeCombo.setPrototypeDisplayValue("RM Team MegaRandom XL");
         modeCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
         parModo = par(new JLabel(t("Modo:", "Mode:")), modeCombo);
@@ -489,7 +489,11 @@ public final class PartidasView {
     // ======================================================================
 
     public void cerrarBusqueda() {
-        if (fetchWorker != null) { anfitrion.pararOperacion(); }
+        // La × con una búsqueda en marcha la cancela de verdad: antes solo cortaba la espera del freno y la tabla
+        // volvía a llenarse al terminar (revisión 1.3, watchlist F6). Su done() (que llega después, en el EDT)
+        // apaga el progreso y repone los botones, pero deja el estado en «Búsqueda cerrada.».
+        SwingWorker<?, ?> enCurso = fetchWorker;
+        if (enCurso != null) { anfitrion.pararOperacion(); busquedas.cerradaPorLaCruz = enCurso; enCurso.cancel(true); }
         all.clear();
         view.clear();
         tableModel.fireTableDataChanged();
@@ -556,9 +560,8 @@ public final class PartidasView {
                     if (x.vinculo() == p.vinculo()) selIds.add(x.id());
         }
 
-        String sgCfg = leerConfig("savegame", null);
-        Path sgConocida = (sgCfg != null && Files.isDirectory(Path.of(sgCfg))) ? Path.of(sgCfg) : null;
         Instant ahora = Instant.now();
+        List<Match> terminadas = new ArrayList<>();
 
         view.clear();
         for (Match m : all) {
@@ -577,17 +580,49 @@ public final class PartidasView {
                 m.enDisco = false;
                 m.enJuego = false;
             } else {
-                m.enDisco = Files.exists(anfitrion.destino(m));
-                m.enJuego = sgConocida != null
-                        && Files.exists(sgConocida.resolve(anfitrion.destino(m).getFileName().toString()));
+                terminadas.add(m);   // «en disco»/«en juego»: se miran en el disco, fuera del EDT (abajo)
             }
             view.add(m);
         }
         tableModel.fireTableDataChanged();
+        marcarEnDiscoEnFondo(terminadas);
         mostrarGuiaVacia(all.isEmpty());
         actualizarTextoBuscar();
         if (!all.isEmpty())
             anfitrion.estado(view.size() + t(" de ", " of ") + all.size() + t(" partidas (según filtros).", " games (per filters)."));
+    }
+
+    /** Solo pinta el último cálculo de «en disco» (applyFilters puede llamarse varias veces seguidas). EDT. */
+    private long generacionEnDisco;
+
+    /** «✓ en disco» / «✓✓ en juego» de cada fila terminada: antes eran dos Files.exists por partida en el EDT (hasta
+     *  1.200 con el tope de 600) más leer config.properties; ahora se miran en un hilo de fondo y las filas se
+     *  repintan al llegar (sin tocar la selección). Lo que se pinta al final es lo mismo que antes; en el primer
+     *  instante, las filas nuevas enseñan su «N POV»/«¿?» hasta que llega la respuesta del disco (revisión 1.3). */
+    void marcarEnDiscoEnFondo(List<Match> terminadas) {
+        if (terminadas.isEmpty()) return;
+        final long gen = ++generacionEnDisco;
+        final List<Match> filas = new ArrayList<>(terminadas);
+        new SwingWorker<boolean[][], Void>() {
+            @Override protected boolean[][] doInBackground() {
+                String sgCfg = leerConfig("savegame", null);
+                Path sgConocida = (sgCfg != null && Files.isDirectory(Path.of(sgCfg))) ? Path.of(sgCfg) : null;
+                boolean[][] marcas = new boolean[filas.size()][2];
+                for (int i = 0; i < filas.size(); i++) {
+                    Path destino = anfitrion.destino(filas.get(i));
+                    marcas[i][0] = Files.exists(destino);
+                    marcas[i][1] = sgConocida != null && Files.exists(sgConocida.resolve(destino.getFileName().toString()));
+                }
+                return marcas;
+            }
+            @Override protected void done() {
+                if (gen != generacionEnDisco) return;   // llegó otro applyFilters: manda el suyo
+                boolean[][] marcas;
+                try { marcas = get(); } catch (Exception ex) { return; }
+                for (int i = 0; i < filas.size(); i++) { filas.get(i).enDisco = marcas[i][0]; filas.get(i).enJuego = marcas[i][1]; }
+                if (!view.isEmpty()) tableModel.fireTableRowsUpdated(0, view.size() - 1);
+            }
+        }.execute();
     }
 
     // ======================================================================

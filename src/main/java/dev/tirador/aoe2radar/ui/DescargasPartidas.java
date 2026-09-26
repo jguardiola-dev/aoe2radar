@@ -30,8 +30,8 @@ import static dev.tirador.aoe2radar.util.Log.log;
  */
 final class DescargasPartidas {
 
-    /** Perfil/Live now descargan sin cambiar de pestaña; alTerminarDescarga se consume al acabar una descarga
-     *  vigente. Solo los usa esta clase (antes eran campos públicos de la fachada que nadie leía fuera). */
+    /** Perfil/Live now descargan sin cambiar de pestaña: descargarSinCambiarVista los arma y download() los toma y
+     *  los desarma al empezar (siempre). Solo los usa esta clase (antes eran campos públicos de la fachada). */
     boolean descargaSinCambiarVista;
     Runnable alTerminarDescarga;
 
@@ -69,7 +69,7 @@ final class DescargasPartidas {
         for (Path f : files) { try { Files.delete(f); ok++; } catch (IOException ignored) {} }
         for (Match m : vista.all) { m.enDisco = false; if (m.estado.startsWith("✓")) m.estado = ""; }
         vista.tableModel.fireTableDataChanged();
-        vista.anfitrion.estado(ok + " recs borradas.");
+        vista.anfitrion.estado(ok + t(" recs borradas.", " recs deleted."));
     }
 
     /** Carpeta savegame activa: la de config si sigue existiendo; si no, la detectada. */
@@ -115,27 +115,56 @@ final class DescargasPartidas {
      *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
     public void enviarInteligente(List<Match> objetivo) {
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
-        separarSanas(objetivo, vista.anfitrion::destino, enDisco, faltan);
-        if (!enDisco.isEmpty()) enviarASavegame(enDisco);
-        if (!faltan.isEmpty()) download(faltan, true);
+        // Leer la cabecera de cada rec es disco: va en un hilo de fondo (revisión 1.3). Lo que sigue (el diálogo del
+        // savegame, la copia y la descarga de lo que falte) arranca desde done(), ya en el EDT, en el mismo orden.
+        final List<Match> lista = new ArrayList<>(objetivo);
+        final Function<Match, Path> destino = vista.anfitrion::destino;
+        new SwingWorker<Void, Void>() {
+            final List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
+            @Override protected Void doInBackground() { separarSanas(lista, destino, enDisco, faltan); return null; }
+            @Override protected void done() {
+                Runnable descargarFaltan = faltan.isEmpty() ? null : () -> download(faltan, true);
+                if (!enDisco.isEmpty()) enviarASavegame(enDisco, descargarFaltan);   // copia primero; luego descarga
+                else if (descargarFaltan != null) descargarFaltan.run();
+            }
+        }.execute();
     }
 
     /** Copia al savegame lo que le llegue en `objetivo`: NO vuelve a comprobar RecService.recSana (su único
      *  llamador, enviarInteligente, ya leyó la cabecera de cada archivo para armar esta lista); así es una sola
      *  lectura de cabecera por partida, no dos. */
-    public void enviarASavegame(List<Match> objetivo) {
-        if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        Path sg = obtenerSavegame(true);
-        if (sg == null) { vista.anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        Copia c = copiarAlSavegame(objetivo, sg, vista.anfitrion::destino, m -> vista.setEstado(m, t("✓✓ en juego", "✓✓ in game")));
-        vista.anfitrion.estado(c.ok() + t(" recs enviadas al juego", " recs sent to the game") +
-                (c.yaEstaban() > 0 ? " (" + c.yaEstaban() + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
+    public void enviarASavegame(List<Match> objetivo) { enviarASavegame(objetivo, null); }
+
+    /** Igual, y al acabar (copie o no) corre {@code despues} en el EDT: enviarInteligente descarga ahí lo que
+     *  faltaba, para que siga yendo después de la copia, como antes. */
+    void enviarASavegame(List<Match> objetivo, Runnable despues) {
+        if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); if (despues != null) despues.run(); return; }
+        Path sg = obtenerSavegame(true);   // puede abrir diálogos: en el EDT
+        if (sg == null) { vista.anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); if (despues != null) despues.run(); return; }
+        final List<Match> lista = new ArrayList<>(objetivo);
+        final Function<Match, Path> destino = vista.anfitrion::destino;
+        final String enJuego = t("✓✓ en juego", "✓✓ in game");
+        new SwingWorker<Copia, Void>() {
+            @Override protected Copia doInBackground() {   // copiar es disco: fuera del EDT (setEstado ya va por invokeLater)
+                return copiarAlSavegame(lista, sg, destino, m -> vista.setEstado(m, enJuego));
+            }
+            @Override protected void done() {
+                try {
+                    Copia c = get();
+                    vista.anfitrion.estado(c.ok() + t(" recs enviadas al juego", " recs sent to the game") +
+                            (c.yaEstaban() > 0 ? " (" + c.yaEstaban() + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
+                } catch (Exception ex) {
+                    log("enviar al juego: ERROR " + causa(ex));
+                    vista.anfitrion.estado("Error: " + causa(ex));
+                }
+                if (despues != null) despues.run();
+            }
+        }.execute();
     }
 
-    // Núcleo sin Swing de «Enviar al juego» (costura para sacarlo del EDT en otra ronda): el prólogo (lista vacía,
-    // obtenerSavegame con sus diálogos) y el epílogo (anfitrion.estado) se quedan arriba, en el EDT; esto solo
-    // lee y copia archivos. Hoy se sigue llamando en el EDT, en el mismo punto y con el mismo orden que antes.
+    // Núcleo sin Swing de «Enviar al juego»: el prólogo (lista vacía, obtenerSavegame con sus diálogos) y el
+    // epílogo (anfitrion.estado) se quedan en el EDT; esto solo lee y copia archivos, y desde la 1.3 corre en el
+    // hilo de fondo de un SwingWorker (separarSanas en enviarInteligente, copiarAlSavegame en enviarASavegame).
 
     /** Reparte `objetivo` en lo que ya está sano en disco (RecService.recSana: lee la cabecera) y lo que falta. */
     static void separarSanas(List<Match> objetivo, Function<Match, Path> destino, List<Match> enDisco, List<Match> faltan) {
@@ -177,6 +206,13 @@ final class DescargasPartidas {
     public void download(List<Match> objetivoIn) { download(objetivoIn, false); }
 
     public void download(List<Match> objetivoIn, boolean enviarSiempre) {
+        // Los dos encargos de descargarSinCambiarVista son de ESTA llamada: se toman y se desarman ya, salga por
+        // donde salga (antes, una salida temprana los dejaba armados para la descarga siguiente, y alTerminar solo
+        // se consumía si la descarga seguía vigente al acabar).
+        final boolean sinCambiarVista = descargaSinCambiarVista;
+        final Runnable alTerminar = alTerminarDescarga;
+        descargaSinCambiarVista = false;
+        alTerminarDescarga = null;
         List<Match> objetivo = new ArrayList<>();
         List<Match> vivas = new ArrayList<>();
         for (Match m : objetivoIn) (m.finished == null ? vivas : objetivo).add(m);
@@ -190,8 +226,7 @@ final class DescargasPartidas {
             vista.anfitrion.estado(t("Las partidas EN DIRECTO no se descargan; se saltan.",
                     "LIVE games can't be downloaded; skipping them."));
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        if (!descargaSinCambiarVista) vista.anfitrion.mostrarDirectos(false);
-        descargaSinCambiarVista = false;
+        if (!sinCambiarVista) vista.anfitrion.mostrarDirectos(false);
         vista.dlSel.setEnabled(false); vista.dlAll.setEnabled(false);
         vista.anfitrion.trabajando(true);
         final long miSerial = vista.anfitrion.operacionActual();
@@ -210,7 +245,7 @@ final class DescargasPartidas {
                 int ok = 0, copiadas = 0;
                 for (Match m : objetivo) {
                     if (vista.anfitrion.detenido()) break;
-                    vista.setEstado(m, "descargando…");
+                    vista.setEstado(m, t("descargando…", "downloading…"));
                     RecService.Resultado r = vista.recService.procesar(m, trackedIds, autoCopiarFinal, sgAuto, vista.anfitrion::detenido);
                     boolean hecho = r.estado() != RecService.Estado.FALLO;
                     if (hecho) {
@@ -221,7 +256,7 @@ final class DescargasPartidas {
                             m.enJuego = true;
                         }
                     }
-                    vista.setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
+                    vista.setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : t("✓ guardada", "✓ saved")) : t("✗ no disponible", "✗ not available"));
                     // La pausa de cortesía es para espaciar peticiones a la API: si la rec se reutilizó del
                     // disco (RecService.Resultado.reutilizada), no hubo ninguna que espaciar.
                     if (!r.reutilizada()) vista.anfitrion.dormir(vista.pausaMs);
@@ -230,17 +265,22 @@ final class DescargasPartidas {
                 final boolean parada = vista.anfitrion.detenido();
                 SwingUtilities.invokeLater(() ->
                         vista.anfitrion.estado((parada ? t("Detenido. ", "Stopped. ") : "")
-                                + n + "/" + tot + t(" recs guardadas en ./", " recs saved to ./") + vista.anfitrion.recsDir()
+                                + n + "/" + tot + t(" recs guardadas en ", " recs saved to ") + vista.anfitrion.recsDir()
                                 + (cop > 0 ? "  ·  " + cop + t(" al juego", " to the game") : "")
                                 + (n < tot ? t("  ·  detalle en descargas.log", "  ·  details in descargas.log") : "")));
                 return null;
             }
             @Override protected void done() {
-                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) { log("descargas #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual()); return; }
-                vista.dlSel.setEnabled(true);
-                vista.dlAll.setEnabled(true);
-                vista.anfitrion.trabajando(false);
-                if (alTerminarDescarga != null) { Runnable r = alTerminarDescarga; alTerminarDescarga = null; r.run(); }
+                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) {
+                    log("descargas #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual());
+                } else {
+                    vista.dlSel.setEnabled(true);
+                    vista.dlAll.setEnabled(true);
+                    vista.anfitrion.trabajando(false);
+                }
+                // El aviso de quien la pidió (Perfil/Live now: repintar su tabla con lo ya en disco) corre siempre al
+                // acabar ESTA descarga, aunque otra operación se llevara el semáforo mientras tanto.
+                if (alTerminar != null) alTerminar.run();
             }
         }.execute();
     }

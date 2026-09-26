@@ -154,7 +154,7 @@ final class PartidasTexto {
             boolean gana = false;
             for (MatchPlayer p : e.getValue()) if (Boolean.TRUE.equals(p.won)) gana = true;
             if (gana) hayGanador = true;
-            sb.append("Equipo ").append(e.getKey()).append(gana ? "  —  GANA" : "").append('\n');
+            sb.append(t("Equipo ", "Team ")).append(e.getKey()).append(gana ? t("  —  GANA", "  —  WINS") : "").append('\n');
             for (MatchPlayer p : e.getValue()) {
                 sb.append("    ").append(p.name);
                 if (p.civ != null && !p.civ.isBlank()) sb.append(" (").append(p.civ).append(')');

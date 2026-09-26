@@ -14,6 +14,7 @@ import java.util.List;
 import static dev.tirador.aoe2radar.service.NombresStats.posicionNombre;
 import static dev.tirador.aoe2radar.service.ReglasPartida.posicionEnEquipo;
 import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
+import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 
 /**
@@ -57,10 +58,7 @@ final class MenuPartida {
             menu.add(esp);
             if (dev.tirador.aoe2radar.service.Juego.rutaCaptureAge() != null) {
                 JMenuItem espCa = new JMenuItem(t("Espectar con CaptureAge", "Spectate with CaptureAge"));
-                espCa.addActionListener(a -> {
-                    vista.anfitrion.lanzarCaptureAge(null);
-                    vista.anfitrion.espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
-                });
+                espCa.addActionListener(a -> espectarConCaptureAge(m));
                 menu.add(espCa);
             }
         } else {
@@ -106,6 +104,14 @@ final class MenuPartida {
             }
         }
         menu.show(vista.table, e.getX(), e.getY());
+    }
+
+    /** «Espectar con CaptureAge»: lanza CA y especta. Con «Usar CaptureAge» activado, espectar ya lo lanza él
+     *  mismo (AccionesVentana.espectarPartida, tras verificar la partida): aquí no se lanza otra vez (revisión
+     *  1.3: salían dos CaptureAge). Sin la casilla, este es el único lanzamiento, como siempre. */
+    void espectarConCaptureAge(Match m) {
+        if (!Boolean.parseBoolean(leerConfig("usar_ca", "false"))) vista.anfitrion.lanzarCaptureAge(null);
+        vista.anfitrion.espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
     }
 
     void revelarResultado() {
