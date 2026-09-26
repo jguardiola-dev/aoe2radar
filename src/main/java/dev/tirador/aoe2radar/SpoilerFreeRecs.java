@@ -748,82 +748,20 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // Cargas iniciales (canales, jugadores, tema/fuentes) y el arranque de los
     // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
     // precarga del tech tree y del ladder. Es lo último que hace el constructor.
-    private void arrancar() {
-        cargarCanales();
-        watchlist.loadPlayers();
-        watchlist.sanearVinculosHuerfanos();
-        getRootPane().setDefaultButton(partidas.fetchBtn);   // acción primaria: acento y Enter
-        ajustarGrises(flatLafDisponible && temaOscuroActivo);
-        ajustarBotonesEspeciales(flatLafDisponible && temaOscuroActivo);
-        ajustarFuentesSecundarias();
-        partidas.table.getInputMap(JComponent.WHEN_FOCUSED)
-             .put(KeyStroke.getKeyStroke("ENTER"), "descargarSeleccion");
-        partidas.table.getActionMap().put("descargarSeleccion", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { partidas.download(partidas.selectedRows()); }
-        });
-        watchlist.refrescarWatchlist();
-        SwingUtilities.invokeLater(() -> {
-            watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER);   // la app abre en ★
-            mostrarDirectos(true);                    // …con los Directos a la vista, no una tabla vacía
-            if (Boolean.parseBoolean(leerConfig("inicio_min", "false")))
-                setExtendedState(JFrame.ICONIFIED);
-        });
-        final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
-        new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
-        enlaceVivo.iniciarPing();
-        javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
-            comprobarActualizacion(false); techTree.precargar();
-            cargarPaises(); instalarAutoScroll();
-            new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
-            watchlist.refrescarCampanas();
-            campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> watchlist.refrescarCampanas()); campanasTimer.start();
-            new javax.swing.Timer(1000, ev -> { if (!VIVO.nadieJugando() && playersList.isShowing()) playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
-            Thread lh = new Thread(() -> ladderAsegurar(false), "ladder-precarga"); lh.setDaemon(true); lh.start();   // el volcado del ladder, en silencio
-        });
-        tUpd.setRepeats(false);
-        tUpd.start();
-        vigilante = new javax.swing.Timer(tickMs(), e -> {
-            // Con el socket conectado, quién está en partida llega al instante: los sondeos pasan a ser una resincronización
-            // cada 10 min (× el multiplicador del mando a distancia). Si el socket cae, vuelven al ritmo del tick.
-            long ahora = System.currentTimeMillis();
-            long resync = (long) (10 * 60_000L * ctrlMult("tick_mult"));
-            boolean tocaSondear = ctrlOn("sondeo") && (!enlaceVivo.conectado() || ahora - ultimoResyncMs >= resync);
-            if (tocaSondear) ultimoResyncMs = ahora;
-            if (tocaSondear) watchlist.vigilarVivos();
-            if (!watchlist.modoTop()) directos.vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
-            if (watchlist.modoTop() && !watchlist.modoClan()) {
-                // recuperación automática: si el top no pudo cargarse (o solo hay caché), reintenta
-                if (watchlist.topLadderVacio() || ahora - watchlist.topCargadoMs() > 15 * 60_000L)
-                    watchlist.cargarTopLadder(true);
-                else if (tocaSondear) watchlist.vigilarTop();
-            } else if (watchlist.modoClan() && tocaSondear) watchlist.vigilarTop();   // el clan se vigila, pero nunca se sustituye por el top del ladder
-        });
-        new Thread(() -> { cargarControl(); cargarEloAyer(); }, "control").start();
-        if (!leerConfig("mi_pid", "").isBlank()) iniciarVigilanciaLogJuego();   // «Mi partida»: aviso temprano al encontrar partida
-
-        new javax.swing.Timer(3_600_000, e -> new Thread(Servicios::cargarControl, "control").start()).start();
-        vigilante.setInitialDelay(tickMs());
-        vigilante.start();
-        if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
-            SwingUtilities.invokeLater(() -> { if (!watchlist.modoTop() && playersModel.size() > 0) partidas.fetchMatches(partidas.fetchBtn); });
-    }
+    private void arrancar() { AccionesVentana.arrancar(this); }
 
     /** El endpoint de Steam (api.SteamApi), aparte del companion. Campo de instancia, no static: así no importa el
      *  orden de texto frente a API_CLIENTE (vive en app.Servicios, inicializado en su primer uso: el campo
      *  {@code dialogos}, mucho más arriba) — para cuando se crea {@code steam}, Servicios ya está inicializado. */
     final SteamApi steam = new SteamApi(API_CLIENTE);
 
-    void abrirUrl(String url) {
-        try { Desktop.getDesktop().browse(URI.create(url)); }
-        catch (Exception ex) { status.setText(t("No se pudo abrir el navegador: ", "Couldn't open the browser: ") + causa(ex)); }
-    }
+    void abrirUrl(String url) { AccionesVentana.abrirUrl(this, url); }
 
     /** La zona central alterna entre la tabla de recs y los directos. El cromo vive en ui.Navegador; se queda
      *  este delegado porque medio fichero llama a «mostrarDirectos» por su nombre (Watchlist, Partidas, Perfil…). */
     void mostrarDirectos(boolean mostrar) { navegador.mostrarDirectos(mostrar); }
 
 
-    boolean usarCA() { return Boolean.parseBoolean(leerConfig("usar_ca", "false")); }
 
     /** Espectar en el juego (protocolo aoe2de://), CaptureAge de acompañante y la verificación por red antes
      *  de lanzar: la parte sin Swing vive en service.Espectar (fase 3, tanda 4, Z4). */
@@ -832,15 +770,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** Lanza CaptureAge — con una rec (la reproduce con su overlay) o sin argumentos (modo acompañante: se
      *  engancha al juego al espectar). Buscar la ruta y arrancar el proceso viven en service.Espectar (fase 3,
      *  tanda 4, Z4); aquí solo queda traducir el resultado al texto de estado. */
-    void lanzarCaptureAge(Path rec) {
-        Espectar.ResultadoCaptureAge r = espectar.lanzarCaptureAge();
-        switch (r.estado()) {
-            case RUTA_AUSENTE -> status.setText(t("No encuentro CaptureAge: fija su ruta en Configuración → Cambiar ruta de CaptureAge…",
-                    "Can't find CaptureAge: set its path in Settings → Change CaptureAge path…"));
-            case LANZADO -> status.setText(t("Lanzando CaptureAge de acompañante…", "Launching CaptureAge alongside…"));
-            case FALLO -> status.setText(t("No se pudo lanzar CaptureAge: ", "Couldn't launch CaptureAge: ") + causa(r.error()));
-        }
-    }
+    void lanzarCaptureAge(Path rec) { AccionesVentana.lanzarCaptureAge(this, rec); }
 
     /** Abre el juego espectando una partida en curso (protocolo
      *  aoe2de://1/matchId, el mismo que usa aoe2companion/aoe2recs). */
@@ -848,60 +778,18 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
      *  ui.ConfirmacionEspectar. Nombre conservado para las Anfitrion que lo llaman (Live now, Perfil, Partidas). */
     boolean confirmarEspectar(String quien) { return dev.tirador.aoe2radar.ui.ConfirmacionEspectar.confirmar(this, quien); }
 
-    void espectarPartida(long matchId) {
-        log("espectar: lanzando aoe2de://1/" + matchId);
-        try {
-            espectar.espectarPartida(matchId);
-            boolean caListo = rutaCaptureAge() != null;
-            if (usarCA() && caListo) lanzarCaptureAge(null);
-            String pista = (!usarCA() && caListo)
-                    ? t(" (Configuración → «Usar CaptureAge» lo lanzaría también)",
-                        " (Settings → \u201CUse CaptureAge\u201D would launch it too)")
-                    : "";
-            status.setText(t("Abriendo AoE2 para espectar\u2026 Si estaba cerrado tardará; si la partida termina antes de entrar, el juego dirá «Invalid match ID».",
-                    "Opening AoE2 to spectate\u2026 If it was closed it takes a while; if the game ends before you join, AoE2 will show \"Invalid match ID\".") + pista);
-        } catch (Exception ex) {
-            status.setText(t("No se pudo abrir el juego: ", "Couldn't open the game: ") + causa(ex));
-        }
-    }
+    void espectarPartida(long matchId) { AccionesVentana.espectarPartida(this, matchId); }
 
     /** Verifica que la partida sigue en curso justo antes de lanzar el juego:
      *  si acaba de terminar, avisa y re-sincroniza en vez de abrir AoE2 a un
      *  «Invalid match ID». La llamada de red y sus logs viven en service.Espectar.viva (fase 3, tanda 4, Z4). */
-    void espectarVerificando(long profileId, long matchId) {
-        status.setText(t("Comprobando que la partida sigue en curso…", "Checking the game is still live…"));
-        new SwingWorker<Boolean, Void>() {
-            @Override protected Boolean doInBackground() { return espectar.viva(profileId, matchId, PER_PAGE); }
-            @Override protected void done() {
-                Boolean viva;
-                try { viva = get(); } catch (Exception e) { viva = null; }
-                if (Boolean.FALSE.equals(viva)) {
-                    status.setText(t("Esa partida ya terminó (el companion la seguía dando por viva): el directo no existe. Dale a «Buscar partidas» para bajar la rec.",
-                            "That game already ended (the companion still listed it as live): the live match is gone. Hit search to download the rec."));
-                    VIVO.quitarPartida(matchId);   // el punto fantasma se va ya
-                    watchlist.actualizarIndicadoresVivos(); watchlist.refrescarAlturasWatch(); playersList.repaint();
-                    watchlist.vigilarVivos();
-                    return;
-                }
-                espectarPartida(matchId);
-            }
-        }.execute();
-    }
+    void espectarVerificando(long profileId, long matchId) { AccionesVentana.espectarVerificando(this, profileId, matchId); }
 
-    void espectar(Player p) {
-        Long mid = VIVO.matchDe(p.id());
-        if (mid != null) espectarVerificando(p.id(), mid);
-    }
+    void espectar(Player p) { AccionesVentana.espectar(this, p); }
 
-    void abrirTwitch() {
-        try { Desktop.getDesktop().browse(URI.create("https://" + TWITCH)); }
-        catch (Exception ex) { status.setText("Abre en tu navegador: https://" + TWITCH); }
-    }
+    void abrirTwitch() { AccionesVentana.abrirTwitch(this); }
 
-    void abrirDonacion() {
-        try { Desktop.getDesktop().browse(URI.create(DONAR_URL)); }
-        catch (Exception ex) { status.setText("Abre en tu navegador: " + DONAR_URL); }
-    }
+    void abrirDonacion() { AccionesVentana.abrirDonacion(this); }
 
     // ----- Acerca de: movido a ui.AcercaDe (logo, showAbout, generarIco) -----
     void showAbout() { AcercaDe.showAbout(this, logo); }
