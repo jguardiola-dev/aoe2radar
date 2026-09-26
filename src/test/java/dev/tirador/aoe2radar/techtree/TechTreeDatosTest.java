@@ -69,6 +69,27 @@ class TechTreeDatosTest {
         assertEquals(1, traidos.size(), "no se reintenta en bucle");
     }
 
+    /** Revisión B1: si falla la LECTURA (no el parseo), el archivo no se borra ni se vuelve a traer: sale el error como antes. */
+    @Test void leerJsonSiFallaLaLecturaNoBorraNiTrae() throws Exception {
+        Path p = dir.resolve(ARBOL);
+        Files.createDirectories(p);   // existe pero no se puede leer como archivo (como un bloqueo del antivirus)
+        List<String> traidos = new ArrayList<>();
+        assertThrows(IOException.class, () -> TechTreeDatos.leerJson(dir, ARBOL, rel -> traidos.add(rel)));
+        assertTrue(Files.exists(p), "no se borra lo que no se pudo leer");
+        assertEquals(List.of(), traidos);
+    }
+
+    @Test void leerJsonConUtf8CortadoLoTrataComoDanado() throws Exception {
+        Path p = dir.resolve(ARBOL);
+        Files.createDirectories(p.getParent());
+        byte[] cortado = utf8("{\"n\":\"Ñ");
+        Files.write(p, java.util.Arrays.copyOf(cortado, cortado.length - 1));   // cortado a mitad de la Ñ (2 bytes)
+        List<String> traidos = new ArrayList<>();
+        Map<String, Object> m = TechTreeDatos.leerJson(dir, ARBOL, rel -> { traidos.add(rel); TechTreeDatos.descargar(dir, rel, r -> utf8("{\"n\":\"Ñ\"}")); });
+        assertEquals("Ñ", m.get("n"));
+        assertEquals(List.of(ARBOL), traidos);
+    }
+
     // ----- General F7: el tech tree del jar, si falta en disco (sin ir a GitHub en un PC limpio)
 
     static final String DATA_JAR = "{\"civs\":{\"Aztecs\":{}}}";
@@ -93,6 +114,15 @@ class TechTreeDatosTest {
         assertEquals(DATA_JAR, Files.readString(dir.resolve("data/data.json")));
         assertEquals("{\"del\":\"jar\"}", Files.readString(dir.resolve(ARBOL)));
         assertArrayEquals(new byte[]{ 7 }, Files.readAllBytes(dir.resolve("img/Unit/7.png")));
+    }
+
+    /** Revisión C2: sin data.json en disco (hueco entre el borrado de data/ y el data.json nuevo de la comprobación
+     *  diaria) un árbol no sale del jar: podría ser de otra versión que el data.json que llega. */
+    @Test void sinDataJsonEnDiscoLosArbolesNoSalenDelJar() throws Exception {
+        assertFalse(TechTreeDatos.descargar(dir, ARBOL, JAR, red));
+        assertEquals(List.of(ARBOL), aLaRed);
+        assertTrue(TechTreeDatos.jarVale(dir, "data/data.json", JAR), "el propio data.json sí");
+        assertTrue(TechTreeDatos.jarVale(dir, "img/Unit/7.png", JAR), "los iconos, siempre");
     }
 
     @Test void loQueElJarNoTraeSeBajaDeLaRed() throws Exception {

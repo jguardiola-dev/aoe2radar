@@ -132,14 +132,16 @@ public final class TechTreeDatos {
 
     /**
      * ¿Sirve la copia del jar para rel? Los iconos (img/…) siempre: van por id y la actualización diaria ya los
-     * conserva. Lo demás (data.json, árboles, cadenas) solo si en disco no hay data.json (PC limpio: el jar es el punto
-     * de partida y la comprobación diaria trae luego la versión nueva) o si el de disco es idéntico al del jar. Si la
-     * comprobación diaria lo renovó, los árboles y cadenas van con el nuevo y se bajan de aoe2techtree, como siempre.
+     * conserva. data.json, si falta en disco (PC limpio: el jar es el punto de partida y la comprobación diaria trae
+     * luego la versión nueva). Árboles y cadenas, solo si el data.json de disco es idéntico al del jar. Si la
+     * comprobación diaria lo renovó, van con el nuevo y se bajan de aoe2techtree, como siempre. Sin data.json en disco,
+     * árboles y cadenas no salen del jar: puede ser el hueco entre que la comprobación diaria borra data/ y escribe el
+     * nuevo, y un árbol del jar quedaría junto a un data.json más nuevo (carrera con techtree-precarga).
      */
     static boolean jarVale(Path dir, String rel, Fuente jar) throws Exception {
         if (rel.startsWith("img/")) return true;
         Path dj = dir.resolve(DATA_JSON);
-        if (!Files.exists(dj)) return true;
+        if (!Files.exists(dj)) return DATA_JSON.equals(rel);
         var at = Files.readAttributes(dj, java.nio.file.attribute.BasicFileAttributes.class);
         long mtime = at.lastModifiedTime().toMillis(), tamano = at.size();
         Comparacion c = comparacion;
@@ -155,18 +157,28 @@ public final class TechTreeDatos {
      * sin escritura atómica, o dañado), se borra y se trae otra vez, una sola: antes quedaba roto para siempre (el
      * archivo existía, así que nunca se volvía a pedir) y esa civ, o el tech tree entero, fallaba hasta que cambiara
      * data.json en origen. Si el nuevo tampoco se entiende, la excepción sale como antes.
+     * <p>Solo se desecha lo que se leyó y no se entiende (UTF-8 inválido o JSON roto): un fallo al LEER (el antivirus
+     * con el archivo abierto, p. ej.) sale tal cual, sin borrar un archivo que puede estar bien (sin red, esa civ
+     * desaparecería).
      */
     static Map<String, Object> leerJson(Path dir, String rel, Descarga traer) throws Exception {
         Path p = dir.resolve(rel);
         if (!Files.exists(p)) traer.traer(rel);
+        byte[] raw = Files.readAllBytes(p);   // fuera del try: un fallo de lectura no es un archivo dañado
         try {
-            return obj(Json.parse(Files.readString(p)));
+            return obj(Json.parse(utf8Estricto(raw)));
         } catch (Exception ex) {
             log("techtree: " + rel + " no se entiende (" + causa(ex) + "): se borra y se vuelve a traer");
-            Files.deleteIfExists(p);
+            try { Files.deleteIfExists(p); }
+            catch (IOException borrado) { ex.addSuppressed(borrado); throw ex; }   // que no tape el motivo original
             traer.traer(rel);
-            return obj(Json.parse(Files.readString(p)));
+            return obj(Json.parse(utf8Estricto(Files.readAllBytes(p))));
         }
+    }
+
+    /** Como Files.readString: UTF-8 que falla (CharacterCodingException) si los bytes no lo son, p. ej. cortados a mitad de un carácter. */
+    static String utf8Estricto(byte[] raw) throws java.nio.charset.CharacterCodingException {
+        return java.nio.charset.StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(raw)).toString();
     }
 
     public static String ttLang() { return "es".equals(IDIOMA) ? "es" : "en"; }
