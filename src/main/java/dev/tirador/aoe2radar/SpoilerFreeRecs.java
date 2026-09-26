@@ -730,7 +730,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
         JPanel bottom = CableadoCromo.construirBarraInferior(this);
 
-        JPanel center = construirCentro(top, bottom);
+        JPanel center = CableadoCentro.construirCentro(this, top, bottom);
 
         CableadoCromo.montarVentana(this, left, center);
         navegador.conectarVistas(watchlist, perfil, liveNow, techTree, ratings, civStats, directos, centroCards, splitPrincipal);
@@ -741,119 +741,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // configurarVentana/construirBarraSuperior/construirBarraInferior: movidos a CableadoCromo (fase 3, tanda 4,
     // oleada B, T4-B3), llamados desde el constructor en el mismo punto y orden.
 
-    // El centro de la ventana: las cartas (CardLayout) de cada vista -- tabla de
-    // partidas/guia, Directos, Live now, tech tree, Ratings, Civ Stats y Perfil --
-    // encima de «top» y con «bottom» debajo. Aquí se crean las vistas y sus
-    // anfitriones (las interfaces que les dan acceso a la ventana).
-    private JPanel construirCentro(JPanel top, JPanel bottom) {
-        JPanel center = new JPanel(new BorderLayout());
-        center.add(top, BorderLayout.NORTH);
-        centroCards = new JPanel(new CardLayout());
-        partidas.construirCards();   // recsCards «tabla»/«guia», guiaBtn: ver ui.PartidasView
-        centroCards.add(partidas.panel(), "recs");
-        directos = new DirectosView(TWITCH_SERVICE, twitchLive, Tareas.SWING, new DirectosView.Anfitrion() {
-            @Override public List<Player> visibles() {
-                List<Player> out = new ArrayList<>();
-                for (int i = 0; i < playersModel.size(); i++) out.add(playersModel.get(i));
-                return out;
-            }
-            @Override public void repintarLista() { playersList.repaint(); }
-            @Override public void estado(String texto) { status.setText(texto); }
-            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-            @Override public boolean seleccionada() { return navegador.directosBtn != null && navegador.directosBtn.isSelected(); }
-        });
-        centroCards.add(directos.panel(), "directos");
-        liveNow = new LiveNowView(campanas, LIVE, List.of(watchlist.PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
-            @Override public List<String> clanesGuardados() { return watchlist.clanesGuardados(); }
-            @Override public String paisSel() { return watchlist.paisSel(); }
-            @Override public String clanBuscado() { return watchlist.clanBuscado(); }
-            @Override public boolean campanaContiene(long pid) { return watchlist.campanaContiene(pid); }
-            @Override public void sincronizarSocket() { SpoilerFreeRecs.this.sincronizarSocket(); }
-            @Override public boolean socketConectado() { return enlaceVivo.conectado(); }
-            @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
-            @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
-            @Override public void ocultarHoverCard(boolean forzar) { watchlist.ocultarHoverCard(forzar); }
-            @Override public boolean confirmarEspectar(String quien) { return SpoilerFreeRecs.this.confirmarEspectar(quien); }
-            @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
-            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-            @Override public void descargar(List<Match> lista, boolean enviarAlJuego, Runnable alTerminar) { partidas.descargarSinCambiarVista(lista, enviarAlJuego, alTerminar); }
-            @Override public void estadoGlobal(String texto) { status.setText(texto); }
-        });
-        centroCards.add(liveNow.panel(), "ahora");
-        techTree = new TechTreeView(this, TechTreeServiceDatos.SISTEMA, stats, filtroStats, listas, this, Tareas.SWING,
-                new TechTreeView.Anfitrion() {
-                    @Override public void precalentarPerfiles() { SpoilerFreeRecs.this.precalentarPerfiles(); }
-                    @Override public void cerrar() { cerrarTechTree(); }
-                },
-                new TechTreeView.EnlaceCivStats() {
-                    // Civ Stats se crea después (civStats es null mientras se construye el tech tree, como civStatsPanel en la 1.1)
-                    @Override public boolean construida() { return civStats != null; }
-                    @Override public void filtrosCambiados(boolean repintarTechTree) { if (civStats != null) civStats.filtrosCambiados(repintarTechTree); }
-                    @Override public void sincronizarVentana(String ventana) { if (civStats != null) civStats.ponerVentanaSinDisparar(ventana); }
-                });
-        centroCards.add(techTree.panel(), "techtree");
-        ToolTipManager.sharedInstance().setInitialDelay(350);
-        ToolTipManager.sharedInstance().setDismissDelay(90_000);   // el tooltip aguanta mientras el ratón esté quieto
-        ratings = new RatingsView(RatingsServiceSfr.SISTEMA, BUSQUEDA, SERVICIO_PERFIL, Tareas.SWING, new RatingsView.Anfitrion() {
-            @Override public List<Player> seleccion() { return playersList.getSelectedValuesList(); }
-            @Override public boolean seleccionado(long pid) { for (Player p : playersList.getSelectedValuesList()) if (p.id() == pid) return true; return false; }
-            @Override public void deseleccionar(long pid) { for (int i = 0; i < playersModel.getSize(); i++) if (playersModel.getElementAt(i).id() == pid) playersList.removeSelectionInterval(i, i); }
-            @Override public void limpiarSeleccion() { playersList.clearSelection(); }
-            @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
-        });
-        centroCards.add(ratings.panel(), "ladder");
-        civStats = new CivStatsView(stats, filtroStats, listas, this, Tareas.SWING, this, () -> { if (techTree != null) techTree.actualizarWr(); });
-        centroCards.add(civStats.panel(), "civstats");
-        perfil = new PerfilView(SERVICIO_PERFIL, RatingsServiceSfr.SISTEMA, BUSQUEDA, stats, VIVO, menus, this, techTree, listas, Tareas.SWING,
-                new PerfilView.Anfitrion() {
-                    @Override public List<Player> seleccionWatchlist() { return playersList.getSelectedValuesList(); }
-                    @Override public boolean estaEnWatchlist(long pid) { return watchlist.containsPlayerId(pid); }
-                    @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
-                    @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
-                    @Override public void ficharDesdeTop(long pid, String nombre, String grupo) { watchlist.ficharDesdeTop(new Player(pid, nombre, grupo), grupo); }
-                    @Override public List<String> gruposDeJugadores() { Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); for (Player x : todosJugadores) gs.add(x.grupo()); return new ArrayList<>(gs); }
-                    @Override public Set<Long> idsDeGrupo(String grupo) { Set<Long> ids = new HashSet<>(); for (Player x : todosJugadores) if (x.grupo().equalsIgnoreCase(grupo)) ids.add(x.id()); return ids; }
-                    @Override public List<String> gruposGuardados() { return new ArrayList<>(watchlist.gruposConfig()); }
-                    @Override public String grupoGeneral() { return WatchlistView.GRUPO_GENERAL; }
-                    @Override public List<String> clanesGuardados() { return watchlist.clanesGuardados(); }
-                    @Override public boolean hayTop250() { if (liveNow == null) return false; boolean[] hay = { false }; liveNow.conTop(l -> hay[0] = !l.isEmpty()); return hay[0]; }
-                    @Override public Set<Long> idsTop250() { Set<Long> s = new HashSet<>(); if (liveNow != null) liveNow.conTop(l -> { for (Object[] x : l) s.add((Long) x[0]); }); return s; }
-                    @Override public boolean ultimoClicFueCtrl() { return ultimoClicCtrl; }
-                    @Override public void pedirAlias(long pid, String nombreOriginal) { SpoilerFreeRecs.this.pedirAlias(pid, nombreOriginal); }
-                    @Override public void pedirNota(long pid, String nombre) { SpoilerFreeRecs.this.pedirNota(pid, nombre); }
-                    @Override public void borrarNota(long pid, String nombre) { SpoilerFreeRecs.this.borrarNota(pid, nombre); }
-                    @Override public void mostrarVinculadas(long pid, String nombre) { SpoilerFreeRecs.this.mostrarVinculadas(pid, nombre); }
-                    @Override public void nicksAnteriores(long pid, String nombre) { SpoilerFreeRecs.this.nicksAnteriores(pid, nombre); }
-                    @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-                    @Override public void registrarDestino(long pid, String nombre) { SpoilerFreeRecs.this.registrarDestino(new Destino("perfil", pid, nombre, null)); }
-                    @Override public void actualizarTextoBuscar() { partidas.actualizarTextoBuscar(); }
-                    @Override public JToggleButton crearBotonPestana(String texto, Icon icono) { return pestana(texto, icono); }
-                    @Override public void traerAlFrente() { toFront(); requestFocus(); }
-                    @Override public void mostrarEstadoGlobal(String texto) { status.setText(texto); }
-                    @Override public void cerrarPerfil() { mostrarDirectos(false); }
-                    @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-                    @Override public boolean confirmarEspectar(String nombre) { return SpoilerFreeRecs.this.confirmarEspectar(nombre); }
-                    @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
-                    @Override public void cargarPartidasEnTabla(List<Match> lista, Player sujeto) {
-                        partidas.cargarPartidasEnTabla(lista, sujeto, watchlist.vistaActualId());
-                        mostrarDirectos(false);
-                    }
-                    @Override public void buscarPartidasDe(long pid, String nombre) {
-                        Player p = new Player(pid, nombre, watchlist.grupoDestino());
-                        objetivoForzado = p; invitado = p; vistaDelInvitado = watchlist.vistaActualId();
-                        playersList.clearSelection(); watchlist.aplicarFiltroGrupo(); mostrarDirectos(false); partidas.fetchMatches(partidas.fetchBtn);
-                    }
-                    @Override public void descargarSinCambiarVista(List<Match> lista, boolean enviar, Runnable alTerminar) {
-                        partidas.descargarSinCambiarVista(lista, enviar, alTerminar);
-                    }
-                },
-                ACTIVIDAD_CACHE, eloWatch, ALIASES, CANAL_DE, ELO_AYER, NOMBRES_AYER, twitchLive, dev.tirador.aoe2radar.cache.Anotaciones::notaDe,
-                PERFILES_DIR, dev.tirador.aoe2radar.cache.HistorialDisco::cargarActividad, ACT_DIAS);
-        centroCards.add(perfil.panel(), "perfil");
-        center.add(centroCards, BorderLayout.CENTER);
-        center.add(bottom, BorderLayout.SOUTH);
-        return center;
-    }
 
     // montarVentana (split Watchlist/resto + ClicEnFondo): movido a CableadoCromo (fase 3, tanda 4, oleada B,
     // T4-B3), llamado desde el constructor en el mismo punto.
