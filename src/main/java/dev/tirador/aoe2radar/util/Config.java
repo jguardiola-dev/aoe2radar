@@ -16,7 +16,7 @@ import static dev.tirador.aoe2radar.util.Identidad.NOMBRE;
 public final class Config {
     private Config() {}
 
-    public static final Path CONFIG_FILE = Path.of("config.properties");
+    public static final Path CONFIG_FILE = Sistema.enCarpetaBase("config.properties");
 
     public static synchronized String leerConfig(String clave, String porDefecto) {
         try (var in = Files.newInputStream(CONFIG_FILE)) {

@@ -12,7 +12,7 @@ import java.time.format.DateTimeFormatter;
 public final class Log {
     private Log() {}
 
-    public static final Path LOG_FILE = Path.of("descargas.log");
+    public static final Path LOG_FILE = Sistema.enCarpetaBase("descargas.log");
 
     public static final DateTimeFormatter LOG_F =
             DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());

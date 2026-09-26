@@ -68,6 +68,7 @@ import dev.tirador.aoe2radar.ui.BarraEstado;
 // para que ninguna llamada existente cambie de texto; import normal para Servicios::dormir...
 import dev.tirador.aoe2radar.app.Servicios;
 import static dev.tirador.aoe2radar.app.Servicios.*;
+import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
 // Socket de vivos y espectar: ver service.EnlaceVivo/service.Espectar/ui.ConfirmacionEspectar.
 import dev.tirador.aoe2radar.service.EnlaceVivo;
 import dev.tirador.aoe2radar.service.Espectar;
@@ -75,7 +76,7 @@ import dev.tirador.aoe2radar.service.ReglasPartida;
 
 public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.Navegacion, dev.tirador.aoe2radar.ui.ComponentesTema {
 
-    static final Path   PLAYERS_FILE = Path.of("players.txt");
+    static final Path   PLAYERS_FILE = enCarpetaBase("players.txt");
     static final String DONAR_URL    = "https://paypal.me/12Tirador/5EUR";
     // PER_PAGE/PAUSA_MS: en app.Servicios, llegan aquí por el import static de arriba.
 

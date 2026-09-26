@@ -8,7 +8,6 @@ import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.Locale;
 
 import static dev.tirador.aoe2radar.cache.Catalogos.cargarCatalogos;
@@ -17,6 +16,7 @@ import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.Identidad.NOMBRE;
 import static dev.tirador.aoe2radar.util.Identidad.VERSION;
 import static dev.tirador.aoe2radar.ui.TemaApp.TEMA_SISTEMA;
+import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
 
 /**
  * El arranque de la app (fase 3, tanda 4, Z6): {@code --make-ico}, catálogos, idioma, tema y la creación de la
@@ -47,7 +47,7 @@ public class Main {
             } catch (Throwable ex) {   // un fallo de arranque nunca más muere en silencio: queda escrito y avisa
                 StringBuilder sb = new StringBuilder("Fallo al arrancar " + NOMBRE + " " + VERSION + "\n" + ex + "\n");
                 for (StackTraceElement st : ex.getStackTrace()) sb.append("    at ").append(st).append("\n");
-                try { Files.writeString(Path.of("arranque_error.log"), sb.toString()); } catch (Exception ignored) { }
+                try { Files.writeString(enCarpetaBase("arranque_error.log"), sb.toString()); } catch (Exception ignored) { }
                 JOptionPane.showMessageDialog(null,
                         NOMBRE + " no ha podido arrancar.\nDetalle guardado en arranque_error.log (junto al exe).\n\n" + ex,
                         NOMBRE, JOptionPane.ERROR_MESSAGE);

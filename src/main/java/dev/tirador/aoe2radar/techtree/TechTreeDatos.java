@@ -23,6 +23,7 @@ import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.Json.obj;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
+import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
 
 /** Datos de aoe2techtree: data.json, árboles por civ y cadenas por idioma, con caché en disco y comprobación diaria por ETag. */
 public final class TechTreeDatos {
@@ -33,7 +34,7 @@ public final class TechTreeDatos {
 
     /** «Extraer todo» de Windows deja techtree\techtree: se acepta la carpeta anidada. */
     public static Path ttDirBase() {
-        Path base = Path.of("techtree");
+        Path base = enCarpetaBase("techtree");
         if (!Files.exists(base.resolve("data/data.json")) && Files.exists(base.resolve("techtree/data/data.json"))) return base.resolve("techtree");
         return base;
     }
