@@ -261,6 +261,22 @@
             <version>3.1.0</version>
             <executions>
               <execution>
+                <!-- La carpeta de entrada de jpackage tampoco se limpiaba: cada versión dejaba allí su jar
+                     (aoe2radar-1.2.0-SNAPSHOT.jar seguía dentro del zip de la 1.3, y en el classpath del .cfg).
+                     Se vacía en process-classes, una fase ANTES de prepare-package, porque en prepare-package
+                     copiar-dependencias-runtime (plugin anterior en el pom) ya la está llenando. -->
+                <id>borrar-entrada-jpackage-anterior</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${jpackage.entrada}" quiet="true" />
+                  </target>
+                </configuration>
+              </execution>
+              <execution>
                 <id>borrar-dist-anterior</id>
                 <phase>prepare-package</phase>
                 <goals>
