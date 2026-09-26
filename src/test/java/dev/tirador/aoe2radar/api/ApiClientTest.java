@@ -39,11 +39,13 @@ class ApiClientTest {
         }
     }
 
-    /** Apunta qué le piden; el 429 siempre «pausa» 60 s. */
+    /** Apunta qué le piden; el 429 siempre «pausa» 60 s, y es pausa nueva salvo que el test diga que hay una en curso. */
     static final class ThrottleEspia implements Throttle {
         int adquiridas, cuatrocientosVeintinueve;
+        boolean pausaEnCurso;
         @Override public void adquirir(java.util.function.BooleanSupplier cancelar) { adquiridas++; }
-        @Override public long registrar429() { cuatrocientosVeintinueve++; return 60_000; }
+        @Override public long registrar429() { return registrarEpisodio429().ms(); }
+        @Override public Pausa429 registrarEpisodio429() { cuatrocientosVeintinueve++; return new Pausa429(60_000, !pausaEnCurso); }
     }
 
     final ThrottleEspia throttle = new ThrottleEspia();
@@ -81,14 +83,41 @@ class ApiClientTest {
         assertEquals(1, red.pedidas.size(), "texto no reintenta");
     }
 
+    @Test void un429DentroDeUnaPausaEnCursoCuentaPeroNoSeAvisaOtraVez() {
+        // Fase 4 (DEUDA, aviso del 429): una ráfaga de 5 respuestas 429 escribía 5 líneas «pausa de N s» con N
+        // decreciente. Ahora solo avisa (log y barra de estado) el 429 que abre la pausa.
+        throttle.pausaEnCurso = true;
+        red.responde(429);
+        assertThrows(IOException.class, () -> api.texto(COMPANION));
+        assertEquals(1, throttle.cuatrocientosVeintinueve, "al freno le llega igual");
+        assertTrue(avisos.isEmpty(), "la pausa ya se avisó cuando se abrió");
+    }
+
+    @Test void conElFrenoRealUnaRafagaDe429AvisaUnaSolaVez() throws Exception {
+        // Dos peticiones en vuelo a la vez: mientras esta espera su respuesta, otra (anidada aquí, como si fuera de otro
+        // hilo) recibe un 429 y abre la pausa; el 429 de esta llega después y cae dentro de esa pausa.
+        RelojFalso reloj = new RelojFalso();
+        ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> false);
+        red.trasCadaPeticion = () -> {
+            if (red.pedidas.size() != 1) return;
+            assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));   // la otra: primer 429, pausa de 60 s
+        };
+        red.responde(429, 429, 200);
+        assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));
+        assertEquals(List.of(60L), avisos, "un solo aviso: el de la pausa nueva");
+        long antes = reloj.dormido;
+        conFrenoReal.texto(COMPANION);
+        assertEquals(60_000, reloj.dormido - antes, "la pausa sigue siendo la misma (sin escalar)");
+    }
+
     @Test void textoCuentaEl429DeCualquierHostDelCompanion() {
         red.responde(429);
         assertThrows(IOException.class, () -> api.texto("https://api.aoe2companion.com/twitch/live?game=13389"));
         assertEquals(1, throttle.cuatrocientosVeintinueve);
     }
 
-    @Test void caracterizacion_textoDetectaEl429PorElEstadoNoPorElMensaje() {
-        // Asimetría con textoCon429, que lo detecta por el texto del mensaje (ver DEUDA).
+    @Test void textoDetectaEl429PorElEstadoNoPorElMensaje() {
+        // Igual que textoCon429 desde la fase 4 (antes este lo miraba en el texto del mensaje).
         red.responde(new IOException("proxy: 429 conexiones"));
         assertThrows(IOException.class, () -> api.texto(COMPANION));
         assertEquals(0, throttle.cuatrocientosVeintinueve);
@@ -110,6 +139,20 @@ class ApiClientTest {
         red.responde(429, 429, 200);
         assertEquals("cuerpo 200", conFrenoReal.textoCon429(COMPANION));
         assertEquals(List.of(60L, 120L), avisos, "el segundo 429 llega tras dormir la pausa: escala");
+    }
+
+    @Test void conElFrenoRealTres429SeguidosCuentanLosTres() {
+        // Fase 4 (DEUDA, asimetría): el tercero salía sin registrar. Cada reintento duerme la pausa anterior, así que
+        // cada 429 es un episodio nuevo y escala, igual que si la llamada siguiente fuera por texto().
+        RelojFalso reloj = new RelojFalso();
+        ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> false);
+        red.responde(429, 429, 429, 200);
+        IOException e = assertThrows(IOException.class, () -> conFrenoReal.textoCon429(COMPANION));
+        assertEquals("HTTP 429", e.getMessage());
+        assertEquals(List.of(60L, 120L, 240L), avisos, "el tercero también pausa: nadie llama durante 240 s");
+        long antes = reloj.dormido;
+        assertDoesNotThrow(() -> conFrenoReal.texto(COMPANION));
+        assertEquals(240_000, reloj.dormido - antes, "la llamada siguiente respeta esa pausa");
     }
 
     @Test void conElFrenoRealDetenerCortaLaEsperaDeLaPausa() {
@@ -178,14 +221,24 @@ class ApiClientTest {
         IOException e = assertThrows(IOException.class, () -> api.textoCon429(COMPANION));
         assertEquals("HTTP 429", e.getMessage());
         assertEquals(3, red.pedidas.size());
-        assertEquals(2, throttle.cuatrocientosVeintinueve, "caracterización: el tercer 429 sale sin registrarse (texto() sí contaría todos)");
+        assertEquals(3, throttle.cuatrocientosVeintinueve, "los tres cuentan al freno, como en texto()");
+        assertEquals(List.of(60L, 60L, 60L), avisos);
     }
 
-    @Test void un429DeSteamNoTocaElFrenoDelCompanion() throws Exception {
+    @Test void un429DeSteamNoSeReintentaNiTocaElFreno() {
+        // Fase 4 (DEUDA): antes se reintentaba dos veces al instante (sin pausa: tres peticiones en ráfaga).
         red.responde(429, 200);
-        assertEquals("cuerpo 200", api.textoCon429(STEAM));
+        IOException e = assertThrows(IOException.class, () -> api.textoCon429(STEAM));
+        assertEquals("HTTP 429", e.getMessage());
+        assertEquals(1, red.pedidas.size());
         assertEquals(0, throttle.cuatrocientosVeintinueve);
         assertTrue(avisos.isEmpty());
+    }
+
+    @Test void otroErrorDeSteamTampocoSeReintenta() {
+        red.responde(500);
+        assertThrows(IOException.class, () -> api.textoCon429(STEAM));
+        assertEquals(1, red.pedidas.size());
     }
 
     @Test void un429YLuegoOtroErrorSaleConEseError() {
@@ -223,10 +276,20 @@ class ApiClientTest {
         assertEquals(1, red.pedidas.size());
     }
 
-    @Test void caracterizacion_unErrorCuyoMensajeContiene429SeReintenta() {
-        // Rareza de la 1.1: el 429 se detecta por el texto del mensaje, no por el estado.
-        red.responde(new IOException("proxy: 429 conexiones"), 200);
-        assertDoesNotThrow(() -> api.textoCon429(COMPANION));
+    @Test void unErrorDeRedCuyoMensajeContiene429NoEsUn429() {
+        // Fase 4 (DEUDA, asimetría): en la 1.1 el 429 se detectaba por el texto del mensaje y esto se reintentaba.
+        // Ahora solo cuenta el estado HTTP, como en texto().
+        IOException proxy = new IOException("proxy: 429 conexiones");
+        red.responde(proxy, 200);
+        assertSame(proxy, assertThrows(IOException.class, () -> api.textoCon429(COMPANION)));
+        assertEquals(1, red.pedidas.size());
+        assertEquals(0, throttle.cuatrocientosVeintinueve);
+    }
+
+    @Test void unErrorInesperadoEnElReintentoTambienSaleComoIOException() {
+        red.responde(429, new IllegalArgumentException("URI mala"));
+        IOException e = assertThrows(IOException.class, () -> api.textoCon429(COMPANION));
+        assertEquals("URI mala", e.getMessage());
         assertEquals(2, red.pedidas.size());
     }
 

@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Caracterización de SteamApi (antes, dentro de nicksAnteriores de la app): sin red, con un transporte falso que
  * responde JSON. Steam no es un host del companion (ver Freno.aplicaA), así que un 429 suyo no debe contar al freno
- * del companion, aunque textoCon429 reintente igual que con cualquier host.
+ * del companion, y textoCon429 tampoco lo reintenta (solo reintenta los 429 del companion, que tienen pausa).
  */
 class SteamApiTest {
 
@@ -78,21 +78,13 @@ class SteamApiTest {
         assertThrows(RuntimeException.class, () -> steam.alias(STEAM_ID));
     }
 
-    @Test void un429DeSteamNoCuentaAlFrenoDelCompanionPeroSeReintenta() throws Exception {
+    @Test void un429DeSteamNoSeReintentaNiCuentaAlFrenoDelCompanion() {
+        // Fase 4 (DEUDA): en la 1.1 se reintentaba dos veces al instante (tres peticiones en ráfaga contra Steam).
         red.estados.add(429);
-        red.cuerpo = "[]";
-        List<String[]> out = steam.alias(STEAM_ID);
-        assertTrue(out.isEmpty());
-        assertEquals(2, red.pedidas.size(), "textoCon429 reintenta igual, sea cual sea el host");
+        IOException e = assertThrows(IOException.class, () -> steam.alias(STEAM_ID));
+        assertEquals("HTTP 429", e.getMessage(), "quien llama recibe el mismo error que tras agotar los reintentos");
+        assertEquals(1, red.pedidas.size(), "una sola petición: sin pausa propia para Steam, no se insiste");
         assertEquals(0, throttle.cuatrocientosVeintinueve, "Steam no cuenta al freno del companion");
         assertTrue(avisos.isEmpty(), "sin aviso de pausa: la pausa es cosa del companion");
-    }
-
-    @Test void dosReintentosComoMaximoYLuegoPropagaHttp429() {
-        red.estados.add(429); red.estados.add(429); red.estados.add(429);
-        IOException e = assertThrows(IOException.class, () -> steam.alias(STEAM_ID));
-        assertEquals("HTTP 429", e.getMessage());
-        assertEquals(3, red.pedidas.size());
-        assertEquals(0, throttle.cuatrocientosVeintinueve, "sigue sin contar al freno del companion");
     }
 }

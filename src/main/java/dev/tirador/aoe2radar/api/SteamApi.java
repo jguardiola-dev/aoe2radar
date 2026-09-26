@@ -15,8 +15,9 @@ import static dev.tirador.aoe2radar.util.Json.val;
  * El único endpoint de Steam que usa la app (antes, dentro de nicksAnteriores): el historial de nombres
  * (ajaxaliases) de un steamId. Pasa por ApiClient.textoCon429 igual que el companion (antes httpText429 a secas),
  * pero Steam NO es un host del companion: Freno.aplicaA(url) da false para steamcommunity.com, así que un 429 de
- * Steam no cuenta al Throttle ni pausa la app global (ver ApiClientTest, «un429DeSteamNoTocaElFrenoDelCompanion»).
- * Mismo comportamiento que la 1.1: el freno decide por host, no por quién llama.
+ * Steam no cuenta al Throttle ni pausa la app global, y tampoco se reintenta: sin una pausa entre medias, reintentar
+ * era insistir en ráfaga (ver ApiClientTest, «un429DeSteamNoSeReintentaNiTocaElFreno»). El freno decide por host, no
+ * por quién llama.
  */
 public final class SteamApi {
     private final ApiClient api;

@@ -125,11 +125,16 @@ public final class Json {
         try { return Long.parseLong(String.valueOf(o)); } catch (Exception e) { return -1; }
     }
 
+    /**
+     * Fecha de la API: número (segundos o, si pasa de 1e11, milisegundos) o texto ISO. Lo ilegible queda null, también
+     * un número fuera del rango de Instant (p. ej. -1e30): así una fila absurda no tumba la página entera.
+     */
     public static Instant when(Object o) {
         if (o == null) return null;
         if (o instanceof Number n) {
             long v = n.longValue();
-            return v > 100_000_000_000L ? Instant.ofEpochMilli(v) : Instant.ofEpochSecond(v);
+            try { return v > 100_000_000_000L ? Instant.ofEpochMilli(v) : Instant.ofEpochSecond(v); }
+            catch (java.time.DateTimeException e) { return null; }
         }
         String s = String.valueOf(o);
         try { return Instant.parse(s); }

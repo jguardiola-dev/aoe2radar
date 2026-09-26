@@ -120,6 +120,17 @@ class ThrottleCuboTest {
         assertEquals(250, r.dormido - antes, "falta 0,25 de ficha: espera 250 ms (antes del arreglo pasaba sin esperar)");
     }
 
+    @Test void registrarEpisodioDiceSiEl429AbrioLaPausaOCayoEnUnaVigente() {
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        assertEquals(new Throttle.Pausa429(60_000, true), t.registrarEpisodio429(), "el primero abre la pausa");
+        r.avanzar(10_000);
+        assertEquals(new Throttle.Pausa429(50_000, false), t.registrarEpisodio429(), "misma ráfaga: lo que queda, no es nueva");
+        assertEquals(50_000, t.registrar429(), "registrar429 sigue dando solo los ms (misma escalada)");
+        pasaLaPausa(r, 50_000);
+        assertEquals(new Throttle.Pausa429(120_000, true), t.registrarEpisodio429(), "acabada la pausa: episodio nuevo, escala");
+    }
+
     @Test void sinDetenerLaEsperaEsLaMismaQueAntes() throws Exception {
         RelojFalso r = new RelojFalso();
         ThrottleCubo t = new ThrottleCubo(r);
