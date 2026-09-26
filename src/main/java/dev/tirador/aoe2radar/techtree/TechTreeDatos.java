@@ -6,6 +6,7 @@ import dev.tirador.aoe2radar.util.Archivos;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -87,14 +88,66 @@ public final class TechTreeDatos {
 
     static final Fuente RED = rel -> httpBytesTT(TT_RAW + rel);
 
+    /**
+     * Dentro del jar va el mismo tech tree (src/main/resources/techtree, 8,8 MB): el exe de jpackage no deja la
+     * carpeta techtree junto al exe como hacía el bat de la 1.1, y sin esto un PC limpio bajaba de GitHub data.json,
+     * unos 55 árboles y cientos de iconos (y sin red se quedaba vacío). Mismo caso que las banderas (7e7748f). null si
+     * el jar no lo trae.
+     */
+    static final Fuente JAR = rel -> {
+        try (InputStream in = TechTreeDatos.class.getResourceAsStream("/techtree/" + rel)) {
+            return in == null ? null : in.readAllBytes();
+        }
+    };
+
+    static final String DATA_JSON = "data/data.json";
+
+    /**
+     * Trae rel a la carpeta techtree: del jar si lo trae y vale (ver jarVale), si no de aoe2techtree. Se copia a disco
+     * (no se lee del jar en cada uso) porque todo el que pinta el tech tree trabaja con rutas de disco. Si data.json
+     * sale del jar, se olvida el ETag guardado: era de otra copia, y con él la comprobación diaria podría recibir un
+     * 304 y quedarse para siempre con la del jar aunque aoe2techtree tenga una más nueva.
+     */
     public static void ttDescargar(String rel) throws Exception {
-        descargar(TT_DIR, rel, RED);
+        if (descargar(TT_DIR, rel, JAR, RED) && DATA_JSON.equals(rel)) guardarConfig("techtree_etag", "");
     }
 
     /** Baja rel a dir con escritura atómica (util.Archivos): un corte a mitad no deja un archivo truncado que, al
      *  existir, ya no se volvería a bajar nunca (F5 de la revisión general). */
     static void descargar(Path dir, String rel, Fuente red) throws Exception {
         Archivos.escribirAtomico(dir.resolve(rel), red.bytes(rel));
+    }
+
+    /** Como descargar(dir, rel, red), pero primero prueba la copia del jar si vale para rel. true si salió del jar. */
+    static boolean descargar(Path dir, String rel, Fuente jar, Fuente red) throws Exception {
+        byte[] b = jarVale(dir, rel, jar) ? jar.bytes(rel) : null;
+        if (b == null) { descargar(dir, rel, red); return false; }
+        Archivos.escribirAtomico(dir.resolve(rel), b);
+        return true;
+    }
+
+    /** Última comparación del data.json de disco con el del jar (se repite solo si cambia el archivo de disco). */
+    private record Comparacion(Path dj, long mtime, long tamano, boolean igual) { }
+    private static volatile Comparacion comparacion;
+
+    /**
+     * ¿Sirve la copia del jar para rel? Los iconos (img/…) siempre: van por id y la actualización diaria ya los
+     * conserva. Lo demás (data.json, árboles, cadenas) solo si en disco no hay data.json (PC limpio: el jar es el punto
+     * de partida y la comprobación diaria trae luego la versión nueva) o si el de disco es idéntico al del jar. Si la
+     * comprobación diaria lo renovó, los árboles y cadenas van con el nuevo y se bajan de aoe2techtree, como siempre.
+     */
+    static boolean jarVale(Path dir, String rel, Fuente jar) throws Exception {
+        if (rel.startsWith("img/")) return true;
+        Path dj = dir.resolve(DATA_JSON);
+        if (!Files.exists(dj)) return true;
+        var at = Files.readAttributes(dj, java.nio.file.attribute.BasicFileAttributes.class);
+        long mtime = at.lastModifiedTime().toMillis(), tamano = at.size();
+        Comparacion c = comparacion;
+        if (c != null && c.dj().equals(dj.toAbsolutePath()) && c.mtime() == mtime && c.tamano() == tamano) return c.igual();
+        byte[] delJar = jar.bytes(DATA_JSON);
+        boolean igual = delJar != null && delJar.length == tamano && java.util.Arrays.equals(delJar, Files.readAllBytes(dj));
+        comparacion = new Comparacion(dj.toAbsolutePath(), mtime, tamano, igual);
+        return igual;
     }
 
     /**
