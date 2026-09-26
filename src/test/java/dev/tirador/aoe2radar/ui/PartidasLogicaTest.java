@@ -393,4 +393,94 @@ class PartidasLogicaTest {
         assertEquals(List.of(8503L), rec.procesadas);
         assertEquals("1/1 recs guardadas en " + recs, anfitrion.estado);
     }
+
+    // ----- a quién busca fetchMatches -----
+
+    /** Lanza «Buscar partidas» (páginas vacías) y devuelve a quién se pidió, en orden. */
+    List<Long> buscarYVerAQuien() throws Exception {
+        anfitrion.pedidas.clear();
+        anfitrion.paginador = (pid, pag, pp) -> List.of();
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+        return new ArrayList<>(anfitrion.pedidas);
+    }
+
+    @Test void buscar_seleccionOLaListaEntera() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        assertEquals(List.of(A.id(), B.id()), buscarYVerAQuien(), "sin selección: toda la lista");
+        enlace.seleccion.add(B);
+        assertEquals(List.of(B.id()), buscarYVerAQuien());
+    }
+
+    @Test void buscar_elForzadoSeUsaYSeLimpia_yElInvitadoAntesQueLaSeleccion() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        enlace.seleccion.add(A);
+        Player forzado = new Player(7100, "Forzado", "General");
+        enlace.objetivoForzado = forzado;
+        enlace.invitado = B;
+        assertEquals(List.of(7100L), buscarYVerAQuien());
+        assertNull(enlace.objetivoForzado, "el objetivo forzado se consume");
+        assertEquals(List.of(B.id()), buscarYVerAQuien(), "sin forzado: el invitado");
+    }
+
+    @Test void buscar_conElPerfilAbiertoYSinSeleccion_buscaAlDelPerfil() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        anfitrion.perfilPid = 7200; anfitrion.perfilAbierto = true; anfitrion.perfilNombre = "Perfilado";
+        assertEquals(List.of(7200L), buscarYVerAQuien());
+        assertTrue(anfitrion.mostrarDirectos.contains(false));
+        assertNull(enlace.objetivoForzado);
+        enlace.seleccion.add(A);
+        assertEquals(List.of(A.id()), buscarYVerAQuien(), "con selección, la selección");
+    }
+
+    @Test void buscar_elDelBotonSinSeleccion() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        enEdt(() -> vista.objetivoEtiqueta = new Player(7300, "Etiqueta", ""));
+        assertEquals(List.of(7300L), buscarYVerAQuien());
+    }
+
+    @Test void buscar_enTopConMasDeQuince_losQuincePrimerosYAviso() throws Exception {
+        enlace.modoTop = true;
+        for (int i = 0; i < 17; i++) { Player p = new Player(7400 + i, "T" + i, "General"); enlace.jugadores.add(p); enlace.seleccion.add(p); }
+        List<Long> pedidas = buscarYVerAQuien();
+        assertEquals(15, pedidas.size());
+        assertEquals(7400L, pedidas.get(0));
+        assertEquals(7414L, pedidas.get(14));
+        assertTrue(anfitrion.estados.stream().anyMatch(s -> s.contains("15 perfiles por tanda")), "estados: " + anfitrion.estados);
+    }
+
+    // ----- cabecera «Partidas de:»: clic en un sujeto -----
+
+    javax.swing.JLabel chip(int i) {
+        JPanel chips = (JPanel) enlace.sujetosPanel.getComponent(1);
+        return (javax.swing.JLabel) chips.getComponent(i);
+    }
+
+    void clicEnChip(int i, boolean ctrl) {
+        javax.swing.JLabel l = chip(i);
+        l.dispatchEvent(new java.awt.event.MouseEvent(l, java.awt.event.MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(),
+                ctrl ? java.awt.event.InputEvent.CTRL_DOWN_MASK : 0, 1, 1, 1, false, java.awt.event.MouseEvent.BUTTON1));
+    }
+
+    @Test void cabecera_clicFiltraCtrlSumaYOtroClicQuita() throws Exception {
+        Match a = partida(1, A, Instant.now().minusSeconds(600)), b = partida(2, B, Instant.now().minusSeconds(700));
+        enEdt(() -> {
+            vista.refrescarSujetos(List.of(A, B), false);
+            vista.all.addAll(List.of(a, b));
+            vista.applyFilters();
+            clicEnChip(1, false);
+            assertEquals(java.util.Set.of(B.id()), vista.filtroSujetos);
+            assertEquals(List.of(b), vista.view);
+            clicEnChip(0, true);
+            assertEquals(java.util.Set.of(A.id(), B.id()), vista.filtroSujetos, "Ctrl+clic suma");
+            clicEnChip(1, true);
+            assertEquals(java.util.Set.of(A.id()), vista.filtroSujetos, "Ctrl+clic en uno marcado lo quita");
+            clicEnChip(0, false);
+            assertEquals(java.util.Set.of(), vista.filtroSujetos, "clic en el único marcado: todas");
+            assertEquals(List.of(a, b), vista.view);
+            clicEnChip(0, false);
+            clicEnChip(1, false);
+            assertEquals(java.util.Set.of(B.id()), vista.filtroSujetos, "clic en otro: solo ese");
+        });
+    }
 }
