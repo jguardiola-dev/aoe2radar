@@ -148,10 +148,12 @@ class WatchlistViewTest {
         @Override public boolean clanesVacios() { return true; }
         @Override public void asegurarLadderEnFondo() { }
         @Override public List<Map.Entry<String, Integer>> sugerirClanes(String texto) { return List.of(); }
-        @Override public void trabajando(boolean on) { trabajando.add(on ? "on" : "off"); }
+        @Override public long empezarOperacion() { trabajando.add("on"); return 0; }
+        @Override public void terminarOperacion(long op) { trabajando.add("off"); }
         @Override public long opSerial() { return 0; }
-        @Override public void marcarHiloOperacionActual() { }
-        @Override public boolean detenerOperacion() { return false; }
+        @Override public void marcarHiloOperacionActual(long op) { }
+        @Override public void soltarHiloOperacion() { }
+        @Override public boolean operacionDetenida(long op) { return false; }
         @Override public void dormir(long ms) { }
         @Override public void abrirUrl(String url) { }
         final List<String> espectarYCa = new ArrayList<>();   // el orden de «lanzar CaptureAge» y «espectar»

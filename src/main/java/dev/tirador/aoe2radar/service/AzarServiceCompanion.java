@@ -26,8 +26,7 @@ import java.util.function.Function;
 import java.util.function.LongConsumer;
 import java.util.function.Supplier;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
+import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.cache.RecsDisco.maxGteEnDisco;
 import static dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import static dev.tirador.aoe2radar.service.Aleatorio.componerTanda;
@@ -96,7 +95,6 @@ public final class AzarServiceCompanion implements AzarService {
     public List<Match> buscarAleatorias(int lo, int hi, String mapaSel, String civSel, int hours, int multAzar,
                                          Instant cutoff, long serial, Consumer<String> progreso) throws Exception {
         Hilos.avisarSiUi("AzarService.buscarAleatorias");
-        hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
         Random rnd = new Random();
         azarDeMuestra = false;
         if (hours >= 24) {   // la muestra nocturna cubre «ayer»: si da para una tanda, cero llamadas
@@ -139,7 +137,7 @@ public final class AzarServiceCompanion implements AzarService {
             int ult = ultimaPaginaLadder(ctxAzar);
             int pIni = primeraPaginaRango(prov, hi, ult);
             int pFin = ultimaPaginaRango(prov, lo, ult);
-            log("azar #" + serial + ": tramo páginas " + pIni + "-" + pFin + " de " + ult + " stop=" + stopOperacion);
+            log("azar #" + serial + ": tramo páginas " + pIni + "-" + pFin + " de " + ult + " stop=" + detieneEsteHilo());
             if (pIni > pFin) return ordenaYRecorta(encontradas);
             double fraccion = (pFin - pIni + 1) / (double) Math.max(1, ult);
 
@@ -150,7 +148,7 @@ public final class AzarServiceCompanion implements AzarService {
                 int varLb = 0;
                 int maxPagRio = mapaSel != null ? 25 : 15;
                 int pagLeidas = 0;
-                for (int pag = 1; pag <= maxPagRio && encontradas.size() < 10 && !stopOperacion; pag++) {
+                for (int pag = 1; pag <= maxPagRio && encontradas.size() < 10 && !detieneEsteHilo(); pag++) {
                     progreso.accept(t("Leyendo partidas recientes del ladder\u2026 (p\u00e1g. ", "Reading recent ladder games\u2026 (page ")
                             + pag + ", " + encontradas.size() + "/10)");
                     PaginaPartidas ms;
@@ -192,7 +190,7 @@ public final class AzarServiceCompanion implements AzarService {
                 cursorPagsAzar = 0;
             }
             int pasadas = ((mapaSel != null || civSel != null) ? 2 : 3) * multAzar;
-            for (int intento = 1; intento <= pasadas && encontradas.size() < 10 && !stopOperacion; intento++) {
+            for (int intento = 1; intento <= pasadas && encontradas.size() < 10 && !detieneEsteHilo(); intento++) {
                 int nPerfiles = civSel != null ? 40 : (intento == 1 ? 12 : 24);
                 int nPags = Math.min(pagsAzar.size(), civSel != null ? 12 : (intento == 1 ? 6 : 10));
                 if (intento > 1 || continua)
@@ -226,7 +224,7 @@ public final class AzarServiceCompanion implements AzarService {
                 if (perfiles.isEmpty()) { azarTramoAgotado = true; break; }
                 int i = 0;
                 for (long pid : perfiles) {
-                    if (stopOperacion) break;
+                    if (detieneEsteHilo()) break;
                     progreso.accept(t("Perfil ", "Profile ") + (++i) + "/" + perfiles.size()
                             + " \u00b7 " + encontradas.size() + "/10\u2026");
                     try {
@@ -250,7 +248,7 @@ public final class AzarServiceCompanion implements AzarService {
                     + (azarTramoAgotado ? " (tramo activo agotado en esta sesi\u00f3n)" : ""));
             return ordenaYRecorta(encontradas);
         } catch (InterruptedException ex) {   // Detener durante la bisección o el muestreo: se aplica lo encontrado, como en la 1.1
-            if (stopOperacion) return ordenaYRecorta(encontradas);
+            if (detieneEsteHilo()) return ordenaYRecorta(encontradas);
             throw ex;
         }
     }
@@ -258,7 +256,6 @@ public final class AzarServiceCompanion implements AzarService {
     @Override
     public List<Match> buscarGte(Instant cutoff, Consumer<String> progreso) throws Exception {
         Hilos.avisarSiUi("AzarService.buscarGte");
-        hiloOperacion = Thread.currentThread();   // Detener corta la espera del freno de ESTA operación, no la de todos
         Random rnd = new Random();
         List<Match> deMuestra = gteDesdeMuestra(rnd);   // la muestra nocturna de sfr-data: cero llamadas y nunca una partida repetida
         if (!deMuestra.isEmpty()) return deMuestra;
@@ -301,7 +298,7 @@ public final class AzarServiceCompanion implements AzarService {
         for (List<Long> ids : perfilesPorSlot) {
             Map<Long, Match> unicos = new LinkedHashMap<>();
             for (long pid : ids) {
-                if (stopOperacion) break;
+                if (detieneEsteHilo()) break;
                 progreso.accept(t("Perfil ", "Profile ") + (++i) + "/" + nPerfiles + "…");
                 try {
                     Iterable<Match> leidas = companion.partidas(pid, 1, perPage);

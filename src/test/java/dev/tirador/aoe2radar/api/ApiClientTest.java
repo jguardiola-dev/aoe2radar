@@ -174,13 +174,33 @@ class ApiClientTest {
         try {
             red.responde(429, 200);
             assertThrows(IOException.class, () -> app.texto(COMPANION));   // pausa de 60 s
-            Cancelacion.hiloOperacion = new Thread(() -> { });              // la operación es otro hilo
-            Cancelacion.opEnCurso = true;
-            Cancelacion.stopOperacion = true;                              // el usuario pulsa Detener
+            dev.tirador.aoe2radar.util.Operaciones.GLOBAL.empezar(OP_AJENA);   // la operación es otro hilo: este no la anota
+            dev.tirador.aoe2radar.util.Operaciones.GLOBAL.detener(OP_AJENA);   // el usuario pulsa Detener
             assertEquals("cuerpo 200", app.texto(COMPANION), "este hilo (un barrido de fondo) no se corta");
             assertEquals(60_000, reloj.dormido, "espera la pausa entera, como siempre");
         } finally {
-            Cancelacion.stopOperacion = false; Cancelacion.opEnCurso = false; Cancelacion.hiloOperacion = null;
+            dev.tirador.aoe2radar.util.Operaciones.GLOBAL.terminar(OP_AJENA);
+        }
+    }
+
+    /** Un número de operación lejos de los de la barra (Operaciones.GLOBAL es el de la app). */
+    static final long OP_AJENA = 920_001;
+
+    @Test void cableadoReal_detenerCortaLaEsperaDelHiloDeSuOperacion() throws Exception {
+        RelojFalso reloj = new RelojFalso();
+        ApiClient app = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, Cancelacion::detieneEsteHilo);
+        dev.tirador.aoe2radar.util.Operaciones ops = dev.tirador.aoe2radar.util.Operaciones.GLOBAL;
+        try {
+            red.responde(429);
+            assertThrows(IOException.class, () -> app.texto(COMPANION));   // pausa de 60 s
+            ops.empezar(OP_AJENA);
+            ops.anotarHilo(OP_AJENA);                                      // este hilo ES el de la operación
+            ops.detener(OP_AJENA);                                         // el usuario pulsa Detener
+            assertThrows(InterruptedException.class, () -> app.texto(COMPANION));
+            assertTrue(reloj.dormido < 1_000, "sale enseguida (durmió " + reloj.dormido + " ms)");
+        } finally {
+            ops.soltarHilo();
+            ops.terminar(OP_AJENA);
         }
     }
 

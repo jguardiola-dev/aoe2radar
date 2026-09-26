@@ -17,6 +17,8 @@ import java.awt.Insets;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 
+import dev.tirador.aoe2radar.util.Operaciones;
+
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Identidad.AUTOR;
@@ -31,22 +33,19 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * y el toast flotante (avisos de «tu partida»/campanas). Vive en {@code ui} porque es cromo puro de la ventana,
  * no de una vista concreta: todas las vistas (Partidas, Watchlist, Azar…) comparten este único semáforo.
  * <p>
- * No conoce la red ni el freno de cancelación real (viven en {@code api.Cancelacion}/{@code api.Http}, y
- * {@code ui} no puede importar {@code api}): lo que necesita de fuera se lo pide a su {@link Anfitrion}.
+ * No conoce la red ({@code api.Http}; {@code ui} no puede importar {@code api}): lo que necesita de fuera se lo
+ * pide a su {@link Anfitrion}. Los frenos de las operaciones (uno por operación, desde la 1.3) son un
+ * {@link Operaciones}: la barra decide con él a quién para «Detener» (la más reciente viva) y cuándo se oculta.
  */
 public final class BarraEstado {
 
-    /** Lo que BarraEstado necesita del resto de la ventana: el freno global de cancelación (api.Cancelacion),
-     *  la red (api.Http, java.net) y las otras vistas (Partidas). Implementado por la ventana con lambdas. */
+    /** Lo que BarraEstado necesita del resto de la ventana: la red (api.Http, java.net) y las otras vistas
+     *  (Partidas). Implementado por la ventana con lambdas. Los frenos de las operaciones ya no pasan por aquí:
+     *  son de util.Operaciones, que esta barra usa directamente (decisión de Jorge, 1.3: un freno por operación). */
     public interface Anfitrion {
-        /** Al empezar una operación: limpia el freno de cancelación (api.Cancelacion.stopOperacion/hiloOperacion). */
-        void iniciarOperacion();
-        /** api.Cancelacion.opEnCurso: lo usa dormir() (pausa cooperativa) en medio proyecto. */
-        void marcarOperacionEnCurso(boolean on);
-        /** Al terminar, cada vista reactiva sus propios botones (fetchBtn/azarBtn/gteBtn/dlSel/dlAll: ui.PartidasView). */
+        /** Al terminar la ÚLTIMA operación viva, cada vista reactiva sus propios botones (fetchBtn/azarBtn/gteBtn/
+         *  dlSel/dlAll: ui.PartidasView). */
         void operacionTerminada();
-        /** Botón «Detener»: pide parar la operación en curso (api.Cancelacion.stopOperacion = true). */
-        void pararOperacion();
         /** Las peticiones en vuelo mueren solas (≤15 s); las siguientes salen con un cliente nuevo (api.Http). */
         void renovarHttp();
         /** Botón «Continuar buscando»: reanuda el azar con los mismos filtros (ui.PartidasView.buscarAleatorias). */
@@ -60,6 +59,8 @@ public final class BarraEstado {
     private final RootPaneContainer ventana;
     private final Anfitrion anfitrion;
     private final String donarUrl;
+    /** Los frenos de las operaciones vivas (uno por operación). La barra los toca solo en el EDT. */
+    private final Operaciones operaciones;
 
     /** visible para SpoilerFreeRecs (alias de campo: decenas de sitios de otras zonas llaman status.setText(...)) */
     public final JLabel status = new JLabel(t("Listo.", "Ready.")) {
@@ -84,11 +85,10 @@ public final class BarraEstado {
      *  simularlo sin esperar los 5 s reales (disparando su ActionListener a mano); el comportamiento en
      *  producción es idéntico. Cada clic en «Detener» SUSTITUYE esta referencia por un Timer nuevo, pero eso no
      *  cambia nada: el Timer anterior (si lo hubiera) no se cancela, sigue vivo en la cola de Swing con su
-     *  propio {@code serialDetenido} capturado por el lambda, y comparará ese número cuando le toque disparar,
-     *  sea cual sea el valor de este campo en ese momento. Además, en la práctica nunca hay dos a la vez:
-     *  {@code detenerDescBtn} queda deshabilitado justo tras el primer clic y no vuelve a habilitarse hasta que
-     *  {@link #trabajando(boolean)} termina la operación, así que no puede haber un segundo clic (y por tanto un
-     *  segundo watchdog) mientras el primero sigue pendiente. */
+     *  propio número de operación detenida capturado por el lambda, y solo actúa sobre ESA operación. Tras un
+     *  clic, {@code detenerDescBtn} queda deshabilitado mientras esa operación siga viva; si otra más reciente
+     *  empieza, o si esa termina y queda otra anterior viva, se vuelve a habilitar para parar a la nueva
+     *  destinataria: cada watchdog vigila solo la suya. */
     javax.swing.Timer watchdogDetener;
 
     /** cada operación tiene su número: el watchdog del Detener solo cierra la suya */
@@ -104,34 +104,59 @@ public final class BarraEstado {
     private String ultimoTextoPausaApi;
 
     public BarraEstado(RootPaneContainer ventana, Anfitrion anfitrion, String donarUrl) {
+        this(ventana, anfitrion, donarUrl, Operaciones.GLOBAL);
+    }
+
+    /** Con sus propios frenos: solo para tests (sin tocar Operaciones.GLOBAL). Ojo: el freno de la red
+     *  (api.Cancelacion.detieneEsteHilo) lee siempre GLOBAL; la app usa el constructor de tres argumentos. */
+    public BarraEstado(RootPaneContainer ventana, Anfitrion anfitrion, String donarUrl, Operaciones operaciones) {
         this.ventana = ventana;
         this.anfitrion = anfitrion;
         this.donarUrl = donarUrl;
+        this.operaciones = operaciones;
         cafeBtn = new JButton("\u2615 " + t("Invítame a un café", "Buy me a coffee"));
         // El aviso de pausa por 429 (app.Servicios.avisarPausa429) llega por Servicios.avisoPausa429, fijado en
         // el EDT al construir la ventana (CableadoCromo.configurarVentana): ya no hace falta que esta barra se
         // "encuentre a sí misma" con un putClientProperty en `status` (limpieza 1, fase 4).
     }
 
+    /** El número de la operación empezada más recientemente (siga viva o no): con él, cada operación sabe al
+     *  acabar si otra la ha superado (PartidasPresenter.vigente). */
     public long opSerial() { return opSerial; }
+
+    /** Los frenos de las operaciones: el cableado de las vistas pregunta aquí si SU operación debe parar. */
+    public Operaciones operaciones() { return operaciones; }
 
     /** El toast actual (o null si no hay ninguno mostrado): lo usa la Watchlist para añadirle botones extra
      *  («Su perfil»/«Cara a cara») antes de que se auto-oculte. */
     public JPanel toast() { return toast; }
 
-    /** Muestra u oculta la barra de progreso y el semáforo de la operación en curso. */
-    public void trabajando(boolean on) {
-        progreso.setVisible(on);
-        if (on) anfitrion.iniciarOperacion();   // antes que opEnCurso: operación nueva = freno suelto (la anterior, si aún muere, ya no frena a esta), y hasta que anote su hilo Detener no alcanza a nadie
-        anfitrion.marcarOperacionEnCurso(on);
-        if (on) opSerial++;
-        if (!on) anfitrion.operacionTerminada();   // cualquier fin de operación deja la UI usable, pase por donde pase
-        if (on) {
-            if (continuarBtn != null) continuarBtn.setVisible(false);
-        }
+    /** Empieza una operación cancelable: número nuevo, freno propio (suelto) y barra de progreso con «Detener»,
+     *  que desde ahora apunta a esta. Devuelve su número. EDT. */
+    public long empezarOperacion() {
+        opSerial++;
+        operaciones.empezar(opSerial);
+        if (continuarBtn != null) continuarBtn.setVisible(false);
+        pintarOperaciones();
+        return opSerial;
+    }
+
+    /** La operación {@code op} terminó (repetirlo no hace nada). Si quedan otras vivas, el progreso sigue y
+     *  «Detener» pasa a la más reciente de ellas; si era la última, se ocultan y cada vista reactiva sus botones.
+     *  EDT. */
+    public void terminarOperacion(long op) {
+        boolean seguiaViva = operaciones.terminar(op);
+        pintarOperaciones();
+        if (seguiaViva && !operaciones.hayVivas()) anfitrion.operacionTerminada();   // cualquier fin de la última deja la UI usable
+    }
+
+    /** Progreso y «Detener» según las operaciones vivas (util.Operaciones.estadoDetener decide; aquí se pinta). */
+    private void pintarOperaciones() {
+        Operaciones.EstadoDetener e = operaciones.estadoDetener();
+        progreso.setVisible(e.visible());
         if (detenerDescBtn != null) {
-            detenerDescBtn.setVisible(on);
-            if (!on) detenerDescBtn.setEnabled(true);
+            detenerDescBtn.setVisible(e.visible());
+            detenerDescBtn.setEnabled(!e.visible() || e.habilitado());   // oculto, queda listo para la próxima
         }
     }
 
@@ -168,18 +193,22 @@ public final class BarraEstado {
         detenerDescBtn.setToolTipText(t("Detiene la operación en curso: descargas, azar o Guess the ELO (cada petición muere sola a los 15 s).",
                 "Stops the running operation: downloads, random or Guess the ELO (each request self-terminates at 15 s)."));
         detenerDescBtn.addActionListener(e -> {
-            log("detener pulsado (op #" + opSerial + ")");
-            anfitrion.pararOperacion();
-            detenerDescBtn.setEnabled(false);
+            final long serialDetenido = operaciones.detenerUltima();   // SOLO la más reciente que sigue viva
+            log("detener pulsado (op #" + serialDetenido + ", última empezada #" + opSerial + ")");
+            if (serialDetenido < 0) return;
+            pintarOperaciones();   // queda deshabilitado mientras esa siga viva
             status.setText(t("Deteniendo… (como mucho 15 s si había una petición en vuelo)",
                     "Stopping… (at most 15 s if a request was in flight)"));
             anfitrion.renovarHttp();   // las peticiones en vuelo caducan solas (≤15 s); las siguientes salen limpias
-            final long serialDetenido = opSerial;
             watchdogDetener = new javax.swing.Timer(5000, ev -> {
-                if (progreso.isVisible() && opSerial == serialDetenido) {   // solo si es LA MISMA operación
-                    trabajando(false);
-                    status.setText(t("Detenido.", "Stopped."));
-                }
+                // Solo sobre LA MISMA operación, y solo si sigue viva: se da por terminada para la barra (su freno
+                // sigue puesto y su hilo lo sigue viendo hasta que acabe de verdad).
+                boolean seguiaViva = operaciones.terminar(serialDetenido);
+                if (!seguiaViva) return;
+                pintarOperaciones();
+                if (operaciones.hayVivas()) return;   // no pisa el mensaje de la operación que sigue viva
+                anfitrion.operacionTerminada();
+                status.setText(t("Detenido.", "Stopped."));
             });
             watchdogDetener.setRepeats(false);
             watchdogDetener.start();

@@ -20,9 +20,6 @@ import dev.tirador.aoe2radar.ui.VentanaPrincipalAjustes;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Reloj;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
 import static dev.tirador.aoe2radar.app.Servicios.CONTROL_SERVICE;
@@ -210,19 +207,16 @@ final class CableadoCromo {
         Servicios.avisoControl = franja::mostrar;
     }
 
-    /** Lo que ui.BarraEstado necesita del resto de la ventana: el freno de cancelación real (api.Cancelacion)
-     *  y la red (api.Http, java.net) viven aquí porque ui no puede importarlos; «operacionTerminada» reactiva
+    /** Lo que ui.BarraEstado necesita del resto de la ventana: la red (api.Http, java.net) vive aquí porque ui
+     *  no puede importarla (los frenos de las operaciones son util.Operaciones, de la barra); «operacionTerminada» reactiva
      *  los botones de ui.PartidasView, que tampoco son suyos. */
     static BarraEstado.Anfitrion barraEstadoAnfitrion(SpoilerFreeRecs v) {
         return new BarraEstado.Anfitrion() {
-            @Override public void iniciarOperacion() { stopOperacion = false; hiloOperacion = null; }
-            @Override public void marcarOperacionEnCurso(boolean on) { opEnCurso = on; }
             @Override public void operacionTerminada() {
                 v.partidas.fetchBtn.setEnabled(true); v.partidas.azarBtn.setEnabled(true); v.partidas.gteBtn.setEnabled(true);
                 if (v.partidas.dlSel != null) v.partidas.dlSel.setEnabled(true);
                 if (v.partidas.dlAll != null) v.partidas.dlAll.setEnabled(true);
             }
-            @Override public void pararOperacion() { stopOperacion = true; }
             @Override public void renovarHttp() { HTTP = nuevoHttp(); }
             @Override public void continuarBuscando() { v.partidas.buscarAleatorias(true); }
             @Override public void abrirTwitch() { AccionesVentana.abrirTwitch(v); }

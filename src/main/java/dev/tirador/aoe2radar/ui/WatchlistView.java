@@ -113,10 +113,17 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         boolean clanesVacios();
         void asegurarLadderEnFondo();
         List<Map.Entry<String, Integer>> sugerirClanes(String texto);
-        void trabajando(boolean on);
+        /** Un freno por operación (ui.BarraEstado + util.Operaciones, decisión de Jorge 1.3): empezar devuelve el
+         *  número de la operación; lo demás va siempre con ESE número. */
+        long empezarOperacion();
+        void terminarOperacion(long op);
         long opSerial();
-        void marcarHiloOperacionActual();
-        boolean detenerOperacion();
+        /** Al empezar el doInBackground de la operación (el freno de la red mira el hilo)... */
+        void marcarHiloOperacionActual(long op);
+        /** ...y al acabarlo, en un finally (el hilo del pool vuelve limpio). */
+        void soltarHiloOperacion();
+        /** ¿Le han pedido parar a la operación {@code op}? */
+        boolean operacionDetenida(long op);
         void dormir(long ms);
         void abrirUrl(String url);
         void espectar(Player p);

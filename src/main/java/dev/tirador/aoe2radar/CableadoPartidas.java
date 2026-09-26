@@ -14,8 +14,6 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
 import static dev.tirador.aoe2radar.app.Servicios.PAUSA_MS;
 import static dev.tirador.aoe2radar.app.Servicios.PER_PAGE;
@@ -88,11 +86,13 @@ final class CableadoPartidas {
                     @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
                     @Override public Path destino(Match m) { return RecsDisco.destino(m); }
                     @Override public Path recsDir() { return RECS_DIR; }
-                    @Override public void trabajando(boolean on) { v.barraEstado.trabajando(on); }
+                    @Override public long empezarOperacion() { return v.barraEstado.empezarOperacion(); }
+                    @Override public void terminarOperacion(long op) { v.barraEstado.terminarOperacion(op); }
                     @Override public long operacionActual() { return v.barraEstado.opSerial(); }
-                    @Override public boolean detenido() { return stopOperacion; }
-                    @Override public void pararOperacion() { stopOperacion = true; }
-                    @Override public void anotarHiloOperacion() { hiloOperacion = Thread.currentThread(); }
+                    @Override public boolean detenido(long op) { return v.barraEstado.operaciones().detenido(op); }
+                    @Override public void pararOperacion(long op) { v.barraEstado.operaciones().detener(op); }
+                    @Override public void anotarHiloOperacion(long op) { v.barraEstado.operaciones().anotarHilo(op); }
+                    @Override public void soltarHiloOperacion() { v.barraEstado.operaciones().soltarHilo(); }
                     @Override public void aprenderCatalogos(List<Match> res) { Servicios.aprenderCatalogos(res); }
                     @Override public List<String> mapasConocidos() { return new ArrayList<>(MAPAS_CAT); }
                     @Override public List<String> civsConocidas() { return new ArrayList<>(CIVS_CAT); }

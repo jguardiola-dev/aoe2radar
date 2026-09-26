@@ -1,16 +1,15 @@
 package dev.tirador.aoe2radar.api;
 
-/** Banderas del botón Detener: la operación cancelable en curso y la orden de pararla (las lee httpText y el freno). */
+import dev.tirador.aoe2radar.util.Operaciones;
+
+/** El freno de la red para el botón Detener: lo leen el ApiClient (app.Servicios lo cablea) y la pausa cooperativa
+ *  dormir(). Desde la 1.3 hay un freno por operación (util.Operaciones): aquí solo se pregunta por el de este hilo. */
 public final class Cancelacion {
     private Cancelacion() {}
 
-    public static volatile boolean stopOperacion;
-    public static volatile boolean opEnCurso;   // solo dentro de una operación cancelable el freno corta pausas
-    /** El hilo de la operación cancelable en curso (lo anota cada operación al empezar su trabajo de fondo). */
-    public static volatile Thread hiloOperacion;
-
-    /** ¿Detener va por ESTE hilo? Solo el de la operación: un barrido de fondo que espere en el freno no se entera. */
+    /** ¿Detener va por ESTE hilo? Solo el trabajo de fondo de una operación a la que han pedido parar: un barrido de
+     *  fondo que espere en el freno, u otra operación, no se entera. */
     public static boolean detieneEsteHilo() {
-        return stopOperacion && opEnCurso && Thread.currentThread() == hiloOperacion;
+        return Operaciones.GLOBAL.detieneEsteHilo();
     }
 }

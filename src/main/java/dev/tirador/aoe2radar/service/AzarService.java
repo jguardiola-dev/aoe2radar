@@ -31,7 +31,9 @@ public interface AzarService {
      * <p>multAzar multiplica el número de pasadas de muestreo de perfiles (intensidad del diálogo). progreso recibe
      * los mismos textos que antes mostraba directamente el estado de la ventana (vía publish/process del
      * SwingWorker). serial es solo para identificar la operación en los mensajes de log.
-     * <p>Si se interrumpe (Detener) durante la búsqueda, devuelve lo encontrado hasta el corte, igual que hoy.
+     * <p>Si se interrumpe (Detener) durante la búsqueda, devuelve lo encontrado hasta el corte, igual que hoy. El
+     * freno es el de la operación de quien llama: debe apuntar su hilo (util.Operaciones.anotarHilo) antes, y este
+     * servicio lo mira con api.Cancelacion.detieneEsteHilo (lo mismo en buscarGte).
      */
     List<Match> buscarAleatorias(int lo, int hi, String mapaSel, String civSel, int hours, int multAzar,
                                   Instant cutoff, long serial, Consumer<String> progreso) throws Exception;
