@@ -79,8 +79,14 @@ final class AccionesVentana {
         v.enlaceVivo.iniciarPing();
         javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
             v.menuConfiguracion.comprobarActualizacion(false); v.techTree.precargar();
-            cargarPaises(); v.autoScroll.instalar();
-            new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
+            // Fila 25 de DEUDA: PAIS_DE ya es ConcurrentHashMap, así que leerlo/escribirlo desde un hilo aparte
+            // (nunca el EDT) es seguro. El Timer de guardado sigue siendo de Swing (dispara cada 60 s en el EDT);
+            // lo único que se manda a un hilo demonio es la escritura a disco de cada disparo.
+            Thread cargaPaises = new Thread(() -> cargarPaises(), "paises-carga"); cargaPaises.setDaemon(true); cargaPaises.start();
+            v.autoScroll.instalar();
+            new javax.swing.Timer(60_000, ev -> {
+                Thread guardaPaises = new Thread(() -> guardarPaises(), "paises-guarda"); guardaPaises.setDaemon(true); guardaPaises.start();
+            }).start();
             v.watchlist.refrescarCampanas();
             v.campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> v.watchlist.refrescarCampanas()); v.campanasTimer.start();
             new javax.swing.Timer(1000, ev -> { if (!VIVO.nadieJugando() && v.playersList.isShowing()) v.playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
