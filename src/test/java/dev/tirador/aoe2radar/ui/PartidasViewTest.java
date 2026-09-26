@@ -490,6 +490,18 @@ class PartidasViewTest {
         });
     }
 
+    /** Con una ruta imposible en config (InvalidPathException al mirarla), «Enviar al juego» dice el error y suelta
+     *  la guarda: antes la excepción salía del done() y «enviando» se quedaba puesto (los clics siguientes, ignorados). */
+    @Test void enviarAlJuego_conUnaRutaSavegameRara_avisaYSueltaLaGuarda() throws Exception {
+        Match m = partida(8304, A, Instant.now().minusSeconds(600));
+        java.nio.file.Files.write(recs.resolve("8304.aoe2record"), new byte[6000]);
+        conConfig("savegame", "C:\\no<valida>|ruta", () -> {
+            enEdt(() -> vista.enviarInteligente(List.of(m)));
+            esperar(() -> anfitrion.estado.startsWith("Error: "), "el error de la carpeta savegame");
+            esperar(() -> !vista.descargas.enviando, "la guarda suelta");
+        });
+    }
+
     @Test void enviarAlJuego_loQueFaltaSeDescargaDespuesDeCopiar() throws Exception {
         Path sg = java.nio.file.Files.createDirectories(recs.resolve("savegame"));
         Match sana = partida(8302, A, Instant.now().minusSeconds(600));
