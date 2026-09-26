@@ -1,6 +1,7 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuenteLadder;
+import dev.tirador.aoe2radar.api.FuentePartidas;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
@@ -47,13 +48,14 @@ public final class TopLadderService {
     /** Cuánto vale un top ya cargado antes de volver a pedirlo (cargarTopLadder, 1.1). */
     public static final long DIEZ_MINUTOS_MS = 10 * 60_000L;
 
-    private final CompanionApi api;
+    private final FuentePartidas fuente;   // partidas de los del top (vigilarTop)
+    private final FuenteLadder ladder;     // la clasificación (cargarTop)
     private final Reloj reloj;
     private final LongConsumer pausa;
     private final long pausaMs;
 
-    public TopLadderService(CompanionApi api, Reloj reloj, LongConsumer pausa, long pausaMs) {
-        this.api = api; this.reloj = reloj; this.pausa = pausa; this.pausaMs = pausaMs;
+    public TopLadderService(FuentePartidas fuente, FuenteLadder ladder, Reloj reloj, LongConsumer pausa, long pausaMs) {
+        this.fuente = fuente; this.ladder = ladder; this.reloj = reloj; this.pausa = pausa; this.pausaMs = pausaMs;
     }
 
     // ===================== cargarTopLadder =====================
@@ -84,7 +86,7 @@ public final class TopLadderService {
         Map<Long, Integer> partidas = new HashMap<>();
         for (String id : new String[]{ "rm_1v1", "3" }) {
             try {
-                for (FilaClasificacion f : api.clasificacion(id, 1, 100, pais).filas()) {
+                for (FilaClasificacion f : ladder.clasificacion(id, 1, 100, pais).filas()) {
                     long pid = f.pid();
                     int rating = f.rating() != null ? f.rating() : -1;
                     String name = String.valueOf(f.nombre());
@@ -204,7 +206,7 @@ public final class TopLadderService {
                 csv.append(p.id());
             }
             try {
-                Iterable<Match> leidas = api.partidas(csv.toString(), 1, 100);
+                Iterable<Match> leidas = fuente.partidas(csv.toString(), 1, 100);
                 int nPart = 0, nCurso = 0; Instant masAntigua = null;
                 for (Match m : leidas) {
                     if (m == null) continue;
@@ -231,7 +233,7 @@ public final class TopLadderService {
             if (stopOperacion) break;
             if (!jugando.test(p.id()) || resultado.containsKey(p.id()) || !verificados.contains(p.id())) continue;
             try {
-                Iterable<Match> leidas = api.partidas(p.id(), 1, 3);
+                Iterable<Match> leidas = fuente.partidas(p.id(), 1, 3);
                 Match ultima = null;
                 for (Match m : leidas) { if (m != null) { ultima = m; break; } }
                 if (ultima != null && enCursoReal(ultima, Instant.ofEpochMilli(reloj.ahoraMs()))) {

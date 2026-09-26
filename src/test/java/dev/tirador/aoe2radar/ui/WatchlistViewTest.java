@@ -202,7 +202,7 @@ class WatchlistViewTest {
         cfg = new HashMap<>();
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
-        TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
+        TopLadderService topLadderService = new TopLadderService(companion, companion, new RelojFalso(), ms -> { }, 300);
         campanas = new Campanas(companion, (k, def) -> def, (k, v) -> { }, nombre -> false);
         BarridoVivos barridoVivos = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 300, 50);
         EloSesion eloSesion = new EloSesion(EstadoVivo.SISTEMA, new RelojFalso(), Duration.ofMinutes(6));
@@ -269,7 +269,7 @@ class WatchlistViewTest {
     private WatchlistView nuevaInstancia(List<Player> jugadores) {
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
-        TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
+        TopLadderService topLadderService = new TopLadderService(companion, companion, new RelojFalso(), ms -> { }, 300);
         Campanas camp = new Campanas(companion, (k, def) -> def, (k, v) -> { }, nombre -> false);
         BarridoVivos barridoVivos = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 300, 50);
         EloSesion eloSesion = new EloSesion(EstadoVivo.SISTEMA, new RelojFalso(), Duration.ofMinutes(6));

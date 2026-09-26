@@ -70,7 +70,8 @@ class ServiciosTest {
         // Todo lo que se construye "DESPUÉS de COMPANION" (comentado en Servicios) debe envolver ese MISMO
         // CompanionApi, no uno nuevo: si no, el freno y la caché de sesión se partirían en dos.
         assertSame(Servicios.COMPANION, campo(Servicios.LIVE, "api"));
-        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "api"));
+        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "fuente"));   // sus dos fuentes (partidas y ladder), el mismo
+        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "ladder"));
         assertSame(Servicios.COMPANION, campo(Servicios.SERVICIO_PERFIL, "api"));
         assertSame(Servicios.COMPANION, campo(Servicios.BUSQUEDA, "api"));
         assertSame(Servicios.COMPANION, campo(Servicios.TWITCH_SERVICE, "api"));

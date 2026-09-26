@@ -1,6 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuentePartidas;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.PaginaPartidas;
@@ -29,7 +29,7 @@ import static dev.tirador.aoe2radar.cache.HistorialDisco.ACT_DIAS;
  * construida, igual que el disco y la pausa (en la app, dormir: se corta con Detener).
  */
 public final class HistorialPerfil {
-    private final CompanionApi api;
+    private final FuentePartidas api;
     private final Map<Long, Actividad> actividades;
     private final LongFunction<Actividad> cargar;
     private final Consumer<Actividad> guardar;
@@ -38,7 +38,7 @@ public final class HistorialPerfil {
     private final long pausaMs;
     private final Reloj reloj;
 
-    public HistorialPerfil(CompanionApi api, Map<Long, Actividad> actividades, LongFunction<Actividad> cargar, Consumer<Actividad> guardar,
+    public HistorialPerfil(FuentePartidas api, Map<Long, Actividad> actividades, LongFunction<Actividad> cargar, Consumer<Actividad> guardar,
                            LongConsumer pausa, int porPagina, long pausaMs, Reloj reloj) {
         this.api = api; this.actividades = actividades; this.cargar = cargar; this.guardar = guardar;
         this.pausa = pausa; this.porPagina = porPagina; this.pausaMs = pausaMs; this.reloj = reloj;

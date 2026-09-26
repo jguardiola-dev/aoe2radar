@@ -35,7 +35,7 @@ import static dev.tirador.aoe2radar.util.Json.when;
  * y no inventan valores: lo que falta queda null (textos, Integer) o -1 (ids y contadores long); cada pantalla decide
  * lo suyo. Fuera de aquí solo lee JSON del companion el socket (LiveService).
  */
-public final class CompanionApi {
+public final class CompanionApi implements FuentePartidas, FuenteLadder {
     public static final String TWITCH_LIVE = "https://api.aoe2companion.com/twitch/live";
 
     /** Cuánto vale una ficha /profiles/{pid} guardada: ELO, vinculadas y steamId no cambian en minutos. */
@@ -104,7 +104,7 @@ public final class CompanionApi {
      * bucle la pide; si el bucle corta con break, las siguientes no se leen, igual que el bucle a mano de la 1.1.
      * Se recorre UNA sola vez: recorrerlo de nuevo volvería a leer (y a aprender) las partidas.
      */
-    public Iterable<Match> partidas(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
+    @Override public Iterable<Match> partidas(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
         List<Object> brutas = arr(val(obj(matches(ids, pagina, porPagina)), "matches"));
         return () -> new Iterator<>() {
             int i;
@@ -121,7 +121,7 @@ public final class CompanionApi {
     }
 
     /** Como partidas(String…) para un solo jugador. */
-    public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+    @Override public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
         return partidas(String.valueOf(pid), pagina, porPagina);
     }
 
@@ -143,7 +143,7 @@ public final class CompanionApi {
      * Una página de partidas de un jugador, convertida entera (para paginaciones que recorren la página completa y
      * deciden con «brutas» si es la última). Si el bucle puede cortar a media página, usar partidas(…), que es perezoso.
      */
-    public PaginaPartidas pagina(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+    @Override public PaginaPartidas pagina(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
         return aPagina(matches(pid, pagina, porPagina));
     }
 
@@ -238,7 +238,7 @@ public final class CompanionApi {
     }
 
     /** Como leaderboard(…), ya convertida (ver aClasificacion). */
-    public Clasificacion clasificacion(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
+    @Override public Clasificacion clasificacion(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
         return aClasificacion(leaderboard(id, pagina, porPagina, pais));
     }
 

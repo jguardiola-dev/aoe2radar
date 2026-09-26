@@ -77,7 +77,7 @@ class TopLadderServiceTest {
     final LongConsumer pausa = pausas::add;
     static final long PAUSA_MS = 300;
 
-    TopLadderService nuevo() { return new TopLadderService(api, reloj, pausa, PAUSA_MS); }
+    TopLadderService nuevo() { return new TopLadderService(api, api, reloj, pausa, PAUSA_MS); }
 
     // ===================== helpers de JSON =====================
 
