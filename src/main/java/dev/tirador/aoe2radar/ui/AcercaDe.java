@@ -58,7 +58,7 @@ public final class AcercaDe {
                 + "</span></div></html>");
         texto.setHorizontalAlignment(SwingConstants.CENTER);
         p.add(texto, BorderLayout.CENTER);
-        JOptionPane.showMessageDialog(propietario, p, "Acerca de", JOptionPane.PLAIN_MESSAGE);
+        JOptionPane.showMessageDialog(propietario, p, t("Acerca de", "About"), JOptionPane.PLAIN_MESSAGE);
     }
 
     /** Genera logo.ico multi-tamaño desde el logo (embebido o logo.png).

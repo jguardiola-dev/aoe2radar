@@ -225,11 +225,23 @@ final class PartidasTabla {
 
     public List<Match> allRows() { return new ArrayList<>(vista.view); }
 
+    /** Estado de la columna Rec de una partida (seguro desde cualquier hilo: va por invokeLater). La fila se busca
+     *  por id de partida, no por identidad: si una búsqueda terminó durante la descarga, la tabla tiene OTRO Match
+     *  de la misma partida (revisión 1.3, F7). A ese se le pasan el estado y, si la descarga ya los puso, «en
+     *  disco»/«en juego»; en ese caso la marca en curso de applyFilters (marcarEnDiscoEnFondo) deja de valer. */
     void setEstado(Match m, String txt) {
         SwingUtilities.invokeLater(() -> {
             m.estado = txt;
-            int idx = vista.view.indexOf(m);
-            if (idx >= 0) vista.tableModel.fireTableRowsUpdated(idx, idx);
+            boolean marca = false;
+            for (Match otro : vista.all) {
+                if (otro.id != m.id) continue;
+                otro.estado = txt;
+                if (m.enDisco && !otro.enDisco) { otro.enDisco = true; marca = true; }
+                if (m.enJuego && !otro.enJuego) { otro.enJuego = true; marca = true; }
+            }
+            if (marca) vista.generacionEnDisco++;
+            for (int i = 0; i < vista.view.size(); i++)
+                if (vista.view.get(i).id == m.id) vista.tableModel.fireTableRowsUpdated(i, i);
         });
     }
 

@@ -93,13 +93,24 @@ public final class TechTreePresenter {
         this.enlaceCivStats = enlaceCivStats;
     }
 
-    /** «techtree-datos»: comprueba si hay catálogo nuevo y lo asegura; vuelve al EDT con el resultado. */
+    // F11 (1.3): la civ que hay que enseñar cuando llegue el catálogo; puede cambiar mientras se descarga.
+    private volatile String civPedidaDatos;
+
+    /** «techtree-datos»: comprueba si hay catálogo nuevo y lo asegura; vuelve al EDT con el resultado y la civ
+     *  pedida MÁS RECIENTE (la de esta llamada o la que llegó después por {@link #actualizarCivPedida}). */
     public void cargarDatos(String civPedida) {
+        civPedidaDatos = civPedida;
         tareas.enFondo("techtree-datos", () -> {
             tt.comprobarActualizacion();
             String err = tt.asegurarDatos();
-            tareas.enUi(() -> pantalla.datosListos(err, civPedida));
+            tareas.enUi(() -> pantalla.datosListos(err, civPedidaDatos));
         });
+    }
+
+    /** F11: con el catálogo aún bajando, se pidió otra civ (desde el perfil o Civ Stats): es la que se enseñará al
+     *  terminar. null no cambia nada (abrir la pestaña sin civ no borra la que ya se había pedido). */
+    public void actualizarCivPedida(String civ) {
+        if (civ != null) civPedidaDatos = civ;
     }
 
     /** «techtree-civ»: descarga (o coge de caché) el árbol de "civ"; si mientras tanto se pidió otra, no pinta. */

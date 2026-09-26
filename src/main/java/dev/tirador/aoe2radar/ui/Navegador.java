@@ -235,7 +235,7 @@ public final class Navegador implements Navegacion {
             case "civstats" -> abrirCivStats();
             case "ahora" -> abrirAhora();
             case "techtree" -> abrirTechTree(d.civ());
-            case "perfil" -> abrirPerfil(d.pid(), d.nombre());
+            case "perfil" -> { perfil.antesDeVolverPorHistorial(d.pid()); abrirPerfil(d.pid(), d.nombre()); }   // F10: pestaña cerrada → pestaña nueva
             default -> mostrarDirectos(false);
         }
     }

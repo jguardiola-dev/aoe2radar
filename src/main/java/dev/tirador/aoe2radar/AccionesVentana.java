@@ -215,11 +215,11 @@ final class AccionesVentana {
 
     static void abrirTwitch(SpoilerFreeRecs v) {
         try { Desktop.getDesktop().browse(URI.create("https://" + TWITCH)); }
-        catch (Exception ex) { v.status.setText("Abre en tu navegador: https://" + TWITCH); }
+        catch (Exception ex) { v.status.setText(t("Abre en tu navegador: https://", "Open in your browser: https://") + TWITCH); }
     }
 
     static void abrirDonacion(SpoilerFreeRecs v) {
         try { Desktop.getDesktop().browse(URI.create(SpoilerFreeRecs.DONAR_URL)); }
-        catch (Exception ex) { v.status.setText("Abre en tu navegador: " + SpoilerFreeRecs.DONAR_URL); }
+        catch (Exception ex) { v.status.setText(t("Abre en tu navegador: ", "Open in your browser: ") + SpoilerFreeRecs.DONAR_URL); }
     }
 }

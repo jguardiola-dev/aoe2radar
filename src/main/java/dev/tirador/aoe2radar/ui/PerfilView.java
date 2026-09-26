@@ -128,13 +128,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         String nombreVisible(long pid, String nombre);
         void ficharDesdeTop(long pid, String nombre, String grupo);
         List<String> gruposDeJugadores();
-        /** Los ids de la watchlist que pertenecen a este grupo (para el filtro «grupo» del cara a cara). */
-        Set<Long> idsDeGrupo(String grupo);
         List<String> gruposGuardados();
         String grupoGeneral();
-        List<String> clanesGuardados();
-        boolean hayTop250();
-        Set<Long> idsTop250();
         /** ¿El último clic en una lista de jugadores llevaba Ctrl? (lo marca Listas, campo compartido de la ventana). */
         boolean ultimoClicFueCtrl();
 
@@ -195,7 +190,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     // ----- estado y componentes propios (mismos nombres que la 1.1) -----
     private JPanel actividadPanel, actCabecera, actChips;
     private JLabel actTitulo; public JLabel actEstado;   // visible para RegresionCapturas
-    private JLabel actSubtitulo, actPista;
+    JLabel actSubtitulo;   // de paquete: lo mira PerfilViewTest
+    private JLabel actPista;
     private JComboBox<String> actModoCombo;
     private PanelScrollable actCuerpo;
     private JTextField perfilBusca;
@@ -203,7 +199,10 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     private javax.swing.Timer perfilDebounce;
     private JProgressBar actProgreso;
     private JButton actMasBtn;
-    boolean actividadAbierta, actCargando, actRellenandoModos;
+    boolean actividadAbierta, actRellenandoModos;
+    /** F5 (1.3): volatile porque PerfilPresenter.precalentar lo lee desde su hilo de fondo ("perfiles-precarga")
+     *  para no competir con una carga pedida por el usuario; se escribe en el EDT. */
+    volatile boolean actCargando;
     long actPid; String actNombre = "", actModo = "*";
     /** Fila 28 (C1+C2): sube en cada apertura de verdad (alAbrir); ver generacion() y PerfilPresenter.abrirBase. */
     private long aperturaGeneracion;
@@ -213,19 +212,18 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     public BarrasActividad actMeses;        // visible para RegresionCapturas
     private JPanel actSpark, actPosicion, actUltimos30Civs, actUltimos30Mapas, actDuracionFila;
     private GraficaElo actGrafica;
-    private JComboBox<String> actPeriodoCombo, actH2hSet;
-    private JTextField actH2hBusca;
-    private JPopupMenu actH2hPopup;
-    private javax.swing.Timer actH2hDebounce;
+    private JComboBox<String> actPeriodoCombo;
     private LocalDate actDesde, actHasta;
     private int actPeriodoIdx;
-    private Set<Long> h2hIds;
-    private String h2hNombre;   // null = sin cara a cara
     private JPanel actTarjetas, actCivs, actCivsRival, actMapas, actRivales, actAliados, actTramos;
     private boolean actOrigenSfr;
     private String actHastaSfr;
-    private JButton actHoyBtn;
-    private JLabel actHastaLabel;
+    JButton actHoyBtn;       // de paquete: lo mira PerfilViewTest
+    JLabel actHastaLabel;    // ídem
+    /** F4 (1.3): pid → fecha «hasta» de los perfiles que se pintaron desde sfr-data en esta sesión (valor null si el
+     *  paquete no la traía). Al reabrir uno desde la caché, su «Actualizar hoy» y su «Datos hasta…» salen de aquí,
+     *  no del perfil que estuviera abierto antes. Solo en el EDT. */
+    private final Map<Long, String> hastaSfrDe = new HashMap<>();
     private JPanel actVinculadasPanel;
     private JLabel actNotaLinea;
     private String actNombreReal = "";
@@ -243,6 +241,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     public final List<Object[]> perfilPestanas = new ArrayList<>();   // visible para RegresionCapturas: {pid Long, nombre String}
     public int perfilPestanaActiva = -1;                              // visible para RegresionCapturas
     private JPanel perfilTira;
+    /** F10 (1.3): pids cuya pestaña cerró el usuario con su ×; salen de aquí en cuanto vuelven a tener pestaña. */
+    private final Set<Long> pestanasCerradas = new HashSet<>();
 
     public PerfilView(ProfileService perfiles, RatingsService ratings, BusquedaPerfiles busqueda, StatsService stats,
                        EstadoVivo vivo, MenusJugador menus, Navegacion navegacion, TechTreeView techTree, Listas listas,
@@ -344,7 +344,18 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     private int indicePestana(long pid) { for (int i = 0; i < perfilPestanas.size(); i++) if ((Long) perfilPestanas.get(i)[0] == pid) return i; return -1; }
 
+    /**
+     * F10 (1.3): la ventana va a abrir pid desde su historial (atrás/adelante). Si ese perfil tenía pestaña y el
+     * usuario la cerró, vuelve en una pestaña nueva en vez de sustituir la activa (antes se perdía el perfil que se
+     * estaba mirando). Si la pestaña no se cerró sino que se reutilizó (clic sin Ctrl), sigue como siempre: el
+     * historial vuelve atrás dentro de la pestaña activa. Con el tope de pestañas lleno, también como siempre.
+     */
+    public void antesDeVolverPorHistorial(long pid) {
+        if (pid > 0 && indicePestana(pid) < 0 && pestanasCerradas.contains(pid) && perfilPestanas.size() < PERFIL_MAX_PESTANAS) perfilPestanaActiva = -1;
+    }
+
     private void perfilContabilizarPestana(long pid, String nombre) {
+        pestanasCerradas.remove(pid);
         int i = indicePestana(pid);
         if (i >= 0) perfilPestanaActiva = i;
         else if (perfilPestanaActiva >= 0 && perfilPestanaActiva < perfilPestanas.size()) perfilPestanas.set(perfilPestanaActiva, new Object[]{ pid, nombre });
@@ -352,8 +363,9 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         refrescarTiraPerfil();
     }
 
-    private void cerrarPestana(int i) {
+    void cerrarPestana(int i) {   // de paquete: lo usa PerfilViewTest
         if (i < 0 || i >= perfilPestanas.size()) return;
+        pestanasCerradas.add((Long) perfilPestanas.get(i)[0]);   // F10
         perfilPestanas.remove(i);
         if (perfilPestanas.isEmpty()) { perfilPestanaActiva = -1; refrescarTiraPerfil(); navegacion.abrirPerfil(0, ""); return; }
         if (perfilPestanaActiva >= perfilPestanas.size()) perfilPestanaActiva = perfilPestanas.size() - 1;
@@ -424,7 +436,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         izq.add(actHastaLabel); izq.add(actHoyBtn);
         JButton histBtn = new JButton(t("Todas las partidas…", "All games…"));
         histBtn.setFocusable(false); histBtn.setMargin(new Insets(1, 8, 1, 8)); histBtn.putClientProperty("JButton.buttonType", "roundRect");
-        histBtn.setToolTipText(t("El histórico del perfil en páginas, con filtro de modo y rec a un clic", "The profile's history in pages, with a mode filter and recs one click away"));
+        histBtn.setToolTipText(t("Lleva todas las partidas cargadas del perfil a la pestaña Partidas: sin resultado hasta que lo pidas y con la rec a un clic", "Takes all the profile's loaded games to the Games tab: no result until you ask for it, and the rec one click away"));
         histBtn.addActionListener(e -> { if (actPid > 0) verHistorialEnTabla(actPid, actNombre); });
         izq.add(histBtn);
         JButton h2hBtn = new JButton(t("Cara a cara…", "Head-to-head…"));
@@ -437,21 +449,6 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         masBtn.setToolTipText(t("Nota, alias, nicks anteriores, cuentas vinculadas, watchlist…", "Note, alias, previous names, linked accounts, watchlist…"));
         masBtn.addActionListener(e -> actMenuNombre(new MouseEvent(masBtn, MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, 0, masBtn.getHeight(), 1, true), masBtn));
         izq.add(masBtn);
-        actH2hBusca = new JTextField(14);
-        actH2hBusca.putClientProperty("JTextField.placeholderText", t("Cara a cara con… (nick)", "Head-to-head vs… (nick)"));
-        actH2hBusca.putClientProperty("JTextField.showClearButton", true);
-        actH2hBusca.setToolTipText(t("Escribe un nick: el perfil pasa a mostrar solo las partidas contra ese jugador (o elige un grupo, clan o top en el desplegable)", "Type a nick: the profile shows only the games against that player (or pick a group, clan or top in the dropdown)"));
-        actH2hPopup = new JPopupMenu(); actH2hPopup.setFocusable(false);
-        actH2hDebounce = new javax.swing.Timer(450, e -> h2hSugerir()); actH2hDebounce.setRepeats(false);
-        actH2hBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { if (actH2hBusca.getText().trim().isEmpty()) { if (h2hIds != null) { h2hIds = null; h2hNombre = null; actPintar(); } actH2hPopup.setVisible(false); } else actH2hDebounce.restart(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        actH2hSet = new JComboBox<>();
-        actH2hSet.setToolTipText(t("Cara a cara contra un conjunto: tu grupo, un clan guardado o el top 250", "Head-to-head against a set: your group, a saved clan or the top 250"));
-        actH2hSet.addActionListener(e -> { if (actRellenandoModos) return; aplicarH2hConjunto(); });
         perfilBusca = new JTextField(18);
         perfilBusca.putClientProperty("JTextField.placeholderText", t("Buscar jugador… o selecciona en la watchlist", "Search a player… or select in the watchlist"));
         perfilBusca.putClientProperty("JTextField.showClearButton", true);
@@ -489,7 +486,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         norte.add(actProgreso, BorderLayout.SOUTH);
         actMasBtn = new JButton(t("Cargar más partidas", "Load more games"));
         actMasBtn.setFocusable(false); actMasBtn.setMargin(new Insets(1, 8, 1, 8)); actMasBtn.putClientProperty("JButton.buttonType", "roundRect");
-        actMasBtn.setToolTipText(t("Este jugador tiene más de 1.000 partidas en el último año: baja las 500 siguientes", "This player has over 1,000 games in the last year: fetch the next 500"));
+        actMasBtn.setToolTipText(t("El historial cargado aún no llega a un año: baja las " + miles(ACT_MAS_PAGINAS * 50) + " partidas anteriores (" + ACT_MAS_PAGINAS + " llamadas)", "The loaded history doesn't cover a year yet: fetch the previous " + miles(ACT_MAS_PAGINAS * 50) + " games (" + ACT_MAS_PAGINAS + " requests)"));
         actMasBtn.setVisible(false);
         actMasBtn.addActionListener(e -> perfilCargarMas());
         izq.add(actMasBtn);
@@ -584,11 +581,23 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         JScrollPane scroll = new JScrollPane(actCuerpo, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(null);
         actividadPanel.add(scroll, BorderLayout.CENTER);
-        JLabel pie = new JLabel(t("Perfil e historial de aoe2companion.com (hasta 1 año o 1.500 partidas). Solo agregados: cada línea exige al menos 3 partidas; el calendario cuenta partidas, no resultados. Clic en un rival o aliado abre su perfil.",
-                "Profile and history from aoe2companion.com (up to 1 year or 1,500 games). Aggregates only: every line needs at least 3 games; the calendar counts games, not results. Click a rival or ally to open their profile."));
+        JLabel pie = new JLabel(t("Perfil e historial de sfr-data y aoe2companion.com (hasta 1 año; por la API, primero las más recientes y el resto con «Cargar más partidas»). Solo agregados: cada línea exige al menos 3 partidas; el calendario cuenta partidas, no resultados. Clic en un rival o aliado abre su perfil.",
+                "Profile and history from sfr-data and aoe2companion.com (up to 1 year; through the API, the most recent first and the rest with \u201CLoad more games\u201D). Aggregates only: every line needs at least 3 games; the calendar counts games, not results. Click a rival or ally to open their profile."));
         pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
         actividadPanel.add(pie, BorderLayout.SOUTH);
         actMostrarCuerpo(false);
+    }
+
+    /**
+     * F1 (1.3): un aviso del perfil. La barra de estado de la ventana está oculta mientras Perfil está abierto (a
+     * propósito desde la 1.1: Navegador.actualizarControlesTabla, «los mensajes de estado, solo donde se usan»),
+     * así que el mensaje va a la etiqueta propia del perfil (actEstado), como hacen Ratings, Civ Stats y Tech
+     * tree; también se deja en la barra general, que es donde estará al volver a Partidas. De paquete: lo usa
+     * también CaraACaraDialogo. Solo en el EDT.
+     */
+    void avisar(String texto) {
+        actEstado.setText(texto);
+        anfitrion.mostrarEstadoGlobal(texto);
     }
 
     private void actMostrarCuerpo(boolean hay) {
@@ -606,7 +615,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         int r = JOptionPane.showConfirmDialog(SwingUtilities.getWindowAncestor(actividadPanel), pnl, t("Rango de fechas", "Date range"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
         if (r != JOptionPane.OK_OPTION) return false;
         try { actDesde = LocalDate.parse(d1.getText().trim()); actHasta = LocalDate.parse(d2.getText().trim()); if (actHasta.isBefore(actDesde)) { LocalDate x = actDesde; actDesde = actHasta; actHasta = x; } return true; }
-        catch (Exception ex) { anfitrion.mostrarEstadoGlobal(t("Fecha no válida: usa AAAA-MM-DD.", "Invalid date: use YYYY-MM-DD.")); return false; }
+        catch (Exception ex) { avisar(t("Fecha no válida: usa AAAA-MM-DD.", "Invalid date: use YYYY-MM-DD.")); return false; }
     }
 
     private boolean enPeriodo(Match m) {
@@ -616,7 +625,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         return actHasta == null || !d.isAfter(actHasta);
     }
 
-    // ===== filtro «cara a cara con…» de la cabecera (distinto del diálogo Cara a cara) ==============
+    // ===== buscador de nick de la barra del perfil =================================================
 
     /** Sugerencias de nick para el buscador del perfil (búsqueda del companion, con retardo). */
     private void perfilSugerir() {
@@ -624,74 +633,6 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         perfilPopup.setVisible(false); perfilPopup.removeAll();
         if (q.length() < 2) return;
         presenter.sugerirBuscador(q);
-    }
-
-    private void h2hSugerir() {
-        String q = actH2hBusca.getText().trim();
-        actH2hPopup.setVisible(false); actH2hPopup.removeAll();
-        if (q.length() < 2) return;
-        Actividad a = actividadCache.get(actPid);
-        Map<Long, String> locales = new LinkedHashMap<>();
-        if (a != null) for (Match m : a.partidas()) for (MatchPlayer p : m.players) if (p.id != actPid && p.name != null && p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))) locales.putIfAbsent(p.id, p.name);
-        int n = 0;
-        for (Map.Entry<Long, String> en : locales.entrySet()) { long pid = en.getKey(); String nombre = en.getValue(); JMenuItem it = new JMenuItem(nombre + t("  (rival en tu historial)", "  (opponent in the history)")); it.addActionListener(x -> fijarH2h(Set.of(pid), nombre)); actH2hPopup.add(it); if (++n >= 6) break; }
-        if (n > 0 && actH2hBusca.isShowing()) actH2hPopup.show(actH2hBusca, 0, actH2hBusca.getHeight());
-        presenter.sugerirCaraACara(q);
-    }
-
-    @Override public void sugerenciasCaraACara(List<String[]> res, String q) {
-        if (!q.equals(actH2hBusca.getText().trim())) return;
-        Actividad a = actividadCache.get(actPid);
-        Map<Long, String> locales = new LinkedHashMap<>();
-        if (a != null) for (Match m : a.partidas()) for (MatchPlayer p : m.players) if (p.id != actPid && p.name != null && p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))) locales.putIfAbsent(p.id, p.name);
-        int k = 0;
-        for (String[] r : res) { long pid = Long.parseLong(r[0]); if (locales.containsKey(pid)) continue; JMenuItem it = new JMenuItem(r[2]); String nombre = r[1]; it.addActionListener(x -> fijarH2h(Set.of(pid), nombre)); actH2hPopup.add(it); if (++k >= 6) break; }
-        if (actH2hPopup.getComponentCount() > 0 && actH2hBusca.isShowing()) actH2hPopup.show(actH2hBusca, 0, actH2hBusca.getHeight());
-    }
-
-    private void fijarH2h(Set<Long> ids, String nombre) {
-        actH2hPopup.setVisible(false);
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(nombre); actH2hSet.setSelectedIndex(0); } finally { actRellenandoModos = false; }
-        actPintar();
-    }
-
-    private void rellenarH2hConjuntos() {
-        if (actH2hSet == null) return;
-        actRellenandoModos = true;
-        try {
-            List<String[]> claves = new ArrayList<>();
-            actH2hSet.removeAllItems(); actH2hSet.addItem(t("Contra un conjunto…", "Against a set…")); claves.add(new String[]{ "", "" });
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.addAll(anfitrion.gruposDeJugadores());
-            for (String g : gs) { actH2hSet.addItem(t("Grupo ", "Group ") + g); claves.add(new String[]{ "grupo", g }); }
-            for (String tag : anfitrion.clanesGuardados()) { actH2hSet.addItem(t("Clan ", "Clan ") + tag); claves.add(new String[]{ "clan", tag }); }
-            if (anfitrion.hayTop250()) { actH2hSet.addItem(t("Top 250 mundial", "World top 250")); claves.add(new String[]{ "top", "" }); }
-            actH2hSet.putClientProperty("claves", claves);
-        } finally { actRellenandoModos = false; }
-    }
-
-    private void aplicarH2hConjunto() {
-        Object cl = actH2hSet.getClientProperty("claves");
-        int i = actH2hSet.getSelectedIndex();
-        if (!(cl instanceof List<?> l) || i <= 0 || i >= l.size()) { if (i == 0 && h2hIds != null && (h2hNombre == null || !h2hNombre.equals(actH2hBusca.getText().trim()))) { h2hIds = null; h2hNombre = null; actPintar(); } return; }
-        String[] f = (String[]) l.get(i);
-        Set<Long> ids = new HashSet<>();
-        String nombre = String.valueOf(actH2hSet.getSelectedItem());
-        switch (f[0]) {
-            case "grupo" -> ids.addAll(anfitrion.idsDeGrupo(f[1]));
-            case "clan" -> { presenter.resolverConjuntoClan(f[1], nombre); return; }
-            case "top" -> ids.addAll(anfitrion.idsTop250());
-            default -> { }
-        }
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(""); } finally { actRellenandoModos = false; }
-        actPintar();
-    }
-
-    @Override public void conjuntoClanListo(Set<Long> ids, String nombre) {
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(""); } finally { actRellenandoModos = false; }
-        actPintar();
     }
 
     // ===== PerfilPresenter.Pantalla ==================================================================
@@ -707,11 +648,19 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
         if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
         if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
-        if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
+        if (fresco && base.completo() && perfilCache != null) {
+            actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false);
+            // F4: esta salida temprana no pasa por cargaIniciada/desdeSfr: el origen y el botón «Actualizar hoy» son los
+            // de ESTE perfil (antes quedaban los del anterior)
+            actOrigenSfr = hastaSfrDe.containsKey(actPid); actHastaSfr = hastaSfrDe.get(actPid);
+            perfilEstadoHoy();
+            return;
+        }
         presenter.cargar(actPid, actNombre, base, fresco);
     }
 
     @Override public void cargaIniciada() {
+        hastaSfrDe.remove(actPid);   // F4 (3): se vuelve a cargar; si llega de sfr-data, desdeSfr lo apunta otra vez
         actEstado.setText(t("Consultando el perfil…", "Fetching the profile…"));
         actProgreso.setVisible(true); actProgreso.setIndeterminate(true); actProgreso.setString(t("Perfil…", "Profile…"));
         actOrigenSfr = false; actHastaSfr = null; perfilEstadoHoy();
@@ -721,6 +670,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     @Override public void desdeSfr(Actividad a, String hastaSfr) {
         actOrigenSfr = true; actHastaSfr = hastaSfr;
+        hastaSfrDe.put(actPid, hastaSfr);   // F4
+        presenter.olvidarHoy(actPid);       // F4 (2): datos recién traídos de sfr-data: «Actualizar hoy» vuelve a tener sentido
         actProgreso.setVisible(false); actMostrarCuerpo(true); actRellenarModos(a); actPintar();
         actEstado.setText(miles(a.partidas().size()) + t(" partidas · último año · de sfr-data", " games · last year · from sfr-data"));
         actMasBtn.setVisible(false);
@@ -750,11 +701,20 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     @Override public void marcarVinculadasPedidas(long pid) { vinculadasPedidas.add(pid); }
 
+    /** El texto del botón tras un «Actualizar hoy» terminado. */
+    private static String textoHoyHecho(int nuevas) {
+        return nuevas == 0 ? t("Al día · sin partidas nuevas", "Up to date · no new games") : t("Actualizado · +", "Updated · +") + nuevas + t(" partidas", " games");
+    }
+
+    /** F4 (3): un perfil llegó a la caché desde sfr-data por otro camino (el año del rival en Cara a cara): se apunta su
+     *  fecha «hasta» para que, al abrirlo desde la caché, tenga su «Actualizar hoy». Solo en el EDT. */
+    void recordarOrigenSfr(long pid, String hasta) { hastaSfrDe.put(pid, hasta); }
+
     @Override public void hoyTerminado(FichaPerfil ficha, int nuevas) {
-        actPintarCabecera(ficha);
+        if (ficha != null) actPintarCabecera(ficha);   // F9: sin ficha nueva ni conocida, se deja la cabecera que había (p. ej. la sintética de sfr-data)
         Actividad a = actividadCache.get(actPid);
         if (a != null) { actRellenarModos(a); actPintar(); }
-        actHoyBtn.setText(nuevas == 0 ? t("Al día · sin partidas nuevas", "Up to date · no new games") : t("Actualizado · +", "Updated · +") + nuevas + t(" partidas", " games"));
+        actHoyBtn.setText(textoHoyHecho(nuevas));
         actHoyBtn.setForeground(UIManager.getColor("Button.foreground"));
         actHoyBtn.setEnabled(false);
         if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta hoy", "Data up to today"));
@@ -762,7 +722,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     @Override public void hoyError(String mensaje) {
         actHoyBtn.setEnabled(true); actHoyBtn.setText(t("Actualizar hoy", "Update today"));
-        anfitrion.mostrarEstadoGlobal(t("No se pudo actualizar: ", "Couldn't update: ") + mensaje);
+        avisar(t("No se pudo actualizar: ", "Couldn't update: ") + mensaje);
     }
 
     @Override public void masProgreso(Actividad parcialA, int maxPaginas) {
@@ -809,6 +769,11 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actHoyBtn.setToolTipText(hayNuevas ? t("Le hemos visto en partida después del volcado: hay partidas de hoy que traer (2 llamadas)", "Seen in a game after the dump: there are today's games to fetch (2 requests)")
                 : t("No consta ninguna partida nueva desde el volcado; actualizar solo si crees que ha jugado hoy (2 llamadas)", "No new game is known since the dump; update only if you think they played today (2 requests)"));
         if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta el ", "Data up to ") + (actHastaSfr == null ? "?" : actHastaSfr) + (hayNuevas ? "" : t(" · sin partidas nuevas conocidas", " · no new games known")));
+        if (presenter.hoyEnCurso(actPid)) hoyIniciado();   // F4: se volvió a este perfil con su «Actualizar hoy» aún en marcha
+        else if (presenter.hoyNuevas(actPid) != null) {   // F4 (2): ya se actualizó hoy en esta sesión (aunque terminara con otro perfil abierto)
+            actHoyBtn.setText(textoHoyHecho(presenter.hoyNuevas(actPid))); actHoyBtn.setForeground(UIManager.getColor("Button.foreground")); actHoyBtn.setEnabled(false);
+            if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta hoy", "Data up to today"));
+        }
     }
 
     private void perfilCargarMas() { perfilCargarMas(ACT_MAS_PAGINAS); }
@@ -904,7 +869,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     /** «Todas las partidas»: vuelca el año completo del perfil en la pestaña Partidas. */
     private void verHistorialEnTabla(long pid, String nombre) {
         Actividad a = actividadCache.get(pid);
-        if (a == null || a.partidas().isEmpty()) { anfitrion.mostrarEstadoGlobal(t("Sin historial cargado para este perfil.", "No history loaded for this profile.")); return; }
+        if (a == null || a.partidas().isEmpty()) { avisar(t("Sin historial cargado para este perfil.", "No history loaded for this profile.")); return; }
         List<Match> todas = new ArrayList<>(a.partidas());
         for (Match m : todas) if (m.refId == 0) m.refId = pid;
         anfitrion.cargarPartidasEnTabla(todas, new Player(pid, nombre, "", 0));
@@ -1000,7 +965,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
                 if (top != null) val.append(" <span style='color:gray;font-weight:normal'>").append(escapeHtml(top)).append("</span>");
                 if (v.length > 2 && v[2] > 0) val.append("<br><span style='font-weight:normal;font-size:10px;color:gray'>").append(t("máx ", "peak ")).append("</span><span style='font-weight:normal;font-size:10px'>").append(v[2]).append("</span>");
                 String tip = (v.length > 2 && v[2] > 0 ? t("Máximo ", "Peak ") + v[2] : "") + (v.length > 4 && v[3] + v[4] > 0 ? (v.length > 2 && v[2] > 0 ? " · " : "") + v[3] + "-" + v[4] + t(" en total (", " in total (") + pct1(100.0 * v[3] / (v[3] + v[4])) + ")" : "");
-                if (top != null) tip = (tip.isBlank() ? "" : tip + " · ") + t("Top % entre los jugadores activos (al menos una partida en los últimos 28 días); el # es el puesto en el ladder completo", "Top % among active players (at least one game in the last 28 days); # is the rank in the full ladder");
+                if (top != null) tip = (tip.isBlank() ? "" : tip + " · ") + t("Top % entre los jugadores activos (", "Top % among active players (") + RatingsService.criterioActivos(ratings.activosMinPartidas(), ratings.activosDias()) + t("); el # es el puesto en el ladder completo", "); # is the rank in the full ladder");
                 actChips.add(chipPerfil(ladderNombre(lb), val.toString(), tip.isBlank() ? null : tip));
             }
             for (String lbTot : new String[]{ "rm_1v1", "rm_team" }) {
@@ -1037,6 +1002,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         for (Match m : a.partidas()) {
             if (!"*".equals(actModo) && !actModo.equals(m.mode)) continue;
             if (!enPeriodo(m)) continue;
+            if (m.started == null) continue;   // D3 (1.3): sin hora de inicio (AnioDesdeSfr con ini<=0, o traerHoy) no se puede fechar; antes reventaba el pintado en el EDT
             MatchPlayer yo = null;
             for (MatchPlayer p : m.players) if (p.id == actPid) { yo = p; break; }
             if (yo == null) continue;
@@ -1095,7 +1061,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         for (Component c : actChips.getComponents()) if (c instanceof JLabel l && "forma".equals(l.getName())) actChips.remove(l);
         if (f10 > 0) {
             String forma = fW + "-" + fL + " · " + (fDiff >= 0 ? "+" : "") + fDiff + (fDiff > 0 ? " \u25B2" : fDiff < 0 ? " \u25BC" : "")
-                    + (fRacha >= 2 ? " · " + t("racha ", "streak ") + fRacha + (Boolean.TRUE.equals(fRachaGana) ? "V" : "D") : "");
+                    + (fRacha >= 2 ? " · " + t("racha ", "streak ") + fRacha + letraRacha(Boolean.TRUE.equals(fRachaGana)) : "");
             JLabel lf = chipPerfil(t("Últimas ", "Last ") + f10 + ("*".equals(actModo) ? "" : " · " + actModo), escapeHtml(forma), t("Las partidas más recientes con resultado, en el modo elegido", "The most recent games with a result, in the chosen mode"));
             lf.setName("forma");
             actChips.add(lf);
@@ -1156,16 +1122,48 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     /** ELO actual del ladder que corresponde a un modo (de la ficha del perfil); si no hay ficha, el de la partida más reciente más su diferencia. */
     private long eloActualLadder(String modo, long[] masReciente) {
-        String lb = modo == null ? null : (modo.toLowerCase(Locale.ROOT).contains("empire") || modo.toLowerCase(Locale.ROOT).startsWith("ew")) ? (modo.contains("1v1") ? "ew_1v1" : "ew_team") : modo.contains("1v1") ? "rm_1v1" : "rm_team";
-        FichaPerfil perfil = perfiles.fichaConocida(actPid);
-        if (perfil != null && lb != null && perfil.ladders().get(lb) instanceof int[] v && v[0] > 0) return v[0];
-        return masReciente[1] + masReciente[2];
+        return anclaGraficaElo(modo, masReciente, perfiles.fichaConocida(actPid), actHasta, LocalDate.now(ZoneId.systemDefault()));
+    }
+
+    /**
+     * F6 (1.3): el ELO en el que termina la gráfica (el de después de la partida más reciente de la serie).
+     * El ELO de hoy de la ficha solo vale si la serie llega hasta hoy y el modo tiene ladder en la ficha; si no, se
+     * ancla en la propia partida más reciente (su rating más su diferencia):
+     * <ul><li>Death Match: la ficha no trae ladder de DM (antes se usaba el de RM y la escala salía desplazada);</li>
+     * <li>un «Rango de fechas…» que termina antes de hoy: la curva debe acabar en el ELO de entonces, no en el de hoy.</li></ul>
+     * masReciente = {inicio ms, rating, diferencia}. Pura: la prueba PerfilViewTest.
+     */
+    static long anclaGraficaElo(String modo, long[] masReciente, FichaPerfil ficha, LocalDate hasta, LocalDate hoy) {
+        long propia = masReciente[1] + masReciente[2];
+        if (hasta != null && hasta.isBefore(hoy)) return propia;
+        String lb = ladderDeModo(modo);
+        if (ficha != null && lb != null && ficha.ladders().get(lb) instanceof int[] v && v[0] > 0) return v[0];
+        return propia;
+    }
+
+    /** La letra de la racha del chip de forma: V/D en español, W/L en inglés (las de la tabla de rivales). Pura. */
+    static String letraRacha(boolean gana) { return gana ? t("V", "W") : t("D", "L"); }
+
+    /** El ladder de la ficha que corresponde a un modo de partida; null si la ficha no tiene ese ladder (Death Match). */
+    static String ladderDeModo(String modo) {
+        if (modo == null) return null;
+        String m = modo.toLowerCase(Locale.ROOT);
+        if (m.contains("death") || m.startsWith("dm")) return null;   // F6: sin ladder de DM en la ficha
+        if (m.contains("empire") || m.startsWith("ew")) return modo.contains("1v1") ? "ew_1v1" : "ew_team";
+        return modo.contains("1v1") ? "rm_1v1" : "rm_team";
     }
 
     /** Lista «nombre · barra por partidas · WR» ordenada por partidas; solo entradas con ACT_MIN partidas. Package-private: la usa también CaraACaraDialogo. */
     void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar) { pintarListaAgg(panel, titulo, datos, tope, nombre, alClicar, null); }
 
     void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar, java.util.function.Function<String, Icon> icono) {
+        pintarListaAgg(panel, titulo, datos, tope, nombre, alClicar, icono, this::actPintar);
+    }
+
+    /** F7 (1.3): alReordenar es lo que se repinta al pulsar el título para cambiar el orden. En el perfil es
+     *  actPintar; el diálogo Cara a cara pasa su propio repintado (antes repintaba el perfil de detrás y el
+     *  diálogo no cambiaba hasta el siguiente cruce). */
+    void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar, java.util.function.Function<String, Icon> icono, Runnable alReordenar) {
         panel.removeAll();
         boolean ordenado = datos instanceof LinkedHashMap;
         int modo = ordenado ? -1 : ordenListas.getOrDefault(titulo, 0);
@@ -1173,7 +1171,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
                 ordenado ? null : t("Clic para cambiar el orden: partidas → winrate → A-Z", "Click to change the order: games → win rate → A-Z"));
         if (!ordenado) {
             cab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            cab.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ordenListas.put(titulo, (ordenListas.getOrDefault(titulo, 0) + 1) % 3); actPintar(); } });
+            cab.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ordenListas.put(titulo, (ordenListas.getOrDefault(titulo, 0) + 1) % 3); alReordenar.run(); } });
         }
         panel.add(cab);
         List<Map.Entry<String, int[]>> l = new ArrayList<>();

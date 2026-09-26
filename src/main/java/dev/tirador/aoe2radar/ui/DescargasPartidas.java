@@ -68,6 +68,7 @@ final class DescargasPartidas {
         int ok = 0;
         for (Path f : files) { try { Files.delete(f); ok++; } catch (IOException ignored) {} }
         for (Match m : vista.all) { m.enDisco = false; if (m.estado.startsWith("✓")) m.estado = ""; }
+        vista.generacionEnDisco++;   // un «en disco» que aún se esté mirando en el fondo ya no vale: manda este borrado
         vista.tableModel.fireTableDataChanged();
         vista.anfitrion.estado(ok + t(" recs borradas.", " recs deleted."));
     }
@@ -111,21 +112,44 @@ final class DescargasPartidas {
         return p;
     }
 
+    /** Hay un «Enviar al juego» mirando cabeceras o copiando (hasta que empieza la descarga de lo que falte). EDT. */
+    boolean enviando;
+
     /** Enviar al juego: copia lo que ya está sano en disco y descarga+envía lo que falte (decisión de Jorge,
      *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
     public void enviarInteligente(List<Match> objetivo) {
+        if (enviando) {   // un segundo clic mientras el primero sigue: no dos copias a la vez sobre el mismo savegame
+            vista.anfitrion.estado(t("Ya se está enviando al juego: espera a que acabe.", "Already sending to the game: wait for it to finish."));
+            return;
+        }
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         // Leer la cabecera de cada rec es disco: va en un hilo de fondo (revisión 1.3). Lo que sigue (el diálogo del
         // savegame, la copia y la descarga de lo que falte) arranca desde done(), ya en el EDT, en el mismo orden.
+        enviando = true;
         final List<Match> lista = new ArrayList<>(objetivo);
         final Function<Match, Path> destino = vista.anfitrion::destino;
         new SwingWorker<Void, Void>() {
             final List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
             @Override protected Void doInBackground() { separarSanas(lista, destino, enDisco, faltan); return null; }
             @Override protected void done() {
+                try {
+                    get();
+                } catch (Exception ex) {
+                    enviando = false;
+                    log("enviar al juego: ERROR al mirar las recs: " + causa(ex));
+                    vista.anfitrion.estado("Error: " + causa(ex));
+                    return;
+                }
                 Runnable descargarFaltan = faltan.isEmpty() ? null : () -> download(faltan, true);
-                if (!enDisco.isEmpty()) enviarASavegame(enDisco, descargarFaltan);   // copia primero; luego descarga
-                else if (descargarFaltan != null) descargarFaltan.run();
+                if (!enDisco.isEmpty()) {
+                    enviarASavegame(enDisco, () -> {   // copia primero; luego descarga
+                        enviando = false;
+                        if (descargarFaltan != null) descargarFaltan.run();
+                    });
+                } else {
+                    enviando = false;
+                    if (descargarFaltan != null) descargarFaltan.run();
+                }
             }
         }.execute();
     }
@@ -139,7 +163,15 @@ final class DescargasPartidas {
      *  faltaba, para que siga yendo después de la copia, como antes. */
     void enviarASavegame(List<Match> objetivo, Runnable despues) {
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); if (despues != null) despues.run(); return; }
-        Path sg = obtenerSavegame(true);   // puede abrir diálogos: en el EDT
+        Path sg;
+        try {
+            sg = obtenerSavegame(true);   // puede abrir diálogos: en el EDT
+        } catch (RuntimeException ex) {   // p. ej. InvalidPathException con una ruta rara en config: sin esto, «enviando» se quedaba puesto
+            log("enviar al juego: ERROR con la carpeta savegame: " + causa(ex));
+            vista.anfitrion.estado("Error: " + causa(ex));
+            if (despues != null) despues.run();
+            return;
+        }
         if (sg == null) { vista.anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); if (despues != null) despues.run(); return; }
         final List<Match> lista = new ArrayList<>(objetivo);
         final Function<Match, Path> destino = vista.anfitrion::destino;
@@ -278,6 +310,9 @@ final class DescargasPartidas {
                     vista.dlAll.setEnabled(true);
                     vista.anfitrion.trabajando(false);
                 }
+                // Si una búsqueda cambió la tabla durante la descarga, sus filas son otros Match: se vuelve a mirar
+                // en el disco qué está ya bajado o en el juego (fuera del EDT, y sube la generación).
+                vista.remarcarEnDisco();
                 // El aviso de quien la pidió (Perfil/Live now: repintar su tabla con lo ya en disco) corre siempre al
                 // acabar ESTA descarga, aunque otra operación se llevara el semáforo mientras tanto.
                 if (alTerminar != null) alTerminar.run();

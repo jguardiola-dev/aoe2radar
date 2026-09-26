@@ -55,7 +55,18 @@ public final class CivStats {
             List<Object> f = arr(o);
             if (f.size() < 6) continue;
             if ("unknown".equals(String.valueOf(f.get(2))) || "unknown".equals(String.valueOf(f.get(3)))) continue;
-            mu.add(new Matchup(String.valueOf(f.get(0)), String.valueOf(f.get(1)), String.valueOf(f.get(2)), String.valueOf(f.get(3)), (int) lng(f.get(4)), (int) lng(f.get(5))));
+            mu.add(new Matchup(String.valueOf(f.get(0)), "*", String.valueOf(f.get(1)), String.valueOf(f.get(2)), String.valueOf(f.get(3)), (int) lng(f.get(4)), (int) lng(f.get(5))));
+        }
+        // D2 (1.3): por mapa, [modo, mapa, tramo, civA, civB, n, winsA] (sfr-data 1.5.4; los datos viejos no lo traen).
+        // Son cientos de miles de filas con pocos textos distintos: se comparte cada texto para no llenar la memoria.
+        Map<String, String> textos = new HashMap<>();
+        for (Object o : arr(j.get("matchups_mapa"))) {
+            List<Object> f = arr(o);
+            if (f.size() < 7) continue;
+            if ("unknown".equals(String.valueOf(f.get(3))) || "unknown".equals(String.valueOf(f.get(4)))) continue;
+            String[] s = new String[5];
+            for (int i = 0; i < 5; i++) { String x = String.valueOf(f.get(i)); s[i] = textos.computeIfAbsent(x, k -> k); }
+            mu.add(new Matchup(s[0], s[1], s[2], s[3], s[4], (int) lng(f.get(5)), (int) lng(f.get(6))));
         }
         Object parche = j.get("parche");
         return new VentanaStats(String.valueOf(j.get("ventana")), String.valueOf(firstNonNull(j.get("desde"), "")), String.valueOf(firstNonNull(j.get("hasta"), "")), (int) lng(j.get("dias")),

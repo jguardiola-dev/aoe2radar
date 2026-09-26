@@ -42,9 +42,9 @@ import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
  */
 final class BusquedasPartidas {
 
-    /** La búsqueda que canceló la × de «Partidas de:» (PartidasView.cerrarBusqueda): su done() no pisa «Búsqueda
-     *  cerrada.» con «Búsqueda detenida.». Por identidad, así no hace falta desarmarlo. Solo en el EDT. */
-    SwingWorker<?, ?> cerradaPorLaCruz;
+    /** El opSerial de la última «Buscar partidas» lanzada: la × lo mira para saber si el progreso sigue siendo
+     *  de la búsqueda (y apagarlo) o ya es de otra operación (y dejarlo). Solo en el EDT. */
+    long serialBusqueda;
 
     private final PartidasView vista;
 
@@ -314,6 +314,7 @@ final class BusquedasPartidas {
         vista.gteBtn.setEnabled(false);
         vista.anfitrion.trabajando(true);
         final long miSerial = vista.anfitrion.operacionActual();
+        serialBusqueda = miSerial;
         int hours = vista.enlaceWatchlist.horasVentana();
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         SwingWorker<Recorrido, String> fw = new SwingWorker<>() {
@@ -325,14 +326,16 @@ final class BusquedasPartidas {
                         vista.anfitrion::enCursoReal, () -> isCancelled() || vista.anfitrion.detenido(), this::publish);
             }
             @Override protected void process(List<String> msgs) {
-                if (isCancelled()) return;   // un «Consultando…» tardío no tapa «Búsqueda cerrada.»/«detenida.»
+                // Un «Consultando…» tardío de una búsqueda cancelada, cerrada con la × o sustituida no tapa nada.
+                if (isCancelled() || vista.fetchWorker != this) return;
                 vista.anfitrion.estado(msgs.get(msgs.size() - 1));
             }
             @Override protected void done() {
                 if (vista.fetchWorker != this) {
                     // Otra búsqueda la sustituyó (fetchMatches con una en marcha; fetchWorker es de la nueva, o ya
-                    // null si la nueva acabó antes): esa es la que manda en el botón, el progreso y la tabla.
-                    log("buscar #" + miSerial + ": sustituida por otra búsqueda; resultado ignorado");
+                    // null si la nueva acabó antes), o la cerró la × (soltarPorLaCruz, que ya repuso botones y
+                    // progreso): esta no toca nada.
+                    log("buscar #" + miSerial + ": sustituida o cerrada; resultado ignorado");
                     return;
                 }
                 // Otra operación de otro tipo (una descarga, «Ver forma»…) pudo empezar mientras tanto y llevarse el
@@ -348,8 +351,7 @@ final class BusquedasPartidas {
                 vista.gteBtn.setEnabled(true);
                 if (semaforoPropio) vista.anfitrion.trabajando(false);
                 if (isCancelled()) {
-                    // Cancelada por la × de «Partidas de:»: el estado final es su «Búsqueda cerrada.», no este.
-                    if (cerradaPorLaCruz != this) vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));
+                    vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));   // el botón «Detener»
                     return;
                 }
                 try {
@@ -375,6 +377,12 @@ final class BusquedasPartidas {
                         else if (dec.fuera().contains(pl.id())) { EstadoVivo.SISTEMA.marcarFuera(pl.id()); }
                     }
                     vista.enlaceWatchlist.actualizarIndicadoresVivos();
+                    // Una descarga pudo seguir mientras se buscaba (F7): la misma partida vuelve como OTRO Match, y
+                    // su estado («descargando…», «✓ guardada»…) se conserva por id de partida. enDisco/enJuego los
+                    // vuelve a mirar applyFilters (y otra vez la descarga al acabar).
+                    java.util.Map<Long, String> estados = new java.util.HashMap<>();
+                    for (Match viejo : vista.all) if (!viejo.estado.isBlank()) estados.put(viejo.id, viejo.estado);
+                    for (Match nuevo : res) { String e = estados.get(nuevo.id); if (e != null && nuevo.estado.isBlank()) nuevo.estado = e; }
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.refreshModeCombo();
@@ -395,6 +403,26 @@ final class BusquedasPartidas {
         };
         vista.fetchWorker = fw;
         fw.execute();
+    }
+
+    /** La × de «Partidas de:» con una búsqueda en marcha (PartidasView.cerrarBusqueda). fetchWorker se pone a null
+     *  ANTES de cancelar, como en fetchMatches: así su done() —que corre dentro de cancel() si aún no había
+     *  terminado, o más tarde si doInBackground ya acabó y el done() estaba en cola— ve que ya no es la búsqueda
+     *  y no toca nada (en ese segundo caso, cancel no puede nada y antes volvía a llenar la tabla). Los botones y
+     *  el progreso los repone esta misma llamada. EDT. */
+    void soltarPorLaCruz() {
+        SwingWorker<?, ?> enCurso = vista.fetchWorker;
+        if (enCurso == null) return;
+        vista.fetchWorker = null;
+        boolean semaforoPropio = PartidasPresenter.vigente(serialBusqueda, vista.anfitrion.operacionActual());
+        if (semaforoPropio) vista.anfitrion.pararOperacion();   // corta la espera del freno; si el semáforo ya es de otra operación, no se la para
+        enCurso.cancel(true);
+        vista.fetchBtn.setToolTipText(null);
+        vista.fetchBtn.setEnabled(true);
+        vista.azarBtn.setEnabled(true);
+        vista.gteBtn.setEnabled(true);
+        if (semaforoPropio) vista.anfitrion.trabajando(false);
+        log("buscar #" + serialBusqueda + ": cerrada con la ×");
     }
 
     /** Una página de partidas de un jugador (en la app, Anfitrion.paginaDePartidas: la red). */

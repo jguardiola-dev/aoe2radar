@@ -3,10 +3,8 @@ package dev.tirador.aoe2radar.ui;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
-import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.service.BusquedaPerfiles;
-import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.RatingsService;
 
@@ -15,10 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.LongFunction;
 
 import static dev.tirador.aoe2radar.service.ProfileService.ACT_MAX_PAGINAS;
@@ -28,10 +24,9 @@ import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * Lo que la pestaña Perfil pide en segundo plano: abrir un perfil (primero sfr-data, si no la API página a
- * página), «Actualizar hoy», «Cargar más», las sugerencias del buscador de nick y del filtro cara a cara de la
- * cabecera, las cuentas vinculadas y el conjunto «clan» del filtro. Sale de SpoilerFreeRecs (abrirPerfil,
- * perfilActualizarHoy, perfilCargarMas, perfilSugerir, h2hSugerir, actPintarVinculadas, aplicarH2hConjunto de la
- * 1.1) tal cual, con los mismos nombres de hilo y las mismas comprobaciones de «respuesta caducada»
+ * página), «Actualizar hoy», «Cargar más», las sugerencias del buscador de nick y las cuentas vinculadas. Sale
+ * de SpoilerFreeRecs (abrirPerfil, perfilActualizarHoy, perfilCargarMas, perfilSugerir, actPintarVinculadas de
+ * la 1.1) tal cual, con los mismos nombres de hilo y las mismas comprobaciones de «respuesta caducada»
  * ({@code pantalla.pidAbierto() != pid}: si mientras tanto se abrió otro perfil, la respuesta tardía no pinta).
  * <p>Sin Swing: la vista (PerfilView) implementa {@link Pantalla} y hace la pintura, que no es red.
  */
@@ -83,12 +78,8 @@ public final class PerfilPresenter {
 
         /** Sugerencias del buscador de nick de la barra del perfil. */
         void sugerenciasBuscador(List<String[]> resultados, String query);
-        /** Sugerencias del filtro «cara a cara con…» de la cabecera. */
-        void sugerenciasCaraACara(List<String[]> resultados, String query);
         /** Las cuentas vinculadas ya están en ProfileService: repinta la línea de la cabecera. */
         void vinculadasListas();
-        /** El conjunto de ids del filtro «clan» del cara a cara ya está listo. */
-        void conjuntoClanListo(Set<Long> ids, String nombre);
     }
 
     private final ProfileService perfiles;
@@ -98,6 +89,15 @@ public final class PerfilPresenter {
     private final Map<Long, Integer> eloWatch;
     private final Map<Long, Actividad> actividadCache;
     private final Pantalla pantalla;
+    /** F5 (1.3): testigo de la última carga lanzada (cargar o cargarMas). Solo la carga cuyo testigo sigue siendo el
+     *  vigente apaga cargando(): la respuesta tardía de un perfil que ya se dejó no apaga la del que se está mirando.
+     *  Se lee y escribe solo en el EDT (al lanzar y en tareas.enUi), así que no necesita volatile. */
+    private long cargaToken;
+    /** F4 (1.3): pids con «Actualizar hoy» en marcha (puede haber varios: A, luego B antes de que A vuelva). */
+    private final java.util.Set<Long> hoyEnMarcha = new java.util.HashSet<>();
+    /** F4 (3): pid → partidas nuevas del último «Actualizar hoy» terminado bien en esta sesión, aunque al terminar
+     *  ese perfil ya no estuviera abierto. Las dos colecciones se leen y escriben solo en el EDT. */
+    private final Map<Long, Integer> hoyHechos = new HashMap<>();
 
     public PerfilPresenter(ProfileService perfiles, RatingsService ratings, BusquedaPerfiles busqueda, Tareas tareas,
                             Map<Long, Integer> eloWatch, Map<Long, Actividad> actividadCache, Pantalla pantalla) {
@@ -137,6 +137,7 @@ public final class PerfilPresenter {
     /** Abre pid: primero sfr-data (el año completo sin tocar la API); si no está en su alcance, la API página a página. Hilo "perfil-" + pid. */
     public void cargar(long pid, String nombre, Actividad base, boolean fresco) {
         boolean actualizar = base != null && !base.partidas().isEmpty();
+        long token = ++cargaToken;
         pantalla.cargando(true);
         pantalla.cargaIniciada();
         tareas.enFondo("perfil-" + pid, () -> {
@@ -153,49 +154,72 @@ public final class PerfilPresenter {
                     FichaPerfil perfilConocido = perfiles.fichaConocida(pid);
                     FichaPerfil ficha = perfilConocido != null ? perfilConocido : sintetico(pid, a, paisF);
                     tareas.enUi(() -> {
-                        pantalla.cargando(false);
+                        terminar(token);
                         if (pantalla.pidAbierto() != pid) return;
                         pantalla.cabecera(ficha);
                         pantalla.desdeSfr(a, hastaF);
                     });
                     return;
                 }
-                FichaPerfil ficha = perfiles.ficha(pid);
+                FichaPerfil ficha = fichaOConocida(pid);
                 tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.cabecera(ficha); });
-                int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // primero 250 partidas; el resto solo si te quedas
+                int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // primero 100 partidas (2 páginas); hasta 1.000 al actualizar; el resto, con «Cargar más»
                 Actividad a = (fresco && base.completo()) ? base : perfiles.historial(pid, nombre, base, false, max, parcialA -> tareas.enUi(() -> {
                     if (pantalla.pidAbierto() != pid) return;
-                    pantalla.progresoParcial(parcialA, ACT_MAX_PAGINAS);
+                    pantalla.progresoParcial(parcialA, max);   // F8: «página 1 de 2» en la carga rápida (antes decía «de 20»)
                 }), () -> pantalla.pidAbierto() != pid);
                 tareas.enUi(() -> {
-                    pantalla.cargando(false);
+                    terminar(token);
                     if (pantalla.pidAbierto() != pid) return;
                     pantalla.cargaCompletada(a);
                 });
             } catch (Exception ex) {
-                tareas.enUi(() -> { pantalla.cargando(false); if (pantalla.pidAbierto() == pid) pantalla.errorCarga(causa(ex)); });
+                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.errorCarga(causa(ex)); });
             }
         });
+    }
+
+    /** F9 (1.3): la ficha por la API; si esa llamada falla (null), la última conocida, para no borrar la cabecera
+     *  con «Sin datos de perfil» cuando lo que falló fue solo la ficha. Fuera del EDT (hace red). */
+    private FichaPerfil fichaOConocida(long pid) {
+        FichaPerfil f = perfiles.ficha(pid);
+        return f != null ? f : perfiles.fichaConocida(pid);
+    }
+
+    /** F5: fin de una carga (en el EDT). Solo apaga cargando() si ninguna carga posterior la ha relevado. */
+    private void terminar(long token) {
+        if (token == cargaToken) pantalla.cargando(false);
     }
 
     /** «Actualizar hoy»: ficha + las 50 partidas más recientes, fundidas con lo que ya había. Hilo "perfil-hoy". */
     public void actualizarHoy(long pid) {
         if (pid <= 0) return;
+        hoyEnMarcha.add(pid); hoyHechos.remove(pid);
         pantalla.hoyIniciado();
         tareas.enFondo("perfil-hoy", () -> {
             try {
-                FichaPerfil ficha = perfiles.ficha(pid);
+                FichaPerfil ficha = fichaOConocida(pid);
                 pantalla.marcarVinculadasPedidas(pid);
                 int nuevas = perfiles.traerHoy(pid);
-                tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });
+                tareas.enUi(() -> { hoyEnMarcha.remove(pid); hoyHechos.put(pid, nuevas); if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });
             } catch (Exception ex) {
-                tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.hoyError(causa(ex)); });
+                tareas.enUi(() -> { hoyEnMarcha.remove(pid); if (pantalla.pidAbierto() == pid) pantalla.hoyError(causa(ex)); });
             }
         });
     }
 
+    /** F4: ¿está en marcha el «Actualizar hoy» de este pid? (para pintar su botón al volver a él). Solo en el EDT. */
+    public boolean hoyEnCurso(long pid) { return hoyEnMarcha.contains(pid); }
+
+    /** F4 (3): las partidas nuevas del «Actualizar hoy» ya terminado de este pid en la sesión; null si no hubo. Solo en el EDT. */
+    public Integer hoyNuevas(long pid) { return hoyHechos.get(pid); }
+
+    /** F4 (3): el perfil volvió a llegar de sfr-data: su «Actualizar hoy» anterior deja de contar. Solo en el EDT. */
+    public void olvidarHoy(long pid) { hoyHechos.remove(pid); }
+
     /** «Cargar más» páginas del historial por la API. Hilo "perfil-mas-" + pid. */
     public void cargarMas(long pid, String nombre, Actividad base, int paginas) {
+        long token = ++cargaToken;
         pantalla.cargando(true);
         int maxTotal = base.paginas() + paginas;
         tareas.enFondo("perfil-mas-" + pid, () -> {
@@ -204,9 +228,9 @@ public final class PerfilPresenter {
                     if (pantalla.pidAbierto() != pid) return;
                     pantalla.masProgreso(parcialA, maxTotal);
                 }), () -> pantalla.pidAbierto() != pid);
-                tareas.enUi(() -> { pantalla.cargando(false); if (pantalla.pidAbierto() == pid) pantalla.masCompletado(a); });
+                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.masCompletado(a); });
             } catch (Exception ex) {
-                tareas.enUi(() -> { pantalla.cargando(false); if (pantalla.pidAbierto() == pid) pantalla.masError(causa(ex)); });
+                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.masError(causa(ex)); });
             }
         });
     }
@@ -235,28 +259,11 @@ public final class PerfilPresenter {
         });
     }
 
-    /** Sugerencias del filtro «cara a cara con…» de la cabecera (rivales del historial ya se pintan sin red, aparte). Hilo "h2h-sugerir". */
-    public void sugerirCaraACara(String q) {
-        tareas.enFondo("h2h-sugerir", () -> {
-            List<String[]> res = busqueda.sugerir(q);
-            tareas.enUi(() -> pantalla.sugerenciasCaraACara(res, q));
-        });
-    }
-
     /** Cuentas vinculadas (con su ELO) del pid actual. Hilo "perfil-vinculadas". */
     public void pedirVinculadas(long pid) {
         tareas.enFondo("perfil-vinculadas", () -> {
             perfiles.vinculadasConElo(pid);   // las recuerda para la sesión, con el ELO de cada una
             tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.vinculadasListas(); });
-        });
-    }
-
-    /** El filtro «clan» del cara a cara: asegura el ladder y saca los miembros del tag. Hilo "h2h-clan". */
-    public void resolverConjuntoClan(String tag, String etiqueta) {
-        tareas.enFondo("h2h-clan", () -> {
-            Set<Long> ids = new HashSet<>();
-            if (ratings.asegurar(false) == null) for (LadderRow r : ConsultasLadder.miembrosClan(tag)) ids.add(r.pid());
-            tareas.enUi(() -> pantalla.conjuntoClanListo(ids, etiqueta));
         });
     }
 
@@ -269,24 +276,40 @@ public final class PerfilPresenter {
         tareas.enFondoDemonioMinima("perfiles-precarga", () -> {
             try {
                 Thread.sleep(90_000);
-                if (!Files.isDirectory(perfilesDir)) return;
-                List<Path> ficheros;
-                try (var st = Files.list(perfilesDir)) { ficheros = st.filter(p -> p.toString().endsWith(".json")).toList(); } catch (IOException ex) { return; }
-                ficheros = new ArrayList<>(ficheros);
-                ficheros.removeIf(p -> { try { return System.currentTimeMillis() - Files.getLastModifiedTime(p).toMillis() > 7L * 24 * 3_600_000L; } catch (IOException ex) { return true; } });
-                ficheros.sort((x, y) -> { try { return Files.getLastModifiedTime(y).compareTo(Files.getLastModifiedTime(x)); } catch (IOException ex) { return 0; } });
-                if (ficheros.size() > 10) ficheros = ficheros.subList(0, 10);
-                for (Path p : ficheros) {
-                    long pid;
-                    try { pid = Long.parseLong(p.getFileName().toString().replace(".json", "")); } catch (NumberFormatException ex) { continue; }
-                    while (pantalla.cargando()) Thread.sleep(5000);   // nunca competir con una carga pedida por el usuario
-                    Actividad base = actividadCache.get(pid);
-                    if (base == null) base = cargarDeDisco.apply(pid);
-                    if (base == null || System.currentTimeMillis() - base.ms() < 6 * 3_600_000L) continue;
-                    try { perfiles.historial(pid, base.nombre(), base, false, 3, a -> { }, () -> false); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
-                    Thread.sleep(4000);
-                }
+                precalentarAhora(perfilesDir, cargarDeDisco);
             } catch (InterruptedException ignored) { }
         });
+    }
+
+    /** Pausa entre perfiles precalentados por la API (4 s, como en la 1.1). El test la baja. */
+    long pausaPrecargaMs = 4000;
+
+    /**
+     * El trabajo de precalentar, sin la espera inicial (el test lo llama directo). «Nocturno primero» (1.3): antes de
+     * ir a la API mira sfr-data; si tiene el año del jugador, abrir su perfil ya no llama a la API (cargar lo saca de
+     * ahí), así que no se gastan hasta 3 páginas en él; de paso el paquete queda bajado. Solo los que sfr-data no
+     * cubre (o si leerlo falla) van a la API, como antes. Fuera del EDT.
+     */
+    void precalentarAhora(Path perfilesDir, LongFunction<Actividad> cargarDeDisco) throws InterruptedException {
+        if (!Files.isDirectory(perfilesDir)) return;
+        List<Path> ficheros;
+        try (var st = Files.list(perfilesDir)) { ficheros = st.filter(p -> p.toString().endsWith(".json")).toList(); } catch (IOException ex) { return; }
+        ficheros = new ArrayList<>(ficheros);
+        ficheros.removeIf(p -> { try { return System.currentTimeMillis() - Files.getLastModifiedTime(p).toMillis() > 7L * 24 * 3_600_000L; } catch (IOException ex) { return true; } });
+        ficheros.sort((x, y) -> { try { return Files.getLastModifiedTime(y).compareTo(Files.getLastModifiedTime(x)); } catch (IOException ex) { return 0; } });
+        if (ficheros.size() > 10) ficheros = ficheros.subList(0, 10);
+        for (Path p : ficheros) {
+            long pid;
+            try { pid = Long.parseLong(p.getFileName().toString().replace(".json", "")); } catch (NumberFormatException ex) { continue; }
+            while (pantalla.cargando()) Thread.sleep(5000);   // nunca competir con una carga pedida por el usuario
+            Actividad base = actividadCache.get(pid);
+            if (base == null) base = cargarDeDisco.apply(pid);
+            if (base == null || System.currentTimeMillis() - base.ms() < 6 * 3_600_000L) continue;
+            try {
+                if (perfiles.anioSfr(pid, base.nombre()) != null) continue;   // en el alcance de sfr-data: sin API
+            } catch (Exception ex) { log("precarga perfil " + pid + " (sfr-data): " + causa(ex)); }
+            try { perfiles.historial(pid, base.nombre(), base, false, 3, a -> { }, () -> false); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
+            Thread.sleep(pausaPrecargaMs);
+        }
     }
 }

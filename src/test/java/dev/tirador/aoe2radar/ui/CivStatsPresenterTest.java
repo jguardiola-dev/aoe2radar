@@ -116,6 +116,40 @@ class CivStatsPresenterTest {
         assertEquals(List.of("30", "90"), stats.ventanasPedidas);
     }
 
+    /** F2 (1.3): mientras baja «30 días» se elige «365 días». Al terminar la de 30 hay que pedir la de 365 (antes
+     *  se perdía: el combo decía 365, se veían los datos de 30 y el estado seguía en «Descargando…»). */
+    @Test void cambioDeVentanaDuranteUnaDescargaSePideAlTerminar() {
+        StatsFalso stats = new StatsFalso();
+        PantallaFalsa pantalla = new PantallaFalsa();
+        TareasAplazada tareas = new TareasAplazada();
+        CivStatsPresenter p = new CivStatsPresenter(stats, tareas, pantalla);
+        p.cargar("30");
+        p.cargar("365");   // la de 30 aún no ha vuelto
+        assertEquals(1, tareas.pendientes.size(), "sigue habiendo un solo hilo en vuelo");
+        tareas.pendientes.remove(0).run();   // vuelve la de 30: debe lanzar la de 365, no pintar la de 30
+        assertEquals(0, pantalla.datosListos, "la ventana vieja no se pinta");
+        assertEquals(1, tareas.pendientes.size(), "se lanzó la carga de la ventana vigente");
+        tareas.pendientes.remove(0).run();
+        assertEquals(List.of("30", "365"), stats.ventanasPedidas);
+        assertEquals(1, pantalla.datosListos);
+        assertTrue(pantalla.estados.get(pantalla.estados.size() - 1).contains(dev.tirador.aoe2radar.service.NombresStats.ventanaNombre("365").toLowerCase(Locale.ROOT)), "el último aviso es el de la ventana nueva");
+    }
+
+    /** F2: ir y volver (30 → 365 → 30) durante la descarga de 30 no descarga nada más: la vigente es la que llegó. */
+    @Test void idaYVueltaALaMismaVentanaNoRelanza() {
+        StatsFalso stats = new StatsFalso();
+        PantallaFalsa pantalla = new PantallaFalsa();
+        TareasAplazada tareas = new TareasAplazada();
+        CivStatsPresenter p = new CivStatsPresenter(stats, tareas, pantalla);
+        p.cargar("30");
+        p.cargar("365");
+        p.cargar("30");
+        tareas.pendientes.remove(0).run();
+        assertTrue(tareas.pendientes.isEmpty());
+        assertEquals(List.of("30"), stats.ventanasPedidas);
+        assertEquals(1, pantalla.datosListos);
+    }
+
     @Test void elHiloDeCargaSeLlamaCivstatsDatos() {
         StatsFalso stats = new StatsFalso();
         PantallaFalsa pantalla = new PantallaFalsa();

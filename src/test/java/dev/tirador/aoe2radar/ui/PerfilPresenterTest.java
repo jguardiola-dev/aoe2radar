@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -26,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * PerfilPresenter con Tareas.EN_LINEA (sin hilos) y dobles de ProfileService/RatingsService/BusquedaPerfiles y de
  * la Pantalla: comprueba las dos rutas de abrirPerfil (sfr-data y API con progreso parcial), «Actualizar hoy»,
- * «Cargar más», las sugerencias de los dos buscadores, las vinculadas y el filtro «clan» del cara a cara — todas
+ * «Cargar más», las sugerencias del buscador de nick y las vinculadas — todas
  * con su comprobación de «respuesta caducada» (el pid abierto cambió mientras se esperaba).
  */
 class PerfilPresenterTest {
@@ -34,6 +33,8 @@ class PerfilPresenterTest {
     /** Un ProfileService de mentira: solo lo que usa el presentador. */
     static class PerfilesFalso implements ProfileService {
         FichaPerfil ficha;
+        /** La última ficha conocida, si difiere de la que devuelve ficha() (F9); null = la misma que ficha. */
+        FichaPerfil conocida;
         AnioSfr anioSfr;
         Exception anioSfrFalla;
         Actividad historialResultado;
@@ -45,7 +46,7 @@ class PerfilPresenterTest {
         Consumer<Actividad> ultimoParcial;
 
         @Override public FichaPerfil ficha(long pid) { if (fichaFalla != null) throw fichaFalla; return ficha; }
-        @Override public FichaPerfil fichaConocida(long pid) { return ficha; }
+        @Override public FichaPerfil fichaConocida(long pid) { return conocida != null ? conocida : ficha; }
         @Override public Integer elo1v1(long pid) { return null; }
         @Override public List<Perfil.Vinculada> vinculadas(long pid) { return List.of(); }
         @Override public List<Perfil.Vinculada> vinculadasConElo(long pid) { return List.of(); }
@@ -60,6 +61,28 @@ class PerfilPresenterTest {
             return historialResultado;
         }
         @Override public int traerHoy(long pid) throws java.io.IOException { if (traerHoyFalla != null) { if (traerHoyFalla instanceof java.io.IOException io) throw io; throw new RuntimeException(traerHoyFalla); } return traerHoyResultado; }
+    }
+
+    /** 3.8 del inventario de la API: precalentar mira sfr-data antes; solo los pid que no cubre van a la API. */
+    @Test void precalentarSoloVaALaApiConLoQueSfrDataNoTiene(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        for (long pid : new long[]{ 1, 2, 3 }) java.nio.file.Files.writeString(dir.resolve(pid + ".json"), "{}");
+        List<Long> alaApi = new ArrayList<>(), aSfr = new ArrayList<>();
+        PerfilesFalso perfilesPre = new PerfilesFalso() {
+            @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception {
+                aSfr.add(pid);
+                if (pid == 3) throw new java.io.IOException("sin red");   // si sfr-data falla, la API como antes
+                return pid == 1 ? new AnioSfr(PerfilPresenterTest.this.actividad(pid, "Uno", List.of()), "2026-09-25", "es") : null;
+            }
+            @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, BooleanSupplier cancelar) {
+                alaApi.add(pid); return base;
+            }
+        };
+        PerfilPresenter p = new PerfilPresenter(perfilesPre, ratings, busqueda, Tareas.EN_LINEA, eloWatch, new HashMap<>(), pantalla);
+        p.pausaPrecargaMs = 0;
+        p.precalentarAhora(dir, pid -> actividad(pid, "J" + pid, List.of()));   // ms de 2023: más de 6 h, toca refrescar
+        java.util.Collections.sort(aSfr); java.util.Collections.sort(alaApi);
+        assertEquals(List.of(1L, 2L, 3L), aSfr, "se mira sfr-data para todos");
+        assertEquals(List.of(2L, 3L), alaApi, "el 1 lo tiene sfr-data: ninguna llamada a la API por él");
     }
 
     static class RatingsFalso implements RatingsService {
@@ -118,9 +141,7 @@ class PerfilPresenterTest {
         Actividad masCompletado;
         String masError;
         List<String[]> sugerenciasBuscador; String sugerenciasBuscadorQuery;
-        List<String[]> sugerenciasH2h; String sugerenciasH2hQuery;
         int vinculadasListasVeces;
-        Set<Long> conjuntoIds; String conjuntoNombre;
 
         @Override public long pidAbierto() { return pidAbierto; }
         @Override public long generacion() { return generacion; }
@@ -141,9 +162,7 @@ class PerfilPresenterTest {
         @Override public void masCompletado(Actividad a) { masCompletado = a; }
         @Override public void masError(String mensaje) { masError = mensaje; }
         @Override public void sugerenciasBuscador(List<String[]> resultados, String query) { sugerenciasBuscador = resultados; sugerenciasBuscadorQuery = query; }
-        @Override public void sugerenciasCaraACara(List<String[]> resultados, String query) { sugerenciasH2h = resultados; sugerenciasH2hQuery = query; }
         @Override public void vinculadasListas() { vinculadasListasVeces++; }
-        @Override public void conjuntoClanListo(Set<Long> ids, String nombre) { conjuntoIds = ids; conjuntoNombre = nombre; }
     }
 
     final PerfilesFalso perfiles = new PerfilesFalso();
@@ -238,6 +257,53 @@ class PerfilPresenterTest {
         assertNull(pantalla.cabeceraPintada);   // ni la cabecera se pinta: la comprobación es antes de cabecera()
     }
 
+    // ----- F5 (1.3): testigo por carga ----------------------------------------------------------
+
+    /** F5: se abre A (lento, por la API) y enseguida B. La respuesta tardía de A no debe apagar «cargando» mientras
+     *  B sigue bajando (antes lo hacía: salía «Cargar más partidas» a mitad de carga y se podían lanzar dos). */
+    @Test void respuesta_tardia_de_otro_perfil_no_apaga_la_carga_en_curso() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        pantalla.pidAbierto = 7L;
+        p.cargar(7L, "Zutano", null, false);   // A
+        pantalla.pidAbierto = 8L;
+        p.cargar(8L, "Mengano", null, false);  // B, mientras A sigue en vuelo
+        tareasAplazadas.pendientesFondo.get(0).run();   // vuelve A, tarde
+        assertTrue(pantalla.cargando, "B sigue cargando: A no puede apagarlo");
+        assertNull(pantalla.completadaPintada, "A no pinta sobre B");
+        tareasAplazadas.pendientesFondo.get(1).run();   // vuelve B
+        assertFalse(pantalla.cargando);
+    }
+
+    /** F5: si se deja el perfil sin abrir otro que cargue (p. ej. la página vacía), la carga que vuelve sí apaga. */
+    @Test void la_ultima_carga_apaga_cargando_aunque_ya_no_sea_el_perfil_abierto() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        pantalla.pidAbierto = 7L;
+        p.cargar(7L, "Zutano", null, false);
+        pantalla.pidAbierto = 0L;
+        tareasAplazadas.pendientesFondo.get(0).run();
+        assertFalse(pantalla.cargando);
+    }
+
+    /** F5: «Cargar más» de A en vuelo y se abre B por la API: la vuelta de A tampoco apaga la carga de B. */
+    @Test void cargar_mas_tardio_no_apaga_la_carga_de_otro_perfil() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        pantalla.pidAbierto = 7L;
+        p.cargarMas(7L, "Zutano", actividad(7L, "Zutano", List.of()), 4);
+        pantalla.pidAbierto = 8L;
+        p.cargar(8L, "Mengano", null, false);
+        tareasAplazadas.pendientesFondo.get(0).run();
+        assertTrue(pantalla.cargando);
+    }
+
     // ----- cargar: API con progreso parcial -------------------------------------------------
 
     @Test void cargar_por_api_pinta_progreso_parcial_y_termina() {
@@ -252,6 +318,28 @@ class PerfilPresenterTest {
         perfiles.ultimoParcial.accept(parcial);
         assertSame(parcial, pantalla.parcialPintada);
         assertSame(completa, pantalla.completadaPintada);
+    }
+
+    /** F8 (1.3): la carga rápida (sin nada guardado) pide ACT_PAGINAS_RAPIDAS páginas: la barra dice «de 2», no «de 20». */
+    @Test void cargar_por_api_rapida_anuncia_sus_paginas_reales() {
+        pantalla.pidAbierto = 7L;
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        presenter.cargar(7L, "Zutano", null, false);
+        perfiles.ultimoParcial.accept(actividad(7L, "Zutano", List.of()));
+        assertEquals(dev.tirador.aoe2radar.service.ProfileService.ACT_PAGINAS_RAPIDAS, pantalla.parcialMax);
+    }
+
+    /** F8: la actualización de un perfil ya guardado sí va hasta ACT_MAX_PAGINAS. */
+    @Test void cargar_por_api_actualizando_anuncia_el_maximo() {
+        pantalla.pidAbierto = 7L;
+        perfiles.anioSfr = null;
+        Match m = new Match(); m.id = 1;
+        Actividad base = new Actividad(7L, "Zutano", List.of(m), false, 2, 1_700_000_000_000L);
+        perfiles.historialResultado = base;
+        presenter.cargar(7L, "Zutano", base, false);
+        perfiles.ultimoParcial.accept(base);
+        assertEquals(dev.tirador.aoe2radar.service.ProfileService.ACT_MAX_PAGINAS, pantalla.parcialMax);
     }
 
     @Test void cargar_por_api_progreso_parcial_se_descarta_si_el_pid_cambio() {
@@ -286,6 +374,48 @@ class PerfilPresenterTest {
         assertEquals(1, pantalla.hoyIniciadoVeces);
         assertEquals(3, pantalla.hoyNuevas);
         assertSame(perfiles.ficha, pantalla.hoyFicha);
+    }
+
+    /** F9: «Actualizar hoy» con la ficha caída (ficha() devuelve null) pero traerHoy bien: se pinta con la última
+     *  ficha conocida, no con null (que dejaba «Sin datos de perfil» y sin chips de ELO). */
+    @Test void actualizar_hoy_con_la_ficha_caida_usa_la_ultima_conocida() {
+        pantalla.pidAbierto = 5L;
+        perfiles.ficha = null;
+        perfiles.conocida = new FichaPerfil(Map.of("rm_1v1", new int[]{ 1500, 10 }), "es", "", 20);
+        perfiles.traerHoyResultado = 2;
+        presenter.actualizarHoy(5L);
+        assertSame(perfiles.conocida, pantalla.hoyFicha);
+        assertEquals(2, pantalla.hoyNuevas);
+    }
+
+    /** F9: lo mismo en la carga por la API: la cabecera no se pinta vacía si la ficha falla y había una conocida. */
+    @Test void cargar_por_api_con_la_ficha_caida_pinta_la_ultima_conocida() {
+        pantalla.pidAbierto = 7L;
+        perfiles.anioSfr = null;
+        perfiles.ficha = null;
+        perfiles.conocida = new FichaPerfil(Map.of(), "es", "", 3);
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        presenter.cargar(7L, "Zutano", null, false);
+        assertSame(perfiles.conocida, pantalla.cabeceraPintada);
+    }
+
+    /** F4 (3): dos «Actualizar hoy» en marcha a la vez (A y luego B) se recuerdan los dos; y el que termina con
+     *  otro perfil abierto queda apuntado como hecho, para cuando se vuelva a él. */
+    @Test void actualizar_hoy_recuerda_varios_pids_y_el_resultado_aunque_no_este_abierto() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.traerHoyResultado = 3;
+        p.actualizarHoy(5L);
+        p.actualizarHoy(6L);
+        assertTrue(p.hoyEnCurso(5L) && p.hoyEnCurso(6L));
+        pantalla.pidAbierto = 7L;   // ninguno de los dos está abierto al terminar
+        tareasAplazadas.pendientesFondo.get(0).run();
+        assertFalse(p.hoyEnCurso(5L));
+        assertTrue(p.hoyEnCurso(6L));
+        assertEquals(3, p.hoyNuevas(5L));
+        assertNull(pantalla.hoyFicha, "no se pinta sobre el perfil abierto");
+        p.olvidarHoy(5L);
+        assertNull(p.hoyNuevas(5L));
     }
 
     @Test void actualizar_hoy_descartado_si_el_pid_abierto_ya_no_es_ese() {
@@ -389,14 +519,7 @@ class PerfilPresenterTest {
         assertEquals("ful", pantalla.sugerenciasBuscadorQuery);
     }
 
-    @Test void sugerir_cara_a_cara_pasa_los_resultados_y_la_query() {
-        busqueda.resultado = List.<String[]>of(new String[]{ "2", "Zutano", "Zutano" });
-        presenter.sugerirCaraACara("zu");
-        assertEquals(busqueda.resultado, pantalla.sugerenciasH2h);
-        assertEquals("zu", pantalla.sugerenciasH2hQuery);
-    }
-
-    // ----- vinculadas y conjunto clan ------------------------------------------------------------
+    // ----- vinculadas -----------------------------------------------------------------------------
 
     @Test void pedir_vinculadas_avisa_a_la_pantalla_si_el_pid_sigue_abierto() {
         pantalla.pidAbierto = 5L;
@@ -408,19 +531,6 @@ class PerfilPresenterTest {
         pantalla.pidAbierto = 6L;
         presenter.pedirVinculadas(5L);
         assertEquals(0, pantalla.vinculadasListasVeces);
-    }
-
-    @Test void resolver_conjunto_clan_ok_devuelve_los_miembros() {
-        ratings.asegurarError = null;   // asegurar() va bien
-        presenter.resolverConjuntoClan("TSK", "Clan TSK");
-        assertNotNull(pantalla.conjuntoIds);   // vacío o no: lo importante es que se avisó a la pantalla
-        assertEquals("Clan TSK", pantalla.conjuntoNombre);
-    }
-
-    @Test void resolver_conjunto_clan_con_ladder_caido_devuelve_vacio() {
-        ratings.asegurarError = "sin red";   // asegurar() falla: no se listan miembros (ver ConsultasLadder.miembrosClan)
-        presenter.resolverConjuntoClan("TSK", "Clan TSK");
-        assertTrue(pantalla.conjuntoIds.isEmpty());
     }
 
     /** Ficha de cabecera sin llamada (perfilSintetico de la 1.1): usa el ELO de la watchlist si no hay ninguno en las partidas. */

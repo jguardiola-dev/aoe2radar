@@ -13,6 +13,7 @@ import java.util.Locale;
 import static dev.tirador.aoe2radar.cache.Catalogos.cargarCatalogos;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
+import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Identidad.NOMBRE;
 import static dev.tirador.aoe2radar.util.Identidad.VERSION;
 import static dev.tirador.aoe2radar.ui.TemaApp.TEMA_SISTEMA;
@@ -49,7 +50,8 @@ public class Main {
                 for (StackTraceElement st : ex.getStackTrace()) sb.append("    at ").append(st).append("\n");
                 try { Files.writeString(enCarpetaBase("arranque_error.log"), sb.toString()); } catch (Exception ignored) { }
                 JOptionPane.showMessageDialog(null,
-                        NOMBRE + " no ha podido arrancar.\nDetalle guardado en arranque_error.log (junto al exe).\n\n" + ex,
+                        NOMBRE + t(" no ha podido arrancar.\nDetalle guardado en arranque_error.log (junto al exe).\n\n",
+                                " could not start.\nDetails saved to arranque_error.log (next to the exe).\n\n") + ex,
                         NOMBRE, JOptionPane.ERROR_MESSAGE);
                 System.exit(2);
             }

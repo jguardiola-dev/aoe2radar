@@ -375,8 +375,8 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
     public void ladderRefrescar() {
         histograma1.lb = familia + "_1v1";
         histograma2.lb = familia + "_team";
-        activosCheck.setToolTipText(t("Solo jugadores con ", "Only players with ") + ratingsService.activosMinPartidas() + t(" o más partidas en ese ladder y una en los últimos ", " games or more on that ladder and one in the last ")
-                + ratingsService.activosDias() + t(" días. Sin marcar: todos los que tienen rating.", " days. Unticked: everyone with a rating."));
+        activosCheck.setToolTipText(t("Solo jugadores con ", "Only players with ") + RatingsService.criterioActivos(ratingsService.activosMinPartidas(), ratingsService.activosDias())
+                + t(". Sin marcar: todos los que tienen rating.", ". Unticked: everyone with a rating."));
         ladderRefrescarComparados();
         LadderHist h = ratingsService.hist(histograma1.lb, soloActivos);
         ladderEstado.setText(h == null ? t("Sin datos de ese ladder.", "No data for that ladder.")
