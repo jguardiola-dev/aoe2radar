@@ -101,6 +101,7 @@ class PerfilPresenterTest {
     /** La Pantalla de mentira: guarda lo que el presentador le pide, como haría PerfilView. */
     static class PantallaFalsa implements PerfilPresenter.Pantalla {
         long pidAbierto;
+        long generacion;
         boolean cargando;
         int cargaIniciadaVeces;
         FichaPerfil cabeceraPintada;
@@ -122,6 +123,7 @@ class PerfilPresenterTest {
         Set<Long> conjuntoIds; String conjuntoNombre;
 
         @Override public long pidAbierto() { return pidAbierto; }
+        @Override public long generacion() { return generacion; }
         @Override public boolean cargando() { return cargando; }
         @Override public void cargando(boolean v) { cargando = v; }
         @Override public void baseLista(Actividad base, FichaPerfil perfilCache) { baseListaBase = base; baseListaFicha = perfilCache; baseListaVeces++; }
@@ -156,19 +158,31 @@ class PerfilPresenterTest {
 
     // ----- abrir base (fila 28): perfiles.actividad/fichaConocida fuera del EDT -------------
 
-    @Test void abrir_base_pinta_lo_que_hay_en_disco_y_memoria_si_el_pid_sigue_abierto() {
-        pantalla.pidAbierto = 5L;
+    @Test void abrir_base_pinta_si_la_generacion_sigue_siendo_la_actual() {
+        pantalla.generacion = 3L;
         perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
         perfiles.ficha = new FichaPerfil(Map.of(), "es", "", 0);
-        presenter.abrirBase(5L, "Fulano");
+        presenter.abrirBase(5L, 3L);
         assertSame(perfiles.actividadResultado, pantalla.baseListaBase);
         assertSame(perfiles.ficha, pantalla.baseListaFicha);
     }
 
-    @Test void abrir_base_no_pinta_si_el_pid_abierto_cambio_mientras_tanto() {
-        pantalla.pidAbierto = 999L;   // se navegó a otro perfil antes de que volviera la lectura de disco
+    /**
+     * Mutación (fila 28, C1+C2 revisado): un A→B→A rápido, o abrir el mismo pid dos veces antes de que la
+     * primera lectura vuelva, no debe dejar dos cargas pintando. Se simula con un Tareas que ENCOLA: se lanza
+     * abrirBase con la generación 1, pero para cuando el hilo de fondo "vuelve" ya se ha abierto otra vez (la
+     * generación en la pantalla es 2). Sin el arreglo (comprobar solo pidAbierto()), esto pintaría igual, porque
+     * el pid puede seguir siendo el mismo; comprobando generacion() en vez de (o además de) pidAbierto(), se
+     * descarta. Quitar la comprobación de generación del presentador pone este test en rojo.
+     */
+    @Test void abrir_base_no_pinta_si_la_generacion_cambio_mientras_tanto() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        pantalla.generacion = 1L;
         perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
-        presenter.abrirBase(5L, "Fulano");
+        p.abrirBase(5L, 1L);   // captura la generación 1 al lanzar el hilo
+        pantalla.generacion = 2L;   // mientras tanto: se reabrió (mismo pid u otro) antes de que volviera la lectura
+        tareasAplazadas.pendientesFondo.get(0).run();
         assertEquals(0, pantalla.baseListaVeces);
     }
 
@@ -183,9 +197,9 @@ class PerfilPresenterTest {
     @Test void abrir_base_manda_la_lectura_a_un_hilo_de_fondo_llamado_perfil_abrir_mas_el_pid() {
         TareasAplazadas tareasAplazadas = new TareasAplazadas();
         PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
-        pantalla.pidAbierto = 5L;
+        pantalla.generacion = 1L;
         perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
-        p.abrirBase(5L, "Fulano");
+        p.abrirBase(5L, 1L);
         assertEquals(List.of("perfil-abrir-5"), tareasAplazadas.nombresFondo);
         assertEquals(0, pantalla.baseListaVeces);   // todavía no "volvió" del hilo de fondo
         tareasAplazadas.pendientesFondo.get(0).run();   // ahora sí

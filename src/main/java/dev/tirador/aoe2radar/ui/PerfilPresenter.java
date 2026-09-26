@@ -41,6 +41,11 @@ public final class PerfilPresenter {
     public interface Pantalla {
         /** El pid actualmente abierto (para descartar respuestas de un perfil que ya no se mira). */
         long pidAbierto();
+        /** Fila 28 (C1+C2): sube cada vez que alAbrir procesa una apertura de verdad. abrirBase la captura al
+         *  lanzar el hilo de fondo y la vuelve a leer al terminar: si cambió mientras tanto (el mismo pid se
+         *  reabrió, o A→B→A antes de que la lectura volviera), la respuesta se descarta aunque pidAbierto()
+         *  coincida (subsume esa comprobación: cada apertura de verdad tiene su propia generación). */
+        long generacion();
         /** ¿Hay una carga en curso? Campo de la vista (actCargando de la 1.1), leído/escrito tal cual. */
         boolean cargando();
         void cargando(boolean v);
@@ -113,16 +118,18 @@ public final class PerfilPresenter {
     }
 
     /**
-     * Fila 28: la primera mirada al abrir un perfil (perfiles.actividad, que sin ir a la red sí puede leer disco
-     * si no está en memoria, más fichaConocida) sale del EDT: antes se llamaba directamente en alAbrir. El
-     * resultado vuelve por baseLista(), que pinta y decide si hace falta seguir cargando (sfr-data o la API).
-     * Hilo "perfil-abrir-" + pid.
+     * Fila 28 (C1+C2, revisión del revisor): la vista solo llega aquí cuando el perfil NO está ya en
+     * {@code actividadCache} (si lo estuviera, pintaría en el acto ella misma, sin hilo ni parpadeo); así que
+     * perfiles.actividad(pid) sí va a tener que leer disco (HistorialDisco.cargarActividad), y eso sale del EDT.
+     * El resultado vuelve por baseLista(), pero solo si {@code generacion} (la de ESTA apertura, capturada al
+     * llamar) sigue siendo la actual: evita que un A→B→A rápido, o abrir dos veces el mismo pid antes de que la
+     * primera lectura vuelva, disparen dos cargas a la vez. Hilo "perfil-abrir-" + pid.
      */
-    public void abrirBase(long pid, String nombre) {
+    public void abrirBase(long pid, long generacion) {
         tareas.enFondo("perfil-abrir-" + pid, () -> {
             Actividad base = perfiles.actividad(pid);
             FichaPerfil perfilCache = perfiles.fichaConocida(pid);
-            tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.baseLista(base, perfilCache); });
+            tareas.enUi(() -> { if (pantalla.generacion() == generacion) pantalla.baseLista(base, perfilCache); });
         });
     }
 

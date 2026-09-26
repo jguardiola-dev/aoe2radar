@@ -205,6 +205,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     private JButton actMasBtn;
     boolean actividadAbierta, actCargando, actRellenandoModos;
     long actPid; String actNombre = "", actModo = "*";
+    /** Fila 28 (C1+C2): sube en cada apertura de verdad (alAbrir); ver generacion() y PerfilPresenter.abrirBase. */
+    private long aperturaGeneracion;
     public CalendarioPanel actCalendario;   // visible para RegresionCapturas
     public BarrasActividad actSemana;       // visible para RegresionCapturas
     private BarrasActividad actHoras;
@@ -266,6 +268,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     public boolean abierto() { return actividadAbierta; }
     /** El pid actualmente mostrado (0 si no hay ninguno). */
     public long pidAbierto() { return actPid; }
+    /** Fila 28 (C1+C2): la generación de la apertura en curso; PerfilPresenter.abrirBase la compara al volver del hilo de fondo. */
+    public long generacion() { return aperturaGeneracion; }
     /** El nombre del perfil actualmente mostrado. */
     public String nombreAbierto() { return actNombre; }
     /** El pid cuyo histórico está volcado en la pestaña Partidas (0 si ninguno todavía). */
@@ -288,19 +292,24 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         perfilContabilizarPestana(pid, nombre);
         anfitrion.registrarDestino(pid, nombre);
         if (actCargando && pid == actPid) return;
+        // Fila 28 (C1+C2, revisión): esta apertura pasa a ser LA de verdad; una generación nueva invalida
+        // cualquier lectura de fondo que estuviera pendiente de una apertura anterior (aunque fuera del mismo
+        // pid: A→B→A rápido, o abrir dos veces seguidas el mismo perfil antes de que la primera lectura vuelva).
+        aperturaGeneracion++;
         actPid = pid; actNombre = nombre;
         actTitulo.setText(t("Perfil de ", "Profile of ") + nombre);
         actNombreReal = nombre;
         anfitrion.actualizarTextoBuscar();
         actMasBtn.setVisible(false);
-        // Fila 28: perfiles.actividad(pid) mira el disco si no está en memoria (HistorialDisco.cargarActividad);
-        // antes se llamaba aquí mismo, en el EDT. Ahora se pide a PerfilPresenter.abrirBase, que lo hace en un
-        // hilo y vuelve a pintar con baseLista(). Mientras tanto se deja el mismo aviso que antes se veía solo
-        // cuando no había nada en disco: con historial ya guardado, ahora hay un instante de «Descargando…»
-        // antes de que la lectura en segundo plano termine y repinte el cuerpo completo.
+        // C1: si ya está en memoria (actividadCache es la MISMA ConcurrentHashMap que usa perfiles.actividad(pid)
+        // por debajo, ver HistorialPerfil.actividad), no hace falta ir a un hilo: se pinta en el acto, como la 1.1,
+        // sin el parpadeo de «Descargando…». Solo cuando no está en memoria perfiles.actividad(pid) tendría que
+        // leer disco (HistorialDisco.cargarActividad), y eso sí sale del EDT vía PerfilPresenter.abrirBase.
+        Actividad base = actividadCache.get(pid);
+        if (base != null) { baseLista(base, perfiles.fichaConocida(pid)); return; }
         actMostrarCuerpo(false);
         actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in."));
-        presenter.abrirBase(pid, nombre);
+        presenter.abrirBase(pid, aperturaGeneracion);
     }
 
     /** Con Perfil abierto, seleccionar a alguien en la watchlist abre su perfil (lo llama el listener de playersList). */
