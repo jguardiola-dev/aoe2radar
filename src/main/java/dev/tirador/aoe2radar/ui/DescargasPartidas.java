@@ -68,6 +68,7 @@ final class DescargasPartidas {
         int ok = 0;
         for (Path f : files) { try { Files.delete(f); ok++; } catch (IOException ignored) {} }
         for (Match m : vista.all) { m.enDisco = false; if (m.estado.startsWith("✓")) m.estado = ""; }
+        vista.generacionEnDisco++;   // un «en disco» que aún se esté mirando en el fondo ya no vale: manda este borrado
         vista.tableModel.fireTableDataChanged();
         vista.anfitrion.estado(ok + t(" recs borradas.", " recs deleted."));
     }
@@ -278,6 +279,9 @@ final class DescargasPartidas {
                     vista.dlAll.setEnabled(true);
                     vista.anfitrion.trabajando(false);
                 }
+                // Si una búsqueda cambió la tabla durante la descarga, sus filas son otros Match: se vuelve a mirar
+                // en el disco qué está ya bajado o en el juego (fuera del EDT, y sube la generación).
+                vista.remarcarEnDisco();
                 // El aviso de quien la pidió (Perfil/Live now: repintar su tabla con lo ya en disco) corre siempre al
                 // acabar ESTA descarga, aunque otra operación se llevara el semáforo mientras tanto.
                 if (alTerminar != null) alTerminar.run();

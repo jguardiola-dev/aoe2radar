@@ -591,12 +591,19 @@ public final class PartidasView {
     }
 
     /** Solo pinta el último cálculo de «en disco» (applyFilters puede llamarse varias veces seguidas). EDT. */
-    private long generacionEnDisco;
+    long generacionEnDisco;
 
     /** «✓ en disco» / «✓✓ en juego» de cada fila terminada: antes eran dos Files.exists por partida en el EDT (hasta
      *  1.200 con el tope de 600) más leer config.properties; ahora se miran en un hilo de fondo y las filas se
      *  repintan al llegar (sin tocar la selección). Lo que se pinta al final es lo mismo que antes; en el primer
      *  instante, las filas nuevas enseñan su «N POV»/«¿?» hasta que llega la respuesta del disco (revisión 1.3). */
+    /** Vuelve a mirar «en disco»/«en juego» de las filas terminadas de la tabla (al acabar una descarga). EDT. */
+    void remarcarEnDisco() {
+        List<Match> terminadas = new ArrayList<>();
+        for (Match m : view) if (m.finished != null) terminadas.add(m);
+        marcarEnDiscoEnFondo(terminadas);
+    }
+
     void marcarEnDiscoEnFondo(List<Match> terminadas) {
         if (terminadas.isEmpty()) return;
         final long gen = ++generacionEnDisco;

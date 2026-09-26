@@ -128,10 +128,12 @@ class PartidasViewTest {
     static final class RecFalso implements dev.tirador.aoe2radar.service.RecService {
         final List<Long> procesadas = Collections.synchronizedList(new ArrayList<>());
         volatile CountDownLatch dentro, soltar;   // si están puestos, procesar avisa y espera (una descarga «en curso»)
+        volatile Path escribirEn;                 // si está puesto, deja la rec en esa carpeta (como la descarga real)
         @Override public Resultado procesar(Match m, java.util.Set<Long> trackedIds, boolean enviarAlJuego, Path savegame, BooleanSupplier cancelado) {
             procesadas.add(m.id);
             if (dentro != null) dentro.countDown();
             if (soltar != null) try { soltar.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+            if (escribirEn != null) try { java.nio.file.Files.write(escribirEn.resolve(m.id + ".aoe2record"), new byte[6000]); } catch (java.io.IOException ignored) { }
             return new Resultado(Estado.DESCARGADA, false, null, true);
         }
     }
@@ -553,6 +555,33 @@ class PartidasViewTest {
         conConfig("usar_ca", "false", () -> enEdt(() -> vista.menuPartida.espectarConCaptureAge(m)));
         assertEquals(1, anfitrion.capturesLanzados);
         assertEquals(List.of(8602L), anfitrion.espectadas);
+    }
+
+    @Test void busquedaQueAcabaDuranteUnaDescarga_laFilaSigueEnsenandoLaDescarga() throws Exception {
+        // F7 (2.ª vuelta): la búsqueda trae la misma partida como OTRO Match; setEstado la buscaba por identidad y
+        // «descargando… / ✓ guardada» dejaba de verse.
+        Instant fin = Instant.now().minusSeconds(600);
+        Match vieja = partida(8701, A, fin);
+        rec.dentro = new CountDownLatch(1);
+        rec.soltar = new CountDownLatch(1);
+        rec.escribirEn = recs;
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(vieja), A, "grupo|General"));
+        enEdt(() -> vista.download(List.of(vieja)));
+        assertTrue(rec.dentro.await(5, TimeUnit.SECONDS), "la descarga está en marcha");
+        enlace.invitado = A;
+        anfitrion.paginador = (pid, pag, pp) -> List.of(partida(8701, A, fin));   // la misma partida, otro objeto
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+        asentar();
+        Match nueva = vista.view.get(0);
+        assertNotSame(vieja, nueva);
+        assertEquals("descargando…", nueva.estado, "la fila de la búsqueda nueva conserva el estado de la descarga");
+        rec.soltar.countDown();
+        esperar(() -> "✓ guardada".equals(nueva.estado), "el «✓ guardada» llega a la fila nueva");
+        esperar(() -> nueva.enDisco, "y su marca «en disco»");
+        asentar();
+        enEdt(() -> assertEquals("✓ guardada", vista.tableModel.getValueAt(vista.view.indexOf(nueva), 7)));
+        assertTrue(nueva.enDisco, "remarcar al acabar la descarga no la desmarca");
     }
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {

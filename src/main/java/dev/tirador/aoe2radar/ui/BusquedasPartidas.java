@@ -377,6 +377,12 @@ final class BusquedasPartidas {
                         else if (dec.fuera().contains(pl.id())) { EstadoVivo.SISTEMA.marcarFuera(pl.id()); }
                     }
                     vista.enlaceWatchlist.actualizarIndicadoresVivos();
+                    // Una descarga pudo seguir mientras se buscaba (F7): la misma partida vuelve como OTRO Match, y
+                    // su estado («descargando…», «✓ guardada»…) se conserva por id de partida. enDisco/enJuego los
+                    // vuelve a mirar applyFilters (y otra vez la descarga al acabar).
+                    java.util.Map<Long, String> estados = new java.util.HashMap<>();
+                    for (Match viejo : vista.all) if (!viejo.estado.isBlank()) estados.put(viejo.id, viejo.estado);
+                    for (Match nuevo : res) { String e = estados.get(nuevo.id); if (e != null && nuevo.estado.isBlank()) nuevo.estado = e; }
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.refreshModeCombo();
