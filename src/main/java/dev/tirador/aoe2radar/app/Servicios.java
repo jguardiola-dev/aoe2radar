@@ -22,6 +22,7 @@ import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.service.TwitchService;
 import dev.tirador.aoe2radar.service.TwitchServiceCompanion;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
+import dev.tirador.aoe2radar.ui.BarraEstado;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import javax.swing.SwingUtilities;
@@ -58,7 +59,6 @@ import static dev.tirador.aoe2radar.sfrdata.Snapshots.ELO_AYER;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.NOMBRES_AYER;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
-import static dev.tirador.aoe2radar.util.I18n.t;
 
 /**
  * Raíz de composición de la app: aquí se crean, UNA sola vez y en un orden fijo, todos los servicios que
@@ -104,11 +104,16 @@ public class Servicios {
     public static final AnotacionesService ANOTACIONES = new AnotacionesService(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
 
     // ----- HTTP --------------------------------------------------------------
-    /** La pausa por 429 del companion, contada en la barra de estado (ApiClient avisa; la red ya no toca Swing). */
+    /** La pausa por 429 del companion, contada con cuenta atrás en la barra de estado (decisión de Jorge,
+     *  DEUDA 45: ApiClient avisa una vez por episodio; la red ya no toca Swing). Servicios no guarda una
+     *  referencia a ui.BarraEstado (solo a `status`, público «desde fuera del paquete»): BarraEstado se
+     *  encuentra a sí misma a través de ese mismo JLabel (ver el putClientProperty de su constructor). */
     static void avisarPausa429(long seg) {
         SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
         final SpoilerFreeRecs appF = app;
-        if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(t("La API pide calma (429): la app pausa las consultas ", "The API asks for calm (429): the app pauses its requests for ") + seg + t(" s y sigue sola.", " s and carries on by itself.")));
+        if (appF != null) SwingUtilities.invokeLater(() -> {
+            if (appF.status.getClientProperty(BarraEstado.class) instanceof BarraEstado b) b.mostrarPausaApi(seg);
+        });
     }
     /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
      *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pintar en Swing. */

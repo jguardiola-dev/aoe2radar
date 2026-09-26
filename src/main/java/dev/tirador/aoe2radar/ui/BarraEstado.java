@@ -94,11 +94,24 @@ public final class BarraEstado {
     /** cada operación tiene su número: el watchdog del Detener solo cierra la suya */
     private long opSerial;
 
+    /** Cuenta atrás del aviso de pausa por 429 (decisión de Jorge, DEUDA 45): un único Timer, reutilizado
+     *  (restart(), nunca «new») aunque lleguen varios avisos seguidos. Paquete, no privado: BarraEstadoTest
+     *  lo para al cerrar (como watchdogDetener/toastTimer) y comprueba que sigue siendo el mismo objeto. */
+    javax.swing.Timer timerPausaApi;
+    private long segRestantesPausaApi;
+    /** El último texto de cuenta atrás que se pintó: al llegar a 0 solo se limpia `status` si sigue mostrando
+     *  ESTE texto exacto (si alguien pintó otra cosa encima mientras tanto, no se toca). */
+    private String ultimoTextoPausaApi;
+
     public BarraEstado(RootPaneContainer ventana, Anfitrion anfitrion, String donarUrl) {
         this.ventana = ventana;
         this.anfitrion = anfitrion;
         this.donarUrl = donarUrl;
         cafeBtn = new JButton("\u2615 " + t("Invítame a un café", "Buy me a coffee"));
+        // app.Servicios.avisarPausa429 solo conoce `status` (es público, ver SpoilerFreeRecs.status):
+        // esta marca deja que, con ESE mismo JLabel, encuentre esta BarraEstado sin que Servicios guarde
+        // una referencia nueva ni SpoilerFreeRecs exponga el campo barraEstado.
+        status.putClientProperty(BarraEstado.class, this);
     }
 
     public long opSerial() { return opSerial; }
@@ -207,4 +220,48 @@ public final class BarraEstado {
     }
 
     public void ocultarToast() { if (toast != null) { ventana.getLayeredPane().remove(toast); ventana.getLayeredPane().repaint(); toast = null; } }
+
+    // ======================================================================
+    // Aviso de pausa por 429 (decisión de Jorge, DEUDA 45): "Buscar" y Twitch se quedaban en "Consultando..."
+    // hasta 5 min sin explicar por qué. app.Servicios.avisarPausa429 llama aquí, ya en el EDT, una vez por
+    // episodio de pausa.
+    // ======================================================================
+
+    /** Pinta la cuenta atrás YA (para ganarle a un publish/process de "Consultando..." que llegue en el mismo
+     *  instante) y arranca (o reinicia, si ya había una en curso) un único Timer de 1 s que la reescribe cada
+     *  segundo. Un segundo aviso mientras la cuenta sigue corriendo la reinicia con el nuevo valor de seg: el
+     *  Timer se reutiliza (restart()), nunca se crea uno nuevo. seg &lt;= 0 no hace nada (no hay pausa que
+     *  contar). */
+    public void mostrarPausaApi(long seg) {
+        if (seg <= 0) return;
+        segRestantesPausaApi = seg;
+        ultimoTextoPausaApi = textoPausaApi(seg);
+        status.setText(ultimoTextoPausaApi);
+        if (timerPausaApi == null) {
+            timerPausaApi = new javax.swing.Timer(1000, e -> tickPausa());
+            timerPausaApi.setRepeats(true);
+            timerPausaApi.start();
+        } else {
+            timerPausaApi.restart();
+        }
+    }
+
+    /** Un segundo de la cuenta atrás: al llegar a 0 para el Timer y, SOLO si `status` sigue mostrando su
+     *  propio texto de cuenta atrás (nadie ha pintado otra cosa encima), lo limpia. Paquete, no privado: lo
+     *  dispara BarraEstadoTest a mano, sin esperar el segundo real. */
+    void tickPausa() {
+        segRestantesPausaApi--;
+        if (segRestantesPausaApi <= 0) {
+            timerPausaApi.stop();
+            if (ultimoTextoPausaApi.equals(status.getText())) status.setText("");
+            return;
+        }
+        ultimoTextoPausaApi = textoPausaApi(segRestantesPausaApi);
+        status.setText(ultimoTextoPausaApi);
+    }
+
+    private static String textoPausaApi(long seg) {
+        return t("Esperando a la API (", "Waiting for the API (") + seg
+                + t(" s): pide calma y la app sigue sola.", " s): it asks for calm and the app carries on by itself.");
+    }
 }
