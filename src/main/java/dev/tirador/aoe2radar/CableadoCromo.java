@@ -123,6 +123,9 @@ final class CableadoCromo {
             @Override public void mostrarMiPerfil() { v.miPartida.abrirMiPerfil(); }
             @Override public void cambiarCuentaPropia() { v.miPartida.preguntarMiNick(); }
             @Override public void mostrarAcercaDe() { v.showAbout(); }
+            @Override public java.util.List<String> gruposWatchlist() { return v.watchlist.gruposDelCombo(); }
+            @Override public java.util.List<String> clanesGuardados() { return v.watchlist.clanesGuardados(); }
+            @Override public java.util.List<dev.tirador.aoe2radar.model.PaisItem> paises() { return java.util.List.of(v.watchlist.PAISES); }
         });
         JPanel esquina = v.menuConfiguracion.esquina();
 

@@ -126,18 +126,24 @@ public final class ListaSeguidos {
         guardarConfig.accept("grupos", String.join(",", gs));
     }
 
-    /** Renombra el grupo en los jugadores y en la config. No toca disco (players.txt): eso lo hace quien llama. */
+    /** Renombra el grupo en los jugadores y en la config, conservando el vínculo de familia de cada uno (misma
+     *  regla que moverJugador, decisión 5; antes de la 1.3 renombrar deshacía las familias del grupo). No toca
+     *  disco (players.txt): eso lo hace quien llama. */
     public void renombrarGrupo(List<Player> jugadores, String viejo, String nuevo) {
         for (int i = 0; i < jugadores.size(); i++) {
             Player p = jugadores.get(i);
             if (p.grupo().equalsIgnoreCase(viejo))
-                jugadores.set(i, new Player(p.id(), p.name(), nuevo));
+                jugadores.set(i, new Player(p.id(), p.name(), nuevo, p.vinculo()));
         }
         Set<String> gs = gruposConfig();
         gs.removeIf(g -> g.equalsIgnoreCase(viejo));
         gs.add(nuevo);
         guardarConfig.accept("grupos", String.join(",", gs));
         if (leerConfig.apply("grupo_activo", "").equalsIgnoreCase(viejo)) guardarConfig.accept("grupo_activo", nuevo);
+        // «Abrir en» ese grupo sigue al grupo renombrado (borrado, en cambio, cae a ★ Top ladder al arrancar)
+        VistaInicial.Eleccion abrir = VistaInicial.leer(leerConfig.apply(VistaInicial.CLAVE, ""));
+        if (abrir.tipo() == VistaInicial.Tipo.GRUPO && abrir.valor().equalsIgnoreCase(viejo))
+            guardarConfig.accept(VistaInicial.CLAVE, new VistaInicial.Eleccion(VistaInicial.Tipo.GRUPO, nuevo).aConfig());
     }
 
     /** Pasa los jugadores del grupo borrado a General. No toca disco (players.txt): eso lo hace quien llama. */
@@ -145,12 +151,26 @@ public final class ListaSeguidos {
         for (int i = 0; i < jugadores.size(); i++) {
             Player p = jugadores.get(i);
             if (p.grupo().equalsIgnoreCase(g))
-                jugadores.set(i, new Player(p.id(), p.name(), grupoGeneral));
+                jugadores.set(i, new Player(p.id(), p.name(), grupoGeneral, p.vinculo()));   // conserva el vínculo (F2 de la 1.3)
         }
         Set<String> gs = gruposConfig();
         gs.removeIf(x -> x.equalsIgnoreCase(g));
         guardarConfig.accept("grupos", String.join(",", gs));
         if (leerConfig.apply("grupo_activo", "").equalsIgnoreCase(g)) guardarConfig.accept("grupo_activo", t("Todos", "All"));
+    }
+
+    /**
+     * Los grupos donde se puede fichar o mover a alguien: General, los de los jugadores y los de la config, en ese
+     * orden y sin distinguir mayúsculas (si un nombre llega con mayúsculas distintas, sobrevive el primero: «General»
+     * y, después, el del jugador antes que el de config). Sin efectos: no escribe config (a diferencia de
+     * calcularGrupos). Un solo sitio para lo que antes se repetía en ocho bloques de la Watchlist (DEUDA fila 134).
+     */
+    public Set<String> gruposDisponibles(List<Player> jugadores) {
+        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        gs.add(grupoGeneral);
+        for (Player x : jugadores) gs.add(x.grupo());
+        gs.addAll(gruposConfig());
+        return gs;
     }
 
     /**

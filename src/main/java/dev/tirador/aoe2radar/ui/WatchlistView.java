@@ -16,6 +16,7 @@ import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.TopLadderService;
+import dev.tirador.aoe2radar.service.VistaInicial;
 
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
@@ -58,7 +59,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
+import java.util.function.BiConsumer;
+import java.util.function.BiFunction;
 
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -192,6 +194,13 @@ public final class WatchlistView {
     static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
 
     // ----- propios -----
+    /** config.properties (util.Config en la app). Inyectable para que los tests de grupos usen un mapa en memoria y no
+     *  el fichero real: en Windows, un guardado que falla en silencio (Config traga la IOException del move atómico
+     *  si el fichero está bloqueado un instante) dejaba grupo_activo sin escribir y el test leía «Todos» (el flaky de
+     *  la fila 146 de DEUDA). Pasan por aquí grupo_activo, abrir_en, clanes_guardados y lo de ListaSeguidos; el resto
+     *  de claves (orden, país, clan...) sigue con util.Config directamente, en esta clase y en sus piezas. */
+    final BiFunction<String, String, String> leerCfg;
+    final BiConsumer<String, String> guardarCfg;
     /** Persistencia, grupos y altas/bajas/movimientos de la watchlist: ver service.ListaSeguidos. */
     final ListaSeguidos listaSeguidos;
     final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
@@ -320,6 +329,24 @@ public final class WatchlistView {
                           Map<Long, Integer> eloWatch, Map<Long, Integer> gamesWatch, Map<Long, String[]> twitchLive,
                           Map<Long, String> aliases, JLabel status, JProgressBar progreso, List<Match> all,
                           JPanel sujetosPanel, Path playersFile, Path topCache, long pausaMs, int perPage) {
+        this(ventana, perfiles, busqueda, topLadderService, formaService, campanas, barridoVivos, eloSesion, menus, dialogos,
+                navegacion, tareas, enlacePartidas, anfitrion, todosJugadores, playersModel, playersList, eloWatch, gamesWatch,
+                twitchLive, aliases, status, progreso, all, sujetosPanel, playersFile, topCache, pausaMs, perPage,
+                dev.tirador.aoe2radar.util.Config::leerConfig, dev.tirador.aoe2radar.util.Config::guardarConfig);
+    }
+
+    /** Como el público, con la config inyectada (los tests: un mapa en memoria; ver leerCfg). */
+    WatchlistView(Window ventana, ProfileService perfiles,
+                  dev.tirador.aoe2radar.service.BusquedaPerfiles busqueda, TopLadderService topLadderService,
+                  FormService formaService, Campanas campanas, BarridoVivos barridoVivos, EloSesion eloSesion,
+                  MenusJugador menus, DialogosJugador dialogos, Navegacion navegacion,
+                  Tareas tareas, EnlacePartidas enlacePartidas, Anfitrion anfitrion,
+                  List<Player> todosJugadores, DefaultListModel<Player> playersModel, JList<Player> playersList,
+                  Map<Long, Integer> eloWatch, Map<Long, Integer> gamesWatch, Map<Long, String[]> twitchLive,
+                  Map<Long, String> aliases, JLabel status, JProgressBar progreso, List<Match> all,
+                  JPanel sujetosPanel, Path playersFile, Path topCache, long pausaMs, int perPage,
+                  BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg) {
+        this.leerCfg = leerCfg; this.guardarCfg = guardarCfg;
         this.ventana = ventana; this.perfiles = perfiles; this.busqueda = busqueda; this.topLadderService = topLadderService;
         this.formaService = formaService; this.campanas = campanas; this.barridoVivos = barridoVivos; this.eloSesion = eloSesion;
         this.menus = menus; this.dialogos = dialogos; this.navegacion = navegacion;
@@ -329,7 +356,7 @@ public final class WatchlistView {
         this.status = status; this.progreso = progreso; this.all = all;
         this.sujetosPanel = sujetosPanel;
         this.pausaMs = pausaMs; this.perPage = perPage;
-        this.listaSeguidos = new ListaSeguidos(playersFile, GRUPO_GENERAL, dev.tirador.aoe2radar.util.Config::leerConfig, dev.tirador.aoe2radar.util.Config::guardarConfig);
+        this.listaSeguidos = new ListaSeguidos(playersFile, GRUPO_GENERAL, leerCfg, guardarCfg);
         this.topCache = topCache;
         construirPanel();
     }
@@ -359,15 +386,10 @@ public final class WatchlistView {
         left.setPreferredSize(new Dimension(280, 0));
     }
 
-    /** Grupos donde se puede fichar a alguien: «General», los grupos con gente ahora mismo y los guardados en
-     *  config (idéntico al bloque que arma menuContextualWatchlist/menuDeJugador/mostrarVinculadas). */
-    public Set<String> gruposParaFichar() {
-        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        gs.add(GRUPO_GENERAL);
-        for (Player x : todosJugadores) gs.add(x.grupo());
-        gs.addAll(gruposConfig());
-        return gs;
-    }
+    /** Grupos donde se puede fichar o mover a alguien: «General», los grupos con gente ahora mismo y los guardados
+     *  en config (service.ListaSeguidos.gruposDisponibles). Es el único sitio que los calcula: menú contextual,
+     *  diálogos, esGrupoDeUsuario y, vía la ventana, DialogosJugador y MenusJugadorSwing (DEUDA fila 134). */
+    public Set<String> gruposDisponibles() { return listaSeguidos.gruposDisponibles(todosJugadores); }
 
     public boolean enZonaForma(Point p) {
         int wL = playersList.getWidth() - 22, elo = anchoCeldaElo(wL);
@@ -404,7 +426,7 @@ public final class WatchlistView {
 
     static String formaLarga(Forma f) {
         if (f.partidas() == 0) return t("sin partidas 1v1 en la ventana", "no 1v1 games in the window");
-        String r = f.racha() >= 2 ? " \u00B7 " + t("racha ", "streak ") + f.racha() + (f.rachaGana() ? "V" : "D") : "";
+        String r = f.racha() >= 2 ? " \u00B7 " + t("racha ", "streak ") + f.racha() + (f.rachaGana() ? t("V", "W") : t("D", "L")) : "";
         return f.w() + "-" + f.l() + " \u00B7 " + (f.diff() >= 0 ? "+" : "") + f.diff() + r;
     }
 
@@ -413,6 +435,17 @@ public final class WatchlistView {
     static String tipOcultarForma() { return t("Oculta la columna Forma (los datos siguen en caché 10 min).", "Hides the Recent form column (data stays cached for 10 min)."); }
 
     Map<Long, Forma> formaActiva() { return ventanaForma <= 24 ? forma24 : forma7d; }
+
+    /** Jugadores cuyo ELO en eloWatch es el del snapshot nocturno (el barrido de un grupo sin red, o el resumen
+     *  diario de ★ Top clan), no uno fresco. Lo escriben el EDT y lo lee el hilo de «Ver forma»: concurrente. */
+    final Set<Long> eloDelSnapshot = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** El «ELO actual» que «Ver forma» resta al de anoche (FormService.porResta): null si el que se conoce ES el de
+     *  anoche, porque la resta daría 0 y «sin partidas» (F5 de la revisión 1.3). Con null, porResta no sirve y la
+     *  forma va por la vía exacta (porSerie, una llamada). */
+    static Integer eloParaResta(long pid, Map<Long, Integer> eloWatch, Set<Long> delSnapshot) {
+        return delSnapshot.contains(pid) ? null : eloWatch.get(pid);
+    }
 
     public void apagarForma() { trabajos.apagarForma(); }
     void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) { trabajos.cargarForma(objetivo, horas, alTerminar); }
@@ -447,12 +480,29 @@ public final class WatchlistView {
         return "grupo|" + String.valueOf(grupoCombo.getSelectedItem());
     }
 
+    /** El nombre de la vista actual tal como lo ve el usuario, para el texto de la campana: «★ Top país · España»,
+     *  «★ Top clan · R1», «★ Top ladder», «Todos» o el nombre del grupo. Antes se enseñaba el id interno de
+     *  idVistaCampana («★pais es», «grupo Amigos»: «grupo» en español también con la app en inglés). */
+    String nombreVistaCampana() {
+        if (modoClan()) return TOP_CLAN + " \u00B7 " + clanBuscado();
+        if (modoPais()) return TOP_PAIS + " \u00B7 " + (paisActual != null ? paisActual.nombre() : paisSel().toUpperCase(Locale.ROOT));
+        return String.valueOf(grupoCombo.getSelectedItem());
+    }
+
     public boolean campanaContiene(long pid) { return campanas.campanaContiene(pid, campanaIds); }
 
     /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, pais y clan. */
     public void refrescarCampanas() {
         Set<String> s = campanas.campanas();
-        if (s.isEmpty()) { campanaIds.clear(); SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket); return; }
+        if (s.isEmpty()) {
+            campanaIds.clear();
+            // F11 de la 1.3: al apagar la última campana, el socket también deja de vigilar esa lista (antes solo
+            // se vaciaba campanaIds y el socket seguía con los ids viejos). Conjunto MUTABLE: el anfitrión le suma
+            // el top de Live now, si está abierto.
+            anfitrion.actualizarSocketExtra(new HashSet<>());
+            SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket);
+            return;
+        }
         // Copia de todosJugadores AQUÍ, en el EDT (refrescarCampanas siempre se llama desde él: botón de campana,
         // Timer de Swing, arranque): mismo riesgo que la fila 106 si el hilo de fondo recorriera la lista de
         // verdad mientras el EDT la muta (altas, bajas, rebuildGrupos...).
@@ -511,11 +561,14 @@ public final class WatchlistView {
 
     // ===== «★ Top clan» =================================================================================
 
-    public List<String> clanesGuardados() { List<String> l = new ArrayList<>(); for (String x : leerConfig("clanes_guardados", "").split(",")) if (!x.isBlank()) l.add(x.trim()); return l; }
+    public List<String> clanesGuardados() { List<String> l = new ArrayList<>(); for (String x : leerCfg.apply("clanes_guardados", "").split(",")) if (!x.isBlank()) l.add(x.trim()); return l; }
     /** El tag de clan escrito ahora mismo en el campo (Top clan); "" si no hay campo o está vacío. */
     public String clanBuscado() { return clanField == null ? "" : clanField.getText().trim(); }
 
     void cargarTopClan() { trabajos.cargarTopClan(); }
+    /** La firma de la lista cargada cuando es la de un clan: nunca coincide con la de ★ Top ladder («global») ni
+     *  con la de ★ Top país (el código ISO), así que volver a esas vistas recarga (F1 de la revisión 1.3). */
+    static String firmaClan(String tag) { return "clan|" + tag.toLowerCase(Locale.ROOT); }
     public void cargarTopLadder(boolean forzar) { trabajos.cargarTopLadder(forzar); }
     public void vigilarTop() { trabajos.vigilarTop(); }
 
@@ -527,11 +580,14 @@ public final class WatchlistView {
 
     // ===== Grupos ========================================================================================
 
-    public String grupoActivo() {   // null = «Todos»
+    /** El grupo de usuario elegido; null = «Todos» o una vista ★ (ladder, país o clan: ninguna es un grupo donde
+     *  fichar). Antes de la 1.3 se colaba «★ Top clan»: grupoDestino() lo daba como grupo y el invitado de
+     *  «Ver sus partidas» nacía con ese grupo. */
+    public String grupoActivo() {
         Object sel = grupoCombo.getSelectedItem();
         if (sel == null) return null;
         String s = String.valueOf(sel);
-        return s.equals(t("Todos", "All")) || s.equals(TOP_LADDER) || s.equals(TOP_PAIS)
+        return s.equals(t("Todos", "All")) || s.equals(TOP_LADDER) || s.equals(TOP_PAIS) || s.equals(TOP_CLAN)
                 || s.equals(t("+ Nuevo grupo…", "+ New group…"))
                 || s.equals(t("Gestionar grupos…", "Manage groups…")) ? null : s;
     }
@@ -585,27 +641,18 @@ public final class WatchlistView {
 
     public void ficharVarios(List<Player> lista, String g) { dialogosLista.ficharVarios(lista, g); }
 
-    // visible para esGrupoDeUsuario (y para el menú "mover a grupo")
-    Set<String> gruposExistentes() {
-        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        gs.add(GRUPO_GENERAL);
-        for (Player x : todosJugadores) gs.add(x.grupo());
-        gs.addAll(gruposConfig());
-        return gs;
-    }
-
     /**
      * ¿"nombre" es un grupo de verdad (General, uno con jugadores dentro o uno registrado en config), no un
      * texto que solo coincide por casualidad con "Todos"/"All"? Lo usa Campanas (inyectado desde
      * SpoilerFreeRecs) para no traducir la campana de un grupo que el usuario llamó, por ejemplo, "All": esa
      * campana es la de ESE grupo, no la del pseudogrupo "todos los jugadores".
      */
-    public boolean esGrupoDeUsuario(String nombre) { return gruposExistentes().contains(nombre); }
+    public boolean esGrupoDeUsuario(String nombre) { return gruposDisponibles().contains(nombre); }
 
     void moverVarios(List<Player> lista, String g) {
         int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
         savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-        status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + "\u00bb.");
+        status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + t("\u00bb.", "\u201D."));
     }
 
     public String elegirGrupoDialog(String nombreJugador) { return dialogosLista.elegirGrupoDialog(nombreJugador); }
@@ -615,7 +662,7 @@ public final class WatchlistView {
     public void rebuildGrupos() {
         var listener = grupoCombo.getActionListeners();
         for (var l : listener) grupoCombo.removeActionListener(l);
-        String guardado = leerConfig("grupo_activo", t("Todos", "All"));
+        String guardado = leerCfg.apply("grupo_activo", t("Todos", "All"));
         Set<String> grupos = listaSeguidos.calcularGrupos(todosJugadores);   // un grupo ya nunca se esfuma al vaciarse
         grupoCombo.removeAllItems();
         grupoCombo.addItem(t("Todos", "All"));
@@ -658,30 +705,76 @@ public final class WatchlistView {
     void onGrupoElegido() {
         String sel = String.valueOf(grupoCombo.getSelectedItem());
         if (sel.equals(TOP_CLAN)) {
-            guardarConfig("grupo_activo", sel);
+            guardarCfg.accept("grupo_activo", sel);
             actualizarBotonesModo();
             if (clanField != null && clanField.getText().isBlank()) clanField.setText(leerConfig("clan_tag", ""));
             cargarTopClan();
             return;
         }
         if (sel.equals(TOP_LADDER) || sel.equals(TOP_PAIS)) {
-            guardarConfig("grupo_activo", sel);
+            guardarCfg.accept("grupo_activo", sel);
             actualizarBotonesModo();
             cargarTopLadder(false);
             return;
         }
-        guardarConfig("grupo_activo", sel);
+        guardarCfg.accept("grupo_activo", sel);
         actualizarBotonesModo();
         aplicarFiltroGrupo();
         refrescarWatchlist();
         actualizarIndicadoresVivos();
     }
 
+    // ===== «Abrir en» (Configuración): la vista con la que abre la app =================================
+
+    /** Los grupos de usuario del combo (lo que hay detrás de «Todos» y las tres vistas ★), en su orden. */
+    public List<String> gruposDelCombo() {
+        List<String> gs = new ArrayList<>();
+        for (int i = 0; i < grupoCombo.getItemCount(); i++) {
+            String s = grupoCombo.getItemAt(i);
+            if (!s.equals(t("Todos", "All")) && !s.equals(TOP_LADDER) && !s.equals(TOP_PAIS) && !s.equals(TOP_CLAN)) gs.add(s);
+        }
+        return gs;
+    }
+
+    /** La elección de «Abrir en» guardada, ya comprobada contra lo que existe hoy (service.VistaInicial): si el país,
+     *  el clan (entre los guardados) o el grupo ya no existen, ★ Top ladder. No toca nada. */
+    public VistaInicial.Eleccion eleccionInicial() {
+        List<String> codigos = new ArrayList<>();
+        for (PaisItem pi : PAISES) codigos.add(pi.code());
+        return VistaInicial.resolver(VistaInicial.leer(leerCfg.apply(VistaInicial.CLAVE, "top")), codigos, clanesGuardados(), gruposDelCombo());
+    }
+
+    /** Al arrancar: abre la Watchlist en la vista de «Abrir en» (por defecto ★ Top ladder, como siempre). Elige el
+     *  item del combo CON sus listeners: onGrupoElegido carga el top, el país o el clan, o barre el grupo, y guarda
+     *  grupo_activo. Antes el arranque ponía siempre ★ Top ladder y pisaba grupo_activo (F3 de la revisión 1.3).
+     *  Devuelve la elección aplicada: el arranque decide con ella si toca «Buscar al abrir». En el EDT. */
+    public VistaInicial.Eleccion abrirVistaInicial() {
+        VistaInicial.Eleccion e = eleccionInicial();
+        switch (e.tipo()) {
+            case PAIS -> {
+                for (PaisItem pi : PAISES) if (pi.code().equals(e.valor())) paisActual = pi;
+                if (paisCombo != null) {   // que el selector enseñe ese país, sin volver a cargar (rearmandoPais)
+                    rearmandoPais = true;
+                    try { paisCombo.setSelectedItem(paisActual); } finally { rearmandoPais = false; }
+                }
+                grupoCombo.setSelectedItem(TOP_PAIS);
+            }
+            case CLAN -> {
+                if (clanField != null) { clanField.setText(e.valor()); clanPopup.setVisible(false); }
+                grupoCombo.setSelectedItem(TOP_CLAN);
+            }
+            case GRUPO -> grupoCombo.setSelectedItem(e.valor());
+            case TODOS -> grupoCombo.setSelectedItem(t("Todos", "All"));
+            default -> grupoCombo.setSelectedItem(TOP_LADDER);
+        }
+        return e;
+    }
+
     void crearGrupoDialog() { dialogosLista.crearGrupoDialog(); }
 
     void refrescarCabeceraOrden() { listaVista.refrescarCabeceraOrden(); }
 
-    void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
+    private void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
 
     /** Reconstruye la lista visible con el grupo activo («Todos» = todos). */
     public void aplicarFiltroGrupo() {

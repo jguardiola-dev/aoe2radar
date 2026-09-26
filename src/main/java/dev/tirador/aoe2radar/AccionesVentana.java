@@ -15,9 +15,9 @@ package dev.tirador.aoe2radar;
 import dev.tirador.aoe2radar.app.Servicios;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.Espectar;
+import dev.tirador.aoe2radar.service.VistaInicial;
 import dev.tirador.aoe2radar.ui.TemaApp;
 import dev.tirador.aoe2radar.ui.VentanaGuardada;
-import dev.tirador.aoe2radar.ui.WatchlistView;
 
 import javax.swing.*;
 import java.awt.Desktop;
@@ -85,10 +85,16 @@ final class AccionesVentana {
         });
         v.watchlist.refrescarWatchlist();
         SwingUtilities.invokeLater(() -> {
-            v.watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER);   // la app abre en ★
+            // «Abrir en» (Configuración): por defecto ★ Top ladder, como siempre; o el país, clan, grupo o «Todos» elegido
+            // (si ya no existe, ★ Top ladder). Antes se abría siempre en ★ y se pisaba grupo_activo (F3 de la revisión 1.3).
+            VistaInicial.Eleccion inicio = v.watchlist.abrirVistaInicial();
             v.mostrarDirectos(true);                    // …con los Directos a la vista, no una tabla vacía
             if (Boolean.parseBoolean(leerConfig("inicio_min", "false")))
                 VentanaGuardada.minimizar(v);   // F8 (1.3): sin olvidar si estaba maximizada
+            // «Buscar al abrir», con la MISMA decisión y en el mismo turno del EDT: antes iba en otro invokeLater que
+            // miraba !modoTop() cuando la app ya estaba siempre en ★, y nunca buscaba (general F2 / watchlist F3).
+            if (inicio.buscaAlAbrir() && Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")) && v.playersModel.size() > 0)
+                v.partidas.fetchMatches(v.partidas.fetchBtn);
         });
         final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
@@ -140,8 +146,6 @@ final class AccionesVentana {
         new javax.swing.Timer(3_600_000, e -> new Thread(Servicios::cargarControl, "control").start()).start();
         v.vigilante.setInitialDelay(tickMs());
         v.vigilante.start();
-        if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
-            SwingUtilities.invokeLater(() -> { if (!v.watchlist.modoTop() && v.playersModel.size() > 0) v.partidas.fetchMatches(v.partidas.fetchBtn); });
     }
 
     static void abrirUrl(SpoilerFreeRecs v, String url) {

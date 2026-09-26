@@ -21,9 +21,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.TreeSet;
 
-import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
@@ -68,11 +66,7 @@ final class WatchlistDialogos {
         DefaultListModel<String> modelo = new DefaultListModel<>();
         Runnable recargar = () -> {
             modelo.clear();
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            gs.add(WatchlistView.GRUPO_GENERAL);
-            gs.addAll(wv.gruposConfig());
-            for (Player p : wv.todosJugadores) gs.add(p.grupo());
-            for (String g : gs) modelo.addElement(g);
+            for (String g : wv.gruposDisponibles()) modelo.addElement(g);
         };
         recargar.run();
         JList<String> lista = new JList<>(modelo);
@@ -88,7 +82,7 @@ final class WatchlistDialogos {
         renombrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
             if (sel == null || sel.equalsIgnoreCase(WatchlistView.GRUPO_GENERAL)) return;
-            String n = JOptionPane.showInputDialog(wv.ventana, t("Nuevo nombre para «", "New name for “") + sel + "»:",
+            String n = JOptionPane.showInputDialog(wv.ventana, t("Nuevo nombre para «", "New name for “") + sel + t("»:", "”:"),
                     t("Renombrar grupo", "Rename group"), JOptionPane.PLAIN_MESSAGE);
             if (n != null && !n.isBlank()) { wv.renombrarGrupo(sel, WatchlistView.limpiarGrupo(n)); recargar.run(); }
         });
@@ -133,7 +127,7 @@ final class WatchlistDialogos {
         wv.rebuildGrupos();
         wv.aplicarFiltroGrupo();
         wv.refrescarWatchlist();
-        wv.status.setText(nuevos.size() + t(" jugadores añadidos a «", " players added to \u201C") + g + "\u00bb.");
+        wv.status.setText(nuevos.size() + t(" jugadores añadidos a «", " players added to \u201C") + g + t("\u00bb.", "\u201D."));
         if (nuevos.isEmpty()) return;
         int r = JOptionPane.showConfirmDialog(wv.ventana,
                 t("¿Buscar las cuentas vinculadas de los ", "Look up the linked accounts of the ") + nuevos.size()
@@ -172,17 +166,14 @@ final class WatchlistDialogos {
                 if (miSerial != wv.anfitrion.opSerial()) return;
                 wv.anfitrion.trabajando(false);
                 wv.savePlayers(); wv.rebuildGrupos(); wv.aplicarFiltroGrupo(); wv.refrescarWatchlist();
-                wv.status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + "\u00bb.");
+                wv.status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + t("\u00bb.", "\u201D."));
             }
         }.execute();
     }
 
     /** Pregunta a qué grupo fichar (preseleccionado el activo), con «Nuevo grupo…». null = cancelado. */
     public String elegirGrupoDialog(String nombreJugador) {
-        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        gs.add(WatchlistView.GRUPO_GENERAL);
-        for (Player x : wv.todosJugadores) gs.add(x.grupo());
-        gs.addAll(wv.gruposConfig());
+        Set<String> gs = wv.gruposDisponibles();
         String nuevoO = t("+ Nuevo grupo\u2026", "+ New group\u2026");
         List<String> ops = new ArrayList<>(gs);
         ops.add(nuevoO);
@@ -214,7 +205,7 @@ final class WatchlistDialogos {
                 t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
         if (nombre == null || nombre.isBlank()) return;
         String limpio = WatchlistView.limpiarGrupo(nombre);
-        guardarConfig("grupo_activo", limpio);
+        wv.guardarCfg.accept("grupo_activo", limpio);
         wv.registrarGrupo(limpio);
         wv.grupoCombo.setSelectedItem(limpio);
         wv.aplicarFiltroGrupo();
@@ -262,13 +253,14 @@ final class WatchlistDialogos {
                 }
                 for (Perfil.Vinculada v : vinc) if (wv.containsPlayerId(v.pid())) familia.add(v.pid());
                 wv.eloWatch.putAll(elosV);
+                wv.eloDelSnapshot.removeAll(elosV.keySet());   // ELO de la API: fresco (F5)
                 wv.marcarVinculo(familia);
                 wv.savePlayers();
                 wv.rebuildGrupos();
                 wv.aplicarFiltroGrupo();
                 wv.refrescarWatchlist();
                 wv.status.setText(nuevas.size() + t(" cuentas vinculadas añadidas a «", " linked accounts added to “")
-                        + grupo + "\u00bb.");
+                        + grupo + t("\u00bb.", "\u201D."));
             }
         }.execute();
     }
@@ -284,13 +276,11 @@ final class WatchlistDialogos {
             wv.enlacePartidas.fijarObjetivo(pl, wv.vistaActualId());
             wv.playersList.clearSelection(); wv.aplicarFiltroGrupo(); wv.enlacePartidas.mostrarDirectos(false); wv.enlacePartidas.fetchMatches();
         } else if (r0 == 2) {
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.add(WatchlistView.GRUPO_GENERAL); for (Player x : wv.todosJugadores) gs.add(x.grupo()); gs.addAll(wv.gruposConfig());
+            Set<String> gs = wv.gruposDisponibles();
             Object g = JOptionPane.showInputDialog(wv.ventana, t("Grupo:", "Group:"), t("Añadir a la watchlist", "Add to the watchlist"), JOptionPane.PLAIN_MESSAGE, null, gs.toArray(), wv.grupoDestino());
             if (g != null) wv.ficharDesdeTop(new Player(pid, nombre, String.valueOf(g)), String.valueOf(g));
         }
     }
-
-    public void addPlayerDialog(boolean soloVer) { addPlayerDialog(soloVer, null); }
 
     public void addPlayerDialog(boolean soloVer, String nickInicial) {
         String q = nickInicial != null && !nickInicial.isBlank() ? nickInicial
@@ -339,6 +329,7 @@ final class WatchlistDialogos {
                             Integer ei = wv.perfiles.elo1v1(p.id());
                             if (ei != null) SwingUtilities.invokeLater(() -> {
                                 wv.eloWatch.put(p.id(), ei);
+                                wv.eloDelSnapshot.remove(p.id());   // ELO de la API: fresco (F5)
                                 wv.playersList.repaint();
                                 wv.enlacePartidas.refrescarSujetos(wv.enlacePartidas.ultimosSujetos(), wv.enlacePartidas.invitado() != null);   // el ELO recién llegado, a la cabecera
                             });

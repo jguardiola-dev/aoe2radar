@@ -70,7 +70,7 @@ final class WatchlistTrabajos {
                 List<Player> porApi = new ArrayList<>();
                 long ahoraTs = System.currentTimeMillis();
                 for (Player p : pendientes) {   // 1) resta con el snapshot nocturno: sin llamadas
-                    Forma[] f = wv.formaService.porResta(p.id(), wv.eloWatch::get, wv.gamesWatch::get);
+                    Forma[] f = wv.formaService.porResta(p.id(), pid -> WatchlistView.eloParaResta(pid, wv.eloWatch, wv.eloDelSnapshot), wv.gamesWatch::get);
                     if (f == null) { porApi.add(p); continue; }
                     wv.forma24.put(p.id(), f[0]); wv.formaTs24.put(p.id(), ahoraTs);
                     if (f[1] != null) { wv.forma7d.put(p.id(), f[1]); wv.formaTs7d.put(p.id(), ahoraTs); } else if (horas > 24) porApi.add(p);
@@ -123,23 +123,32 @@ final class WatchlistTrabajos {
         wv.status.setText(wv.anfitrion.clanesVacios() ? t("Descargando la lista de clanes…", "Downloading the clan list…") : t("Cargando el clan…", "Loading the clan…"));
         new Thread(() -> {
             TopLadderService.ResultadoClan res = wv.topLadderService.topClan(tag);
-            SwingUtilities.invokeLater(() -> {
-                if (res.error() != null) { wv.status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
-                wv.topLadder.clear();
-                wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
-                wv.lastTop.clear(); wv.rankTop.clear();
-                for (TopLadderService.FilaClan f : res.miembros()) {
-                    wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
-                    wv.eloWatch.put(f.pid(), f.rating());
-                    wv.rankTop.put(f.pid(), wv.topLadder.size());
-                }
-                guardarConfig("clan_tag", tag);
-                wv.aplicarFiltroGrupo();
-                wv.actualizarIndicadoresVivos();
-                wv.status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
-                        : t("Clan ", "Clan ") + tag + ": " + res.miembros().size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
-            });
+            SwingUtilities.invokeLater(() -> aplicarTopClan(tag, res));
         }, "top-clan").start();
+    }
+
+    /** El resultado de cargarTopClan, ya en el EDT. F1 de la revisión 1.3: el clan comparte topLadder/rankTop con
+     *  ★ Top ladder y ★ Top país, así que 1) deja su propia firma (antes la de «global» seguía puesta y, al volver al
+     *  ladder antes de 10 min, topFresco daba por buena la lista del clan) y 2) no pinta si el usuario ya salió de
+     *  ★ Top clan mientras cargaba (como cargarTopLadder, que ya lo miraba). */
+    void aplicarTopClan(String tag, TopLadderService.ResultadoClan res) {
+        if (res.error() != null) { wv.status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
+        if (!wv.modoClan()) return;   // el usuario cambió de vista mientras cargaba: no pintar encima
+        wv.topFirma = WatchlistView.firmaClan(tag);
+        wv.topLadder.clear();
+        wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
+        wv.lastTop.clear(); wv.rankTop.clear();
+        for (TopLadderService.FilaClan f : res.miembros()) {
+            wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
+            wv.eloWatch.put(f.pid(), f.rating());
+            wv.eloDelSnapshot.add(f.pid());   // resumen diario de sfr-data: ELO de anoche (F5)
+            wv.rankTop.put(f.pid(), wv.topLadder.size());
+        }
+        guardarConfig("clan_tag", tag);
+        wv.aplicarFiltroGrupo();
+        wv.actualizarIndicadoresVivos();
+        wv.status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
+                : t("Clan ", "Clan ") + tag + ": " + res.miembros().size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
     }
 
     /** Barrido de la Watchlist al abrir: para cada seguido, una consulta ligera
@@ -185,18 +194,19 @@ final class WatchlistTrabajos {
                             long horasCache = Math.max(1, (System.currentTimeMillis() - wv.topCargado) / 3600_000L);
                             wv.status.setText(t("El servicio de datos no responde (¿bloqueo de red? p. ej. LaLiga/Cloudflare). Mostrando el top de hace ~",
                                     "The data service isn't responding (network block? e.g. LaLiga/Cloudflare). Showing the top from ~")
-                                    + horasCache + t(" h. Reintento automático cada 2 min.", " h ago. Auto-retrying every 2 min."));
+                                    + horasCache + t(" h. Reintento automático cada ", " h ago. Auto-retrying every ") + minutosReintento() + " min.");
                         } else {
                             if (!wv.avisoTopMostrado) {
                                 wv.avisoTopMostrado = true;
                                 JOptionPane.showMessageDialog(wv.ventana,
-                                        t("No se pudo cargar el top del ladder.\n\nCausa probable: el servicio de datos está caído o bloqueado\n(p. ej. LaLiga/Cloudflare en días de fútbol en España).\n\nLa app reintenta sola cada 2 minutos — no hace falta hacer nada.",
-                                          "Couldn't load the ladder top.\n\nLikely cause: the data service is down or blocked\n(e.g. LaLiga/Cloudflare on football days in Spain).\n\nThe app retries every 2 minutes on its own — nothing to do."),
+                                        t("No se pudo cargar el top del ladder.\n\nCausa probable: el servicio de datos está caído o bloqueado\n(p. ej. LaLiga/Cloudflare en días de fútbol en España).\n\nLa app reintenta sola cada ",
+                                          "Couldn't load the ladder top.\n\nLikely cause: the data service is down or blocked\n(e.g. LaLiga/Cloudflare on football days in Spain).\n\nThe app retries on its own every ")
+                                          + minutosReintento() + t(" min — no hace falta hacer nada.", " min — nothing to do."),
                                         t("Servicio no disponible", "Service unavailable"),
                                         JOptionPane.WARNING_MESSAGE);
                             }
-                            wv.status.setText(t("No se pudo cargar el top (¿servicio caído o bloqueado? p. ej. LaLiga/Cloudflare en días de fútbol). Reintento automático cada 2 min.",
-                                    "Couldn't load the top (service down or blocked? e.g. LaLiga/Cloudflare on match days). Auto-retrying every 2 min."));
+                            wv.status.setText(t("No se pudo cargar el top (¿servicio caído o bloqueado? p. ej. LaLiga/Cloudflare en días de fútbol). Reintento automático cada ",
+                                    "Couldn't load the top (service down or blocked? e.g. LaLiga/Cloudflare on match days). Auto-retrying every ") + minutosReintento() + " min.");
                         }
                         return;
                     }
@@ -207,6 +217,7 @@ final class WatchlistTrabajos {
                     for (TopLadderService.FilaTop f : res.filas()) {
                         wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
                         wv.eloWatch.put(f.pid(), f.rating());
+                        wv.eloDelSnapshot.remove(f.pid());   // del leaderboard: fresco (F5)
                         wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
                         wv.rankTop.put(f.pid(), wv.topLadder.size());
                     }
@@ -227,6 +238,10 @@ final class WatchlistTrabajos {
         }.execute();
     }
 
+    /** Cada cuánto reintenta el vigilante un top caído: en cada ronda de vigilancia (Configuración → Vigilancia de
+     *  vivos, 1 min por defecto), no «cada 2 min» como decían los textos de la 1.1 (F12 de la revisión 1.3). */
+    private static int minutosReintento() { return dev.tirador.aoe2radar.service.EnlaceVivo.tickMs() / 60_000; }
+
     private void guardarTopCache(String firma) {
         List<TopLadderService.FilaCache> filas = new ArrayList<>();
         for (Player p : wv.topLadder)
@@ -244,7 +259,7 @@ final class WatchlistTrabajos {
         wv.rankTop.clear();
         for (TopLadderService.FilaCache f : cache.filas()) {
             wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-            if (f.elo() > 0) wv.eloWatch.put(f.pid(), f.elo());
+            if (f.elo() > 0) { wv.eloWatch.put(f.pid(), f.elo()); wv.eloDelSnapshot.remove(f.pid()); }   // del leaderboard, aunque de caché (F5)
             wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
             wv.rankTop.put(f.pid(), wv.topLadder.size());
         }
@@ -326,15 +341,24 @@ final class WatchlistTrabajos {
                 return null;
             }
             @Override protected void process(List<BarridoVivos.Refresco> chunks) {
-                for (BarridoVivos.Refresco r : chunks) {
-                    if (r.vivo() != null) {
-                        if (WatchlistView.VIVO.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) WatchlistView.VIVO.ponerInfo(r.pid(), r.resumen());
-                    } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
-                    if (r.elo() != null) wv.eloWatch.put(r.pid(), r.elo());
-                }
+                for (BarridoVivos.Refresco r : chunks) aplicarRefresco(r);
                 wv.actualizarIndicadoresVivos();
             }
         }.execute();
+    }
+
+    /** Un refresco de refrescarWatchlist, ya en el EDT: vivo y ELO. Con el ELO del snapshot nocturno no se sabe si
+     *  juega (sabeSiJuega() false): el estado en vivo no se toca, lo lleva el socket (F4 de la revisión 1.3). */
+    void aplicarRefresco(BarridoVivos.Refresco r) {
+        if (r.sabeSiJuega()) {
+            if (r.vivo() != null) {
+                if (WatchlistView.VIVO.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) WatchlistView.VIVO.ponerInfo(r.pid(), r.resumen());
+            } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
+        }
+        if (r.elo() != null) {
+            wv.eloWatch.put(r.pid(), r.elo());
+            if (r.sabeSiJuega()) wv.eloDelSnapshot.remove(r.pid()); else wv.eloDelSnapshot.add(r.pid());   // F5: ¿fresco o de anoche?
+        }
     }
 
     /** Vigilancia periódica de TODA la watchlist: solo detecta quién está jugando ahora. Se salta el tick si
@@ -348,7 +372,7 @@ final class WatchlistTrabajos {
         List<Player> objetivo = new ArrayList<>(wv.todosJugadores);
         new SwingWorker<Void, BarridoVivos.Lote>() {
             @Override protected Void doInBackground() {
-                final int LOTE = 25;   // 2 llamadas para un top 50, 4 para el top 100
+                final int LOTE = BarridoVivos.LOTE_VIVOS;   // 2 llamadas para un top 50, 4 para el top 100
                 for (int d = 0; d < objetivo.size(); d += LOTE) {
                     List<Player> lote = objetivo.subList(d, Math.min(d + LOTE, objetivo.size()));
                     List<Long> idsLote = new ArrayList<>();

@@ -57,7 +57,7 @@ final class CableadoJugador {
                     @Override public void mostrarEstado(String texto) { v.status.setText(texto); }
                     @Override public boolean enWatchlist(long pid) { return v.watchlist.containsPlayerId(pid); }
                     @Override public void ponerEloWatch(long pid, int elo) { v.eloWatch.put(pid, elo); }
-                    @Override public Set<String> gruposDisponibles() { return v.watchlist.gruposParaFichar(); }
+                    @Override public Set<String> gruposDisponibles() { return v.watchlist.gruposDisponibles(); }
                     @Override public String grupoActivo() { return v.watchlist.grupoActivo(); }
                     @Override public void agregarJugador(long pid, String nombre, String grupo) { v.todosJugadores.add(new Player(pid, nombre, grupo)); }
                     @Override public void guardarJugadores() { v.watchlist.savePlayers(); }
@@ -86,7 +86,7 @@ final class CableadoJugador {
                     @Override public void mostrarVinculadas(long pid, String nombre) { v.dialogos.mostrarVinculadas(pid, nombre); }
                     @Override public void nicksAnteriores(long pid, String nombre) { v.dialogos.nicksAnteriores(pid, nombre); }
                     @Override public boolean enWatchlist(long pid) { return v.watchlist.containsPlayerId(pid); }
-                    @Override public Set<String> gruposDisponibles() { return v.watchlist.gruposParaFichar(); }
+                    @Override public Set<String> gruposDisponibles() { return v.watchlist.gruposDisponibles(); }
                     @Override public void anadirAWatchlist(long pid, String nombre, String grupo) {
                         v.todosJugadores.add(new Player(pid, nombre, grupo));
                         v.watchlist.savePlayers();

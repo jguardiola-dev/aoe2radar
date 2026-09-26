@@ -301,7 +301,7 @@ final class WatchlistControles {
                     it.addActionListener(a -> { wv.clanField.setText(en.getKey()); wv.clanPopup.setVisible(false); wv.cargarTopClan(); });
                     wv.clanPopup.add(it);
                 }
-                if (wv.clanPopup.getComponentCount() > 0) wv.clanPopup.show(wv.clanField, 0, wv.clanField.getHeight());
+                if (wv.clanPopup.getComponentCount() > 0 && wv.clanField.isShowing()) wv.clanPopup.show(wv.clanField, 0, wv.clanField.getHeight());   // oculto (p. ej. «Abrir en» un clan, antes de pasar a ★ Top clan): show() lanzaría IllegalComponentStateException
             }
             @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
             @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
@@ -395,7 +395,7 @@ final class WatchlistControles {
         boolean activo = wv.campanas.alternar(id);
         refrescarCampanaBtn();
         wv.refrescarCampanas();
-        wv.status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + id.replace("\u2605", "\u2605 ").replace("|", " ") + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
+        wv.status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + wv.nombreVistaCampana() + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
     }
 
     private void refrescarClanesGuardados() {
