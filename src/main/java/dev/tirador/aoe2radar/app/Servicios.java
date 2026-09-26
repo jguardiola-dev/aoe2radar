@@ -67,6 +67,9 @@ import static dev.tirador.aoe2radar.util.I18n.t;
  * varios campos se construyen a partir de otros ya declarados (comentado en cada uno). SpoilerFreeRecs sigue
  * llamando a estos nombres mediante {@code import static ...Servicios.*}, así que ninguna llamada cambia de
  * texto.
+ * <p>Esta clase se inicializa en su primer uso, que es el campo {@code dialogos} de la ventana, en el EDT y
+ * después de fijar IDIOMA; en la 1.1 era antes, en el hilo main. Ningún constructor de aquí lee el idioma, la
+ * config ni hace E/S: un servicio nuevo que lo haga cambiaría de comportamiento según ese momento.
  */
 public class Servicios {
 

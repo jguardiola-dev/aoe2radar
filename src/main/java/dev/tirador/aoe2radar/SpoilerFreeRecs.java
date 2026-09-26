@@ -284,7 +284,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     static final Path   PLAYERS_FILE = Path.of("players.txt");
     static final String DONAR_URL    = "https://paypal.me/12Tirador/5EUR";
     // PER_PAGE y PAUSA_MS: movidos a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llegan aquí por
-    // el import static de más abajo, con el mismo nombre y valor.
+    // el import static de más arriba, con el mismo nombre y valor.
 
     // tarjeta, filaBarra, enlaceVerTodo y las ventanas de lista/tabla completa (ver ui.Listas); RegresionCapturas la usa por el nombre del campo.
     final Listas listas = new Listas(this, v -> ultimoClicCtrl = v);
@@ -356,7 +356,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // ----- Modelo ------------------------------------------------------------
 
     // aprenderCatalogos: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el
-    // import static de más abajo.
+    // import static de más arriba.
 
     // Presentación de Match (enfrentamiento/refNombre/eloAntesDespues/rivalTexto/refConVeredicto/FechaCell):
     // movida a ui.PartidasTexto (fase 3, tanda 3, oleada B). SUJETOS: movido a ui.PartidasView.SUJETOS.
@@ -375,7 +375,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     };
     final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
     // VIVO: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el import static
-    // de más abajo. No depende del momento en que se crean los demás servicios (EstadoVivo.SISTEMA es un
+    // de más arriba. No depende del momento en que se crean los demás servicios (EstadoVivo.SISTEMA es un
     // singleton propio, sin conexión con COMPANION/API_CLIENTE), así que moverlo no cambia el comportamiento.
     /** Fuerza la carga de la clase ui.WatchlistView AQUÍ, en la inicialización estática de SpoilerFreeRecs — el
      *  mismo punto relativo donde TOP_LADDER/TOP_PAIS/TOP_CLAN/PAISES vivían en la 1.1 — para que esos static
@@ -474,8 +474,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     /** Forma reciente (±ELO): la lógica y el estado viven en ui.WatchlistView; este campo se inyecta porque
-     *  se construye después de COMPANION (static) y antes que la propia Watchlist. */
-    /** Campo de instancia (no static): se inicializa después de COMPANION, que es static (SpoilerFreeRecs paso FormService). */
+     *  se construye después de COMPANION (vive en app.Servicios, inicializado en su primer uso: el campo
+     *  {@code dialogos}, más arriba) y antes que la propia Watchlist. */
     final FormService formaService = new FormaCompanion(COMPANION, Snapshots.ELO, Reloj.SISTEMA);
 
     JToggleButton ladderBtn;
@@ -604,7 +604,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // ELO_1V1: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el import
-    // static de más abajo. Va después de VIVO en Servicios, igual que aquí.
+    // static de más arriba. Va después de VIVO en Servicios, igual que aquí.
     Integer elo1v1Conocido(long pid) { return menus.elo1v1Conocido(pid); }
     JMenuItem itemJugadorPartida(MatchPlayer p) { return menus.itemJugadorPartida(p); }
 
@@ -897,7 +897,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     // ANOTACIONES: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el import
-    // static de más abajo. Los diálogos se quedan aquí, en la ventana.
+    // static de más arriba. Los diálogos se quedan aquí, en la app.
 
     // notaDe, pedirAlias, pedirNota, borrarNota, mostrarVinculadas y nicksAnteriores se movieron a
     // ui.DialogosJugador en la tanda 3 (oleada A2, T3-A2): delegados de una línea con el mismo nombre.
@@ -1658,8 +1658,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
 
     /** El endpoint de Steam (api.SteamApi), aparte del companion. Campo de instancia, no static: así no importa el
-     *  orden de texto frente a API_CLIENTE (static, definido más abajo) — se crea cuando ya existe la ventana, y para
-     *  entonces la clase entera (con sus static) ya está inicializada. */
+     *  orden de texto frente a API_CLIENTE (vive en app.Servicios, inicializado en su primer uso: el campo
+     *  {@code dialogos}, mucho más arriba) — para cuando se crea {@code steam}, Servicios ya está inicializado. */
     final SteamApi steam = new SteamApi(API_CLIENTE);
 
     void abrirUrl(String url) {
@@ -1923,7 +1923,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             Snapshots.ELO_AYER, Servicios::dormir, PAUSA_MS, PER_PAGE);
 
     /** RecService: descarga, disco y savegame para UNA partida (ver service.RecService). Campo de instancia (no
-     *  static): se cablea junto al código que lo usa, sin tocar el bloque static de COMPANION/LIVE/SERVICIO_PERFIL. */
+     *  static): se cablea junto al código que lo usa, sin tocar la raíz de composición (app.Servicios: COMPANION,
+     *  LIVE, SERVICIO_PERFIL...). */
     final RecService recService = new DescargaRecs(Recs::descargarRec, RecsDisco::destino, Juego::copiarASavegame,
             Servicios::dormir, PAUSA_MS);
 
@@ -2017,5 +2018,5 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // Todo este bloque (avisarPausa429, cargarControl, TRANSPORTE_CONTROL, la cadena CONTROL_SERVICE →
     // API_CLIENTE → COMPANION → LIVE → TOP_LADDER_SERVICE → SERVICIO_PERFIL → BUSQUEDA → TWITCH_SERVICE, dormir
     // y buscarPerfiles) se movió a app.Servicios (fase 3, tanda 4, Z6, raíz de composición), con el mismo orden
-    // de texto. Llega aquí por el import static de más abajo, así que ninguna llamada cambia.
+    // de texto. Llega aquí por el import static de más arriba, así que ninguna llamada cambia.
 }
