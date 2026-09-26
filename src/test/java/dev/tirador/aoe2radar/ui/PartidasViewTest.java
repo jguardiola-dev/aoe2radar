@@ -255,7 +255,7 @@ class PartidasViewTest {
 
     // ----- general F4 / watchlist F6: Detener de la barra y la × paran la búsqueda -----
 
-    @Test void detenerDeLaBarra_paraLaBusquedaYNoPresentaLoParcialComoCompleto() throws Exception {
+    @Test void detenerDeLaBarra_paraLaBusquedaYMuestraLoLeidoComoParcial() throws Exception {
         enlace.jugadores.addAll(List.of(A, B, C));
         CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
         Instant fin = Instant.now().minusSeconds(600);
@@ -270,8 +270,9 @@ class PartidasViewTest {
         esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
         asentar();
         assertFalse(anfitrion.pedidas.contains(C.id()), "tras Detener no se consulta a nadie más");
-        assertTrue(vista.all.isEmpty(), "lo leído hasta el corte no se presenta como la búsqueda entera");
-        assertEquals("Búsqueda detenida.", anfitrion.estado);
+        enEdt(() -> assertEquals(2, vista.all.size(), "lo leído hasta el corte (A y B) se muestra (decisión de Jorge, 1.3)"));
+        assertEquals("Búsqueda detenida: resultados parciales (2 de 3 jugadores)", anfitrion.estado,
+                "avisa de que es parcial: no se presenta como la búsqueda entera");
     }
 
     @Test void cruzDePartidasDe_conBusquedaEnCurso_laTablaNoVuelveALlenarse() throws Exception {
@@ -655,12 +656,15 @@ class PartidasViewTest {
         enEdt(() -> vista.fetchBtn.doClick());
         assertTrue(enA.await(5, TimeUnit.SECONDS));
         enEdt(() -> vista.fetchBtn.doClick());   // el mismo botón, ahora «Detener»
+        assertEquals("Deteniendo la búsqueda…", anfitrion.estado);
         soltarA.countDown();
+        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
         asentar();
         enEdt(() -> {
-            assertNull(vista.fetchWorker);
-            assertTrue(vista.all.isEmpty());
-            assertEquals("Búsqueda detenida.", anfitrion.estado);
+            assertEquals(1, vista.all.size(), "lo leído de A se muestra (decisión de Jorge, 1.3)");
+            assertEquals("Búsqueda detenida: resultados parciales (1 de 2 jugadores)", anfitrion.estado);
+            assertFalse(anfitrion.progreso);
+            assertTrue(vista.fetchBtn.isEnabled() && vista.azarBtn.isEnabled() && vista.gteBtn.isEnabled());
         });
         assertFalse(anfitrion.pedidas.contains(B.id()));
     }

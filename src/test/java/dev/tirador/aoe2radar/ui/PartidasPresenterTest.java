@@ -389,6 +389,12 @@ class PartidasPresenterTest {
         assertEquals(0, consultas[0], "con 10 no se pregunta si el tramo se agotó");
     }
 
+    @Test void mensajeBusquedaDetenida_resultadosParcialesEnLosDosIdiomas() {
+        assertEquals("Búsqueda detenida: resultados parciales (2 de 5 jugadores)", PartidasPresenter.mensajeBusquedaDetenida(2, 5));
+        IDIOMA = "en";
+        assertEquals("Search stopped: partial results (2 of 5 players)", PartidasPresenter.mensajeBusquedaDetenida(2, 5));
+    }
+
     @Test void mensajeAzar_deLaMuestraNocturna_avisaDeQueSonPartidasDeAyer() {
         int[] consultas = { 0 };
         assertEquals("6 partidas 1v1 al azar, ELO 1800–1900, partidas de ayer (muestra nocturna).",
@@ -563,6 +569,8 @@ class PartidasPresenterTest {
                 m -> false, () -> parar[0], s -> { });
         assertEquals(List.of(A.id()), pedidas, "Detener pulsado durante la página de A: ni B ni C se consultan");
         assertTrue(r.detenida());
+        assertEquals(1, r.recorridos(), "A se leyó entero antes del corte");
+        assertEquals(1, r.lista().size(), "lo leído de A se conserva (se muestra como parcial)");
     }
 
     @Test void recorrer_elFrenoCortaLaEspera_noSigueConElSiguienteJugador() {
@@ -579,6 +587,7 @@ class PartidasPresenterTest {
         assertEquals(List.of(A.id(), B.id()), pedidas, "el corte del freno en B no deja pasar a C");
         assertTrue(r.detenida());
         assertEquals(0, r.fallos(), "un corte pedido no es un fallo del servicio");
+        assertEquals(1, r.recorridos(), "B, cortado a medias, no cuenta");
     }
 
     @Test void recorrer_sinParar_recorreATodosYNoVuelveDetenida() {
@@ -589,6 +598,7 @@ class PartidasPresenterTest {
         assertFalse(r.detenida());
         assertEquals(2, r.lista().size());
         assertEquals(java.util.Set.of(A.id(), B.id()), r.exitosos());
+        assertEquals(2, r.recorridos());
     }
 
     /** Partida terminada hace {@code minutos} de {@code pid} contra un rival fijo por partida. */

@@ -214,10 +214,12 @@ final class BusquedasPartidas {
     }
 
     /** El botón «Buscar partidas» (y la guía, que lo pulsa): con una búsqueda en marcha dice «Detener» y la
-     *  cancela; si no, busca. */
+     *  para; si no, busca. Parar = poner SU freno (no cancelar el SwingWorker): el recorrido acaba tras la página en
+     *  curso y su done() muestra lo leído como resultados parciales (decisión de Jorge, 1.3). */
     public void alternar(JButton btn) {
         if (vista.fetchWorker != null) {
-            vista.fetchWorker.cancel(true);
+            vista.anfitrion.pararOperacion(serialBusqueda);
+            vista.anfitrion.estado(t("Deteniendo la búsqueda…", "Stopping the search…"));
             return;
         }
         fetchMatches(btn);
@@ -321,13 +323,11 @@ final class BusquedasPartidas {
                 }
                 try {
                     PartidasPresenter.Recorrido r = get();
-                    if (r.detenida()) {
-                        // Lo leído hasta el corte está incompleto: no se presenta como si fuera la búsqueda entera
-                        // (misma salida que el botón «Detener»: la tabla anterior se queda como estaba).
-                        log("buscar #" + miSerial + ": detenida; " + r.lista().size() + " partidas leídas hasta el corte, descartadas");
-                        vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));
-                        return;
-                    }
+                    // Detenida (el botón, la barra o el freno): lo leído hasta el corte se muestra igual, con un aviso
+                    // de que es parcial (decisión de Jorge, 1.3; antes se descartaba). Los no consultados no
+                    // están en exitosos, así que no se marcan «fuera».
+                    if (r.detenida()) log("buscar #" + miSerial + ": detenida; " + r.lista().size() + " partidas de "
+                            + r.recorridos() + "/" + tracked.size() + " jugadores, se muestran como parciales");
                     List<Match> res = r.lista();
                     final boolean topeAlcanzado = r.topeAlcanzado();
                     final int fallosFetch = r.fallos();
@@ -344,7 +344,9 @@ final class BusquedasPartidas {
                     vista.all.addAll(res);
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(PartidasPresenter.mensajeBusqueda(vista.view.size(), vista.all.size(), hours, topeAlcanzado, fallosFetch));
+                    vista.anfitrion.estado(r.detenida()
+                            ? PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size())
+                            : PartidasPresenter.mensajeBusqueda(vista.view.size(), vista.all.size(), hours, topeAlcanzado, fallosFetch));
                 } catch (Exception ex) {
                     vista.anfitrion.estado("Error: " + causa(ex));
                 }

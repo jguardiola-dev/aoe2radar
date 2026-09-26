@@ -284,6 +284,13 @@ public final class PartidasPresenter {
                     : "");
     }
 
+    /** «Buscar partidas» detenida (decisión de Jorge, 1.3): lo leído hasta el corte se muestra, avisando de que es
+     *  parcial y de cuántos jugadores (de los buscados) se recorrieron enteros. */
+    public static String mensajeBusquedaDetenida(int recorridos, int buscados) {
+        return t("Búsqueda detenida: resultados parciales (", "Search stopped: partial results (") + recorridos
+                + t(" de ", " of ") + buscados + t(" jugadores)", " players)");
+    }
+
     /** «Al azar por ELO» detenido: lo encontrado hasta el corte (si algo) se aplica igual. */
     public static String mensajeAzarDetenido(int encontradas) {
         return t("Búsqueda detenida.", "Search stopped.")
@@ -491,8 +498,9 @@ public final class PartidasPresenter {
     interface Paginador { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
 
     /** Lo que deja el recorrido de fetchMatches: las partidas (la más reciente primero), si se tocó el tope, cuántos
-     *  jugadores fallaron, quiénes respondieron entero y si se detuvo a medias (entonces la lista está incompleta). */
-    record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida) { }
+     *  jugadores fallaron, quiénes respondieron entero, si se detuvo a medias (entonces la lista está incompleta) y
+     *  cuántos jugadores se recorrieron enteros antes del corte (con o sin fallo: el «N de M» del aviso). */
+    record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida, int recorridos) { }
 
     /** El doInBackground de fetchMatches, sin Swing (para poder probarlo): páginas por jugador hasta la ventana,
      *  tope 6 páginas / 600 partidas. {@code parar} se mira antes de cada jugador, antes de cada página y al fallar
@@ -503,7 +511,7 @@ public final class PartidasPresenter {
         Map<Long, Match> unicos = new LinkedHashMap<>();
         Set<Long> exitosos = new HashSet<>();
         boolean topeAlcanzado = false, detenida = false;
-        int fallos = 0;
+        int fallos = 0, recorridos = 0;
         final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
         for (Player pl : tracked) {
             if (parar.getAsBoolean()) { detenida = true; break; }
@@ -538,11 +546,12 @@ public final class PartidasPresenter {
                 if (!seguir) break;
             }
             if (detenida) break;
+            recorridos++;
             if (!fallo) exitosos.add(pl.id());
             if (unicos.size() >= MAX_TOTAL) break;
         }
         List<Match> lista = new ArrayList<>(unicos.values());
         lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
-        return new Recorrido(lista, topeAlcanzado, fallos, exitosos, detenida);
+        return new Recorrido(lista, topeAlcanzado, fallos, exitosos, detenida, recorridos);
     }
 }
