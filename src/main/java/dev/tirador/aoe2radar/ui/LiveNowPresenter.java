@@ -77,13 +77,8 @@ public final class LiveNowPresenter {
     private long ahoraTopMs, ahoraUltimaMs;
     private boolean ahoraCargando;
 
-    /** La de la app: quien construye el presentador (LiveNowView) pasa EstadoVivo.SISTEMA explícitamente. */
-    public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla) {
-        this(buscador, socketExtra, tareas, pantalla, EstadoVivo.SISTEMA);
-    }
-
-    /** Con el EstadoVivo inyectado (DEUDA, fila 125): la usan los tests para no compartir el singleton de toda
-     *  la app entre pruebas. */
+    /** El EstadoVivo se inyecta (DEUDA, fila 125): en la app, LiveNowView pasa EstadoVivo.SISTEMA explícitamente;
+     *  en los tests, cada uno puede traer el suyo y no compartir el singleton de toda la app entre pruebas. */
     public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla, EstadoVivo estadoVivo) {
         this.buscador = buscador;
         this.socketExtra = socketExtra;

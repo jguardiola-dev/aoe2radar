@@ -94,7 +94,7 @@ class RatingsViewTest {
     private static void pumpEdt() throws Exception { SwingUtilities.invokeAndWait(() -> { }); }
 
     @Test void conAltoYaConocidoRepartaLosPxDeInmediato() throws Exception {
-        Files.writeString(CONFIG_FILE, "ratings_tabla_alto=230\n");
+        Files.writeString(CONFIG_FILE, "ratings_tabla_alto=250\n");   // 250, no 230 (el valor por defecto): así la prueba exige leer la config, no solo caer en el fallback
         RatingsView v = nueva();
         SwingUtilities.invokeAndWait(() -> {
             v.ladderDivisor.setSize(400, 600);   // el divisor ya tiene alto: no hace falta esperar a nada
@@ -102,20 +102,20 @@ class RatingsViewTest {
         });
         pumpEdt();
         SwingUtilities.invokeAndWait(() ->
-                assertEquals(600 - 230 - v.ladderDivisor.getDividerSize(), v.ladderDivisor.getDividerLocation()));
+                assertEquals(600 - 250 - v.ladderDivisor.getDividerSize(), v.ladderDivisor.getDividerLocation()));
     }
 
     /** La mutación que demuestra la fila 13: sin el ComponentListener de reserva, cuando el divisor mide 0 al
-     *  abrir, el reparto de 230 px no llega nunca aunque el divisor reciba su alto real un instante después
-     *  (dividerLocation se queda en el valor por defecto de JSplitPane, muy lejos de 600 - 230 - grosor). */
+     *  abrir, el reparto de 250 px no llega nunca aunque el divisor reciba su alto real un instante después
+     *  (dividerLocation se queda en el valor por defecto de JSplitPane, muy lejos de 600 - 250 - grosor). */
     @Test void siElDivisorMide0AlAbrirElRepartoLlegaEnCuantoTengaAlto() throws Exception {
-        Files.writeString(CONFIG_FILE, "ratings_tabla_alto=230\n");
+        Files.writeString(CONFIG_FILE, "ratings_tabla_alto=250\n");   // 250, no 230 (el valor por defecto): así la prueba exige leer la config, no solo caer en el fallback
         RatingsView v = nueva();
         SwingUtilities.invokeAndWait(v::alAbrirAntes);   // ladderDivisor.getHeight() == 0 en este momento
         pumpEdt();
         SwingUtilities.invokeAndWait(() -> v.ladderDivisor.setSize(400, 600));   // ahora sí: dispara componentResized
         pumpEdt();
         SwingUtilities.invokeAndWait(() ->
-                assertEquals(600 - 230 - v.ladderDivisor.getDividerSize(), v.ladderDivisor.getDividerLocation()));
+                assertEquals(600 - 250 - v.ladderDivisor.getDividerSize(), v.ladderDivisor.getDividerLocation()));
     }
 }
