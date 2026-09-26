@@ -14,6 +14,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 
 import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
+import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.Texto.limpiaNombre;
 import static dev.tirador.aoe2radar.util.Texto.recorta;
 import static dev.tirador.aoe2radar.util.Texto.sanea;
@@ -64,9 +65,24 @@ public final class RecsDisco {
      *  millones), y esos archivos viejos no deben seguir marcando la numeración. */
     static final int MAX_NUMERO_GTE = 100_000;
 
-    /** Mayor número «Guess the ELO N» ya usado en ./recs, para continuar la
-     *  numeración sin sobrescribir tandas anteriores. */
-    public static int maxGteEnDisco() { return maxGteEnDisco(RECS_DIR); }
+    /** Mayor número «Guess the ELO N» ya usado en ./recs y en la carpeta savegame del juego (config «savegame»),
+     *  para continuar la numeración sin repetir el nombre de una tanda vieja: «Vaciar recs» deja limpia ./recs,
+     *  pero las copias enviadas al juego siguen allí y la nueva «Guess the ELO 1» las sobrescribiría. Disco: no
+     *  llamar desde el EDT (lo llama AzarService en su hilo). */
+    public static int maxGteEnDisco() {
+        Path sg = null;
+        try {
+            String cfg = leerConfig("savegame", null);
+            if (cfg != null && !cfg.isBlank()) sg = Path.of(cfg);
+        } catch (RuntimeException ignored) { }   // ruta ilegible en config: solo cuenta ./recs
+        return maxGteEnDisco(RECS_DIR, sg);
+    }
+
+    static int maxGteEnDisco(Path recs, Path savegame) {
+        int max = maxGteEnDisco(recs);
+        if (savegame != null && Files.isDirectory(savegame)) max = Math.max(max, maxGteEnDisco(savegame));
+        return max;
+    }
 
     static int maxGteEnDisco(Path dir) {
         int max = 0;

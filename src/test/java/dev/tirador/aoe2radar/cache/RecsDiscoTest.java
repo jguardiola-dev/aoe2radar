@@ -29,6 +29,17 @@ class RecsDiscoTest {
         assertEquals(7, RecsDisco.maxGteEnDisco(dir));
     }
 
+    @Test void maxGte_cuentaTambienLasCopiasDelSavegame(@TempDir Path dir) throws Exception {
+        // «Vaciar recs» deja ./recs vacía, pero la tanda vieja sigue en el savegame del juego: no se repite su número
+        Path recs = Files.createDirectories(dir.resolve("recs"));
+        Path sg = Files.createDirectories(dir.resolve("savegame"));
+        Files.createFile(recs.resolve("Guess the ELO 2.aoe2record"));
+        Files.createFile(sg.resolve("Guess the ELO 9.aoe2record"));
+        assertEquals(9, RecsDisco.maxGteEnDisco(recs, sg));
+        assertEquals(2, RecsDisco.maxGteEnDisco(recs, null), "sin savegame configurado, solo ./recs");
+        assertEquals(2, RecsDisco.maxGteEnDisco(recs, dir.resolve("no-existe")), "savegame que ya no existe: solo ./recs");
+    }
+
     @Test void maxGte_ignoraLosArchivosViejosConElIdDePartida(@TempDir Path dir) throws Exception {
         // hasta la 1.2 el archivo llevaba el id de la partida: no debe disparar la numeración de las tandas nuevas
         Files.createFile(dir.resolve("Guess the ELO 431234568.aoe2record"));

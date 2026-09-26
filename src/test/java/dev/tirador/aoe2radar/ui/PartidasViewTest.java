@@ -97,7 +97,16 @@ class PartidasViewTest {
         @Override public boolean enCursoReal(Match m) { return false; }
         /** En qué hilo se pidió cada ruta de rec (true = EDT): quien la pide va a mirar el disco justo después. */
         final List<Boolean> destinoEnEdt = Collections.synchronizedList(new ArrayList<>());
-        @Override public Path destino(Match m) { destinoEnEdt.add(SwingUtilities.isEventDispatchThread()); return recs.resolve(m.id + ".aoe2record"); }
+        /** Si están puestos, destino (fuera del EDT) espera / falla: un «Enviar al juego» que sigue mirando recs, o que se rompe. */
+        volatile CountDownLatch soltarDestino;
+        volatile RuntimeException fallarDestino;
+        @Override public Path destino(Match m) {
+            boolean edt = SwingUtilities.isEventDispatchThread();
+            destinoEnEdt.add(edt);
+            if (!edt && fallarDestino != null) throw fallarDestino;
+            if (!edt && soltarDestino != null) try { soltarDestino.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+            return recs.resolve(m.id + ".aoe2record");
+        }
         @Override public Path recsDir() { return recs; }
         @Override public void trabajando(boolean on) { progreso = on; if (on) { stop = false; opSerial++; } }
         @Override public long operacionActual() { return opSerial; }
@@ -128,10 +137,12 @@ class PartidasViewTest {
     static final class RecFalso implements dev.tirador.aoe2radar.service.RecService {
         final List<Long> procesadas = Collections.synchronizedList(new ArrayList<>());
         volatile CountDownLatch dentro, soltar;   // si están puestos, procesar avisa y espera (una descarga «en curso»)
+        volatile Path escribirEn;                 // si está puesto, deja la rec en esa carpeta (como la descarga real)
         @Override public Resultado procesar(Match m, java.util.Set<Long> trackedIds, boolean enviarAlJuego, Path savegame, BooleanSupplier cancelado) {
             procesadas.add(m.id);
             if (dentro != null) dentro.countDown();
             if (soltar != null) try { soltar.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+            if (escribirEn != null) try { java.nio.file.Files.write(escribirEn.resolve(m.id + ".aoe2record"), new byte[6000]); } catch (java.io.IOException ignored) { }
             return new Resultado(Estado.DESCARGADA, false, null, true);
         }
     }
@@ -286,6 +297,30 @@ class PartidasViewTest {
             assertEquals("Búsqueda cerrada.", anfitrion.estado, "estados: " + anfitrion.estados);
         });
         assertFalse(anfitrion.pedidas.contains(B.id()), "tras la × no se consulta a nadie más");
+    }
+
+    @Test void cruzDePartidasDe_conElDoneEnCola_laTablaNoVuelveALlenarse() throws Exception {
+        // La carrera: doInBackground ya terminó y su done() espera en la cola del EDT cuando se pulsa la ×.
+        // cancel(true) ya no puede nada; si fetchWorker siguiera apuntando a ella, su done() volvería a llenar la tabla.
+        enlace.jugadores.add(A);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> List.of(partida(pid, A, fin));
+        enEdt(() -> {
+            vista.fetchMatches(vista.fetchBtn);
+            javax.swing.SwingWorker<?, ?> w = vista.fetchWorker;
+            long tope = System.currentTimeMillis() + 5000;
+            while (!w.isDone() && System.currentTimeMillis() < tope) Thread.onSpinWait();   // el EDT está ocupado: done() queda en cola
+            assertTrue(w.isDone(), "doInBackground terminó");
+            vista.cerrarBusqueda();
+            assertNull(vista.fetchWorker);
+            assertTrue(vista.fetchBtn.isEnabled() && vista.azarBtn.isEnabled() && vista.gteBtn.isEnabled(), "la × repone los botones");
+            assertFalse(anfitrion.progreso, "y apaga el progreso de la búsqueda");
+        });
+        asentar();   // ahora corre el done() que estaba en cola
+        enEdt(() -> {
+            assertTrue(vista.all.isEmpty(), "el done() en cola no vuelve a llenar la tabla tras la ×");
+            assertEquals("Búsqueda cerrada.", anfitrion.estado, "estados: " + anfitrion.estados);
+        });
     }
 
     // ----- watchlist F8: pedir las partidas de otro jugador con una búsqueda en marcha -----
@@ -529,6 +564,62 @@ class PartidasViewTest {
         conConfig("usar_ca", "false", () -> enEdt(() -> vista.menuPartida.espectarConCaptureAge(m)));
         assertEquals(1, anfitrion.capturesLanzados);
         assertEquals(List.of(8602L), anfitrion.espectadas);
+    }
+
+    @Test void busquedaQueAcabaDuranteUnaDescarga_laFilaSigueEnsenandoLaDescarga() throws Exception {
+        // F7 (2.ª vuelta): la búsqueda trae la misma partida como OTRO Match; setEstado la buscaba por identidad y
+        // «descargando… / ✓ guardada» dejaba de verse.
+        Instant fin = Instant.now().minusSeconds(600);
+        Match vieja = partida(8701, A, fin);
+        rec.dentro = new CountDownLatch(1);
+        rec.soltar = new CountDownLatch(1);
+        rec.escribirEn = recs;
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(vieja), A, "grupo|General"));
+        enEdt(() -> vista.download(List.of(vieja)));
+        assertTrue(rec.dentro.await(5, TimeUnit.SECONDS), "la descarga está en marcha");
+        enlace.invitado = A;
+        anfitrion.paginador = (pid, pag, pp) -> List.of(partida(8701, A, fin));   // la misma partida, otro objeto
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+        asentar();
+        Match nueva = vista.view.get(0);
+        assertNotSame(vieja, nueva);
+        assertEquals("descargando…", nueva.estado, "la fila de la búsqueda nueva conserva el estado de la descarga");
+        rec.soltar.countDown();
+        esperar(() -> "✓ guardada".equals(nueva.estado), "el «✓ guardada» llega a la fila nueva");
+        esperar(() -> nueva.enDisco, "y su marca «en disco»");
+        asentar();
+        enEdt(() -> assertEquals("✓ guardada", vista.tableModel.getValueAt(vista.view.indexOf(nueva), 7)));
+        assertTrue(nueva.enDisco, "remarcar al acabar la descarga no la desmarca");
+    }
+
+    @Test void enviarAlJuego_segundoClicMientrasSigueElPrimero_noLanzaOtro() throws Exception {
+        Path sg = java.nio.file.Files.createDirectories(recs.resolve("savegame"));
+        Match m = partida(8801, A, Instant.now().minusSeconds(600));
+        java.nio.file.Files.write(recs.resolve("8801.aoe2record"), new byte[6000]);
+        conSavegame(sg, () -> {
+            anfitrion.soltarDestino = new CountDownLatch(1);
+            enEdt(() -> vista.enviarInteligente(List.of(m)));
+            enEdt(() -> vista.enviarInteligente(List.of(m)));   // el segundo clic, con el primero mirando recs
+            assertEquals("Ya se está enviando al juego: espera a que acabe.", anfitrion.estado);
+            anfitrion.soltarDestino.countDown();
+            esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "que acabe el primero");
+            anfitrion.soltarDestino = null;
+            anfitrion.estados.clear();
+            enEdt(() -> vista.enviarInteligente(List.of(m)));   // acabado el primero, se puede volver a enviar
+            esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "el tercero");
+            assertFalse(anfitrion.estados.stream().anyMatch(s -> s.startsWith("Ya se está enviando")));
+        });
+    }
+
+    @Test void enviarAlJuego_siFallaAlMirarLasRecs_loDiceYSePuedeReintentar() throws Exception {
+        Match m = partida(8802, A, Instant.now().minusSeconds(600));
+        anfitrion.fallarDestino = new IllegalStateException("disco roto");
+        enEdt(() -> vista.enviarInteligente(List.of(m)));
+        esperar(() -> anfitrion.estado.startsWith("Error: "), "el error en la barra");
+        assertTrue(anfitrion.estado.contains("disco roto"), anfitrion.estado);
+        assertFalse(vista.descargas.enviando, "tras el error se puede volver a enviar");
+        assertTrue(rec.procesadas.isEmpty(), "no se descarga nada a ciegas");
     }
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
