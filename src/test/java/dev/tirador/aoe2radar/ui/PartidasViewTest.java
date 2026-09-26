@@ -97,7 +97,16 @@ class PartidasViewTest {
         @Override public boolean enCursoReal(Match m) { return false; }
         /** En qué hilo se pidió cada ruta de rec (true = EDT): quien la pide va a mirar el disco justo después. */
         final List<Boolean> destinoEnEdt = Collections.synchronizedList(new ArrayList<>());
-        @Override public Path destino(Match m) { destinoEnEdt.add(SwingUtilities.isEventDispatchThread()); return recs.resolve(m.id + ".aoe2record"); }
+        /** Si están puestos, destino (fuera del EDT) espera / falla: un «Enviar al juego» que sigue mirando recs, o que se rompe. */
+        volatile CountDownLatch soltarDestino;
+        volatile RuntimeException fallarDestino;
+        @Override public Path destino(Match m) {
+            boolean edt = SwingUtilities.isEventDispatchThread();
+            destinoEnEdt.add(edt);
+            if (!edt && fallarDestino != null) throw fallarDestino;
+            if (!edt && soltarDestino != null) try { soltarDestino.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+            return recs.resolve(m.id + ".aoe2record");
+        }
         @Override public Path recsDir() { return recs; }
         @Override public void trabajando(boolean on) { progreso = on; if (on) { stop = false; opSerial++; } }
         @Override public long operacionActual() { return opSerial; }
@@ -582,6 +591,35 @@ class PartidasViewTest {
         asentar();
         enEdt(() -> assertEquals("✓ guardada", vista.tableModel.getValueAt(vista.view.indexOf(nueva), 7)));
         assertTrue(nueva.enDisco, "remarcar al acabar la descarga no la desmarca");
+    }
+
+    @Test void enviarAlJuego_segundoClicMientrasSigueElPrimero_noLanzaOtro() throws Exception {
+        Path sg = java.nio.file.Files.createDirectories(recs.resolve("savegame"));
+        Match m = partida(8801, A, Instant.now().minusSeconds(600));
+        java.nio.file.Files.write(recs.resolve("8801.aoe2record"), new byte[6000]);
+        conSavegame(sg, () -> {
+            anfitrion.soltarDestino = new CountDownLatch(1);
+            enEdt(() -> vista.enviarInteligente(List.of(m)));
+            enEdt(() -> vista.enviarInteligente(List.of(m)));   // el segundo clic, con el primero mirando recs
+            assertEquals("Ya se está enviando al juego: espera a que acabe.", anfitrion.estado);
+            anfitrion.soltarDestino.countDown();
+            esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "que acabe el primero");
+            anfitrion.soltarDestino = null;
+            anfitrion.estados.clear();
+            enEdt(() -> vista.enviarInteligente(List.of(m)));   // acabado el primero, se puede volver a enviar
+            esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "el tercero");
+            assertFalse(anfitrion.estados.stream().anyMatch(s -> s.startsWith("Ya se está enviando")));
+        });
+    }
+
+    @Test void enviarAlJuego_siFallaAlMirarLasRecs_loDiceYSePuedeReintentar() throws Exception {
+        Match m = partida(8802, A, Instant.now().minusSeconds(600));
+        anfitrion.fallarDestino = new IllegalStateException("disco roto");
+        enEdt(() -> vista.enviarInteligente(List.of(m)));
+        esperar(() -> anfitrion.estado.startsWith("Error: "), "el error en la barra");
+        assertTrue(anfitrion.estado.contains("disco roto"), anfitrion.estado);
+        assertFalse(vista.descargas.enviando, "tras el error se puede volver a enviar");
+        assertTrue(rec.procesadas.isEmpty(), "no se descarga nada a ciegas");
     }
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
