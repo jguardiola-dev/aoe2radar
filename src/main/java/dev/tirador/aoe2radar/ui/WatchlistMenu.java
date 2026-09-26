@@ -167,7 +167,7 @@ final class WatchlistMenu {
         Integer e1 = wv.menus.elo1v1Conocido(mp.id);
         JMenu sub = new JMenu(prefijo + nombre + (e1 != null ? "  1v1 " + e1 : "") + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""));
         sub.setIcon(iconoBandera(wv.anfitrion.paisDe(mp.id)));
-        if (((e1 == null && wv.eloSesion.conocido(mp.id) == null) || wv.eloSesion.caducado(mp.id)) && wv.eloSesion.reservar(mp.id)) new Thread(() -> { long pedido = wv.eloSesion.ahora(); Integer e = wv.perfiles.elo1v1(mp.id); wv.eloSesion.apuntar(mp.id, e, pedido); if (e != null && e > 0) SwingUtilities.invokeLater(() -> sub.setText(prefijo + nombre + "  1v1 " + e + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""))); }, "elo-1v1").start();
+        if (((e1 == null && wv.eloSesion.conocido(mp.id) == null) || wv.eloSesion.caducado(mp.id)) && wv.eloSesion.reservar(mp.id)) new Thread(() -> { long pedido = wv.eloSesion.ahora(); dev.tirador.aoe2radar.service.ProfileService.Elo1v1 r = wv.perfiles.elo1v1Leido(mp.id); if (r.fallo()) { wv.eloSesion.liberar(mp.id); return; } Integer e = r.elo(); wv.eloSesion.apuntar(mp.id, e, pedido); if (e != null && e > 0) SwingUtilities.invokeLater(() -> sub.setText(prefijo + nombre + "  1v1 " + e + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""))); }, "elo-1v1").start();
         JMenuItem perf = new JMenuItem(t("Perfil", "Profile")); perf.addActionListener(a -> wv.navegacion.abrirPerfil(mp.id, nombre)); sub.add(perf);
         JMenuItem perfN = new JMenuItem(t("Perfil en pestaña nueva", "Profile in a new tab")); perfN.addActionListener(a -> wv.navegacion.abrirPerfilEnPestana(mp.id, nombre)); sub.add(perfN);
         if (!wv.containsPlayerId(mp.id)) {
