@@ -131,6 +131,8 @@ public final class CivStatsView {
     public SelectorRangoElo stRango;
     SelectorRangoElo tendRango;
     boolean stRellenandoMapas;
+    /** F3 (1.3): true mientras statsPintar vacía y rellena la tabla; el oyente de selección no toca la civ elegida. */
+    boolean stRepintandoTabla;
 
     public CivStatsView(StatsService stats, FiltroStats filtroStats, Listas listas, Navegacion navegacion, Tareas tareas, Window ventana, EnlaceTechTree enlace) {
         this.stats = stats;
@@ -237,7 +239,7 @@ public final class CivStatsView {
         stTabla.getColumnModel().getColumn(3).setCellRenderer(new MilesRenderer());
         stTabla.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         stTabla.getSelectionModel().addListSelectionListener(e -> {
-            if (e.getValueIsAdjusting()) return;
+            if (e.getValueIsAdjusting() || stRepintandoTabla) return;   // F3: vaciar la tabla al repintar no es «deseleccionar»
             int r = stTabla.getSelectedRow();
             filtroStats.civSeleccionada(r < 0 ? null : (String) stTabla.getClientProperty("civ" + stTabla.convertRowIndexToModel(r)));
             stCivsSeleccionadas.clear();
@@ -493,16 +495,21 @@ public final class CivStatsView {
 
         List<CivAgg> lista = new ArrayList<>(agg.values());
         lista.removeIf(a -> a.n() < MIN_PARTIDAS_CIV);
-        stModelo.setRowCount(0);
-        int i = 0;
-        for (CivAgg a : lista) {
-            stModelo.addRow(new Object[]{ nombreCivStats(a.civ()), a.wr(), totalN == 0 ? 0.0 : 100.0 * a.n() / totalN, a.n(), stats.duracionMedia(a.d(), a.n()) });
-            stTabla.putClientProperty("civ" + i, a.civ());
-            i++;
-        }
+        stRepintandoTabla = true;   // F3: setRowCount(0) quita la selección y avisaría con fila -1: la civ elegida se perdería
+        try {
+            stModelo.setRowCount(0);
+            int i = 0;
+            for (CivAgg a : lista) {
+                stModelo.addRow(new Object[]{ nombreCivStats(a.civ()), a.wr(), totalN == 0 ? 0.0 : 100.0 * a.n() / totalN, a.n(), stats.duracionMedia(a.d(), a.n()) });
+                stTabla.putClientProperty("civ" + i, a.civ());
+                i++;
+            }
+        } finally { stRepintandoTabla = false; }
         stTituloTabla.setText(t("Winrate por civilización", "Win rate by civilization") + "  ·  " + modoNombre(filtroStats.modo()) + " · " + nombreMapaStats(v, filtroStats.mapa()) + " · " + tramoNombre(filtroStats.tramo()));
         if (filtroStats.civSeleccionada() != null) {
-            for (int r = 0; r < stModelo.getRowCount(); r++) if (filtroStats.civSeleccionada().equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); break; }
+            boolean esta = false;
+            for (int r = 0; r < stModelo.getRowCount(); r++) if (filtroStats.civSeleccionada().equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); esta = true; break; }
+            if (!esta) { filtroStats.civSeleccionada(null); stCivsSeleccionadas.clear(); }   // con estos filtros ya no sale en la tabla: como antes, sin civ elegida
         }
         Color barra = temaOscuroActivo ? new Color(0x5a, 0x8f, 0xc7) : new Color(0x3b, 0x6e, 0xa8);
         stMasJugadas.removeAll();
