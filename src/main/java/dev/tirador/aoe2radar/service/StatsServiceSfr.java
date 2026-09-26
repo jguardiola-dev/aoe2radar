@@ -31,9 +31,11 @@ public final class StatsServiceSfr implements StatsService {
 
     @Override public boolean tieneVentana(String clave) { return CivStats.VENTANAS_STATS.containsKey(clave); }
 
-    @Override public String[] modos() { return CivStats.MODOS_STATS; }
+    // clone(): copia defensiva (fila 114 de DEUDA). Antes se entregaba el array estático de CivStats tal cual;
+    // quien lo recibiera podía mutarlo y corromper el estado compartido con la UI y con otras sesiones de test.
+    @Override public String[] modos() { return CivStats.MODOS_STATS.clone(); }
 
-    @Override public String[] clavesVentanas() { return CivStats.VENTANAS_STATS_KEYS; }
+    @Override public String[] clavesVentanas() { return CivStats.VENTANAS_STATS_KEYS.clone(); }
 
     @Override public Tendencias tendencias() { return CivStats.tendenciasStats; }
 

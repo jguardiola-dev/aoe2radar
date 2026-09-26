@@ -143,6 +143,20 @@ class MiPartidaServiceJuegoTest {
         assertTrue(s.leerLogJuego());
     }
 
+    // ----- leerLogJuego: sin solape entre ticks (fila 132 de DEUDA) -----
+
+    /**
+     * El tick de 2s (MiPartidaPresenter) lanza un hilo "log-juego" nuevo en cada llamada, sin guarda anti-solape;
+     * si dos llamadas coincidieran, tocarían a la vez logActual/logPos/ultimoAvisoMs sin ninguna protección.
+     * Se comprueba aquí que el método es "synchronized" (una llamada espera a que termine la anterior) en vez de
+     * levantar dos hilos de verdad, que sería un test lento y no determinista.
+     */
+    @Test void leerLogJuegoEsSynchronizedParaQueDosTicksNoSeSolapen() throws NoSuchMethodException {
+        var metodo = MiPartidaServiceJuego.class.getMethod("leerLogJuego");
+        assertTrue(java.lang.reflect.Modifier.isSynchronized(metodo.getModifiers()),
+                "leerLogJuego debe ser synchronized: dos ticks seguidos no deben tocar el estado de la sesión a la vez");
+    }
+
     // ----- civsRecientes / paisDe -----
 
     @Test void civsRecientesSinActividadEnCacheDevuelveVacio() {

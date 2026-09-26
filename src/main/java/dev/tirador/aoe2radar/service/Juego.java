@@ -1,7 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -56,18 +55,6 @@ public final class Juego {
 
     public static final String OFICIAL_LOBBIES = "https://aoe-api.worldsedgelink.com/community/advertisement/findAdvertisements?title=age2&start=0&count=200";
 
-    /** SteamID activo según el registro de Windows (HKCU\\Software\\Valve\\Steam\\ActiveProcess\\ActiveUser, id de 32 bits) → id64. null si no hay Steam. */
-    public static Long steamIdActivo() {
-        try {
-            Process p = new ProcessBuilder("reg", "query", "HKCU\\Software\\Valve\\Steam\\ActiveProcess", "/v", "ActiveUser").redirectErrorStream(true).start();
-            String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            p.waitFor();
-            java.util.regex.Matcher m = java.util.regex.Pattern.compile("ActiveUser\\s+REG_DWORD\\s+0x([0-9a-fA-F]+)").matcher(out);
-            if (!m.find()) return null;
-            long id32 = Long.parseLong(m.group(1), 16);
-            return id32 > 0 ? 76561197960265728L + id32 : null;
-        } catch (Exception ex) { return null; }
-    }
     /** Carpeta de logs del juego: %USERPROFILE%\\Games\\Age of Empires 2 DE\\logs (o la indicada en config «logs_juego»). */
     public static Path carpetaLogsJuego() {
         String cfg = leerConfig("logs_juego", "");

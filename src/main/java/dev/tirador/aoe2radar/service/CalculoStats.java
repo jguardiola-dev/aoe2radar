@@ -17,7 +17,6 @@ public final class CalculoStats {
     public static final int MIN_PARTIDAS_CIV = 20;       // por debajo, la civ no se lista; por debajo de MUESTRA_FIABLE se pinta en gris
     public static final int MUESTRA_FIABLE = 100;
     public static final int POCAS_PARTIDAS = 2000;       // por debajo de este total, aviso discreto: prueba 90 o 365 días
-    public static final int MIN_PARTIDAS_MAPA = 200;
 
     /** ¿La fila de tramo «tramo» entra en el rango elegido? Acepta «*», una clave simple o «desde|hasta» (extremos con * = sin límite). */
     public static boolean tramoEnRango(String tramo, List<String> tramos, String rango) {

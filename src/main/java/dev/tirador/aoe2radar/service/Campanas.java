@@ -42,7 +42,6 @@ public final class Campanas {
     private final BiConsumer<String, String> guardarConfig;
 
     /** pid|matchId (o «mi|matchId») ya avisados: una campana solo avisa una vez por partida. */
-    private final Set<Long> avisados = java.util.concurrent.ConcurrentHashMap.newKeySet();   // sin uso real, igual que en la 1.1 (ver DEUDA)
     private final Set<String> avisadosClave = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public Campanas(CompanionApi api, BiFunction<String, String, String> leerConfig, BiConsumer<String, String> guardarConfig) {

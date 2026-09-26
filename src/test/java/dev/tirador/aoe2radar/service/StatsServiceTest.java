@@ -173,10 +173,15 @@ class StatsServiceTest {
         assertFalse(stats.tieneVentana("90"), "esta no se ha pedido nunca");
     }
 
-    @Test void modosYClavesVentanasSonLasDeCivStatsEnElMismoOrden() {
+    /**
+     * Arreglo de DEUDA fila 114 (fase 4): modos()/clavesVentanas() ahora entregan una COPIA del array estático de
+     * CivStats, no el mismo array: así nadie puede mutar por accidente el estado compartido con la UI (o con otro
+     * test de la suite, que reutiliza los mismos arrays estáticos entre @Test).
+     */
+    @Test void modosYClavesVentanasSonUnaCopiaDelArrayDeCivStatsConElMismoContenido() {
         assertArrayEquals(CivStats.MODOS_STATS, stats.modos());
         assertArrayEquals(CivStats.VENTANAS_STATS_KEYS, stats.clavesVentanas());
-        assertSame(CivStats.MODOS_STATS, stats.modos(), "mismo array, no una copia");
-        assertSame(CivStats.VENTANAS_STATS_KEYS, stats.clavesVentanas(), "mismo array, no una copia");
+        assertNotSame(CivStats.MODOS_STATS, stats.modos(), "copia defensiva, no el array compartido");
+        assertNotSame(CivStats.VENTANAS_STATS_KEYS, stats.clavesVentanas(), "copia defensiva, no el array compartido");
     }
 }

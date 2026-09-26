@@ -68,7 +68,7 @@ public final class ReglasPartida {
         Collections.sort(equipo);
         return mio.equals(equipo.get(0)) || mio.equals(equipo.get(equipo.size() - 1)) ? "flanco" : "pocket";
     }
-    /** Tramo de duración de una partida (minutos): <15, 15–25, 25–35, 35–45, 45–60, 60+. */
+    /** Tramo de duración de una partida (minutos): <5, 5–15, 15–25, 25–40, >40 (aoe2insights). */
     public static final String[] DURACION_TRAMOS = { "< 5 min", "5 \u2013 <15 min", "15 \u2013 <25 min", "25 \u2013 <40 min", "> 40 min" };   // tramos de aoe2insights
     public static int tramoDuracion(Match m) {
         if (m.started == null || m.finished == null) return -1;

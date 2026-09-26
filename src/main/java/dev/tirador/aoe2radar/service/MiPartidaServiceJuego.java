@@ -89,8 +89,14 @@ public final class MiPartidaServiceJuego implements MiPartidaService {
         log("mi partida: vigilancia del log del juego activa (carpeta " + carpeta + ", existe=" + Files.isDirectory(carpeta) + "); socket con mi id " + leerConfig.apply("mi_pid", ""));
     }
 
+    /**
+     * synchronized (fila 132 de DEUDA): el tick de 2s (MiPartidaPresenter) lanza un hilo «log-juego» nuevo en
+     * cada llamada, sin esperar al anterior; si una lectura tarda más de 2s, dos hilos podrían tocar a la vez
+     * logActual/logPos/logUltimaFase/ultimoAvisoMs/ultimoDiagMs. Con el método sincronizado, la segunda llamada
+     * simplemente espera a que termine la primera (mismo resultado que hoy: nunca hay más de una a la vez).
+     */
     @Override
-    public boolean leerLogJuego() {
+    public synchronized boolean leerLogJuego() {
         try {
             if (leerConfig.apply("mi_pid", "").isBlank()) return false;
             Path carpeta = carpetaLogsJuego.get();

@@ -37,14 +37,15 @@ class AnotacionesServiceTest {
         assertEquals("", guardado.get(0)[1]);
     }
 
-    @Test void ponerAliasIgualAlOriginalLoQuitaDelMapaPeroGuardaElTextoTalCual() {
-        // Comportamiento de la 1.1, no se toca (ver DEUDA): al escribir el mismo nombre original, el mapa lo quita,
-        // pero la config se guarda con ese texto (no con ""), así que al recargar reaparecería.
+    @Test void ponerAliasIgualAlOriginalLoQuitaDelMapaYBorraLaClaveDeConfig() {
+        // Arreglo de DEUDA fila 101 (fase 4): antes, al escribir el mismo nombre original, el mapa lo quitaba pero
+        // la config se guardaba con ese texto (no con ""), así que al recargar la app el alias reaparecía.
         alias.put(1L, "Apodo");
         anotaciones.ponerAlias(1L, "Original", "Original");
         assertNull(alias.get(1L), "el mapa en memoria lo trata como «sin alias»");
+        assertEquals(1, guardado.size(), "se guarda una sola vez");
         assertEquals("alias_1", guardado.get(0)[0]);
-        assertEquals("Original", guardado.get(0)[1], "la config guarda el texto tal cual, no vacío");
+        assertEquals("", guardado.get(0)[1], "la config también queda vacía: no debe reaparecer al recargar");
     }
 
     @Test void aliasDeSinAliasEsNull() {

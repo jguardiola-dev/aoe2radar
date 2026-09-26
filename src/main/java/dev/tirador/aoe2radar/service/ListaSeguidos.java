@@ -77,7 +77,9 @@ public final class ListaSeguidos {
             for (Player p : destino) if (p.grupo().equalsIgnoreCase(pros)) { conMiembros = true; break; }
             if (!conMiembros) {
                 List<String> gs = new ArrayList<>();
-                for (String g : leerConfig.apply("grupos", "").split(","))
+                // "[,;]": lectura tolerante (fila 102 de DEUDA) - por si «grupos» quedó grabado con «;» desde el
+                // diálogo de fichaje (ver gruposConfig). La escritura sigue siendo siempre con «,».
+                for (String g : leerConfig.apply("grupos", "").split("[,;]"))
                     if (!g.isBlank() && !g.trim().equalsIgnoreCase(pros)) gs.add(g.trim());
                 guardarConfig.accept("grupos", String.join(",", gs));
             }
@@ -100,10 +102,14 @@ public final class ListaSeguidos {
 
     // ----- Grupos --------------------------------------------------------------
 
-    /** Grupos creados por el usuario (existen aunque estén vacíos). */
+    /**
+     * Grupos creados por el usuario (existen aunque estén vacíos). Lectura tolerante (fila 102 de DEUDA):
+     * elegirGrupoDialog («+ Nuevo grupo…») podía haber grabado «grupos» con «;» en vez de «,»; se acepta también
+     * ese separador al leer, aunque la escritura de este método siga siendo siempre con «,».
+     */
     public Set<String> gruposConfig() {
         Set<String> out = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        for (String g : leerConfig.apply("grupos", "").split(",")) if (!g.isBlank()) out.add(g.trim());
+        for (String g : leerConfig.apply("grupos", "").split("[,;]")) if (!g.isBlank()) out.add(g.trim());
         return out;
     }
 
