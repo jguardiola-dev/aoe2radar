@@ -37,7 +37,7 @@ class AnotacionesServiceTest {
         assertEquals("", guardado.get(0)[1]);
     }
 
-    @Test void ponerAliasIgualAlOriginalLoQuitaDelMapaYBorraLaClaveDeConfig() {
+    @Test void ponerAliasIgualAlOriginalLoQuitaDelMapaYGuardaVacioEnConfig() {
         // Arreglo de DEUDA fila 101 (fase 4): antes, al escribir el mismo nombre original, el mapa lo quitaba pero
         // la config se guardaba con ese texto (no con ""), así que al recargar la app el alias reaparecía.
         alias.put(1L, "Apodo");
