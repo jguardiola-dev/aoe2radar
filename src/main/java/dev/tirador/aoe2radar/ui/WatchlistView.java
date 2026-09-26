@@ -535,6 +535,9 @@ public final class WatchlistView {
     public String clanBuscado() { return clanField == null ? "" : clanField.getText().trim(); }
 
     void cargarTopClan() { trabajos.cargarTopClan(); }
+    /** La firma de la lista cargada cuando es la de un clan: nunca coincide con la de ★ Top ladder («global») ni
+     *  con la de ★ Top país (el código ISO), así que volver a esas vistas recarga (F1 de la revisión 1.3). */
+    static String firmaClan(String tag) { return "clan|" + tag.toLowerCase(Locale.ROOT); }
     public void cargarTopLadder(boolean forzar) { trabajos.cargarTopLadder(forzar); }
     public void vigilarTop() { trabajos.vigilarTop(); }
 

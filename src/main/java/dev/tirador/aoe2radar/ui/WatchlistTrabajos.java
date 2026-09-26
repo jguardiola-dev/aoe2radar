@@ -123,24 +123,32 @@ final class WatchlistTrabajos {
         wv.status.setText(wv.anfitrion.clanesVacios() ? t("Descargando la lista de clanes…", "Downloading the clan list…") : t("Cargando el clan…", "Loading the clan…"));
         new Thread(() -> {
             TopLadderService.ResultadoClan res = wv.topLadderService.topClan(tag);
-            SwingUtilities.invokeLater(() -> {
-                if (res.error() != null) { wv.status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
-                wv.topLadder.clear();
-                wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
-                wv.lastTop.clear(); wv.rankTop.clear();
-                for (TopLadderService.FilaClan f : res.miembros()) {
-                    wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
-                    wv.eloWatch.put(f.pid(), f.rating());
-                    wv.eloDelSnapshot.add(f.pid());   // resumen diario de sfr-data: ELO de anoche (F5)
-                    wv.rankTop.put(f.pid(), wv.topLadder.size());
-                }
-                guardarConfig("clan_tag", tag);
-                wv.aplicarFiltroGrupo();
-                wv.actualizarIndicadoresVivos();
-                wv.status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
-                        : t("Clan ", "Clan ") + tag + ": " + res.miembros().size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
-            });
+            SwingUtilities.invokeLater(() -> aplicarTopClan(tag, res));
         }, "top-clan").start();
+    }
+
+    /** El resultado de cargarTopClan, ya en el EDT. F1 de la revisión 1.3: el clan comparte topLadder/rankTop con
+     *  ★ Top ladder y ★ Top país, así que 1) deja su propia firma (antes la de «global» seguía puesta y, al volver al
+     *  ladder antes de 10 min, topFresco daba por buena la lista del clan) y 2) no pinta si el usuario ya salió de
+     *  ★ Top clan mientras cargaba (como cargarTopLadder, que ya lo miraba). */
+    void aplicarTopClan(String tag, TopLadderService.ResultadoClan res) {
+        if (res.error() != null) { wv.status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
+        if (!wv.modoClan()) return;   // el usuario cambió de vista mientras cargaba: no pintar encima
+        wv.topFirma = WatchlistView.firmaClan(tag);
+        wv.topLadder.clear();
+        wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
+        wv.lastTop.clear(); wv.rankTop.clear();
+        for (TopLadderService.FilaClan f : res.miembros()) {
+            wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
+            wv.eloWatch.put(f.pid(), f.rating());
+            wv.eloDelSnapshot.add(f.pid());   // resumen diario de sfr-data: ELO de anoche (F5)
+            wv.rankTop.put(f.pid(), wv.topLadder.size());
+        }
+        guardarConfig("clan_tag", tag);
+        wv.aplicarFiltroGrupo();
+        wv.actualizarIndicadoresVivos();
+        wv.status.setText(res.miembros().isEmpty() ? t("Ningún clan del ladder 1v1 se llama «", "No 1v1 ladder clan is called \u201C") + tag + t("» (elige uno de las sugerencias).", "\u201D (pick one from the suggestions).")
+                : t("Clan ", "Clan ") + tag + ": " + res.miembros().size() + t(" jugadores en el ladder 1v1 (resumen diario).", " players on the 1v1 ladder (daily summary)."));
     }
 
     /** Barrido de la Watchlist al abrir: para cada seguido, una consulta ligera

@@ -686,6 +686,34 @@ class WatchlistViewTest {
         EstadoVivo.SISTEMA.marcarFuera(pid);
     }
 
+    /** F1 de la revisión 1.3: ★ Top clan cargaba sus miembros en topLadder sin cambiar la firma («global»): volver a
+     *  ★ Top ladder antes de 10 min daba por fresca la lista del clan y enseñaba a sus miembros como el top. */
+    @Test void aplicarTopClan_dejaSuFirmaYElLadderSeRecarga() {
+        watchlist.rebuildGrupos();
+        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.topFirma = "global";
+        watchlist.topCargado = new RelojFalso().ahora;   // el ladder se cargó ahora mismo (reloj del TopLadderService del test)
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
+
+        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+
+        assertEquals(List.of(9L), watchlist.topLadder.stream().map(Player::id).toList());
+        assertFalse(watchlist.topLadderService.topFresco(false, "global", watchlist.topFirma, !watchlist.topLadder.isEmpty(), watchlist.topCargado),
+                "con la lista del clan puesta, volver a ★ Top ladder tiene que recargar");
+    }
+
+    @Test void aplicarTopClan_siElUsuarioYaSalioDelClanNoPinta() {
+        watchlist.rebuildGrupos();
+        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.topFirma = "global";
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+
+        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+
+        assertEquals(List.of(1L), watchlist.topLadder.stream().map(Player::id).toList(), "el top ladder ya pintado se queda");
+        assertEquals("global", watchlist.topFirma);
+    }
+
     @Test void sugerenciaCaducada_siElTextoCambio() {
         assertTrue(WatchlistView.sugerenciaCaducada("tirador", "otra cosa"));
         assertFalse(WatchlistView.sugerenciaCaducada("tirador", "tirador "));   // el trim es parte del criterio
