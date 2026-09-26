@@ -329,6 +329,23 @@ class LiveNowPresenterTest {
         assertEquals(List.of(632L), presenter.jugadoresEn(9331L));
     }
 
+    /** Menor del revisor: la quitada sin datos (fin null) de la partida A no suelta la partida B en la que ya está. */
+    @Test void liveTerminada_sinPartidaDeLaApi_soloQuitaSiEsEsaPartida() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(641L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        Match a = matchEnCurso(9341L, 641L), b = matchEnCurso(9342L, 641L);
+        p.liveEvento(641L, a, false);
+        p.liveEvento(641L, b, false);         // en el hueco, el socket lo mete en B
+        p.liveTerminada(641L, 9341L, null);   // llega el «sin datos» de A
+        assertEquals(b, p.enCursoSnapshot().get(641L), "sigue en B");
+        assertEquals(b, vivo.partida(641L));
+        p.liveTerminada(641L, 9342L, null);   // y cuando es la suya, sí: a «Terminadas» con la guardada
+        assertFalse(p.enCursoSnapshot().containsKey(641L));
+        assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9342L));
+    }
+
     @Test void liveEvento_noRepintaSiLaPantallaNoLoPermite() {
         pantalla.fuente = List.<Object[]>of(ficha(701L, "Uno", 1500, 10, "es"));
         presenter.refrescar(false);

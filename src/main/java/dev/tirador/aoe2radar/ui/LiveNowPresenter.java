@@ -278,18 +278,36 @@ public final class LiveNowPresenter {
     public void liveEvento(long pid, Match m, boolean terminada) {
         if (ficha(pid) == null) return;
         if (terminada) {
-            // con la partida que terminó, solo se suelta/quita si es la actual de pid: un final tardío de una partida
-            // vieja no le saca de la nueva (revisión 1.3, F8); sin partida (null), como antes
-            Match viva = m != null ? estadoVivo.soltarPartidaDe(pid, m.id) : estadoVivo.soltarPartida(pid);
-            Match fin = m != null ? m : viva;
-            // con la hora de fin real si se sabe (la da la API, revisión 1.3, F5), como el barrido; si no, la de ahora
-            if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, fin.finished != null ? fin.finished.toEpochMilli() : System.currentTimeMillis() }); }
-            synchronized (ahoraEnCurso) { Match actual = ahoraEnCurso.get(pid); if (m == null || actual == null || actual.id == m.id) ahoraEnCurso.remove(pid); }
+            if (m != null) { apuntarTerminada(pid, m.id, m); }
+            else {   // sin partida: no se sabe cuál terminó; como antes (el socket ya pasa por liveTerminada con su id)
+                Match viva = estadoVivo.soltarPartida(pid);
+                if (viva != null && viva.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(viva.id, new Object[]{ viva, viva.finished != null ? viva.finished.toEpochMilli() : System.currentTimeMillis() }); }
+                synchronized (ahoraEnCurso) { ahoraEnCurso.remove(pid); }
+            }
         } else if (m != null) {
             estadoVivo.guardarPartida(pid, m);
             synchronized (ahoraEnCurso) { ahoraEnCurso.put(pid, m); }
         }
         if (pantalla.puedeRepintar()) tareas.enUi(pantalla::pintar);
+    }
+
+    /**
+     * La partida matchId de pid terminó (fin: la partida que dio la API, o null si no la dio). Solo se suelta y se quita
+     * de «en curso» si es la partida actual de pid: si en el hueco el socket lo metió en otra, esa se queda (revisión
+     * 1.3, F8 y menor del revisor). Sin fin, se usa la guardada al empezar. Seguro desde cualquier hilo, como liveEvento.
+     */
+    public void liveTerminada(long pid, long matchId, Match fin) {
+        if (ficha(pid) == null) return;
+        apuntarTerminada(pid, matchId, fin);
+        if (pantalla.puedeRepintar()) tareas.enUi(pantalla::pintar);
+    }
+
+    private void apuntarTerminada(long pid, long matchId, Match fin) {
+        Match viva = estadoVivo.soltarPartidaDe(pid, matchId);
+        Match m = fin != null ? fin : viva;
+        // con la hora de fin real si se sabe (la da la API, revisión 1.3, F5), como el barrido; si no, la de ahora
+        if (m != null && m.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(m.id, new Object[]{ m, m.finished != null ? m.finished.toEpochMilli() : System.currentTimeMillis() }); }
+        synchronized (ahoraEnCurso) { Match actual = ahoraEnCurso.get(pid); if (actual == null || actual.id == matchId) ahoraEnCurso.remove(pid); }
     }
 
     /**
