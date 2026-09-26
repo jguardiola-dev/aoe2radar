@@ -45,7 +45,7 @@ public final class PerfilesSfr {
         try {
             byte[] raw = sfr.diario("index.json", 20, Caducidad.NOCTURNO);   // un fallo de red sale tal cual: no hay copia que borrar
             Object root;
-            try { root = Json.parse(new String(raw, StandardCharsets.UTF_8).replace(",NaN", ",\"\"").replace("[NaN", "[\"\""));   // tolerancia: un NaN suelto no es JSON válido
+            try { root = Json.parse(new String(raw, StandardCharsets.UTF_8));   // un NaN suelto lo tolera Json (queda como "")
             } catch (Exception ex) { sfr.olvidarDiario("index.json"); throw ex; }
             if (root instanceof Map<?, ?> m) { @SuppressWarnings("unchecked") Map<String, Object> mm = (Map<String, Object>) m; indice = mm; }
             sello.marcar(sfr.fechaDiario("index.json"));   // la edad cuenta desde que se bajó, no desde que se leyó del disco

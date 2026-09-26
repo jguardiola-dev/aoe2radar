@@ -106,6 +106,18 @@ class MuestraNocturnaTest {
         assertFalse(Files.exists(copia()));
     }
 
+    /** Humo real del 26/09: la civ de una partida de muestra_ayer llegó como NaN (un nulo de pandas) y la muestra entera
+     *  dejaba de cargarse (Guess the ELO vacío, «Al azar» a la API). Ahora se lee y ese campo queda como "" (sin civ). */
+    @Test void unNaNSueltoNoTumbaLaMuestraYQuedaComoSinDato() {
+        red.archivos.put(MuestraNocturna.ARCHIVO, gz(JSON.replace("[13,3]", "[2158721,\"ZabWolff\",NaN,1469,1]")));
+        MuestraNocturna m = nueva();
+        Map<String, List<List<Object>>> t = m.muestra();
+        assertNotNull(t, "un NaN no debe tumbar la muestra entera");
+        assertEquals(List.of(2158721.0, "ZabWolff", "", 1469.0, 1.0), t.get("1500").get(0));
+        assertEquals(2, t.get("1000").size(), "el resto de la muestra, intacto");
+        assertTrue(Files.exists(copia()), "se entiende: la copia no se borra (antes se volvía a bajar en cada intento)");
+    }
+
     @Test void sinTramosEsUnaMuestraVacia() {
         red.archivos.put(MuestraNocturna.ARCHIVO, gz("{\"fecha\":\"2026-09-24\"}"));
         assertTrue(nueva().muestra().isEmpty(), "caracterización de la 1.1: vacía, no null");
