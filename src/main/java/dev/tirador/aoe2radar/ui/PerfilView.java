@@ -68,6 +68,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongFunction;
 
 import static dev.tirador.aoe2radar.service.NombresStats.nombreCivStats;
@@ -104,8 +105,6 @@ import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.lng;
-import static dev.tirador.aoe2radar.util.Log.causa;
-import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * La pestaña Perfil (card "perfil"): la página de un jugador — cabecera con ELO/rango/Top % por ladder, forma y
@@ -206,6 +205,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     private JButton actMasBtn;
     boolean actividadAbierta, actCargando, actRellenandoModos;
     long actPid; String actNombre = "", actModo = "*";
+    /** Fila 28 (C1+C2): sube en cada apertura de verdad (alAbrir); ver generacion() y PerfilPresenter.abrirBase. */
+    private long aperturaGeneracion;
     public CalendarioPanel actCalendario;   // visible para RegresionCapturas
     public BarrasActividad actSemana;       // visible para RegresionCapturas
     private BarrasActividad actHoras;
@@ -228,7 +229,10 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     private JPanel actVinculadasPanel;
     private JLabel actNotaLinea;
     private String actNombreReal = "";
-    private final Set<Long> vinculadasPedidas = new HashSet<>();
+    // Fila 129: se escribe desde el hilo de fondo "perfil-hoy" (PerfilPresenter.actualizarHoy llama a
+    // marcarVinculadasPedidas antes de traerHoy, directamente en el hilo, sin pasar por enUi) y se lee en el
+    // EDT (actPintarVinculadas, el clic de "comprobar"): con un HashSet normal ese cruce de hilos no es seguro.
+    private final Set<Long> vinculadasPedidas = ConcurrentHashMap.newKeySet();
     private JDialog histDialogo; private int histPagina; private String histModo = "*";
     private long historialEnTabla;   // pid cuyo histórico está en la tabla (para que la pestaña Partidas no vuelva a buscar)
     private javax.swing.Timer perfilSeleccionTimer;
@@ -264,6 +268,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     public boolean abierto() { return actividadAbierta; }
     /** El pid actualmente mostrado (0 si no hay ninguno). */
     public long pidAbierto() { return actPid; }
+    /** Fila 28 (C1+C2): la generación de la apertura en curso; PerfilPresenter.abrirBase la compara al volver del hilo de fondo. */
+    public long generacion() { return aperturaGeneracion; }
     /** El nombre del perfil actualmente mostrado. */
     public String nombreAbierto() { return actNombre; }
     /** El pid cuyo histórico está volcado en la pestaña Partidas (0 si ninguno todavía). */
@@ -286,19 +292,24 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         perfilContabilizarPestana(pid, nombre);
         anfitrion.registrarDestino(pid, nombre);
         if (actCargando && pid == actPid) return;
+        // Fila 28 (C1+C2, revisión): esta apertura pasa a ser LA de verdad; una generación nueva invalida
+        // cualquier lectura de fondo que estuviera pendiente de una apertura anterior (aunque fuera del mismo
+        // pid: A→B→A rápido, o abrir dos veces seguidas el mismo perfil antes de que la primera lectura vuelva).
+        aperturaGeneracion++;
         actPid = pid; actNombre = nombre;
         actTitulo.setText(t("Perfil de ", "Profile of ") + nombre);
         actNombreReal = nombre;
         anfitrion.actualizarTextoBuscar();
         actMasBtn.setVisible(false);
-        Actividad base = perfiles.actividad(pid);
-        boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
-        if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
-        else { actMostrarCuerpo(false); actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in.")); }
-        FichaPerfil perfilCache = perfiles.fichaConocida(pid);
-        if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
-        if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
-        presenter.cargar(pid, nombre, base, fresco);
+        // C1: si ya está en memoria (actividadCache es la MISMA ConcurrentHashMap que usa perfiles.actividad(pid)
+        // por debajo, ver HistorialPerfil.actividad), no hace falta ir a un hilo: se pinta en el acto, como la 1.1,
+        // sin el parpadeo de «Descargando…». Solo cuando no está en memoria perfiles.actividad(pid) tendría que
+        // leer disco (HistorialDisco.cargarActividad), y eso sí sale del EDT vía PerfilPresenter.abrirBase.
+        Actividad base = actividadCache.get(pid);
+        if (base != null) { baseLista(base, perfiles.fichaConocida(pid)); return; }
+        actMostrarCuerpo(false);
+        actPista.setText(t("Descargando el historial… la página se irá rellenando sola.", "Downloading the history… the page will fill itself in."));
+        presenter.abrirBase(pid, aperturaGeneracion);
     }
 
     /** Con Perfil abierto, seleccionar a alguien en la watchlist abre su perfil (lo llama el listener de playersList). */
@@ -688,6 +699,18 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     @Override public boolean cargando() { return actCargando; }
     @Override public void cargando(boolean v) { actCargando = v; }
 
+    /** Fila 28: lo que alAbrir hacía en el acto con perfiles.actividad(pid)/fichaConocida(pid) (ambas sin red, pero
+     *  la primera puede leer disco): ahora llega desde el hilo de PerfilPresenter.abrirBase. Mismas decisiones que
+     *  antes, en el mismo orden: pintar cuerpo y cabecera si hay algo, y si ya está fresco y completo no hace
+     *  falta seguir cargando; si no, sigue como siempre por sfr-data o la API (presenter.cargar). */
+    @Override public void baseLista(Actividad base, FichaPerfil perfilCache) {
+        boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
+        if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
+        if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
+        if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
+        presenter.cargar(actPid, actNombre, base, fresco);
+    }
+
     @Override public void cargaIniciada() {
         actEstado.setText(t("Consultando el perfil…", "Fetching the profile…"));
         actProgreso.setVisible(true); actProgreso.setIndeterminate(true); actProgreso.setString(t("Perfil…", "Profile…"));
@@ -863,7 +886,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         modo.addActionListener(e -> { histModo = modo.getSelectedIndex() == 0 ? "*" : String.valueOf(modo.getSelectedItem()); histPagina = 0; pintar.run(); });
         ant.addActionListener(e -> { histPagina--; pintar.run(); });
         sig.addActionListener(e -> { histPagina++; pintar.run(); });
-        mas.addActionListener(e -> { mas.setEnabled(false); tareas.enFondo("historial-mas", () -> { try { Actividad base = actividadCache.get(pid); Actividad a2 = perfiles.historial(pid, nombre, base, true, 1, a -> { }, () -> false); actividadCache.put(pid, a2); } catch (Exception ex) { log("historial: " + causa(ex)); } tareas.enUi(() -> { mas.setEnabled(true); pintar.run(); }); }); });
+        mas.addActionListener(e -> { mas.setEnabled(false); presenter.cargarMasHistorialCompleto(pid, nombre, () -> { mas.setEnabled(true); pintar.run(); }); });
         JPanel sur = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         JButton desc = new JButton(t("Descargar rec", "Download rec")), env = new JButton(t("Enviar al juego", "Send to game"));
         for (JButton b : new JButton[]{ desc, env }) { b.setFocusable(false); b.setMargin(new Insets(2, 10, 2, 10)); b.putClientProperty("JButton.buttonType", "roundRect"); }

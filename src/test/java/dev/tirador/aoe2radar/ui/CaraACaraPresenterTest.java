@@ -27,6 +27,11 @@ class CaraACaraPresenterTest {
         AnioSfr anioSfr;
         FichaPerfil ficha;
         int anioSfrLlamadas;
+        String ultimoNombreSiFalta;
+        /** true: simula un paquete de sfr-data que NO trae nombre propio para el rival, como AnioDesdeSfr.convertir
+         *  de verdad (línea ~110: {@code nombre.isBlank() ? nombreSiFalta : nombre}) — la Actividad se guarda con
+         *  el nombreSiFalta que llegó. false (por defecto): se devuelve el anioSfr ya preparado, tal cual. */
+        boolean paqueteSinNombre;
         @Override public FichaPerfil ficha(long pid) { return ficha; }
         @Override public FichaPerfil fichaConocida(long pid) { return ficha; }
         @Override public Integer elo1v1(long pid) { return null; }
@@ -35,7 +40,12 @@ class CaraACaraPresenterTest {
         @Override public List<Perfil.Vinculada> vinculadasConocidas(long pid) { return null; }
         @Override public Integer eloVinculada(long vid) { return null; }
         @Override public Map<Long, String> familia(long pid) { return null; }
-        @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) { anioSfrLlamadas++; return anioSfr; }
+        @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) {
+            anioSfrLlamadas++;
+            ultimoNombreSiFalta = nombreSiFalta;
+            if (paqueteSinNombre) return new AnioSfr(new Actividad(pid, nombreSiFalta, List.of(), true, 1, 1L), "2026-09-24", "es");
+            return anioSfr;
+        }
         @Override public Actividad actividad(long pid) { return null; }
         @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, BooleanSupplier cancelar) { return null; }
         @Override public int traerHoy(long pid) { return 0; }
@@ -110,6 +120,32 @@ class CaraACaraPresenterTest {
         assertSame(a, pintado[0]);
         assertEquals(1, perfiles.anioSfrLlamadas);
         assertSame(a, actividadCache.get(9L));
+    }
+
+    /**
+     * Fila 80 (C3, revisado): el segundo parámetro de pedirAnioRival NO sirve para buscar en sfr-data; es el
+     * nombre con el que se guarda la Actividad del rival si el paquete no trae uno propio (ver AnioDesdeSfr,
+     * ~línea 110). El bug real era que CaraACaraDialogo pasaba aquí el nombre del perfil ABIERTO en vez del
+     * RIVAL, así que la Actividad del rival podía quedar guardada con el nombre de otro jugador. Se prueba con
+     * un ProfileService.anioSfr que se comporta como el de verdad (paqueteSinNombre) y se comprueba el nombre
+     * de la Actividad que queda en actividadCache. Mutación: si pedirAnioRival ignorase rivalNombre (usara
+     * cualquier otro nombre, o siempre "#pid"), esta comprobación se pone en rojo.
+     */
+    @Test void pedir_anio_rival_guarda_la_actividad_del_rival_con_su_propio_nombre_si_el_paquete_no_lo_trae() {
+        perfiles.paqueteSinNombre = true;
+        Actividad[] pintado = new Actividad[1];
+        presenter.pedirAnioRival(9L, "Rival", () -> true, arF -> pintado[0] = arF);
+        assertEquals("Rival", perfiles.ultimoNombreSiFalta);
+        assertEquals("Rival", actividadCache.get(9L).nombre());
+        assertSame(pintado[0], actividadCache.get(9L));
+    }
+
+    /** Fila 80: sin nombre de rival (nulo o en blanco), el respaldo es "#pid", no queda vacío ni null. */
+    @Test void pedir_anio_rival_sin_nombre_de_rival_cae_a_hash_pid() {
+        perfiles.paqueteSinNombre = true;
+        presenter.pedirAnioRival(9L, "", () -> true, arF -> { });
+        assertEquals("#9", perfiles.ultimoNombreSiFalta);
+        assertEquals("#9", actividadCache.get(9L).nombre());
     }
 
     @Test void pedir_ficha_pinta_siempre_sin_comprobar_caducidad() {

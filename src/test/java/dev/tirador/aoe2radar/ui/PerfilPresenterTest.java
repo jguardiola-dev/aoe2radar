@@ -38,6 +38,7 @@ class PerfilPresenterTest {
         Exception anioSfrFalla;
         Actividad historialResultado;
         Exception historialFalla;
+        Actividad actividadResultado;
         int traerHoyResultado;
         Exception traerHoyFalla;
         RuntimeException fichaFalla;
@@ -52,7 +53,7 @@ class PerfilPresenterTest {
         @Override public Integer eloVinculada(long vid) { return null; }
         @Override public Map<Long, String> familia(long pid) { return null; }
         @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception { if (anioSfrFalla != null) throw anioSfrFalla; return anioSfr; }
-        @Override public Actividad actividad(long pid) { return null; }
+        @Override public Actividad actividad(long pid) { return actividadResultado; }
         @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, BooleanSupplier cancelar) throws java.io.IOException {
             ultimoParcial = parcial;
             if (historialFalla != null) { if (historialFalla instanceof java.io.IOException io) throw io; throw new RuntimeException(historialFalla); }
@@ -85,12 +86,26 @@ class PerfilPresenterTest {
         @Override public List<String[]> local(String q) { return resultado; }
     }
 
+    /** Fila 28 y 128: un Tareas que encola el trabajo de fondo en vez de ejecutarlo en el acto, para comprobar
+     *  DOS cosas que Tareas.EN_LINEA no distingue: que el presentador de verdad manda el trabajo a enFondo (no lo
+     *  hace en el hilo que llama) y con qué nombre de hilo. enUi sigue en el acto, como en el resto de tests. */
+    static final class TareasAplazadas implements Tareas {
+        final List<String> nombresFondo = new ArrayList<>();
+        final List<Runnable> pendientesFondo = new ArrayList<>();
+        @Override public void enFondo(String nombre, Runnable trabajo) { nombresFondo.add(nombre); pendientesFondo.add(trabajo); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { trabajo.run(); }
+    }
+
     /** La Pantalla de mentira: guarda lo que el presentador le pide, como haría PerfilView. */
     static class PantallaFalsa implements PerfilPresenter.Pantalla {
         long pidAbierto;
+        long generacion;
         boolean cargando;
         int cargaIniciadaVeces;
         FichaPerfil cabeceraPintada;
+        Actividad baseListaBase; FichaPerfil baseListaFicha; int baseListaVeces;
         Actividad desdeSfrPintada; String desdeSfrHasta;
         Actividad parcialPintada; int parcialMax;
         Actividad completadaPintada;
@@ -108,8 +123,10 @@ class PerfilPresenterTest {
         Set<Long> conjuntoIds; String conjuntoNombre;
 
         @Override public long pidAbierto() { return pidAbierto; }
+        @Override public long generacion() { return generacion; }
         @Override public boolean cargando() { return cargando; }
         @Override public void cargando(boolean v) { cargando = v; }
+        @Override public void baseLista(Actividad base, FichaPerfil perfilCache) { baseListaBase = base; baseListaFicha = perfilCache; baseListaVeces++; }
         @Override public void cargaIniciada() { cargaIniciadaVeces++; }
         @Override public void cabecera(FichaPerfil ficha) { cabeceraPintada = ficha; }
         @Override public void desdeSfr(Actividad a, String hastaSfr) { desdeSfrPintada = a; desdeSfrHasta = hastaSfr; }
@@ -138,6 +155,56 @@ class PerfilPresenterTest {
     final PerfilPresenter presenter = new PerfilPresenter(perfiles, ratings, busqueda, Tareas.EN_LINEA, eloWatch, actividadCache, pantalla);
 
     private Actividad actividad(long pid, String nombre, List<Match> partidas) { return new Actividad(pid, nombre, partidas, true, 1, 1_700_000_000_000L); }
+
+    // ----- abrir base (fila 28): perfiles.actividad/fichaConocida fuera del EDT -------------
+
+    @Test void abrir_base_pinta_si_la_generacion_sigue_siendo_la_actual() {
+        pantalla.generacion = 3L;
+        perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
+        perfiles.ficha = new FichaPerfil(Map.of(), "es", "", 0);
+        presenter.abrirBase(5L, 3L);
+        assertSame(perfiles.actividadResultado, pantalla.baseListaBase);
+        assertSame(perfiles.ficha, pantalla.baseListaFicha);
+    }
+
+    /**
+     * Mutación (fila 28, C1+C2 revisado): un A→B→A rápido, o abrir el mismo pid dos veces antes de que la
+     * primera lectura vuelva, no debe dejar dos cargas pintando. Se simula con un Tareas que ENCOLA: se lanza
+     * abrirBase con la generación 1, pero para cuando el hilo de fondo "vuelve" ya se ha abierto otra vez (la
+     * generación en la pantalla es 2). Sin el arreglo (comprobar solo pidAbierto()), esto pintaría igual, porque
+     * el pid puede seguir siendo el mismo; comprobando generacion() en vez de (o además de) pidAbierto(), se
+     * descarta. Quitar la comprobación de generación del presentador pone este test en rojo.
+     */
+    @Test void abrir_base_no_pinta_si_la_generacion_cambio_mientras_tanto() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        pantalla.generacion = 1L;
+        perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
+        p.abrirBase(5L, 1L);   // captura la generación 1 al lanzar el hilo
+        pantalla.generacion = 2L;   // mientras tanto: se reabrió (mismo pid u otro) antes de que volviera la lectura
+        tareasAplazadas.pendientesFondo.get(0).run();
+        assertEquals(0, pantalla.baseListaVeces);
+    }
+
+    /**
+     * Mutación (fila 28): sin el arreglo, PerfilView llamaba a perfiles.actividad(pid) EN EL ACTO, en el hilo que
+     * llama (el EDT en la app real). Con el arreglo, PerfilPresenter.abrirBase manda ese trabajo a tareas.enFondo
+     * con el nombre "perfil-abrir-" + pid, y solo pinta cuando ese trabajo vuelve. Se comprueba con un Tareas que
+     * ENCOLA en vez de ejecutar: si se quitara el arreglo (llamada directa a pantalla.baseLista sin pasar por
+     * enFondo), nombresFondo seguiría vacío y baseListaBase ya tendría el valor antes de ejecutar el pendiente:
+     * el test fallaría en rojo. Restaurado el arreglo, vuelve a verde.
+     */
+    @Test void abrir_base_manda_la_lectura_a_un_hilo_de_fondo_llamado_perfil_abrir_mas_el_pid() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        pantalla.generacion = 1L;
+        perfiles.actividadResultado = actividad(5L, "Fulano", List.of());
+        p.abrirBase(5L, 1L);
+        assertEquals(List.of("perfil-abrir-5"), tareasAplazadas.nombresFondo);
+        assertEquals(0, pantalla.baseListaVeces);   // todavía no "volvió" del hilo de fondo
+        tareasAplazadas.pendientesFondo.get(0).run();   // ahora sí
+        assertSame(perfiles.actividadResultado, pantalla.baseListaBase);
+    }
 
     // ----- cargar: sfr-data ----------------------------------------------------------------
 
@@ -281,6 +348,36 @@ class PerfilPresenterTest {
         presenter.cargarMas(5L, "Fulano", actividad(5L, "Fulano", List.of()), 4);
         assertNotNull(pantalla.masError);
         assertTrue(pantalla.masError.contains("timeout"));
+    }
+
+    // ----- cargar más historial completo (fila 128): "historial-mas" salió de PerfilView ------
+
+    @Test void cargar_mas_historial_completo_funde_en_la_cache_y_avisa_al_terminar() {
+        Actividad base = actividad(5L, "Fulano", List.of());
+        actividadCache.put(5L, base);
+        Actividad ampliada = actividad(5L, "Fulano", List.of());
+        perfiles.historialResultado = ampliada;
+        boolean[] avisado = { false };
+        presenter.cargarMasHistorialCompleto(5L, "Fulano", () -> avisado[0] = true);
+        assertSame(ampliada, actividadCache.get(5L));
+        assertTrue(avisado[0]);
+    }
+
+    @Test void cargar_mas_historial_completo_avisa_igual_si_falla_como_hacia_el_finally_de_la_vista() {
+        perfiles.historialFalla = new java.io.IOException("timeout");
+        boolean[] avisado = { false };
+        presenter.cargarMasHistorialCompleto(5L, "Fulano", () -> avisado[0] = true);
+        assertTrue(avisado[0]);
+    }
+
+    /** Mutación (fila 128): el hilo debe llamarse "historial-mas", igual que en PerfilView.mostrarHistorialPerfil
+     *  de antes de moverlo (RegresionCapturas y cualquier volcado de hilos lo identifican por ese nombre). */
+    @Test void cargar_mas_historial_completo_usa_el_hilo_historial_mas() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.historialResultado = actividad(5L, "Fulano", List.of());
+        p.cargarMasHistorialCompleto(5L, "Fulano", () -> { });
+        assertEquals(List.of("historial-mas"), tareasAplazadas.nombresFondo);
     }
 
     // ----- sugerencias -------------------------------------------------------------------------

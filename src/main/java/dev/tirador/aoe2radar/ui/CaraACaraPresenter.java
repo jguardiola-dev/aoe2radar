@@ -40,9 +40,16 @@ public final class CaraACaraPresenter {
 
     /**
      * El año del rival para «Cada uno por su lado» (sfr-data; si no está ahí, queda sin comparación, como la 1.1).
-     * {@code sigueAbierto} se mira al volver, para no pintar sobre un cruce que ya se cambió. Hilo "h2h-comparar".
+     * {@code rivalNombre} NO sirve para buscar nada en sfr-data: es el nombre con el que se GUARDA la Actividad
+     * del rival si el paquete no trae uno propio (ver ProfileService.anioSfr / AnioDesdeSfr.convertir, que hace
+     * {@code nombre.isBlank() ? nombreSiFalta : nombre}). El bug de la fila 80 era que CaraACaraDialogo pasaba
+     * aquí el nombre del perfil que ya estaba ABIERTO en vez del rival, así que la Actividad del rival podía
+     * quedar guardada con el nombre de otro jugador. Si {@code rivalNombre} viene vacío, se usa "#pid" para que
+     * al menos quede identificado. {@code sigueAbierto} se mira al volver, para no pintar sobre un cruce que ya
+     * se cambió. Hilo "h2h-comparar".
      */
-    public void pedirAnioRival(long rivalPid, String nombreSiFalta, Supplier<Boolean> sigueAbierto, Consumer<Actividad> pintar) {
+    public void pedirAnioRival(long rivalPid, String rivalNombre, Supplier<Boolean> sigueAbierto, Consumer<Actividad> pintar) {
+        String nombreSiFalta = rivalNombre != null && !rivalNombre.isBlank() ? rivalNombre : "#" + rivalPid;
         tareas.enFondo("h2h-comparar", () -> {
             Actividad ar = actividadCache.get(rivalPid);
             if (ar == null) {

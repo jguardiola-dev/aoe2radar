@@ -432,7 +432,9 @@ public final class CaraACaraDialogo {
         JLabel cargando = new JLabel(t("cargando el perfil del rival…", "loading the opponent's profile…")); cargando.setForeground(colorSecundario()); cargando.setAlignmentX(0f); comparacion.add(cargando);
         cuerpo.add(comparacion);
         cuerpo.add(Box.createVerticalStrut(10));
-        presenter.pedirAnioRival(rivalPid, nombreAbierto, () -> pidActual == rivalPid, arF -> {
+        // Fila 80: el nombre a pasar es el del RIVAL (antes se pasaba por error nombreAbierto, el del perfil ya
+        // abierto); el "#pid" de respaldo lo aplica el propio presentador. Ver CaraACaraPresenter.pedirAnioRival.
+        presenter.pedirAnioRival(rivalPid, rivalNombre, () -> pidActual == rivalPid, arF -> {
             comparacion.remove(cargando);
             if (arF == null) { JLabel no = new JLabel(t("El rival no está en sfr-data; abre su perfil para cargarlo por la API.", "The opponent isn't in sfr-data; open their profile to load it from the API.")); no.setForeground(colorSecundario()); no.setAlignmentX(0f); comparacion.add(no); }
             else {

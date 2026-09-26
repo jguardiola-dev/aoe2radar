@@ -41,9 +41,18 @@ public final class PerfilPresenter {
     public interface Pantalla {
         /** El pid actualmente abierto (para descartar respuestas de un perfil que ya no se mira). */
         long pidAbierto();
+        /** Fila 28 (C1+C2): sube cada vez que alAbrir procesa una apertura de verdad. abrirBase la captura al
+         *  lanzar el hilo de fondo y la vuelve a leer al terminar: si cambió mientras tanto (el mismo pid se
+         *  reabrió, o A→B→A antes de que la lectura volviera), la respuesta se descarta aunque pidAbierto()
+         *  coincida (subsume esa comprobación: cada apertura de verdad tiene su propia generación). */
+        long generacion();
         /** ¿Hay una carga en curso? Campo de la vista (actCargando de la 1.1), leído/escrito tal cual. */
         boolean cargando();
         void cargando(boolean v);
+
+        /** Fila 28: lo que había en disco/memoria al abrir (perfiles.actividad + fichaConocida, leídos en un hilo
+         *  de fondo). Pinta el cuerpo y la cabecera si hay algo, y decide si hace falta seguir cargando. */
+        void baseLista(Actividad base, FichaPerfil perfilCache);
 
         /** Arranca el aviso de «consultando el perfil…» con el progreso indeterminado. */
         void cargaIniciada();
@@ -60,7 +69,8 @@ public final class PerfilPresenter {
 
         /** «Actualizar hoy»: deshabilita el botón y cambia su texto mientras dura. */
         void hoyIniciado();
-        /** Ya se pidió la ficha con éxito: se recuerda para no preguntar solo por vinculadas en la sesión (mismo sitio que la 1.1: tras ficha(pid), antes de traerHoy). */
+        /** Ya se pidió la ficha con éxito: se recuerda para no preguntar solo por vinculadas en la sesión (mismo sitio que la 1.1: tras ficha(pid), antes de traerHoy).
+         *  Fila 129: se llama FUERA del EDT, en el hilo de fondo "perfil-hoy" (no pasa por tareas.enUi); quien la implemente debe usar una colección segura entre hilos. */
         void marcarVinculadasPedidas(long pid);
         /** Terminó bien: repinta cabecera y cuerpo si hay partidas nuevas, y el botón según cuántas. */
         void hoyTerminado(FichaPerfil ficha, int nuevas);
@@ -106,6 +116,22 @@ public final class PerfilPresenter {
         Integer eloW = eloWatch.get(pid);
         if (eloW != null && eloW > 0) { int[] v = m.computeIfAbsent("rm_1v1", k -> new int[5]); v[0] = eloW; }
         return new FichaPerfil(m, pais == null ? "" : pais, "", (long) a.partidas().size());
+    }
+
+    /**
+     * Fila 28 (C1+C2, revisión del revisor): la vista solo llega aquí cuando el perfil NO está ya en
+     * {@code actividadCache} (si lo estuviera, pintaría en el acto ella misma, sin hilo ni parpadeo); así que
+     * perfiles.actividad(pid) sí va a tener que leer disco (HistorialDisco.cargarActividad), y eso sale del EDT.
+     * El resultado vuelve por baseLista(), pero solo si {@code generacion} (la de ESTA apertura, capturada al
+     * llamar) sigue siendo la actual: evita que un A→B→A rápido, o abrir dos veces el mismo pid antes de que la
+     * primera lectura vuelva, disparen dos cargas a la vez. Hilo "perfil-abrir-" + pid.
+     */
+    public void abrirBase(long pid, long generacion) {
+        tareas.enFondo("perfil-abrir-" + pid, () -> {
+            Actividad base = perfiles.actividad(pid);
+            FichaPerfil perfilCache = perfiles.fichaConocida(pid);
+            tareas.enUi(() -> { if (pantalla.generacion() == generacion) pantalla.baseLista(base, perfilCache); });
+        });
     }
 
     /** Abre pid: primero sfr-data (el año completo sin tocar la API); si no está en su alcance, la API página a página. Hilo "perfil-" + pid. */
@@ -182,6 +208,22 @@ public final class PerfilPresenter {
             } catch (Exception ex) {
                 tareas.enUi(() -> { pantalla.cargando(false); if (pantalla.pidAbierto() == pid) pantalla.masError(causa(ex)); });
             }
+        });
+    }
+
+    /**
+     * Fila 128: «Cargar 50 más» del diálogo «Todas las partidas» (antes vivía como hilo suelto dentro de
+     * PerfilView.mostrarHistorialPerfil). Mismo nombre de hilo y misma caché que la 1.1: "historial-mas",
+     * fundido en actividadCache para que cualquier otra vista que mire este pid vea el resultado.
+     */
+    public void cargarMasHistorialCompleto(long pid, String nombre, Runnable alTerminar) {
+        tareas.enFondo("historial-mas", () -> {
+            try {
+                Actividad base = actividadCache.get(pid);
+                Actividad a2 = perfiles.historial(pid, nombre, base, true, 1, a -> { }, () -> false);
+                actividadCache.put(pid, a2);
+            } catch (Exception ex) { log("historial: " + causa(ex)); }
+            tareas.enUi(alTerminar);
         });
     }
 

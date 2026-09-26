@@ -19,6 +19,27 @@ final class AvisoHarness {
 
     private static Process cartelRojo;
 
+    /**
+     * Encargo de Opus, revisado: ¿está LogonUI.exe (la pantalla de bloqueo de Windows) entre los procesos? Solo
+     * MIRA, con {@link ProcessHandle#allProcesses()} (sin lanzar nada externo); no falla ni decide nada por su
+     * cuenta. Es una señal débil a propósito: en Windows este proceso corre como SYSTEM, así que si el harness no
+     * tiene permiso para leer su línea de mandato puede no verse; y puede estar activo con la sesión de Jorge
+     * DESBLOQUEADA (otra sesión bloqueada en la misma máquina, un RDP en paralelo). Por eso RegresionCapturas la
+     * usa solo para enriquecer el mensaje si la primera foto de verdad sale negra, nunca para decidir ella sola
+     * que la pantalla está bloqueada (eso lo hacía la versión anterior, y creaba un Robot en @BeforeAll, ANTES de
+     * arrancar la app: eso inicializa Java2D y cambia el escalado de iconos, algo que el propio harness prohíbe
+     * en su comentario de correr()).
+     */
+    static boolean logonUiActivo() {
+        return ProcessHandle.allProcesses().anyMatch(ph -> esComandoLogonUi(ph.info().command().orElse("")));
+    }
+
+    /** La parte sin ProcessHandle, para poder probarla sin procesos de verdad: ¿este camino de comando es el de LogonUI.exe? */
+    static boolean esComandoLogonUi(String comando) {
+        if (comando == null || comando.isEmpty()) return false;
+        return Path.of(comando).getFileName().toString().equalsIgnoreCase("LogonUI.exe");
+    }
+
     static void empezar(Path base) {
         tono(440, 180);
         cartelRojo = cartel(base, "NO TOQUES EL RATÓN · harness en marcha", "rojo", 0);
