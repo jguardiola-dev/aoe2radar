@@ -33,7 +33,6 @@ package dev.tirador.aoe2radar;
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Recs;
-import dev.tirador.aoe2radar.api.SocketVivo;
 import dev.tirador.aoe2radar.api.SteamApi;
 import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.cache.Anotaciones;
@@ -272,6 +271,11 @@ import static dev.tirador.aoe2radar.service.NombresStats.posicionNombre;
 import dev.tirador.aoe2radar.service.AzarService;
 import dev.tirador.aoe2radar.service.AzarServiceCompanion;
 import static dev.tirador.aoe2radar.service.AzarService.ajustarRefAzar;
+// Socket de vivos y espectar (fase 3, tanda 4, Z4): ver service.EnlaceVivo/service.Espectar/ui.ConfirmacionEspectar.
+import dev.tirador.aoe2radar.service.EnlaceVivo;
+import dev.tirador.aoe2radar.service.Espectar;
+import dev.tirador.aoe2radar.service.ReglasPartida;
+import static dev.tirador.aoe2radar.service.EnlaceVivo.tickMs;
 
 public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.Navegacion, dev.tirador.aoe2radar.ui.ComponentesTema {
 
@@ -781,86 +785,44 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // ----- Partidas en curso en tiempo real: websocket «ongoing-matches» del companion -----------------
     // Se abre una conexión con los ids de la vista actual y el servidor empuja matchAdded /
     // matchUpdated / matchRemoved. El barrido por lotes sigue de respaldo (y no quita puntos
-    // mientras el socket esté sano).
-    /** El protocolo del socket (ver api.SocketVivo); aquí se decide qué significa cada evento. */
-    final SocketVivo socketVivo = new SocketVivo(SocketVivo.HTTP, new SocketVivo.Oyente() {
-        @Override public void conectado(boolean trasCaida) { if (trasCaida && liveNow != null && liveNow.ahoraAbierta) SwingUtilities.invokeLater(() -> liveNow.refrescar(true)); }   // tras una caída, un barrido para reparar el estado
-        @Override public void eventos(List<SocketVivo.Evento> eventos, Set<Long> ids) { procesarEventosSocket(eventos, ids); }
-    }, Reloj.SISTEMA, SocketVivo.planificadorSistema());
+    // mientras el socket esté sano). El protocolo y qué significa cada evento viven en service.EnlaceVivo
+    // (fase 3, tanda 4, Z4): aquí solo queda avisar a las vistas por Vistas (con la vuelta al EDT, que
+    // service no puede tocar) y los delegados de una línea que usa el resto de la ventana.
+    /** El cableado del socket (ver service.EnlaceVivo); aquí solo se traducen sus avisos a las vistas concretas. */
+    final EnlaceVivo enlaceVivo = new EnlaceVivo(VIVO, LIVE, new EnlaceVivo.Vistas() {
+        @Override public List<Long> idsWatchlist() {
+            List<Long> ids = new ArrayList<>();
+            for (int i = 0; i < playersModel.size(); i++) ids.add(playersModel.get(i).id());
+            return ids;
+        }
+        @Override public List<Long> idsTodosJugadores() {
+            List<Long> ids = new ArrayList<>();
+            for (Player p : todosJugadores) ids.add(p.id());      // todos los grupos, no solo la vista actual: así cambiar de pestaña no reconecta el socket (y no se pierden eventos en el hueco)
+            return ids;
+        }
+        @Override public List<Long> idsTopLadder() {
+            List<Long> ids = new ArrayList<>();
+            for (Player p : watchlist.topLadderSnapshot()) ids.add(p.id());
+            return ids;
+        }
+        @Override public Set<Long> idsSocketExtra() { return liveNow != null ? liveNow.socketExtra : Set.of(); }   // Live now abierto y vistas con campana: también se vigilan aunque no estén a la vista
+        @Override public void liveEvento(long pid, Match m, boolean terminada) { if (liveNow != null) liveNow.liveEvento(pid, m, terminada); }
+        @Override public void avisarSiCampana(long pid, Match m) { watchlist.avisarSiCampana(pid, m); }
+        @Override public void avisarMiPartida(long pid, Match m) { watchlist.avisarMiPartida(pid, m); }
+        @Override public void avisarTrasCambio() {
+            SwingUtilities.invokeLater(() -> { watchlist.actualizarIndicadoresVivos(); watchlist.refrescarAlturasWatch(); playersList.repaint(); partidas.table.repaint(); });
+        }
+        @Override public void refrescarLiveNowSiAbierta() {
+            if (liveNow != null && liveNow.ahoraAbierta) SwingUtilities.invokeLater(() -> liveNow.refrescar(true));   // tras una caída, un barrido para reparar el estado
+        }
+    });
     long ultimoResyncMs;
 
-    /** Conecta (o reconecta) con los ids visibles; si no cambian y el socket está sano, no hace nada. */
-    void sincronizarSocket() {
-        Set<Long> ids = new java.util.LinkedHashSet<>();
-        for (int i = 0; i < playersModel.size(); i++) ids.add(playersModel.get(i).id());
-        for (Player p : todosJugadores) ids.add(p.id());      // todos los grupos, no solo la vista actual: así cambiar de pestaña no reconecta el socket (y no se pierden eventos en el hueco)
-        for (Player p : watchlist.topLadderSnapshot()) ids.add(p.id());
-        if (liveNow != null) ids.addAll(liveNow.socketExtra);   // Live now abierto y vistas con campana: también se vigilan aunque no estén a la vista
-        try { String mi = leerConfig("mi_pid", ""); if (!mi.isBlank()) ids.add(Long.parseLong(mi)); } catch (Exception ignored) { }   // «Mi partida»: mi propio id siempre vigilado
-        socketVivo.sincronizar(ids);
-    }
+    /** Conecta (o reconecta) con los ids visibles; si no cambian y el socket está sano, no hace nada. Delegado
+     *  de una línea: ver service.EnlaceVivo.sincronizarSocket. Nombre conservado para quien lo llama (Watchlist,
+     *  Live now, Mi partida, por su Anfitrion). */
+    void sincronizarSocket() { enlaceVivo.sincronizarSocket(); }
 
-    /** Antes de marcar a alguien como jugando por un evento del socket, se comprueba en la API que la
-     *  partida no esté ya terminada (el companion a veces anuncia partidas viejas como vivas). */
-    void confirmarEventoSocket(Match m, List<Long> pids) {
-        new Thread(() -> {
-            LiveService.Comprobacion c = LIVE.comprobar(pids.get(0), m.id, 5);
-            if (c.error() != null) log("socket: no se pudo confirmar la partida " + m.id + ": " + causa(c.error()));
-            boolean viva = c.veredicto() != LiveService.Veredicto.TERMINADA;   // sin datos: el beneficio de la duda
-            if (!viva) { log("socket: partida " + m.id + " ya terminada según la API: fantasma ignorado"); return; }
-            for (long pid : pids) { if (VIVO.terminada(m.id)) continue; String resumen = resumenVivo(m, pid); if (!VIVO.marcarJugando(pid, m.id, resumen)) continue;   /* terminada entretanto: ni Live now ni avisos */ VIVO.guardarPartida(pid, m); if (liveNow != null) liveNow.liveEvento(pid, m, false); watchlist.avisarSiCampana(pid, m); watchlist.avisarMiPartida(pid, m); }
-            SwingUtilities.invokeLater(() -> { watchlist.actualizarIndicadoresVivos(); watchlist.refrescarAlturasWatch(); playersList.repaint(); partidas.table.repaint(); });
-        }, "socket-confirmar").start();
-    }
-
-    /** Los eventos de un mensaje del socket (vacío si era un pong), ya traducidos por SocketVivo. */
-    void procesarEventosSocket(List<SocketVivo.Evento> eventos, Set<Long> ids) {
-        boolean cambio = false;
-        for (SocketVivo.Evento ev : eventos) {
-            if (ev instanceof SocketVivo.Quitada q) {
-                long mid = q.matchId();
-                for (long pid : VIVO.quitarPartida(mid)) { if (liveNow != null) liveNow.liveEvento(pid, null, true); cambio = true; }
-                continue;
-            }
-            String tipo = ((SocketVivo.Partida) ev).tipo();
-            Match m = ((SocketVivo.Partida) ev).partida();
-            int vigilados = 0; for (MatchPlayer mp : m.players) if (ids.contains(mp.id)) vigilados++;
-            log("socket: " + tipo + " partida " + m.id + " started=" + m.started + " finished=" + m.finished + " · " + vigilados + " vigilados");
-            if (m.id <= 0) continue;   // sin id de partida no hay nada que espectar
-            List<Long> candidatos = new ArrayList<>();
-            for (MatchPlayer mp : m.players) {
-                if (!ids.contains(mp.id)) continue;
-                if (m.finished != null) { VIVO.apuntarTerminada(m.id); VIVO.marcarFuera(mp.id); if (liveNow != null) liveNow.liveEvento(mp.id, m, true); cambio = true; }
-                // en curso DE VERDAD: empezada (no un lobby), sin terminar y hace menos de 3 h
-                else if (candidatoSocket(m, Instant.now()) && !VIVO.terminada(m.id) && !Long.valueOf(m.id).equals(VIVO.matchDe(mp.id))) candidatos.add(mp.id);
-            }
-            if (!candidatos.isEmpty()) confirmarEventoSocket(m, candidatos);   // la API tiene la última palabra (fantasmas fuera)
-        }
-        if (cambio) SwingUtilities.invokeLater(() -> { watchlist.actualizarIndicadoresVivos(); watchlist.refrescarAlturasWatch(); playersList.repaint(); partidas.table.repaint(); });
-    }
-
-    /** Resumen compacto de la partida en curso, para la sublínea y el tooltip:
-     *  1v1 → «vs Rival (CivP–CivR) · Mapa»; equipos → «TG 4v4 · Mapa». */
-    static String resumenVivo(Match m, long pid) {
-        VIVO.registrar(m, pid);   // de paso: partida, «visto» y rival (ver EstadoVivo.registrar); todos los caminos que detectan a alguien en partida pasan por aquí
-        try {
-            if (m.players.size() == 2) {
-                MatchPlayer yo = null, riv = null;
-                for (MatchPlayer p : m.players) { if (p.id == pid) yo = p; else riv = p; }
-                if (riv == null) return null;
-                String civs = (yo != null && yo.civ != null && riv.civ != null)
-                        ? " (" + yo.civ + "\u2013" + riv.civ + ")" : "";
-                return "vs " + riv.name + (riv.rating != null ? " " + riv.rating : "") + civs
-                        + (m.map == null || m.map.isBlank() ? "" : " \u00B7 " + m.map);
-            }
-            Map<Integer, Integer> porEquipo = new TreeMap<>();
-            for (MatchPlayer p : m.players) porEquipo.merge(p.team, 1, Integer::sum);
-            StringBuilder sb = new StringBuilder("TG ");
-            boolean pr = true;
-            for (int n : porEquipo.values()) { if (!pr) sb.append('v'); sb.append(n); pr = false; }
-            return sb + (m.map == null || m.map.isBlank() ? "" : " \u00B7 " + m.map);
-        } catch (Exception e) { return null; }
-    }
     JButton detenerDescBtn, continuarBtn;
 
 
@@ -978,7 +940,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public void actualizarTextoBuscar() { partidas.actualizarTextoBuscar(); }
             @Override public void limpiarSujetos() { dev.tirador.aoe2radar.ui.PartidasView.SUJETOS.clear(); }
             @Override public void sincronizarSocket() { SpoilerFreeRecs.this.sincronizarSocket(); }
-            @Override public String resumenVivo(Match m, long pid) { return SpoilerFreeRecs.resumenVivo(m, pid); }
+            @Override public String resumenVivo(Match m, long pid) { return ReglasPartida.resumenVivo(m, pid); }
             @Override public String refNombre(Match m) { return partidas.refNombre(m); }
             @Override public void repintarTabla() { partidas.table.repaint(); }
             @Override public void fijarObjetivo(Player p, String vistaId) { objetivoForzado = p;   // aunque ya esté en un grupo (entonces no es invitado, pero sí el objetivo)
@@ -1077,7 +1039,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         aplicarVentanaGuardada();
         addWindowListener(new WindowAdapter() {
-            @Override public void windowClosing(WindowEvent e) { guardarVentana(); socketVivo.cerrar(); }
+            @Override public void windowClosing(WindowEvent e) { guardarVentana(); enlaceVivo.cerrar(); }
         });
         addWindowFocusListener(new WindowAdapter() {
             @Override public void windowLostFocus(WindowEvent e) { watchlist.ocultarHoverCard(true); }
@@ -1479,7 +1441,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public String clanBuscado() { return watchlist.clanBuscado(); }
             @Override public boolean campanaContiene(long pid) { return watchlist.campanaContiene(pid); }
             @Override public void sincronizarSocket() { SpoilerFreeRecs.this.sincronizarSocket(); }
-            @Override public boolean socketConectado() { return socketVivo.conectado(); }
+            @Override public boolean socketConectado() { return enlaceVivo.conectado(); }
             @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
             @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
             @Override public void ocultarHoverCard(boolean forzar) { watchlist.ocultarHoverCard(forzar); }
@@ -1649,7 +1611,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         });
         final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
-        socketVivo.iniciarPing();
+        enlaceVivo.iniciarPing();
         javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
             comprobarActualizacion(false); techTree.precargar();
             cargarPaises(); instalarAutoScroll();
@@ -1666,7 +1628,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             // cada 10 min (× el multiplicador del mando a distancia). Si el socket cae, vuelven al ritmo del tick.
             long ahora = System.currentTimeMillis();
             long resync = (long) (10 * 60_000L * ctrlMult("tick_mult"));
-            boolean tocaSondear = ctrlOn("sondeo") && (!socketVivo.conectado() || ahora - ultimoResyncMs >= resync);
+            boolean tocaSondear = ctrlOn("sondeo") && (!enlaceVivo.conectado() || ahora - ultimoResyncMs >= resync);
             if (tocaSondear) ultimoResyncMs = ahora;
             if (tocaSondear) watchlist.vigilarVivos();
             if (!watchlist.modoTop()) directos.vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
@@ -1718,50 +1680,41 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     boolean usarCA() { return Boolean.parseBoolean(leerConfig("usar_ca", "false")); }
 
-    /** Lanza CaptureAge — con una rec (la reproduce con su overlay) o sin
-     *  argumentos (modo acompañante: se engancha al juego al espectar). */
+    /** Espectar en el juego (protocolo aoe2de://), CaptureAge de acompañante y la verificación por red antes
+     *  de lanzar: la parte sin Swing vive en service.Espectar (fase 3, tanda 4, Z4). */
+    final Espectar ESPECTAR = new Espectar(LIVE);
+
+    /** Lanza CaptureAge — con una rec (la reproduce con su overlay) o sin argumentos (modo acompañante: se
+     *  engancha al juego al espectar). Buscar la ruta y arrancar el proceso viven en service.Espectar (fase 3,
+     *  tanda 4, Z4); aquí solo queda traducir el resultado al texto de estado. */
     void lanzarCaptureAge(Path rec) {
-        Path ca = rutaCaptureAge();
-        if (ca == null) {
-            status.setText(t("No encuentro CaptureAge: fija su ruta en Configuración → Cambiar ruta de CaptureAge…",
+        Espectar.ResultadoCaptureAge r = ESPECTAR.lanzarCaptureAge();
+        switch (r.estado()) {
+            case RUTA_AUSENTE -> status.setText(t("No encuentro CaptureAge: fija su ruta en Configuración → Cambiar ruta de CaptureAge…",
                     "Can't find CaptureAge: set its path in Settings → Change CaptureAge path…"));
-            return;
-        }
-        try {
-            // Vía explorer (doble clic real, sin heredar nuestro entorno); CA engancha el juego al espectar
-            new ProcessBuilder("explorer.exe", ca.toString()).start();
-            status.setText(t("Lanzando CaptureAge de acompañante…", "Launching CaptureAge alongside…"));
-        } catch (Exception ex) {
-            status.setText(t("No se pudo lanzar CaptureAge: ", "Couldn't launch CaptureAge: ") + causa(ex));
+            case LANZADO -> status.setText(t("Lanzando CaptureAge de acompañante…", "Launching CaptureAge alongside…"));
+            case FALLO -> status.setText(t("No se pudo lanzar CaptureAge: ", "Couldn't launch CaptureAge: ") + causa(r.error()));
         }
     }
 
     /** Abre el juego espectando una partida en curso (protocolo
      *  aoe2de://1/matchId, el mismo que usa aoe2companion/aoe2recs). */
-    /** Antes de lanzar el juego desde un doble clic: confirmación con «no volver a preguntar». */
-    boolean confirmarEspectar(String quien) {
-        if ("1".equals(leerConfig("espectar_sin_preguntar", "0"))) return true;
-        JCheckBox noMas = new JCheckBox(t("No volver a preguntar", "Don't ask again"));
-        int r = JOptionPane.showConfirmDialog(this, new Object[]{
-                t("¿Espectar la partida de ", "Spectate ") + quien + t(" en el juego?\nSe abrirá Age of Empires II.", "'s game in-game?\nAge of Empires II will open."),
-                noMas }, t("Espectar", "Spectate"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE);
-        if (r != JOptionPane.OK_OPTION) return false;
-        if (noMas.isSelected()) guardarConfig("espectar_sin_preguntar", "1");
-        return true;
-    }
+    /** Antes de lanzar el juego desde un doble clic: confirmación con «no volver a preguntar». Delegado: ver
+     *  ui.ConfirmacionEspectar. Nombre conservado para las Anfitrion que lo llaman (Live now, Perfil, Partidas). */
+    boolean confirmarEspectar(String quien) { return dev.tirador.aoe2radar.ui.ConfirmacionEspectar.confirmar(this, quien); }
 
     void espectarPartida(long matchId) {
         log("espectar: lanzando aoe2de://1/" + matchId);
         try {
-            Desktop.getDesktop().browse(URI.create("aoe2de://1/" + matchId));
+            ESPECTAR.espectarPartida(matchId);
             boolean caListo = rutaCaptureAge() != null;
             if (usarCA() && caListo) lanzarCaptureAge(null);
             String pista = (!usarCA() && caListo)
                     ? t(" (Configuración → «Usar CaptureAge» lo lanzaría también)",
-                        " (Settings → \u201CUse CaptureAge\u201D would launch it too)")
+                        " (Settings → “Use CaptureAge” would launch it too)")
                     : "";
-            status.setText(t("Abriendo AoE2 para espectar\u2026 Si estaba cerrado tardará; si la partida termina antes de entrar, el juego dirá «Invalid match ID».",
-                    "Opening AoE2 to spectate\u2026 If it was closed it takes a while; if the game ends before you join, AoE2 will show \"Invalid match ID\".") + pista);
+            status.setText(t("Abriendo AoE2 para espectar… Si estaba cerrado tardará; si la partida termina antes de entrar, el juego dirá «Invalid match ID».",
+                    "Opening AoE2 to spectate… If it was closed it takes a while; if the game ends before you join, AoE2 will show \"Invalid match ID\".") + pista);
         } catch (Exception ex) {
             status.setText(t("No se pudo abrir el juego: ", "Couldn't open the game: ") + causa(ex));
         }
@@ -1769,17 +1722,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     /** Verifica que la partida sigue en curso justo antes de lanzar el juego:
      *  si acaba de terminar, avisa y re-sincroniza en vez de abrir AoE2 a un
-     *  «Invalid match ID». */
+     *  «Invalid match ID». La llamada de red y sus logs viven en service.Espectar.viva (fase 3, tanda 4, Z4). */
     void espectarVerificando(long profileId, long matchId) {
         status.setText(t("Comprobando que la partida sigue en curso…", "Checking the game is still live…"));
         new SwingWorker<Boolean, Void>() {
-            @Override protected Boolean doInBackground() {
-                LiveService.Comprobacion c = LIVE.comprobar(profileId, matchId, PER_PAGE);
-                if (c.partida() != null) { Match m = c.partida(); log("espectar: verificación de " + matchId + " → started=" + m.started + " finished=" + m.finished); return c.veredicto() == LiveService.Veredicto.VIVA; }
-                if (c.error() != null) log("espectar: verificación no concluyente: " + causa(c.error()));
-                else log("espectar: la partida " + matchId + " no aparece en las últimas del perfil " + profileId + "; se lanza igualmente");
-                return null;   // sin datos claros: lanzar igualmente
-            }
+            @Override protected Boolean doInBackground() { return ESPECTAR.viva(profileId, matchId, PER_PAGE); }
             @Override protected void done() {
                 Boolean viva;
                 try { viva = get(); } catch (Exception e) { viva = null; }
@@ -1949,7 +1896,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** BarridoVivos: la red y la decisión de vigilarVivos/refrescarWatchlist/«Buscar partidas» (ver
      *  service.BarridoVivos). Campo de instancia, junto al código que lo usa (como recService). Lo usan
      *  ui.PartidasView (fetchMatches) y ui.WatchlistView (los dos, inyectado por constructor). */
-    final BarridoVivos barridoVivos = new BarridoVivos(COMPANION, Reloj.SISTEMA, SpoilerFreeRecs::resumenVivo,
+    final BarridoVivos barridoVivos = new BarridoVivos(COMPANION, Reloj.SISTEMA, ReglasPartida::resumenVivo,
             Snapshots.ELO_AYER, SpoilerFreeRecs::dormir, PAUSA_MS, PER_PAGE);
 
     /** RecService: descarga, disco y savegame para UNA partida (ver service.RecService). Campo de instancia (no

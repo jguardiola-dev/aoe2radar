@@ -12,6 +12,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.TreeMap;
 
 import dev.tirador.aoe2radar.cache.Vivos;
 
@@ -121,6 +122,30 @@ public final class ReglasPartida {
     /** ¿Sigue en curso de verdad ahora mismo? Delegado en cache.Vivos.enCursoReal: ui no puede importar cache,
      *  así que Live now (y quien más lo necesite desde ui) pasa por aquí sin duplicar la regla. */
     public static boolean enCursoReal(Match m) { return Vivos.enCursoReal(m); }
+
+    /** Resumen compacto de la partida en curso, para la sublínea y el tooltip:
+     *  1v1 → «vs Rival (CivP–CivR) · Mapa»; equipos → «TG 4v4 · Mapa». Movido de SpoilerFreeRecs (fase 3,
+     *  tanda 4, Z4): solo usa model (Match/MatchPlayer) y service (EstadoVivo), sin nada de Swing. */
+    public static String resumenVivo(Match m, long pid) {
+        EstadoVivo.SISTEMA.registrar(m, pid);   // de paso: partida, «visto» y rival (ver EstadoVivo.registrar); todos los caminos que detectan a alguien en partida pasan por aquí
+        try {
+            if (m.players.size() == 2) {
+                MatchPlayer yo = null, riv = null;
+                for (MatchPlayer p : m.players) { if (p.id == pid) yo = p; else riv = p; }
+                if (riv == null) return null;
+                String civs = (yo != null && yo.civ != null && riv.civ != null)
+                        ? " (" + yo.civ + "–" + riv.civ + ")" : "";
+                return "vs " + riv.name + (riv.rating != null ? " " + riv.rating : "") + civs
+                        + (m.map == null || m.map.isBlank() ? "" : " · " + m.map);
+            }
+            Map<Integer, Integer> porEquipo = new TreeMap<>();
+            for (MatchPlayer p : m.players) porEquipo.merge(p.team, 1, Integer::sum);
+            StringBuilder sb = new StringBuilder("TG ");
+            boolean pr = true;
+            for (int n : porEquipo.values()) { if (!pr) sb.append('v'); sb.append(n); pr = false; }
+            return sb + (m.map == null || m.map.isBlank() ? "" : " · " + m.map);
+        } catch (Exception e) { return null; }
+    }
 
     /** Modo corto de una partida: «1v1 RM», «TG 3v3», «1v1 EW», «DM 2v2», «Custom»… */
     public static String modoCorto(Match m) {
