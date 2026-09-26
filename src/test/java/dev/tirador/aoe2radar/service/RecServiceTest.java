@@ -64,23 +64,78 @@ class RecServiceTest {
         assertEquals(RecService.Estado.DESCARGADA, r.estado());
         assertFalse(r.enJuego());
         assertNull(r.causa());
+        assertFalse(r.reutilizada(), "hizo falta la red: no venía de un archivo ya sano");
         Path archivo = tempDir.resolve("rec-1.aoe2record");
         assertTrue(Files.exists(archivo));
         assertArrayEquals(descarga.datos, Files.readAllBytes(archivo));
         assertEquals(List.of(100L), descarga.pids, "un solo candidato, el de referencia: acierta a la primera");
     }
 
-    /** Test de caracterización: así es la 1.1 (download(), ~12036), no un contrato deseado. Si su rec ya está en
-     *  disco, procesar() la vuelve a descargar y la sobrescribe; no hay comprobación de «ya en disco» (ver
-     *  DEUDA: RecService, propuesta de no reintentar si ya está en disco, pendiente de decidir con Jorge). */
-    @Test void siYaHabiaUnaRecEnDiscoSeVuelveADescargarYSeSobrescribe() throws IOException {
+    /** Decisión de Jorge (DEUDA 94/95): si el archivo que ya había en disco NO parece sano (aquí, unos pocos
+     *  bytes de texto: ni de lejos los 5000 B de una rec real), procesar() se comporta como la 1.1, ignora lo
+     *  que hubiera y vuelve a descargar y a sobrescribir. */
+    @Test void siYaHabiaUnArchivoPeroNoPareceSanoSeVuelveADescargarYSeSobrescribe() throws IOException {
         Match m = partida(2, 100);
         Path archivo = tempDir.resolve("rec-2.aoe2record");
         Files.writeString(archivo, "ya estaba");
         RecService.Resultado r = service.procesar(m, Set.of(), false, null, sinCancelar);
         assertEquals(RecService.Estado.DESCARGADA, r.estado());
-        assertFalse(descarga.pids.isEmpty(), "se vuelve a llamar a la descarga aunque ya hubiera archivo");
+        assertFalse(descarga.pids.isEmpty(), "no parece sano: se vuelve a llamar a la descarga");
         assertArrayEquals(descarga.datos, Files.readAllBytes(archivo), "el archivo se sobrescribe");
+        assertFalse(r.reutilizada(), "no parecía sano: hizo falta la red");
+    }
+
+    /** Decisión de Jorge (DEUDA 94/95): si la rec que ya había en disco SÍ parece sana (≥5000 B, no empieza por
+     *  «&lt;»/«{»), procesar() la reutiliza: no llama a la descarga ni toca el archivo. */
+    @Test void siYaHabiaUnaRecSanaEnDiscoNoSeVuelveADescargarNiSeSobrescribe() throws IOException {
+        Match m = partida(20, 100);
+        Path archivo = tempDir.resolve("rec-20.aoe2record");
+        byte[] recSana = recSanaDeMentira();
+        Files.write(archivo, recSana);
+        RecService.Resultado r = service.procesar(m, Set.of(), false, null, sinCancelar);
+        assertEquals(RecService.Estado.DESCARGADA, r.estado());
+        assertNull(r.causa());
+        assertTrue(descarga.pids.isEmpty(), "parece sana: no hace falta descargar");
+        assertArrayEquals(recSana, Files.readAllBytes(archivo), "el archivo no se toca");
+        assertTrue(r.reutilizada(), "vino de un archivo ya sano en disco, no de la red");
+    }
+
+    /** Con la rec ya sana en disco, enviarAlJuego sigue copiándola al savegame (decisión 94/95: reutilizar del
+     *  disco no significa dejar de enviarla si se pidió). */
+    @Test void conRecSanaEnDiscoYEnviarAlJuegoSeCopiaIgualAlSavegame() throws IOException {
+        Match m = partida(21, 100);
+        Files.write(tempDir.resolve("rec-21.aoe2record"), recSanaDeMentira());
+        RecService.Resultado r = service.procesar(m, Set.of(), true, tempDir.resolve("savegame"), sinCancelar);
+        assertEquals(RecService.Estado.DESCARGADA, r.estado());
+        assertTrue(r.enJuego());
+        assertEquals(List.of(m), juego.recibidas);
+        assertTrue(descarga.pids.isEmpty());
+        assertTrue(r.reutilizada());
+    }
+
+    /** RecService.recSana: la regla que decide si el disco «sirve» (misma cabecera que api.Recs.esRecValida:
+     *  al menos 5000 B, sin empezar por «&lt;»/«{»). Sano, vacío y corrupto, como pide el encargo. */
+    @Test void recSanaConArchivoSanoVacioYCorrupto() throws IOException {
+        Path sano = tempDir.resolve("sano.aoe2record");
+        Files.write(sano, recSanaDeMentira());
+        assertTrue(RecService.recSana(sano), "≥5000 B y no empieza por '<' ni '{': parece una rec");
+
+        Path vacio = tempDir.resolve("vacio.aoe2record");
+        Files.write(vacio, new byte[0]);
+        assertFalse(RecService.recSana(vacio), "0 bytes: no parece sana");
+
+        Path corrupto = tempDir.resolve("corrupto.aoe2record");
+        Files.writeString(corrupto, "<html>demasiado corta y encima parece una página de error</html>");
+        assertFalse(RecService.recSana(corrupto), "menos de 5000 B y empieza por '<': no parece sana");
+
+        assertFalse(RecService.recSana(tempDir.resolve("no-existe.aoe2record")), "si no existe, tampoco es sana");
+    }
+
+    /** 5000 B que no empiezan por '<' ni '{': lo mínimo que api.Recs.esRecValida acepta como «parece una rec». */
+    static byte[] recSanaDeMentira() {
+        byte[] b = new byte[5000];
+        java.util.Arrays.fill(b, (byte) 'R');
+        return b;
     }
 
     @Test void falloDeDescargaNoDejaNadaAMedias() {
@@ -90,6 +145,7 @@ class RecServiceTest {
         assertEquals(RecService.Estado.FALLO, r.estado());
         assertNotNull(r.causa());
         assertFalse(r.enJuego());
+        assertFalse(r.reutilizada(), "el fallo vino de intentar la red, no de reutilizar el disco");
         assertFalse(Files.exists(tempDir.resolve("rec-3.aoe2record")), "sin escritura parcial");
         assertEquals(List.of(100L, 101L), descarga.pids, "los dos candidatos de la partida, en orden");
         assertEquals(List.of(5L, 5L), pausas, "una pausa (el valor inyectado) por cada candidato fallido");

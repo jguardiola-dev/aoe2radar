@@ -181,7 +181,7 @@ public final class PartidasView {
     private final BarridoVivos barridoVivos;
     private final int perPage;
     private final long pausaMs;
-    private final EnlaceWatchlist watchlist;
+    private final EnlaceWatchlist enlaceWatchlist;
     private final Anfitrion anfitrion;
     private final PartidasTexto texto;
 
@@ -235,7 +235,7 @@ public final class PartidasView {
 
     public PartidasView(JFrame ventana, MenusJugador menus, DialogosJugador dialogos, Navegacion navegacion,
                          AzarService azarService, RecService recService, BarridoVivos barridoVivos,
-                         int perPage, long pausaMs, EnlaceWatchlist watchlist, Anfitrion anfitrion) {
+                         int perPage, long pausaMs, EnlaceWatchlist enlaceWatchlist, Anfitrion anfitrion) {
         this.ventana = ventana;
         this.menus = menus;
         this.dialogos = dialogos;
@@ -245,7 +245,7 @@ public final class PartidasView {
         this.barridoVivos = barridoVivos;
         this.perPage = perPage;
         this.pausaMs = pausaMs;
-        this.watchlist = watchlist;
+        this.enlaceWatchlist = enlaceWatchlist;
         this.anfitrion = anfitrion;
         this.texto = new PartidasTexto(anfitrion::nombreVisible);
     }
@@ -379,7 +379,7 @@ public final class PartidasView {
                     c.setForeground(viva ? colorVivoTabla() : getForeground());
                 if (c instanceof JLabel jl && convertColumnIndexToModel(column) == 1
                         && mr >= 0 && mr < view.size())
-                    jl.setToolTipText(watchlist.tipCuentaVinculada(view.get(mr)));
+                    jl.setToolTipText(enlaceWatchlist.tipCuentaVinculada(view.get(mr)));
                 return c;
             }
         };
@@ -500,7 +500,9 @@ public final class PartidasView {
                 } else {
                     if (m.enDisco) {
                         JMenuItem env = new JMenuItem(t("Enviar al juego", "Send to game"));
-                        env.addActionListener(a -> enviarASavegame(List.of(m)));
+                        // enviarInteligente (no enviarASavegame a secas): decisión 94/95, "si no [parece sana],
+                        // descarga como hoy" — con un archivo sano se comporta igual que antes (enviarASavegame).
+                        env.addActionListener(a -> enviarInteligente(List.of(m)));
                         menu.add(env);
                     } else {
                         JMenuItem dl = new JMenuItem(t("Descargar", "Download"));
@@ -643,11 +645,11 @@ public final class PartidasView {
     /** Cabecera fija sobre la watchlist: los sujetos de la búsqueda, fuera del scroll. Solo con ≤4 sujetos
      *  (más de 10, un resumen con «Filtrar ▾»). */
     public void refrescarSujetos(List<Player> tracked, boolean esInvitadoIn) {
-        JPanel sujetosPanel = watchlist.sujetosPanel();
+        JPanel sujetosPanel = enlaceWatchlist.sujetosPanel();
         ultimosSujetos = tracked == null ? List.of() : List.copyOf(tracked);
         if (todasPerfilBtn != null) todasPerfilBtn.setVisible(ultimosSujetos.size() == 1 && ultimosSujetos.get(0).id() > 0);
         final boolean esInvitado = esInvitadoIn
-                || (watchlist.invitado() != null && ultimosSujetos.size() == 1 && ultimosSujetos.get(0).id() == watchlist.invitado().id());
+                || (enlaceWatchlist.invitado() != null && ultimosSujetos.size() == 1 && ultimosSujetos.get(0).id() == enlaceWatchlist.invitado().id());
         sujetosPanel.removeAll();
         filtroSujetos.retainAll(ultimosSujetos.stream().map(Player::id).collect(java.util.stream.Collectors.toSet()));
         if (ultimosSujetos.isEmpty()) {
@@ -684,7 +686,7 @@ public final class PartidasView {
             }
         });
         if (muchos) {
-            JLabel todos = new JLabel("<html><i>" + escapeHtml(watchlist.vistaActualId().split("\\|")[0]) + "</i> <font color='#8a8a8a'>(" + ultimosSujetos.size() + ")</font></html>");
+            JLabel todos = new JLabel("<html><i>" + escapeHtml(enlaceWatchlist.vistaActualId().split("\\|")[0]) + "</i> <font color='#8a8a8a'>(" + ultimosSujetos.size() + ")</font></html>");
             todos.setBorder(BorderFactory.createEmptyBorder(1, 6, 1, 6));
             JButton filtrarBtn = new JButton(t("Filtrar \u25BE", "Filter \u25BE"));
             filtrarBtn.setFocusable(false); filtrarBtn.setMargin(new Insets(1, 6, 1, 6));
@@ -709,7 +711,7 @@ public final class PartidasView {
             }
         }
         for (Player s : muchos ? List.<Player>of() : ultimosSujetos) {
-            Integer elo = watchlist.eloDe(s.id());
+            Integer elo = enlaceWatchlist.eloDe(s.id());
             JLabel l = new JLabel("<html><i>" + escapeHtml(anfitrion.nombreVisible(s.id(), s.name())) + "</i>"
                     + (elo != null ? " <font color='#8a8a8a'>\u00B7 " + elo + "</font>" : "") + "</html>");
             final boolean activo = filtroSujetos.contains(s.id());
@@ -732,9 +734,9 @@ public final class PartidasView {
                         JMenuItem quitar = new JMenuItem(t("Quitar filtro (dejar de ver sus partidas)",
                                 "Remove filter (stop viewing their games)"));
                         quitar.addActionListener(a -> {
-                            watchlist.limpiarInvitado();
+                            enlaceWatchlist.limpiarInvitado();
                             refrescarSujetos(List.of(), false);
-                            watchlist.aplicarFiltroGrupo();
+                            enlaceWatchlist.aplicarFiltroGrupo();
                         });
                         pm.add(quitar);
                     }
@@ -753,7 +755,7 @@ public final class PartidasView {
                     applyFilters();
                 }
             });
-            String grupoYa = ultimosSujetos.size() == 1 ? watchlist.grupoDeJugador(pid) : null;
+            String grupoYa = ultimosSujetos.size() == 1 ? enlaceWatchlist.grupoDeJugador(pid) : null;
             if (ultimosSujetos.size() == 1 && grupoYa != null && !esInvitado) {
                 JLabel ya = new JLabel("\u2605 " + t("en ", "in ") + (grupoYa.isBlank() ? t("tu watchlist", "your watchlist") : grupoYa));
                 ya.setFont(ya.getFont().deriveFont(Font.PLAIN, 11f));
@@ -961,22 +963,25 @@ public final class PartidasView {
         return p;
     }
 
-    /** Enviar al juego: copia lo descargado y descarga+envía lo que falte. */
+    /** Enviar al juego: copia lo que ya está sano en disco y descarga+envía lo que falte (decisión de Jorge,
+     *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
     public void enviarInteligente(List<Match> objetivo) {
         if (objetivo.isEmpty()) { anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
-        for (Match m : objetivo) (Files.exists(anfitrion.destino(m)) ? enDisco : faltan).add(m);
+        for (Match m : objetivo) (RecService.recSana(anfitrion.destino(m)) ? enDisco : faltan).add(m);
         if (!enDisco.isEmpty()) enviarASavegame(enDisco);
         if (!faltan.isEmpty()) download(faltan, true);
     }
 
+    /** Copia al savegame lo que le llegue en `objetivo`: NO vuelve a comprobar RecService.recSana (su único
+     *  llamador, enviarInteligente, ya leyó la cabecera de cada archivo para armar esta lista); así es una sola
+     *  lectura de cabecera por partida, no dos. */
     public void enviarASavegame(List<Match> objetivo) {
         if (objetivo.isEmpty()) { anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         Path sg = obtenerSavegame(true);
         if (sg == null) { anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        int ok = 0, sinRec = 0, yaEstaban = 0;
+        int ok = 0, yaEstaban = 0;
         for (Match m : objetivo) {
-            if (!Files.exists(anfitrion.destino(m))) { sinRec++; continue; }
             boolean ya = Files.exists(sg.resolve(anfitrion.destino(m).getFileName().toString()));
             if (dev.tirador.aoe2radar.service.Juego.copiarASavegame(m, sg)) {
                 ok++;
@@ -990,8 +995,7 @@ public final class PartidasView {
             }
         }
         anfitrion.estado(ok + t(" recs enviadas al juego", " recs sent to the game") +
-                (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") +
-                (sinRec > 0 ? " · " + sinRec + t(" sin descargar aún", " not downloaded yet") : "") + ".");
+                (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
     }
 
     String abrirSgTxt() { return t("Abrir carpeta savegame del juego", "Open game savegame folder"); }
@@ -1014,7 +1018,7 @@ public final class PartidasView {
         tableModel.fireTableDataChanged();
         SUJETOS.clear();
         filtroSujetos.clear();
-        watchlist.limpiarInvitado();
+        enlaceWatchlist.limpiarInvitado();
         refrescarSujetos(List.of(), false);
         taparResultados();
         mostrarGuiaVacia(true);
@@ -1046,10 +1050,10 @@ public final class PartidasView {
         for (MatchPlayer mp : m.players)
             if (SUJETOS.contains(mp.id) && (suj == null || (mp.rating != null && (suj.rating == null || mp.rating > suj.rating)))) suj = mp;
         if (suj != null) { m.refId = suj.id; return; }
-        for (Player p : watchlist.seleccion())
+        for (Player p : enlaceWatchlist.seleccion())
             if (m.tieneJugador(p.id())) { m.refId = p.id(); return; }
-        for (int i = 0; i < watchlist.totalJugadores(); i++) {
-            Player p = watchlist.jugador(i);
+        for (int i = 0; i < enlaceWatchlist.totalJugadores(); i++) {
+            Player p = enlaceWatchlist.jugador(i);
             if (m.tieneJugador(p.id())) { m.refId = p.id(); return; }
         }
         if (!m.players.isEmpty()) {
@@ -1088,7 +1092,7 @@ public final class PartidasView {
         for (Player p : baseFiltro) {
             selIds.add(p.id());
             if (p.vinculo() != 0)
-                for (Player x : watchlist.todosJugadores())
+                for (Player x : enlaceWatchlist.todosJugadores())
                     if (x.vinculo() == p.vinculo()) selIds.add(x.id());
         }
 
@@ -1140,17 +1144,17 @@ public final class PartidasView {
         if (fetchWorker != null) return;
         String quien;
         objetivoEtiqueta = null;
-        if (watchlist.invitado() != null) quien = anfitrion.nombreVisible(watchlist.invitado().id(), watchlist.invitado().name());
-        else if (anfitrion.perfilAbiertoPid() > 0 && watchlist.seleccionSize() == 0 && (anfitrion.perfilAbierto() || watchlist.modoTop())) { quien = anfitrion.perfilNombreAbierto(); objetivoEtiqueta = new Player(anfitrion.perfilAbiertoPid(), anfitrion.perfilNombreAbierto(), ""); }
+        if (enlaceWatchlist.invitado() != null) quien = anfitrion.nombreVisible(enlaceWatchlist.invitado().id(), enlaceWatchlist.invitado().name());
+        else if (anfitrion.perfilAbiertoPid() > 0 && enlaceWatchlist.seleccionSize() == 0 && (anfitrion.perfilAbierto() || enlaceWatchlist.modoTop())) { quien = anfitrion.perfilNombreAbierto(); objetivoEtiqueta = new Player(anfitrion.perfilAbiertoPid(), anfitrion.perfilNombreAbierto(), ""); }
         else {
-            int n = watchlist.seleccionSize();
+            int n = enlaceWatchlist.seleccionSize();
             if (n > 0) quien = n + t(" seleccionado" + (n > 1 ? "s" : ""), " selected");
-            else if (watchlist.modoTop()) quien = t("selecciona a alguien", "select someone");
+            else if (enlaceWatchlist.modoTop()) quien = t("selecciona a alguien", "select someone");
             else quien = t("todo el grupo", "whole group");
         }
         fetchBtn.setText(t("Buscar partidas", "Search games") + " (" + quien + ")");
         if (guiaBtn != null) guiaBtn.setText(fetchBtn.getText());
-        watchlist.actualizarTextoForma();
+        enlaceWatchlist.actualizarTextoForma();
     }
 
     public boolean hayPartidas() { return !all.isEmpty(); }
@@ -1270,11 +1274,11 @@ public final class PartidasView {
                     }
                     SUJETOS.clear();
                     SUJETOS.addAll(refIds);
-                    vistaDeSujetos = watchlist.vistaActualId();
+                    vistaDeSujetos = enlaceWatchlist.vistaActualId();
                     refrescarSujetos(refs, false);
                     all.clear();
                     all.addAll(res);
-                    watchlist.limpiarSeleccion();
+                    enlaceWatchlist.limpiarSeleccion();
                     refreshModeCombo();
                     applyFilters();
                     String extra = "";
@@ -1328,7 +1332,7 @@ public final class PartidasView {
                     }
                     all.clear();
                     all.addAll(res);
-                    watchlist.limpiarSeleccion();
+                    enlaceWatchlist.limpiarSeleccion();
                     refreshModeCombo();
                     applyFilters();
                     anfitrion.estado(res.size() + t(" partidas Guess the ELO (archivos: «Guess the ELO ", " Guess the ELO games (files: “Guess the ELO ")
@@ -1351,33 +1355,33 @@ public final class PartidasView {
             fetchWorker.cancel(true);
             return;
         }
-        if (watchlist.objetivoForzado() == null && watchlist.invitado() == null && anfitrion.perfilAbierto() && anfitrion.perfilAbiertoPid() > 0 && watchlist.seleccionSize() == 0) {
-            watchlist.fijarObjetivoForzado(new Player(anfitrion.perfilAbiertoPid(), anfitrion.perfilNombreAbierto(), watchlist.grupoDestino()));
+        if (enlaceWatchlist.objetivoForzado() == null && enlaceWatchlist.invitado() == null && anfitrion.perfilAbierto() && anfitrion.perfilAbiertoPid() > 0 && enlaceWatchlist.seleccionSize() == 0) {
+            enlaceWatchlist.fijarObjetivoForzado(new Player(anfitrion.perfilAbiertoPid(), anfitrion.perfilNombreAbierto(), enlaceWatchlist.grupoDestino()));
             anfitrion.mostrarDirectos(false);
         }
-        if (watchlist.totalJugadores() == 0 && watchlist.invitado() == null && watchlist.objetivoForzado() == null) {
+        if (enlaceWatchlist.totalJugadores() == 0 && enlaceWatchlist.invitado() == null && enlaceWatchlist.objetivoForzado() == null) {
             JOptionPane.showMessageDialog(ventana, t("Añade antes algún jugador a la lista.",
                     "Add a player to the list first."));
             return;
         }
         List<Player> sel = new ArrayList<>();
-        if (watchlist.objetivoForzado() != null) {
-            sel.add(watchlist.objetivoForzado());
-            watchlist.limpiarObjetivoForzado();
-        } else if (watchlist.invitado() != null) {
-            sel.add(watchlist.invitado());
-        } else if (objetivoEtiqueta != null && watchlist.seleccionSize() == 0) {
+        if (enlaceWatchlist.objetivoForzado() != null) {
+            sel.add(enlaceWatchlist.objetivoForzado());
+            enlaceWatchlist.limpiarObjetivoForzado();
+        } else if (enlaceWatchlist.invitado() != null) {
+            sel.add(enlaceWatchlist.invitado());
+        } else if (objetivoEtiqueta != null && enlaceWatchlist.seleccionSize() == 0) {
             sel.add(objetivoEtiqueta);
-        } else if (watchlist.modoTop()) {
-            List<Player> selTop = watchlist.seleccion();
+        } else if (enlaceWatchlist.modoTop()) {
+            List<Player> selTop = enlaceWatchlist.seleccion();
             if (selTop.size() > 15) {
                 selTop = selTop.subList(0, 15);
                 anfitrion.estado(t("En ★ el máximo son 15 perfiles por tanda: busco los 15 primeros seleccionados.",
                         "In ★ the cap is 15 profiles per run: searching the first 15 selected."));
             }
             if (!selTop.isEmpty()) sel.addAll(selTop);
-            else if (watchlist.soloVivosMarcado())
-                for (int i = 0; i < watchlist.totalJugadores(); i++) sel.add(watchlist.jugador(i));
+            else if (enlaceWatchlist.soloVivosMarcado())
+                for (int i = 0; i < enlaceWatchlist.totalJugadores(); i++) sel.add(enlaceWatchlist.jugador(i));
             else {
                 JOptionPane.showMessageDialog(ventana,
                         t("En ★ (Top ladder o Top país), selecciona jugadores concretos (clic o Ctrl+clic en la lista)\no activa el chip «● Jugando» antes de buscar.",
@@ -1386,11 +1390,11 @@ public final class PartidasView {
                 return;
             }
         } else {
-            List<Player> selNorm = watchlist.seleccion();
+            List<Player> selNorm = enlaceWatchlist.seleccion();
             if (!selNorm.isEmpty()) sel.addAll(selNorm);
-            else for (int i = 0; i < watchlist.totalJugadores(); i++) sel.add(watchlist.jugador(i));
+            else for (int i = 0; i < enlaceWatchlist.totalJugadores(); i++) sel.add(enlaceWatchlist.jugador(i));
         }
-        final List<Player> tracked = (watchlist.invitado() == null && !watchlist.modoTop()) ? watchlist.conFamilias(sel) : sel;
+        final List<Player> tracked = (enlaceWatchlist.invitado() == null && !enlaceWatchlist.modoTop()) ? enlaceWatchlist.conFamilias(sel) : sel;
         SUJETOS.clear();
         filtroSujetos.clear();
         if (rivalField != null && !rivalField.getText().isEmpty()) rivalField.setText("");
@@ -1398,18 +1402,18 @@ public final class PartidasView {
         mostrarGuiaVacia(false);
         taparResultados();
         for (Player px : tracked) SUJETOS.add(px.id());
-        vistaDeSujetos = watchlist.vistaActualId();
-        refrescarSujetos(tracked, watchlist.invitado() != null);
+        vistaDeSujetos = enlaceWatchlist.vistaActualId();
+        refrescarSujetos(tracked, enlaceWatchlist.invitado() != null);
 
         anfitrion.mostrarDirectos(false);
-        watchlist.guardarVentanaHoras();
+        enlaceWatchlist.guardarVentanaHoras();
         btn.setText(t("Detener", "Stop"));
         btn.setToolTipText(t("Detiene la búsqueda en curso", "Stops the current search"));
         azarBtn.setEnabled(false);
         gteBtn.setEnabled(false);
         anfitrion.trabajando(true);
         final long miSerial = anfitrion.operacionActual();
-        int hours = watchlist.horasVentana();
+        int hours = enlaceWatchlist.horasVentana();
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         SwingWorker<List<Match>, String> fw = new SwingWorker<>() {
             final Set<Long> exitosos = new HashSet<>();
@@ -1481,7 +1485,7 @@ public final class PartidasView {
                         if (v != null) { EstadoVivo.SISTEMA.marcarJugando(pl.id(), v, dec.infos().get(pl.id())); }
                         else if (dec.fuera().contains(pl.id())) { EstadoVivo.SISTEMA.marcarFuera(pl.id()); }
                     }
-                    watchlist.actualizarIndicadoresVivos();
+                    enlaceWatchlist.actualizarIndicadoresVivos();
                     all.clear();
                     all.addAll(res);
                     refreshModeCombo();
@@ -1538,7 +1542,7 @@ public final class PartidasView {
         anfitrion.trabajando(true);
         final long miSerial = anfitrion.operacionActual();
         Set<Long> trackedIds = new HashSet<>();
-        for (int i = 0; i < watchlist.totalJugadores(); i++) trackedIds.add(watchlist.jugador(i).id());
+        for (int i = 0; i < enlaceWatchlist.totalJugadores(); i++) trackedIds.add(enlaceWatchlist.jugador(i).id());
         final boolean autoCopiar = anfitrion.autoCopiarAlDescargar();
         final boolean autoCopiarFinal = autoCopiar || enviarSiempre;
         final Path sgAuto = autoCopiarFinal ? obtenerSavegame(enviarSiempre) : null;
@@ -1564,7 +1568,9 @@ public final class PartidasView {
                         }
                     }
                     setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
-                    anfitrion.dormir(pausaMs);
+                    // La pausa de cortesía es para espaciar peticiones a la API: si la rec se reutilizó del
+                    // disco (RecService.Resultado.reutilizada), no hubo ninguna que espaciar.
+                    if (!r.reutilizada()) anfitrion.dormir(pausaMs);
                 }
                 final int n = ok, tot = objetivo.size(), cop = copiadas;
                 final boolean parada = anfitrion.detenido();
@@ -1601,7 +1607,7 @@ public final class PartidasView {
         vistaDeSujetos = vistaId;
         refrescarSujetos(List.of(sujeto), false);
         all.clear(); all.addAll(partidas);
-        watchlist.limpiarSeleccion();
+        enlaceWatchlist.limpiarSeleccion();
         refreshModeCombo();
         applyFilters();
         mostrarGuiaVacia(false);

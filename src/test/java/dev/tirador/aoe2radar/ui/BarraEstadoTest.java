@@ -11,6 +11,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -56,6 +57,7 @@ class BarraEstadoTest {
     private static void cerrar(BarraEstado b, JFrame ventana) {
         if (b.watchdogDetener != null) b.watchdogDetener.stop();
         if (b.toastTimer != null) b.toastTimer.stop();
+        if (b.timerPausaApi != null) b.timerPausaApi.stop();
         ventana.dispose();
     }
 
@@ -178,6 +180,109 @@ class BarraEstadoTest {
             botones.get(0).doClick();   // "Espectar"
             assertEquals(555L, anf.ultimoMatchIdEspectado, "el botón espectar pasa el matchId al Anfitrion");
             assertNull(b.toast(), "espectar también cierra el toast");
+        });
+        cerrar(b, ventana);
+    }
+
+    // ----- Aviso de pausa por 429 (decisión de Jorge, DEUDA 45) --------------------------------------------
+
+    @Test void mostrarPausaApiPintaLaCuentaAtrasEnStatusInmediatamente() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(5);
+            assertTrue(b.status.getText().contains("5"),
+                    "la cuenta atrás se pinta ya, sin esperar al primer tick del Timer");
+        });
+        cerrar(b, ventana);
+    }
+
+    @Test void tickPausaBajaLaCuentaCadaSegundoYAlLlegarACeroLimpiaSuPropioTexto() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(2);
+            assertTrue(b.status.getText().contains("2"));
+            b.tickPausa();
+            assertTrue(b.status.getText().contains("1"), "un tick: baja a 1");
+            b.tickPausa();
+            assertEquals("", b.status.getText(), "al llegar a 0 se limpia: nadie ha pintado nada encima");
+        });
+        cerrar(b, ventana);
+    }
+
+    @Test void siOtroMensajeTapaLaCuentaAtrasAlLlegarACeroNoLoBorra() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(1);
+            b.status.setText("Buscando a Fulanito…");   // otra vista pinta encima mientras corre la cuenta
+            b.tickPausa();   // llega a 0
+            assertEquals("Buscando a Fulanito…", b.status.getText(),
+                    "no se borra un mensaje que no es el de la cuenta atrás");
+        });
+        cerrar(b, ventana);
+    }
+
+    /** Hallazgo del revisor: en un tick INTERMEDIO (no el que llega a 0), si otro mensaje ya tapó la cuenta
+     *  atrás, no hay que repintar encima — se deja de tocar `status` hasta el siguiente aviso. */
+    @Test void tickPausaIntermedioNoRepintaSiOtroMensajeYaTapoLaCuenta() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(5);
+            b.status.setText("otro");   // una vista pinta encima antes del siguiente tick
+            b.tickPausa();   // 5 -> 4, intermedio
+            assertEquals("otro", b.status.getText(), "un tick intermedio no repinta sobre un mensaje ajeno");
+        });
+        cerrar(b, ventana);
+    }
+
+    /** Mismo hallazgo: si lo que tapa la cuenta es un «Consultando…»/«Checking…» (PartidasView, LiveNow), el
+     *  tick SÍ debe reclamar `status`: es justo el mensaje al que la cuenta atrás tiene que ganar. */
+    @Test void tickPausaIntermedioSiRepintaSobreUnConsultando() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(5);
+            // El prefijo exacto según el idioma activo (I18n.IDIOMA): "Consultando"/"Checking", igual que
+            // PartidasView.download y LiveNowPresenter.
+            b.status.setText(dev.tirador.aoe2radar.util.I18n.t("Consultando", "Checking") + " a Fulanito…");
+            b.tickPausa();   // 5 -> 4, intermedio
+            assertTrue(b.status.getText().contains("4"), "un \"Consultando...\" sí se tapa con la cuenta atrás");
+        });
+        cerrar(b, ventana);
+    }
+
+    @Test void unSegundoAvisoMientrasCorreReiniciaLaCuentaConElMismoTimer() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(5);
+            b.tickPausa();   // 4
+            javax.swing.Timer primero = b.timerPausaApi;
+            b.mostrarPausaApi(10);   // segundo aviso: reinicia con el nuevo valor
+            assertSame(primero, b.timerPausaApi, "sigue siendo el mismo Timer, nunca uno nuevo");
+            assertTrue(b.status.getText().contains("10"), "la cuenta se reinicia con el nuevo valor");
+        });
+        cerrar(b, ventana);
+    }
+
+    @Test void mostrarPausaApiConSegundosCeroNoHaceNada() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            String textoPrevio = b.status.getText();
+            b.mostrarPausaApi(0);
+            assertEquals(textoPrevio, b.status.getText(), "sin segundos que contar, no toca status");
+            assertNull(b.timerPausaApi, "tampoco arma el Timer");
         });
         cerrar(b, ventana);
     }
