@@ -140,6 +140,30 @@ class ListaSeguidosTest {
         assertEquals(List.of("1;Ana;General", "2;Bob;Amigos;5"), lineas);
     }
 
+    /**
+     * General F5: guardar es atómico (se escribe a un temporal y se sustituye el archivo entero), así un corte a mitad
+     * nunca deja un players.txt truncado. Se nota con un enlace duro: escribir encima (el Files.write de antes)
+     * cambia también el «espejo», que comparte los datos; sustituir el archivo deja el espejo con la versión vieja.
+     */
+    @Test void guardar_esAtomico_sustituyeElArchivoEnVezDeEscribirEncima() throws IOException {
+        Files.writeString(playersFile, "9;Vieja;General" + System.lineSeparator());
+        Path espejo = tempDir.resolve("espejo.txt");
+        Files.createLink(espejo, playersFile);
+
+        assertNull(svc.guardar(List.of(new Player(1L, "Ana", GENERAL, 0L))));
+
+        assertEquals(List.of("1;Ana;General"), Files.readAllLines(playersFile, StandardCharsets.UTF_8));
+        assertEquals("9;Vieja;General" + System.lineSeparator(), Files.readString(espejo), "no se escribió encima del archivo viejo");
+    }
+
+    @Test void guardar_mismosBytesQueElFilesWriteDeAntes() throws IOException {
+        List<Player> jugadores = List.of(new Player(1L, "Ána", GENERAL, 0L), new Player(2L, "Bob", "Amigos", 5L));
+        Path antes = tempDir.resolve("antes.txt");
+        Files.write(antes, List.of("1;Ána;General", "2;Bob;Amigos;5"), StandardCharsets.UTF_8);
+        assertNull(svc.guardar(jugadores));
+        assertEquals(-1L, Files.mismatch(antes, playersFile));
+    }
+
     @Test void cargar_idNoNumerico_conservaLoYaLeido() throws IOException {
         Files.write(playersFile, List.of(
                 "1;Ana;Amigos",
@@ -245,6 +269,54 @@ class ListaSeguidosTest {
         assertEquals(new Player(2L, "Bob", "Otro", 0L), jugadores.get(1));
         assertEquals("Otro", cfg.get("grupos"));
         assertEquals("Todos", cfg.get("grupo_activo"));
+    }
+
+    /** DEUDA fila 134: el único cálculo de «grupos donde fichar». General + jugadores + config; con mayúsculas
+     *  distintas sobrevive el primero (General, luego el del jugador, luego el de config); no escribe config. */
+    @Test void gruposDisponibles_generalJugadoresYConfigSinEscribir() {
+        cfg.put("grupos", "amigos,Torneo");
+        List<Player> jugadores = List.of(new Player(1L, "Ana", "Amigos"), new Player(2L, "Bob", "general"));
+
+        Set<String> gs = svc.gruposDisponibles(jugadores);
+
+        assertEquals(List.of("Amigos", GENERAL, "Torneo"), new ArrayList<>(gs));
+        assertEquals("amigos,Torneo", cfg.get("grupos"), "consultar no persiste nada (calcularGrupos sí)");
+    }
+
+    /** F2 de la revisión 1.3: renombrar o borrar un grupo deshacía las familias (Player de 3 argumentos, vínculo 0). */
+    @Test void renombrarGrupo_conservaElVinculoDeFamilia() {
+        List<Player> jugadores = new ArrayList<>(List.of(
+                new Player(1L, "Ana", "Amigos", 7L),
+                new Player(2L, "Ana2", "Amigos", 7L)
+        ));
+
+        svc.renombrarGrupo(jugadores, "Amigos", "Colegas");
+
+        assertEquals(new Player(1L, "Ana", "Colegas", 7L), jugadores.get(0));
+        assertEquals(new Player(2L, "Ana2", "Colegas", 7L), jugadores.get(1));
+    }
+
+    /** «Abrir en» un grupo (1.3) sigue al grupo si se renombra; si es otro grupo, no se toca. */
+    @Test void renombrarGrupo_abrirEnSigueAlGrupo() {
+        cfg.put("abrir_en", "grupo:amigos");
+        svc.renombrarGrupo(new ArrayList<>(), "Amigos", "Colegas");
+        assertEquals("grupo:Colegas", cfg.get("abrir_en"));
+
+        cfg.put("abrir_en", "grupo:Pros");
+        svc.renombrarGrupo(new ArrayList<>(), "Colegas", "Otros");
+        assertEquals("grupo:Pros", cfg.get("abrir_en"));
+    }
+
+    @Test void borrarGrupo_conservaElVinculoDeFamilia() {
+        List<Player> jugadores = new ArrayList<>(List.of(
+                new Player(1L, "Ana", "Amigos", 7L),
+                new Player(2L, "Ana2", "Amigos", 7L)
+        ));
+
+        svc.borrarGrupo(jugadores, "Amigos");
+
+        assertEquals(new Player(1L, "Ana", GENERAL, 7L), jugadores.get(0));
+        assertEquals(new Player(2L, "Ana2", GENERAL, 7L), jugadores.get(1));
     }
 
     // ----- Altas, bajas y movimientos --------------------------------------------------------------

@@ -12,7 +12,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static dev.tirador.aoe2radar.service.ImagenesJuego.claveMapa;
 import static dev.tirador.aoe2radar.service.ImagenesJuego.pedirMapa;
-import static dev.tirador.aoe2radar.service.ImagenesJuego.rutaBandera;
+import static dev.tirador.aoe2radar.service.ImagenesJuego.bytesBandera;
+import static dev.tirador.aoe2radar.service.ImagenesJuego.urlBandera;
 import static dev.tirador.aoe2radar.service.ImagenesJuego.rutaIconoCiv;
 import static dev.tirador.aoe2radar.service.ImagenesJuego.rutaMapa;
 
@@ -34,9 +35,9 @@ public final class Iconos {
         if (k.isEmpty() || "null".equals(k)) return null;
         ImageIcon ic = ICONOS_BANDERA.get(k);
         if (ic != null) return ic;
-        Path p = rutaBandera(k);
-        if (p == null) return null;
-        ic = new ImageIcon(p.toString());
+        byte[] png = bytesBandera(k);
+        if (png == null) return null;
+        ic = new ImageIcon(png);
         if (ic.getIconWidth() <= 0) return null;
         ICONOS_BANDERA.put(k, ic);
         return ic;
@@ -58,9 +59,9 @@ public final class Iconos {
     public static String banderaHtml(String cc) {
         if (cc == null) return "";
         String k = cc.trim().toLowerCase(Locale.ROOT);
-        Path p = rutaBandera(k);
-        if (p == null) return "";
-        return "<img src='" + p.toUri() + "' width='16' height='12'>&nbsp;";
+        String url = urlBandera(k);
+        if (url == null) return "";
+        return "<img src='" + url + "' width='16' height='12'>&nbsp;";
     }
 
     /** Icono de civ (techtree/img/Civs/<clave>.png) escalado a px; null si aún no está en disco. La clave del companion y la del tech tree coinciden en minúsculas. */

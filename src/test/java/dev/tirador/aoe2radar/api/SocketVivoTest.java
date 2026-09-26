@@ -14,7 +14,7 @@ import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Protocolo del websocket «ongoing-matches» (CLAUDE.md: cortacircuitos y reconexión viven en un solo sitio),
+ * Protocolo del websocket «ongoing-matches» (docs/ARQUITECTURA.md, «Reglas de desarrollo»: cortacircuitos y reconexión viven en un solo sitio),
  * sin red: un Conector falso que el test completa a mano, un Canal falso que cuenta pings y cierres, y un
  * Planificador falso cuyas tareas el test ejecuta cuando quiere. Primero se fija lo que el código hace hoy
  * (caracterización); después, las reglas del enunciado, una a una.
@@ -42,6 +42,8 @@ class SocketVivoTest {
         final List<String> cierres = new ArrayList<>();
         @Override public void ping() { pings++; }
         @Override public void cerrar(String motivo) { cierres.add(motivo); }
+        int abortos;
+        @Override public void abortar() { abortos++; }
     }
 
     /** Guarda las tareas diferidas y periódicas; el test las ejecuta a mano. */
@@ -510,7 +512,8 @@ class SocketVivoTest {
         reloj.avanzar(10 * 60_000L);
         planificador.periodicas.get(0).r().run();
         assertFalse(socket.conectado());
-        assertEquals(List.of("colgado"), c.cierres);
+        assertEquals(1, c.abortos, "colgada: se corta con abort, sin esperar la despedida");
+        assertTrue(c.cierres.isEmpty(), "sin cierre educado: nadie contestaría");
         assertEquals(0, c.pings, "a una conexión colgada ya no se le hace ping");
         assertEquals(1, planificador.diferidas.size(), "reconexión programada");
         planificador.diferidas.get(0).ejecutar();
@@ -526,7 +529,8 @@ class SocketVivoTest {
         planificador.periodicas.get(0).r().run();
         reloj.avanzar(30_000L);
         planificador.periodicas.get(0).r().run();
-        assertEquals(List.of("colgado"), c.cierres);
+        assertEquals(1, c.abortos, "colgada: se corta con abort, sin esperar la despedida");
+        assertTrue(c.cierres.isEmpty(), "sin cierre educado: nadie contestaría");
         assertEquals(1, planificador.diferidas.size());
     }
 

@@ -8,8 +8,16 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Parser JSON mínimo (suficiente para estas APIs). */
+/**
+ * Parser JSON mínimo (suficiente para estas APIs).
+ * <p>Tolera NaN, Infinity y -Infinity sueltos (no son JSON válido, pero pandas los escribe en sfr-data cuando un dato
+ * falta: la civ de una partida de muestra_ayer, p. ej.): se leen como {@link #NO_NUMERO}, el valor ausente que ya daba
+ * PerfilesSfr. Antes, un solo NaN tumbaba el archivo entero (la muestra nocturna dejaba de cargarse).
+ */
 public final class Json {
+    /** Lo que se lee en lugar de NaN/Infinity/-Infinity: texto vacío, que los lectores ya tratan como «sin dato». */
+    public static final String NO_NUMERO = "";
+
     private final String s; private int i;
     private Json(String s) { this.s = s; }
 
@@ -30,6 +38,8 @@ public final class Json {
             case 't' -> { expect("true");  yield Boolean.TRUE; }
             case 'f' -> { expect("false"); yield Boolean.FALSE; }
             case 'n' -> { expect("null");  yield null; }
+            case 'N' -> { expect("NaN");      yield NO_NUMERO; }
+            case 'I' -> { expect("Infinity"); yield NO_NUMERO; }
             default  -> number();
         };
     }
@@ -90,6 +100,7 @@ public final class Json {
     }
 
     Object number() {
+        if (s.startsWith("-Infinity", i)) { i += "-Infinity".length(); return NO_NUMERO; }
         int start = i;
         while (i < s.length() && "-+.eE0123456789".indexOf(s.charAt(i)) >= 0) i++;
         String n = s.substring(start, i);

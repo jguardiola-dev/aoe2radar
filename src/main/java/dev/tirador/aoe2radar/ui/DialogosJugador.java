@@ -290,7 +290,7 @@ public final class DialogosJugador {
                 anfitrion.aplicarFiltro();
                 anfitrion.refrescarWatchlist();
                 anfitrion.mostrarEstado(t("Familia de ", "Family of ") + nombre
-                        + t(" guardada en «", " saved to “") + g + "\u00bb ("
+                        + t(" guardada en «", " saved to “") + g + t("» (", "” (")
                         + nuevos + t(" nuevas).", " new)."));
             }
         }.execute();

@@ -1,5 +1,8 @@
 package dev.tirador.aoe2radar.api;
 
+import dev.tirador.aoe2radar.util.Log;
+import dev.tirador.aoe2radar.util.Reloj;
+
 import java.io.IOException;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongConsumer;
@@ -17,9 +20,32 @@ public final class ApiClient {
     private final Transporte transporte;
     private final LongConsumer alPausar;          // segundos de pausa tras un 429 del companion (la barra de estado)
     private final BooleanSupplier detenida;       // ¿hay un Detener real en curso? (botón Detener)
+    private final ContadorLlamadas contador;      // llamadas por endpoint y 429, al log cada hora (solo mide)
 
     public ApiClient(Throttle throttle, Transporte transporte, LongConsumer alPausar, BooleanSupplier detenida) {
+        this(throttle, transporte, alPausar, detenida, new ContadorLlamadas(Reloj.SISTEMA, Log::log));
+    }
+
+    /** Como el otro, con el contador que se quiera (los tests le dan un reloj falso y una salida que se puede leer). */
+    public ApiClient(Throttle throttle, Transporte transporte, LongConsumer alPausar, BooleanSupplier detenida,
+                     ContadorLlamadas contador) {
         this.throttle = throttle; this.transporte = transporte; this.alPausar = alPausar; this.detenida = detenida;
+        this.contador = contador;
+    }
+
+    /**
+     * Escribe en el log la línea resumen de llamadas desde el último volcado (la horaria sale sola). Para el cierre de
+     * la app: sin ella, lo contado en la última hora se pierde. No hace red; se puede llamar desde cualquier hilo.
+     */
+    public void volcarLlamadas() { contador.volcar(); }
+
+    /**
+     * Para quien responde sin llegar a pedir() (un acierto de la caché de CompanionApi): si hay un Detener real en curso
+     * para este hilo, sale con InterruptedException("detenido"), como saldría del freno. Sin esto, un bucle que va
+     * encadenando aciertos (sin esperar nunca en el freno) no se enteraría del botón Detener. Sin red.
+     */
+    void comprobarDetenida() throws InterruptedException {
+        if (detenida.getAsBoolean()) { Thread.interrupted(); throw new InterruptedException("detenido"); }
     }
 
     /**
@@ -35,13 +61,16 @@ public final class ApiClient {
         return r.cuerpo();
     }
 
-    /** Cancelación, freno y envío; no registra nada (cada método público decide qué cuenta al freno). */
+    /** Cancelación, freno, envío y contador; no registra nada en el freno (cada método público decide qué le cuenta). */
     private Transporte.Respuesta pedir(String url) throws IOException, InterruptedException {
         // Una interrupción residual de un Detener anterior (los hilos del pool se reutilizan) se limpia;
         // solo cuenta si hay un Detener real en curso.
         if (Thread.interrupted() && detenida.getAsBoolean()) throw new InterruptedException("detenido");
         if (Freno.aplicaA(url)) throttle.adquirir(detenida);   // cualquier host del companion; Detener corta la espera del freno
-        return transporte.get(url);
+        contador.peticion(url);   // tras el freno: cuenta lo que de verdad sale a la red (reintentos incluidos)
+        Transporte.Respuesta r = transporte.get(url);
+        contador.respuesta(url, r.estado());
+        return r;
     }
 
     static final int INTENTOS_429 = 3;   // la petición y dos reintentos, como httpText429 de la 1.1

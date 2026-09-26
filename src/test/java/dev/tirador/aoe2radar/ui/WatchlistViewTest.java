@@ -154,9 +154,10 @@ class WatchlistViewTest {
         @Override public boolean detenerOperacion() { return false; }
         @Override public void dormir(long ms) { }
         @Override public void abrirUrl(String url) { }
-        @Override public void espectar(Player p) { }
+        final List<String> espectarYCa = new ArrayList<>();   // el orden de «lanzar CaptureAge» y «espectar»
+        @Override public void espectar(Player p) { espectarYCa.add("espectar"); }
         @Override public java.nio.file.Path rutaCaptureAge() { return null; }
-        @Override public void lanzarCaptureAge(java.nio.file.Path rec) { }
+        @Override public void lanzarCaptureAge(java.nio.file.Path rec) { espectarYCa.add("ca"); }
         @Override public void mostrarToast(String texto, long matchId) { }
         @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) { }
         @Override public void abrirPerfilYCaraACara(long pid, String miNombre, long rivalId, String rivalNombre) { }
@@ -171,7 +172,8 @@ class WatchlistViewTest {
         @Override public void reiniciarThrottleDirectos() { }
         @Override public void vigilarTwitchDirectos() { }
         @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { }
-        @Override public void actualizarSocketExtra(Set<Long> ids) { }
+        final List<Set<Long>> socketExtra = new ArrayList<>();
+        @Override public void actualizarSocketExtra(Set<Long> ids) { ids.add(-1L); socketExtra.add(ids); }   // como el real: le suma el top de Live now (el set debe ser mutable)
         @Override public String ahoraNombre(long pid) { return String.valueOf(pid); }
     }
 
@@ -184,6 +186,9 @@ class WatchlistViewTest {
     AnfitrionFalso anfitrion;
     Campanas campanas;
     WatchlistView watchlist;
+    /** La config de las WatchlistView del test, en memoria (grupo_activo, abrir_en, grupos...): antes los tests
+     *  escribían config.properties de verdad y en Windows un guardado fallido en silencio daba el flaky de la fila 146. */
+    Map<String, String> cfg;
 
     /** TOP_PAIS/TOP_CLAN/PAISES se calculan en el constructor de WatchlistView (arreglo de fase 4: antes eran
      *  "static final" y salían siempre en español, ver docs/DEUDA.md), así que hay que fijar I18n.IDIOMA
@@ -194,9 +199,10 @@ class WatchlistViewTest {
     @BeforeEach void crear() {
         idiomaPrevio = IDIOMA;
         IDIOMA = "es";
+        cfg = new HashMap<>();
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
-        TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
+        TopLadderService topLadderService = new TopLadderService(companion, companion, new RelojFalso(), ms -> { }, 300);
         campanas = new Campanas(companion, (k, def) -> def, (k, v) -> { }, nombre -> false);
         BarridoVivos barridoVivos = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 300, 50);
         EloSesion eloSesion = new EloSesion(EstadoVivo.SISTEMA, new RelojFalso(), Duration.ofMinutes(6));
@@ -241,13 +247,14 @@ class WatchlistViewTest {
                 Tareas.SWING, enlace, anfitrion,
                 todosJugadores, playersModel, playersList, eloWatch, gamesWatch, new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
-                java.nio.file.Path.of("players_test.txt"), java.nio.file.Path.of("top_cache_test.txt"), 300L, 50);
+                java.nio.file.Path.of("players_test.txt"), java.nio.file.Path.of("top_cache_test.txt"), 300L, 50,
+                (k, def) -> cfg.getOrDefault(k, def), cfg::put);
     }
 
     @AfterEach void restaurar() {
         IDIOMA = idiomaPrevio;
-        // config.properties: util.Config lee/escribe un fichero real (no está inyectado); los tests de
-        // grupo_activo lo tocan a propósito, así que se borra aquí para no dejar rastro entre tests.
+        // config.properties: grupo_activo/abrir_en/grupos ya van al mapa «cfg», pero las piezas de la vista aún escriben
+        // otras claves con util.Config (p. ej. clan_tag en aplicarTopClan): se borra para no dejar rastro entre tests.
         try { Files.deleteIfExists(Config.CONFIG_FILE); } catch (Exception ignored) { }
     }
 
@@ -262,7 +269,7 @@ class WatchlistViewTest {
     private WatchlistView nuevaInstancia(List<Player> jugadores) {
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
-        TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
+        TopLadderService topLadderService = new TopLadderService(companion, companion, new RelojFalso(), ms -> { }, 300);
         Campanas camp = new Campanas(companion, (k, def) -> def, (k, v) -> { }, nombre -> false);
         BarridoVivos barridoVivos = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 300, 50);
         EloSesion eloSesion = new EloSesion(EstadoVivo.SISTEMA, new RelojFalso(), Duration.ofMinutes(6));
@@ -299,7 +306,8 @@ class WatchlistViewTest {
                 jugadores, new DefaultListModel<>(), new JList<>(new DefaultListModel<>()),
                 new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
-                java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50);
+                java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50,
+                (k, def) -> cfg.getOrDefault(k, def), cfg::put);
     }
 
     // ===== idioma: TOP_PAIS/TOP_CLAN/PAISES tras fijar I18n.IDIOMA (bug resuelto en fase 4) ====================
@@ -348,7 +356,7 @@ class WatchlistViewTest {
     }
 
     @Test void grupoActivoGuardadoEnEspanol_appEnIngles_seleccionaTopPais() {
-        Config.guardarConfig("grupo_activo", "★ Top país");
+        cfg.put("grupo_activo", "★ Top país");
         IDIOMA = "en";
         WatchlistView w = nuevaInstancia();
         w.rebuildGrupos();
@@ -356,7 +364,7 @@ class WatchlistViewTest {
     }
 
     @Test void grupoActivoGuardadoEnIngles_appEnEspanol_seleccionaTopClan() {
-        Config.guardarConfig("grupo_activo", "★ Clan top");
+        cfg.put("grupo_activo", "★ Clan top");
         IDIOMA = "es";
         WatchlistView w = nuevaInstancia();
         w.rebuildGrupos();
@@ -371,7 +379,7 @@ class WatchlistViewTest {
      * defecto): solo pasa si la equivalencia bilingüe encontró de verdad el TOP_CLAN.
      */
     @Test void grupoActivoBilingue_cambiaLaSeleccionDeVerdad() {
-        Config.guardarConfig("grupo_activo", "★ Clan top");
+        cfg.put("grupo_activo", "★ Clan top");
         IDIOMA = "es";
         WatchlistView w = nuevaInstancia();
         assertFalse(w.modoClan(), "antes de rebuildGrupos, el combo está en blanco: de fábrica no es modoClan");
@@ -387,19 +395,96 @@ class WatchlistViewTest {
      * coincidencia EXACTA (como en la 1.1) se prueba primero, así que el grupo real gana siempre.
      */
     @Test void grupoDeUsuarioLlamadoAll_ganaALaEquivalenciaBilingue() {
-        Config.guardarConfig("grupo_activo", "All");
+        cfg.put("grupo_activo", "All");
         IDIOMA = "es";
         WatchlistView w = nuevaInstancia(new ArrayList<>(List.of(new Player(1L, "Uno", "All"))));
         w.rebuildGrupos();
         assertEquals("All", w.grupoActivo(), "hay un grupo de verdad llamado \"All\": debe ganar a la traducción de \"Todos\"");
+        assertFalse(Files.exists(Config.CONFIG_FILE), "fila 146 de DEUDA: la config de los grupos va al mapa del test, no al fichero real");
     }
 
     @Test void grupoDeUsuarioLlamadoTodos_ganaALaEquivalenciaBilingueEnIngles() {
-        Config.guardarConfig("grupo_activo", "Todos");
+        cfg.put("grupo_activo", "Todos");
         IDIOMA = "en";
         WatchlistView w = nuevaInstancia(new ArrayList<>(List.of(new Player(1L, "Uno", "Todos"))));
         w.rebuildGrupos();
         assertEquals("Todos", w.grupoActivo(), "hay un grupo de verdad llamado \"Todos\": debe ganar a la traducción de \"All\"");
+    }
+
+    /** Caracterización (DEUDA fila 134, antes de unificar los TreeSet de grupos): el conjunto de grupos para fichar es
+     *  General + los de los jugadores + los de config, sin distinguir mayúsculas; cuando el mismo nombre llega con
+     *  mayúsculas distintas, sobrevive el primero que entra: «General» siempre, y el del jugador antes que el de config. */
+    @Test void gruposDisponibles_caracterizacionDeMayusculas() {
+        cfg.put("grupos", "amigos,Torneo");
+        todosJugadores.add(new Player(1L, "Uno", "Amigos"));
+        todosJugadores.add(new Player(2L, "Dos", "general"));
+        todosJugadores.add(new Player(3L, "Tres", "PROS"));
+        todosJugadores.add(new Player(4L, "Cuatro", "pros"));
+        assertEquals(List.of("Amigos", "General", "PROS", "Torneo"), new ArrayList<>(watchlist.gruposDisponibles()));
+    }
+
+    // ===== «Abrir en» (Configuración, 1.3): qué vista se elige al arrancar =====================================
+
+    /** Aplica «Abrir en» con los listeners del combo quitados (así no se lanza ninguna carga con red). */
+    private dev.tirador.aoe2radar.service.VistaInicial.Eleccion abrirSinCargas(WatchlistView w) {
+        w.rebuildGrupos();
+        var res = new Object() { dev.tirador.aoe2radar.service.VistaInicial.Eleccion e; };
+        sinListeners(() -> res.e = w.abrirVistaInicial(), w.grupoCombo);
+        return res.e;
+    }
+
+    @Test void abrirEn_sinConfigAbreEnTopLadder() {
+        var e = abrirSinCargas(watchlist);
+        assertEquals(WatchlistView.TOP_LADDER, watchlist.grupoCombo.getSelectedItem());
+        assertFalse(e.buscaAlAbrir());
+    }
+
+    @Test void abrirEn_grupoAbreEnEseGrupoYBuscaAlAbrir() {
+        todosJugadores.add(new Player(1L, "Uno", "Amigos"));
+        cfg.put("abrir_en", "grupo:amigos");
+        var e = abrirSinCargas(watchlist);
+        assertEquals("Amigos", watchlist.grupoActivo());
+        assertTrue(e.buscaAlAbrir(), "en un grupo, «Buscar al abrir» sí aplica");
+    }
+
+    @Test void abrirEn_paisYClan() {
+        cfg.put("abrir_en", "pais:fr");
+        abrirSinCargas(watchlist);
+        assertTrue(watchlist.modoPais());
+        assertEquals("fr", watchlist.paisSel());
+
+        cfg.put("clanes_guardados", "R1,TdB");
+        cfg.put("abrir_en", "clan:tdb");
+        abrirSinCargas(watchlist);
+        assertTrue(watchlist.modoClan());
+        assertEquals("TdB", watchlist.clanBuscado(), "el clan guardado, con sus mayúsculas");
+    }
+
+    @Test void abrirEn_todos() {
+        cfg.put("abrir_en", "todos");
+        var e = abrirSinCargas(watchlist);
+        assertEquals("Todos", watchlist.grupoCombo.getSelectedItem());
+        assertTrue(e.buscaAlAbrir());
+    }
+
+    @Test void abrirEn_loGuardadoYaNoExiste_caeATopLadder() {
+        cfg.put("abrir_en", "grupo:Borrado");
+        abrirSinCargas(watchlist);
+        assertEquals(WatchlistView.TOP_LADDER, watchlist.grupoCombo.getSelectedItem());
+        cfg.put("abrir_en", "clan:DK");   // no está entre los guardados
+        abrirSinCargas(watchlist);
+        assertEquals(WatchlistView.TOP_LADDER, watchlist.grupoCombo.getSelectedItem());
+    }
+
+    /** F3 de la revisión 1.3: el arranque ya no pisa grupo_activo con ★ salvo que «Abrir en» sea ★. Con los listeners
+     *  puestos (como en la app): elegir el grupo pasa por onGrupoElegido, que guarda ESE grupo. Grupo vacío: sin barrido. */
+    @Test void abrirEn_grupoGuardaEseGrupoComoActivo() {
+        cfg.put("grupos", "Vacio");
+        cfg.put("grupo_activo", "Otro");
+        cfg.put("abrir_en", "grupo:Vacio");
+        watchlist.rebuildGrupos();
+        watchlist.abrirVistaInicial();
+        assertEquals("Vacio", cfg.get("grupo_activo"));
     }
 
     // ===== grupos / filtro =====================================================================================
@@ -446,6 +531,15 @@ class WatchlistViewTest {
         sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
         assertTrue(watchlist.modoTop());
         assertTrue(watchlist.modoClan());
+    }
+
+    /** Dudoso de la revisión 1.3, confirmado: «★ Top clan» salía como grupo activo y grupoDestino() lo daba como
+     *  grupo donde fichar. Las tres vistas ★ son iguales: ninguna es un grupo. */
+    @Test void grupoActivo_topClanEsNullYFichaEnGeneral() {
+        watchlist.grupoCombo.addItem("★ Top clan");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
+        assertNull(watchlist.grupoActivo());
+        assertEquals(WatchlistView.GRUPO_GENERAL, watchlist.grupoDestino());
     }
 
     @Test void vistaActualId_combinaGrupoYPais() {
@@ -636,6 +730,138 @@ class WatchlistViewTest {
     }
 
     // ===== alta de jugador: solo lo que no abre diálogo =========================================================
+
+    /** F11 de la revisión 1.3: al apagar la última campana, el socket debe dejar de vigilar sus jugadores (antes
+     *  campanaIds se vaciaba pero actualizarSocketExtra no se llamaba y el socket seguía con los ids viejos). */
+    @Test void refrescarCampanas_sinCampanasLimpiaElExtraDelSocket() {
+        // la config de "campanas" en este test es (k, def) -> def: sin campanas
+        watchlist.refrescarCampanas();
+        assertEquals(1, anfitrion.socketExtra.size(), "sin campanas también hay que avisar al socket");
+        assertEquals(Set.of(-1L), anfitrion.socketExtra.get(0), "solo lo que añade el anfitrión (Live now), nada de las campanas");
+    }
+
+    /** F4 de la revisión 1.3 (= vivo F4): el primer barrido de un grupo, con el ELO del snapshot nocturno, trataba
+     *  su vivo null como «no juega»: apagaba el punto que ya había puesto el socket y apuntaba un fin falso. */
+    @Test void aplicarRefresco_delSnapshotNoApagaAlQueJuega() {
+        long pid = 987_654_321L;
+        EstadoVivo.SISTEMA.marcarJugando(pid, 555L);   // el socket ya lo vio en partida
+        try {
+            watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 42));
+            assertTrue(EstadoVivo.SISTEMA.jugando(pid), "el snapshot no sabe si juega: el punto del socket se queda");
+            assertNull(EstadoVivo.SISTEMA.finMs(pid), "ni fin de partida falso");
+            assertEquals(1500, eloWatch.get(pid), "el ELO del snapshot sí se aplica");
+
+            watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1510, null));
+            assertFalse(EstadoVivo.SISTEMA.jugando(pid), "el de la API sí manda: vivo null = fuera");
+        } finally { EstadoVivo.SISTEMA.marcarFuera(pid); }
+    }
+
+    /** F5 de la revisión 1.3: en un grupo, el barrido pone en eloWatch el ELO de anoche (snapshot) y «Ver forma» se lo
+     *  restaba al de anoche: diff 0, «sin partidas». Con el ELO del snapshot, la resta no tiene «ELO actual» y la forma
+     *  va por la vía exacta (porSerie). Un ELO fresco (API, leaderboard) vuelve a valer para la resta. */
+    @Test void eloParaResta_elDelSnapshotNoValeComoEloActual() {
+        long pid = 42L;
+        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 30));   // del snapshot
+        assertEquals(1500, eloWatch.get(pid), "la lista sigue enseñando el ELO del snapshot");
+        assertNull(WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "restar anoche de anoche da 0: no vale");
+
+        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1523, null));   // de la API
+        assertEquals(1523, WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "un ELO fresco sí vale para la resta");
+        EstadoVivo.SISTEMA.marcarFuera(pid);
+    }
+
+    /** F1 de la revisión 1.3: ★ Top clan cargaba sus miembros en topLadder sin cambiar la firma («global»): volver a
+     *  ★ Top ladder antes de 10 min daba por fresca la lista del clan y enseñaba a sus miembros como el top. */
+    @Test void aplicarTopClan_dejaSuFirmaYElLadderSeRecarga() {
+        watchlist.rebuildGrupos();
+        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.topFirma = "global";
+        watchlist.topCargado = new RelojFalso().ahora;   // el ladder se cargó ahora mismo (reloj del TopLadderService del test)
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
+
+        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+
+        assertEquals(List.of(9L), watchlist.topLadder.stream().map(Player::id).toList());
+        assertFalse(watchlist.topLadderService.topFresco(false, "global", watchlist.topFirma, !watchlist.topLadder.isEmpty(), watchlist.topCargado),
+                "con la lista del clan puesta, volver a ★ Top ladder tiene que recargar");
+    }
+
+    @Test void aplicarTopClan_siElUsuarioYaSalioDelClanNoPinta() {
+        watchlist.rebuildGrupos();
+        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.topFirma = "global";
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+
+        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+
+        assertEquals(List.of(1L), watchlist.topLadder.stream().map(Player::id).toList(), "el top ladder ya pintado se queda");
+        assertEquals("global", watchlist.topFirma);
+    }
+
+    /** F12 de la revisión 1.3: la racha salía con «V»/«D» también con la app en inglés. */
+    @Test void formaLarga_rachaTraducida() {
+        Forma f = new Forma(25, 3, 0, 3, true, 3);
+        IDIOMA = "en";
+        assertTrue(WatchlistView.formaLarga(f).endsWith("3W"), WatchlistView.formaLarga(f));
+        IDIOMA = "es";
+        assertTrue(WatchlistView.formaLarga(f).endsWith("3V"), WatchlistView.formaLarga(f));
+    }
+
+    /** F12 de la revisión 1.3: el aviso de campana enseñaba el id interno («★pais es», «grupo Amigos»). */
+    @Test void nombreVistaCampana_esElNombreQueVeElUsuario() {
+        IDIOMA = "en";
+        WatchlistView w = nuevaInstancia();
+        w.grupoCombo.addItem("Amigos");
+        w.grupoCombo.addItem("★ Country top");
+        sinListeners(() -> w.grupoCombo.setSelectedItem("Amigos"), w.grupoCombo);
+        assertEquals("Amigos", w.nombreVistaCampana(), "ni «grupo» ni «|»: el nombre del grupo, tal cual");
+        w.paisActual = new PaisItem("Spain", "es");
+        sinListeners(() -> w.grupoCombo.setSelectedItem("★ Country top"), w.grupoCombo);
+        assertEquals("★ Country top · Spain", w.nombreVistaCampana());
+    }
+
+    /** Revisión 1.3 (dudoso confirmado): con «Usar CaptureAge», espectar ya lanza CA; el menú no debe lanzarlo otra vez. */
+    @Test void espectarConCaptureAge_unSoloLanzamiento() {
+        Player p = new Player(5L, "Cinco", WatchlistView.GRUPO_GENERAL);
+        watchlist.menuLista.espectarConCaptureAge(p);
+        assertEquals(List.of("ca", "espectar"), anfitrion.espectarYCa, "sin la casilla, lo lanza el menú, como siempre");
+
+        anfitrion.espectarYCa.clear();
+        cfg.put("usar_ca", "true");
+        watchlist.menuLista.espectarConCaptureAge(p);
+        assertEquals(List.of("espectar"), anfitrion.espectarYCa, "con la casilla, solo lo lanza espectar (tras verificar)");
+    }
+
+    /** Revisor 1.3: «Guardar clan» escribía clanes_guardados con util.Config y la vista lo lee de la config inyectada. */
+    @Test void guardarClan_escribeEnLaMismaConfigQueLee() {
+        watchlist.clanField.setText("R1");
+        watchlist.clanEstrella.doClick();
+        assertEquals("R1", cfg.get("clanes_guardados"));
+        assertEquals(List.of("R1"), watchlist.clanesGuardados());
+    }
+
+    /** Revisor 1.3: un ELO fresco escrito desde fuera (ponerEloWatch de las vinculadas) quita la marca de «de anoche». */
+    @Test void ponerEloFresco_quitaLaMarcaDeAnoche() {
+        watchlist.ponerEloDeAnoche(8L, 1400);
+        assertNull(WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+        watchlist.ponerEloFresco(8L, 1450);
+        assertEquals(1450, WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+    }
+
+    /** Revisor 1.3: la marca no se acumula: quien sale de la Watchlist y del top la pierde (y se volverá a barrer si
+     *  vuelve); quien sigue en la lista la conserva. */
+    @Test void podarEloDelSnapshot_soloQuedanLosPresentes() {
+        todosJugadores.add(new Player(1L, "Uno", "Amigos"));
+        watchlist.ponerEloDeAnoche(1L, 1500);
+        watchlist.ponerEloDeAnoche(2L, 1600);   // ya no está en ninguna lista
+        watchlist.watchBarridos.add(1L); watchlist.watchBarridos.add(2L);
+
+        watchlist.aplicarFiltroGrupo();
+
+        assertEquals(Set.of(1L), watchlist.eloDelSnapshot);
+        assertTrue(watchlist.watchBarridos.contains(1L));
+        assertFalse(watchlist.watchBarridos.contains(2L), "si vuelve a la Watchlist, se barre y se vuelve a marcar");
+    }
 
     @Test void sugerenciaCaducada_siElTextoCambio() {
         assertTrue(WatchlistView.sugerenciaCaducada("tirador", "otra cosa"));

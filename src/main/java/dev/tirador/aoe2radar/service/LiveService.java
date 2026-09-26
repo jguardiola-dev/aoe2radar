@@ -1,6 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuentePartidas;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.util.Reloj;
 
@@ -23,10 +23,10 @@ public final class LiveService {
     /** El veredicto, con la partida tal como la da la API (si apareció) o el error (si falló). */
     public record Comprobacion(Veredicto veredicto, Match partida, Exception error) { }
 
-    private final CompanionApi api;
+    private final FuentePartidas api;
     private final Reloj reloj;
 
-    public LiveService(CompanionApi api, Reloj reloj) { this.api = api; this.reloj = reloj; }
+    public LiveService(FuentePartidas api, Reloj reloj) { this.api = api; this.reloj = reloj; }
 
     /**
      * ¿Sigue en curso la partida matchId? Mira las `ultimas` partidas de pid (una llamada): si aparece, decide

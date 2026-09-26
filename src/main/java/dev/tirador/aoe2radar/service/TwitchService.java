@@ -28,6 +28,14 @@ public interface TwitchService {
     /** Cruza el listado global de directos de Twitch con los jugadores visibles. Va a la red. */
     Resultado barrer(List<Player> visibles);
 
+    /**
+     * Como barrer(visibles), y además cruza a otrosVigilados (los demás grupos de la watchlist, la fuente de Live
+     * now) SOLO con el listado global y su canal ya conocido: ni adivinar el canal por el nick ni llamadas de canal
+     * una a una, que se quedan para los visibles. Así el TW de Live now no depende del grupo que tenga abierto la
+     * watchlist (revisión 1.3, F10). Por defecto (dobles de prueba), como barrer(visibles). Va a la red.
+     */
+    default Resultado barrer(List<Player> visibles, List<Player> otrosVigilados) { return barrer(visibles); }
+
     /** Una miniatura ya decodificada y escalada a (ancho × alto), en ARGB fila a fila (formato de BufferedImage.getRGB). */
     record Miniatura(int ancho, int alto, int[] pixelesArgb) { }
 

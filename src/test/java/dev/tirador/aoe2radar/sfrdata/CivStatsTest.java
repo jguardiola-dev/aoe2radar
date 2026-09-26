@@ -1,6 +1,9 @@
 package dev.tirador.aoe2radar.sfrdata;
 
 import dev.tirador.aoe2radar.cache.CacheService;
+import dev.tirador.aoe2radar.model.Matchup;
+import dev.tirador.aoe2radar.model.VentanaStats;
+import dev.tirador.aoe2radar.util.Json;
 import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -9,11 +12,13 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.ByteArrayOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -51,6 +56,31 @@ class CivStatsTest {
     static final String VENTANA = "f4test";
 
     @AfterEach void limpiar() { CivStats.VENTANAS_STATS.remove(VENTANA); }
+
+    static final String MATCHUPS = "\"matchups\":[[\"rm_1v1\",\"0-1000\",\"aztecs\",\"britons\",10,6],[\"rm_1v1\",\"0-1000\",\"unknown\",\"britons\",3,1]]";
+    static final String MATCHUPS_MAPA = "\"matchups_mapa\":[[\"rm_1v1\",\"arabia\",\"0-1000\",\"aztecs\",\"britons\",7,5],"
+            + "[\"rm_1v1\",\"arena\",\"0-1000\",\"aztecs\",\"britons\",3,1],[\"rm_1v1\",\"arena\",\"0-1000\",\"aztecs\",\"unknown\",2,1]]";
+
+    /** D2 (1.3): datos viejos (sin «matchups_mapa»): solo el agregado, con mapa "*". */
+    @Test void sinMatchupsMapaSoloElAgregado() {
+        VentanaStats v = CivStats.parsearVentana(Json.obj(Json.parse("{\"ventana\":\"30\"," + MATCHUPS + "}")));
+        assertEquals(List.of(new Matchup("rm_1v1", "*", "0-1000", "aztecs", "britons", 10, 6)), v.matchups());
+    }
+
+    /** D2 (1.3): con «matchups_mapa» ([modo, mapa, tramo, civA, civB, n, winsA]) se añaden las filas por mapa;
+     *  el agregado sigue con "*". Los textos repetidos se comparten (cientos de miles de filas en v365). */
+    @Test void conMatchupsMapaLeeLasFilasPorMapa() {
+        VentanaStats v = CivStats.parsearVentana(Json.obj(Json.parse("{\"ventana\":\"30\"," + MATCHUPS + "," + MATCHUPS_MAPA + "}")));
+        assertEquals(List.of(new Matchup("rm_1v1", "*", "0-1000", "aztecs", "britons", 10, 6),
+                new Matchup("rm_1v1", "arabia", "0-1000", "aztecs", "britons", 7, 5),
+                new Matchup("rm_1v1", "arena", "0-1000", "aztecs", "britons", 3, 1)), v.matchups());
+        assertSame(v.matchups().get(1).ca(), v.matchups().get(2).ca());
+        // agrupados por mapa al crear la ventana: las mismas filas, sin recorrer la lista entera en cada filtro
+        assertEquals(List.of(v.matchups().get(0)), v.matchupsPorMapa().get("*"));
+        assertEquals(List.of(v.matchups().get(1)), v.matchupsPorMapa().get("arabia"));
+        assertEquals(List.of(v.matchups().get(2)), v.matchupsPorMapa().get("arena"));
+        assertEquals(3, v.matchupsPorMapa().size());
+    }
 
     @Test void dosLlamadoresALaVezNoSePisan(@TempDir Path dirA, @TempDir Path dirB) throws Exception {
         CountDownLatch aEntroALaRed = new CountDownLatch(1), dejarSalirA = new CountDownLatch(1);

@@ -13,6 +13,8 @@ import java.util.TreeMap;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 
+import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
+import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.Texto.limpiaNombre;
 import static dev.tirador.aoe2radar.util.Texto.recorta;
 import static dev.tirador.aoe2radar.util.Texto.sanea;
@@ -21,14 +23,16 @@ import static dev.tirador.aoe2radar.util.Texto.sanea;
 public final class RecsDisco {
     private RecsDisco() {}
 
-    public static final Path RECS_DIR = Path.of("recs");
+    public static final Path RECS_DIR = enCarpetaBase("recs");
 
     /** Nombre de archivo: empieza SIEMPRE por el jugador seguido de referencia
      *  (y su equipo), luego los rivales, mapa y hora:
      *  Ref+Aliado-vs-Rival1+Rival2_Mapa_dd-MM_HH.mm.aoe2record
      *  La misma partida siempre genera el mismo nombre (re-descargar sobrescribe). */
     public static Path destino(Match m) {
-        if (m.gte > 0) return RECS_DIR.resolve("Guess the ELO " + m.id + ".aoe2record");
+        // Guess the ELO: el archivo lleva el NÚMERO de la tanda (el que anuncia la barra de estado y lee
+        // maxGteEnDisco), nunca el id de la partida (dejaría buscar el resultado y hacía saltar la numeración).
+        if (m.gte > 0) return RECS_DIR.resolve("Guess the ELO " + m.gte + ".aoe2record");
         String hora = DateTimeFormatter.ofPattern("dd-MM_HH.mm")
                 .withZone(ZoneId.systemDefault()).format(m.finished);
 
@@ -57,16 +61,38 @@ public final class RecsDisco {
         return RECS_DIR.resolve(nombre);
     }
 
-    /** Mayor número «Guess the ELO N» ya usado en ./recs, para continuar la
-     *  numeración sin sobrescribir tandas anteriores. */
+    /** Techo de un número de tanda creíble: hasta la 1.2 el archivo llevaba el id de la partida (cientos de
+     *  millones), y esos archivos viejos no deben seguir marcando la numeración. */
+    static final int MAX_NUMERO_GTE = 100_000;
+
+    /** Mayor número «Guess the ELO N» ya usado en ./recs y en la carpeta savegame del juego (config «savegame»),
+     *  para continuar la numeración sin repetir el nombre de una tanda vieja: «Vaciar recs» deja limpia ./recs,
+     *  pero las copias enviadas al juego siguen allí y la nueva «Guess the ELO 1» las sobrescribiría. Disco: no
+     *  llamar desde el EDT (lo llama AzarService en su hilo). */
     public static int maxGteEnDisco() {
+        Path sg = null;
+        try {
+            String cfg = leerConfig("savegame", null);
+            if (cfg != null && !cfg.isBlank()) sg = Path.of(cfg);
+        } catch (RuntimeException ignored) { }   // ruta ilegible en config: solo cuenta ./recs
+        return maxGteEnDisco(RECS_DIR, sg);
+    }
+
+    static int maxGteEnDisco(Path recs, Path savegame) {
+        int max = maxGteEnDisco(recs);
+        if (savegame != null && Files.isDirectory(savegame)) max = Math.max(max, maxGteEnDisco(savegame));
+        return max;
+    }
+
+    static int maxGteEnDisco(Path dir) {
         int max = 0;
-        try (var st = Files.list(RECS_DIR)) {
+        try (var st = Files.list(dir)) {
             for (Path p : st.toList()) {
                 String n = p.getFileName().toString();
                 if (n.startsWith("Guess the ELO ") && n.endsWith(".aoe2record")) {
                     try {
-                        max = Math.max(max, Integer.parseInt(n.substring(14, n.length() - 11).trim()));
+                        int k = Integer.parseInt(n.substring(14, n.length() - 11).trim());
+                        if (k <= MAX_NUMERO_GTE) max = Math.max(max, k);   // un id de partida (archivo de la 1.2) no cuenta
                     } catch (NumberFormatException ignored) {}
                 }
             }

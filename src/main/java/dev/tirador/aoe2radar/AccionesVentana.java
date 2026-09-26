@@ -15,19 +15,22 @@ package dev.tirador.aoe2radar;
 import dev.tirador.aoe2radar.app.Servicios;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.Espectar;
+import dev.tirador.aoe2radar.service.VistaInicial;
 import dev.tirador.aoe2radar.ui.TemaApp;
-import dev.tirador.aoe2radar.ui.WatchlistView;
+import dev.tirador.aoe2radar.ui.VentanaGuardada;
 
 import javax.swing.*;
 import java.awt.Desktop;
-import java.awt.event.ActionEvent;
 import java.net.URI;
 import java.nio.file.Path;
+
+import java.time.Duration;
 
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
 import static dev.tirador.aoe2radar.app.Servicios.*;
 import static dev.tirador.aoe2radar.cache.Canales.cargarCanales;
+import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.cache.Paises.cargarPaises;
 import static dev.tirador.aoe2radar.cache.Paises.guardarPaises;
 import static dev.tirador.aoe2radar.service.EnlaceVivo.tickMs;
@@ -36,6 +39,7 @@ import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.cargarEloAyer;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.ui.TemaApp.flatLafDisponible;
+import static dev.tirador.aoe2radar.util.Archivos.limpiarTemporales;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Identidad.TWITCH;
@@ -55,6 +59,17 @@ final class AccionesVentana {
     // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
     // precarga del tech tree y del ladder. Es lo último que hace el constructor.
     static void arrancar(SpoilerFreeRecs v) {
+        // Fila 140 de DEUDA: un .tmp huérfano de escribirAtomico (la app se cortó a media escritura) se queda en
+        // disco para siempre si nadie lo barre. UNA vez al arrancar, en un hilo de fondo (nunca bloquea el EDT
+        // ni retrasa el resto del arranque), se limpian los de más de un día en las carpetas donde escribirAtomico
+        // escribe: la de trabajo (config.properties) y sfrdata (paises.txt, perfiles_shards).
+        Thread hiloLimpiarTemporales = new Thread(() -> {
+            limpiarTemporales(dev.tirador.aoe2radar.util.Config.CONFIG_FILE.toAbsolutePath().getParent(), "config.properties", Duration.ofDays(1));   // la carpeta de datos (junto al exe si está empaquetada), no el directorio de trabajo
+            limpiarTemporales(LADDER_DIR, "paises.txt", Duration.ofDays(1));
+            limpiarTemporales(LADDER_DIR.resolve("perfiles_shards"), "", Duration.ofDays(1));
+        }, "limpiar-temporales");
+        hiloLimpiarTemporales.setDaemon(true);   // revisor: limpieza de arranque, no debe retrasar el cierre de la app
+        hiloLimpiarTemporales.start();
         cargarCanales();
         v.watchlist.loadPlayers();
         v.watchlist.sanearVinculosHuerfanos();
@@ -62,17 +77,22 @@ final class AccionesVentana {
         TemaApp.ajustarGrises(v, flatLafDisponible && temaOscuroActivo);
         TemaApp.ajustarBotonesEspeciales(v, flatLafDisponible && temaOscuroActivo);
         TemaApp.ajustarFuentesSecundarias(v);
-        v.partidas.table.getInputMap(JComponent.WHEN_FOCUSED)
-             .put(KeyStroke.getKeyStroke("ENTER"), "descargarSeleccion");
-        v.partidas.table.getActionMap().put("descargarSeleccion", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { v.partidas.download(v.partidas.selectedRows()); }
-        });
+        // Enter en la tabla de Partidas: un solo atajo, con la guarda de «descarga en curso», en ui.PartidasTabla
+        // (revisión 1.3, general F6 / watchlist F10).
         v.watchlist.refrescarWatchlist();
         SwingUtilities.invokeLater(() -> {
-            v.watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER);   // la app abre en ★
+            // «Abrir en» (Configuración): por defecto ★ Top ladder, como siempre; o el país, clan, grupo o «Todos» elegido
+            // (si ya no existe, ★ Top ladder). Antes se abría siempre en ★ y se pisaba grupo_activo (F3 de la revisión 1.3).
+            // OJO: abrir la vista la guarda como grupo_activo (onGrupoElegido), así que el grupo_activo de la sesión anterior
+            // solo se conserva si «Abrir en» es ese grupo o «Todos»; con ★ ladder/país/clan se escribe esa vista ★.
+            VistaInicial.Eleccion inicio = v.watchlist.abrirVistaInicial();
             v.mostrarDirectos(true);                    // …con los Directos a la vista, no una tabla vacía
             if (Boolean.parseBoolean(leerConfig("inicio_min", "false")))
-                v.setExtendedState(JFrame.ICONIFIED);
+                VentanaGuardada.minimizar(v);   // F8 (1.3): sin olvidar si estaba maximizada
+            // «Buscar al abrir», con la MISMA decisión y en el mismo turno del EDT: antes iba en otro invokeLater que
+            // miraba !modoTop() cuando la app ya estaba siempre en ★, y nunca buscaba (general F2 / watchlist F3).
+            if (inicio.buscaAlAbrir() && Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")) && v.playersModel.size() > 0)
+                v.partidas.fetchMatches(v.partidas.fetchBtn);
         });
         final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
@@ -124,8 +144,6 @@ final class AccionesVentana {
         new javax.swing.Timer(3_600_000, e -> new Thread(Servicios::cargarControl, "control").start()).start();
         v.vigilante.setInitialDelay(tickMs());
         v.vigilante.start();
-        if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
-            SwingUtilities.invokeLater(() -> { if (!v.watchlist.modoTop() && v.playersModel.size() > 0) v.partidas.fetchMatches(v.partidas.fetchBtn); });
     }
 
     static void abrirUrl(SpoilerFreeRecs v, String url) {
@@ -197,11 +215,11 @@ final class AccionesVentana {
 
     static void abrirTwitch(SpoilerFreeRecs v) {
         try { Desktop.getDesktop().browse(URI.create("https://" + TWITCH)); }
-        catch (Exception ex) { v.status.setText("Abre en tu navegador: https://" + TWITCH); }
+        catch (Exception ex) { v.status.setText(t("Abre en tu navegador: https://", "Open in your browser: https://") + TWITCH); }
     }
 
     static void abrirDonacion(SpoilerFreeRecs v) {
         try { Desktop.getDesktop().browse(URI.create(SpoilerFreeRecs.DONAR_URL)); }
-        catch (Exception ex) { v.status.setText("Abre en tu navegador: " + SpoilerFreeRecs.DONAR_URL); }
+        catch (Exception ex) { v.status.setText(t("Abre en tu navegador: ", "Open in your browser: ") + SpoilerFreeRecs.DONAR_URL); }
     }
 }

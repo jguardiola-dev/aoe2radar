@@ -2,9 +2,11 @@ package dev.tirador.aoe2radar.techtree;
 
 import dev.tirador.aoe2radar.cache.Caducidad;
 import dev.tirador.aoe2radar.cache.CacheService;
+import dev.tirador.aoe2radar.util.Archivos;
 import dev.tirador.aoe2radar.util.Json;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -23,6 +25,7 @@ import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.Json.obj;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
+import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
 
 /** Datos de aoe2techtree: data.json, árboles por civ y cadenas por idioma, con caché en disco y comprobación diaria por ETag. */
 public final class TechTreeDatos {
@@ -33,7 +36,7 @@ public final class TechTreeDatos {
 
     /** «Extraer todo» de Windows deja techtree\techtree: se acepta la carpeta anidada. */
     public static Path ttDirBase() {
-        Path base = Path.of("techtree");
+        Path base = enCarpetaBase("techtree");
         if (!Files.exists(base.resolve("data/data.json")) && Files.exists(base.resolve("techtree/data/data.json"))) return base.resolve("techtree");
         return base;
     }
@@ -76,10 +79,107 @@ public final class TechTreeDatos {
         return "es".equals(IDIOMA) ? TT_CLASES_ES.getOrDefault(en, en) : en;
     }
 
+    /** De dónde salen los bytes de un archivo de aoe2techtree por su ruta relativa (la red en la app; un doble en los tests). */
+    @FunctionalInterface
+    interface Fuente { byte[] bytes(String rel) throws Exception; }
+
+    /** Cómo se trae a disco un archivo que falta o se desechó (ttDescargar en la app; un doble en los tests). */
+    @FunctionalInterface
+    interface Descarga { void traer(String rel) throws Exception; }
+
+    static final Fuente RED = rel -> httpBytesTT(TT_RAW + rel);
+
+    /**
+     * Dentro del jar va el mismo tech tree (src/main/resources/techtree, 8,8 MB): el exe de jpackage no deja la
+     * carpeta techtree junto al exe como hacía el bat de la 1.1, y sin esto un PC limpio bajaba de GitHub data.json,
+     * unos 55 árboles y cientos de iconos (y sin red se quedaba vacío). Mismo caso que las banderas (7e7748f). null si
+     * el jar no lo trae.
+     */
+    static final Fuente JAR = rel -> {
+        try (InputStream in = TechTreeDatos.class.getResourceAsStream("/techtree/" + rel)) {
+            return in == null ? null : in.readAllBytes();
+        }
+    };
+
+    static final String DATA_JSON = "data/data.json";
+
+    /**
+     * Trae rel a la carpeta techtree: del jar si lo trae y vale (ver jarVale), si no de aoe2techtree. Se copia a disco
+     * (no se lee del jar en cada uso) porque todo el que pinta el tech tree trabaja con rutas de disco. Si data.json
+     * sale del jar, se olvida el ETag guardado: era de otra copia, y con él la comprobación diaria podría recibir un
+     * 304 y quedarse para siempre con la del jar aunque aoe2techtree tenga una más nueva.
+     */
     public static void ttDescargar(String rel) throws Exception {
-        Path destino = TT_DIR.resolve(rel);
-        Files.createDirectories(destino.getParent());
-        Files.write(destino, httpBytesTT(TT_RAW + rel));
+        if (descargar(TT_DIR, rel, JAR, RED) && DATA_JSON.equals(rel)) guardarConfig("techtree_etag", "");
+    }
+
+    /** Baja rel a dir con escritura atómica (util.Archivos): un corte a mitad no deja un archivo truncado que, al
+     *  existir, ya no se volvería a bajar nunca (F5 de la revisión general). */
+    static void descargar(Path dir, String rel, Fuente red) throws Exception {
+        Archivos.escribirAtomico(dir.resolve(rel), red.bytes(rel));
+    }
+
+    /** Como descargar(dir, rel, red), pero primero prueba la copia del jar si vale para rel. true si salió del jar. */
+    static boolean descargar(Path dir, String rel, Fuente jar, Fuente red) throws Exception {
+        byte[] b = jarVale(dir, rel, jar) ? jar.bytes(rel) : null;
+        if (b == null) { descargar(dir, rel, red); return false; }
+        Archivos.escribirAtomico(dir.resolve(rel), b);
+        return true;
+    }
+
+    /** Última comparación del data.json de disco con el del jar (se repite solo si cambia el archivo de disco). */
+    private record Comparacion(Path dj, long mtime, long tamano, boolean igual) { }
+    private static volatile Comparacion comparacion;
+
+    /**
+     * ¿Sirve la copia del jar para rel? Los iconos (img/…) siempre: van por id y la actualización diaria ya los
+     * conserva. data.json, si falta en disco (PC limpio: el jar es el punto de partida y la comprobación diaria trae
+     * luego la versión nueva). Árboles y cadenas, solo si el data.json de disco es idéntico al del jar. Si la
+     * comprobación diaria lo renovó, van con el nuevo y se bajan de aoe2techtree, como siempre. Sin data.json en disco,
+     * árboles y cadenas no salen del jar: puede ser el hueco entre que la comprobación diaria borra data/ y escribe el
+     * nuevo, y un árbol del jar quedaría junto a un data.json más nuevo (carrera con techtree-precarga).
+     */
+    static boolean jarVale(Path dir, String rel, Fuente jar) throws Exception {
+        if (rel.startsWith("img/")) return true;
+        Path dj = dir.resolve(DATA_JSON);
+        if (!Files.exists(dj)) return DATA_JSON.equals(rel);
+        var at = Files.readAttributes(dj, java.nio.file.attribute.BasicFileAttributes.class);
+        long mtime = at.lastModifiedTime().toMillis(), tamano = at.size();
+        Comparacion c = comparacion;
+        if (c != null && c.dj().equals(dj.toAbsolutePath()) && c.mtime() == mtime && c.tamano() == tamano) return c.igual();
+        byte[] delJar = jar.bytes(DATA_JSON);
+        boolean igual = delJar != null && delJar.length == tamano && java.util.Arrays.equals(delJar, Files.readAllBytes(dj));
+        comparacion = new Comparacion(dj.toAbsolutePath(), mtime, tamano, igual);
+        return igual;
+    }
+
+    /**
+     * El JSON rel de dir, trayéndolo si falta. Si el de disco no se entiende (truncado por un corte de las versiones
+     * sin escritura atómica, o dañado), se borra y se trae otra vez, una sola: antes quedaba roto para siempre (el
+     * archivo existía, así que nunca se volvía a pedir) y esa civ, o el tech tree entero, fallaba hasta que cambiara
+     * data.json en origen. Si el nuevo tampoco se entiende, la excepción sale como antes.
+     * <p>Solo se desecha lo que se leyó y no se entiende (UTF-8 inválido o JSON roto): un fallo al LEER (el antivirus
+     * con el archivo abierto, p. ej.) sale tal cual, sin borrar un archivo que puede estar bien (sin red, esa civ
+     * desaparecería).
+     */
+    static Map<String, Object> leerJson(Path dir, String rel, Descarga traer) throws Exception {
+        Path p = dir.resolve(rel);
+        if (!Files.exists(p)) traer.traer(rel);
+        byte[] raw = Files.readAllBytes(p);   // fuera del try: un fallo de lectura no es un archivo dañado
+        try {
+            return obj(Json.parse(utf8Estricto(raw)));
+        } catch (Exception ex) {
+            log("techtree: " + rel + " no se entiende (" + causa(ex) + "): se borra y se vuelve a traer");
+            try { Files.deleteIfExists(p); }
+            catch (IOException borrado) { ex.addSuppressed(borrado); throw ex; }   // que no tape el motivo original
+            traer.traer(rel);
+            return obj(Json.parse(utf8Estricto(Files.readAllBytes(p))));
+        }
+    }
+
+    /** Como Files.readString: UTF-8 que falla (CharacterCodingException) si los bytes no lo son, p. ej. cortados a mitad de un carácter. */
+    static String utf8Estricto(byte[] raw) throws java.nio.charset.CharacterCodingException {
+        return java.nio.charset.StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(raw)).toString();
     }
 
     public static String ttLang() { return "es".equals(IDIOMA) ? "es" : "en"; }
@@ -91,8 +191,8 @@ public final class TechTreeDatos {
             Path st = TT_DIR.resolve("data/locales/" + ttLang() + "/strings.json");
             if (!Files.exists(dj)) ttDescargar("data/data.json");
             if (!Files.exists(st)) ttDescargar("data/locales/" + ttLang() + "/strings.json");
-            if (ttData == null) ttData = obj(Json.parse(Files.readString(dj)));
-            if (ttStrings == null) ttStrings = obj(Json.parse(Files.readString(st)));
+            if (ttData == null) ttData = leerJson(TT_DIR, "data/data.json", TechTreeDatos::ttDescargar);
+            if (ttStrings == null) ttStrings = leerJson(TT_DIR, "data/locales/" + ttLang() + "/strings.json", TechTreeDatos::ttDescargar);
             return null;
         } catch (Exception ex) {
             log("techtree: " + causa(ex));
@@ -120,8 +220,7 @@ public final class TechTreeDatos {
             boolean habia = Files.exists(dj);
             Path data = TT_DIR.resolve("data");
             if (habia) try (var s = Files.walk(data)) { s.sorted(java.util.Comparator.reverseOrder()).forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) { } }); }
-            Files.createDirectories(dj.getParent());
-            Files.write(dj, r.body());
+            Archivos.escribirAtomico(dj, r.body());   // atómica: un data.json a medias no se volvería a pedir hasta mañana
             ttTrees.clear(); ttData = null; ttStrings = null;
             if (habia) log("techtree: datos renovados desde aoe2techtree");
         } catch (Exception ex) {
@@ -133,9 +232,7 @@ public final class TechTreeDatos {
         Map<String, Object> t = ttTrees.get(civ);
         if (t != null) return t;
         String rel = "data/trees/" + civ.toUpperCase(Locale.ROOT) + ".json";
-        Path p = TT_DIR.resolve(rel);
-        if (!Files.exists(p)) ttDescargar(rel);
-        t = obj(Json.parse(Files.readString(p)));
+        t = leerJson(TT_DIR, rel, TechTreeDatos::ttDescargar);
         ttTrees.put(civ, t);
         return t;
     }

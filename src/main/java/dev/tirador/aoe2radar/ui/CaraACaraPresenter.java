@@ -8,6 +8,7 @@ import dev.tirador.aoe2radar.service.ProfileService;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -26,8 +27,15 @@ public final class CaraACaraPresenter {
     private final Tareas tareas;
     private final Map<Long, Actividad> actividadCache;
 
+    /** F4 (3): se avisa (en el EDT) cuando el año de un rival llega de sfr-data: pid y fecha «hasta» del paquete. */
+    private final BiConsumer<Long, String> alLlegarDeSfr;
+
     public CaraACaraPresenter(ProfileService perfiles, BusquedaPerfiles busqueda, Tareas tareas, Map<Long, Actividad> actividadCache) {
-        this.perfiles = perfiles; this.busqueda = busqueda; this.tareas = tareas; this.actividadCache = actividadCache;
+        this(perfiles, busqueda, tareas, actividadCache, (pid, hasta) -> { });
+    }
+
+    public CaraACaraPresenter(ProfileService perfiles, BusquedaPerfiles busqueda, Tareas tareas, Map<Long, Actividad> actividadCache, BiConsumer<Long, String> alLlegarDeSfr) {
+        this.perfiles = perfiles; this.busqueda = busqueda; this.tareas = tareas; this.actividadCache = actividadCache; this.alLlegarDeSfr = alLlegarDeSfr;
     }
 
     /** Sugerencias del buscador de rival del diálogo. {@code actual} da el texto vigente al mirar la respuesta. Hilo "h2h-sugerir". */
@@ -52,14 +60,18 @@ public final class CaraACaraPresenter {
         String nombreSiFalta = rivalNombre != null && !rivalNombre.isBlank() ? rivalNombre : "#" + rivalPid;
         tareas.enFondo("h2h-comparar", () -> {
             Actividad ar = actividadCache.get(rivalPid);
+            String hastaSfr = null; boolean deSfr = false;
             if (ar == null) {
                 try {
                     AnioSfr an = perfiles.anioSfr(rivalPid, nombreSiFalta);
-                    if (an != null) { ar = an.actividad(); actividadCache.put(rivalPid, ar); }
+                    if (an != null) { ar = an.actividad(); actividadCache.put(rivalPid, ar); hastaSfr = an.hasta(); deSfr = true; }
                 } catch (Exception ex) { log("h2h rival: " + causa(ex)); }
             }
-            final Actividad arF = ar;
-            tareas.enUi(() -> { if (Boolean.TRUE.equals(sigueAbierto.get())) pintar.accept(arF); });
+            final Actividad arF = ar; final String hastaF = hastaSfr; final boolean deSfrF = deSfr;
+            tareas.enUi(() -> {
+                if (deSfrF) alLlegarDeSfr.accept(rivalPid, hastaF);   // F4 (3): aunque el diálogo ya mire otro cruce
+                if (Boolean.TRUE.equals(sigueAbierto.get())) pintar.accept(arF);
+            });
         });
     }
 

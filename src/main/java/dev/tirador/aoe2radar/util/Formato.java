@@ -27,6 +27,8 @@ public final class Formato {
         return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
+    /** Un decimal con la coma o el punto del idioma («3,5» / «3.5»), sin unidad. */
+    public static String dec1(double x) { String s = String.format(Locale.ROOT, "%.1f", x); return "en".equals(IDIOMA) ? s : s.replace('.', ','); }
     public static String pct1(double p) { String s = String.format(Locale.ROOT, "%.1f", p); return ("en".equals(IDIOMA) ? s + "%" : s.replace('.', ',') + " %"); }
 
     /** «Top 0,75 %» / «Top 0.75%» según el idioma; por debajo de 0,01 %, «< 0,01 %». */

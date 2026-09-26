@@ -4,6 +4,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.util.Reloj;
+import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -27,11 +28,13 @@ class LiveNowPresenterTest {
     static final class BuscadorFalso implements LiveNowPresenter.Buscador {
         List<Match> resultado = new ArrayList<>();
         RuntimeException falla;
+        Runnable alPedir;   // lo que pasa «mientras» se consulta un lote (un evento del socket, un cambio de fuente…)
         int llamadas;
         final List<String> csvsPedidos = new ArrayList<>();
         @Override public Iterable<Match> partidas(String pidsCsv, int pagina, int porPagina) {
             llamadas++;
             csvsPedidos.add(pidsCsv);
+            if (alPedir != null) alPedir.run();
             if (falla != null) throw falla;
             return resultado;
         }
@@ -161,10 +164,13 @@ class LiveNowPresenterTest {
         pantalla.fuente = fuente;
         buscador.falla = new RuntimeException("sin red");
         presenter.refrescar(false);
-        // «Consultando…» inicial + un intento de progreso por cada uno de los tres primeros lotes; el cuarto ni se intenta
-        assertEquals(4, pantalla.estados.size());
+        // «Consultando…» inicial + un intento de progreso por cada uno de los tres primeros lotes; el cuarto ni se intenta.
+        // Desde la 1.3 (F7), un quinto: el aviso de que el barrido quedó incompleto (antes solo iba al log).
+        assertEquals(5, pantalla.estados.size());
+        assertTrue(pantalla.estados.get(4).startsWith(dev.tirador.aoe2radar.util.I18n.t("Barrido incompleto", "Incomplete sweep")), pantalla.estados.get(4));
         assertEquals(3, buscador.llamadas);
         assertTrue(presenter.enCursoSnapshot().isEmpty());
+        assertEquals(0, presenter.ultimaMs(), "un barrido cortado no cuenta como hecho (F7)");
     }
 
     @Test void refrescar_pestanaCerrada_noLlegaAPedirNingunLote() {
@@ -173,6 +179,69 @@ class LiveNowPresenterTest {
         presenter.refrescar(false);
         assertEquals(1, pantalla.cargarFuenteLiveLlamadas);   // la fuente sí se carga (no depende de «abierta»)
         assertEquals(0, buscador.llamadas);                   // pero el barrido por lotes se corta antes del primero
+        assertEquals(0, presenter.ultimaMs(), "y no cuenta como hecho: al abrir la pestaña se barre de verdad (F7)");
+    }
+
+    // ----- barrido y cambios durante el barrido (revisión 1.3, F7) --------------------------
+
+    /** El fondo, en el acto; lo del EDT, a una cola que el test vacía cuando quiere (como el EDT de verdad, que lo
+     *  ejecuta «después»): así se ve el estado que queda entre el final de un barrido y lo que programó para el EDT. */
+    static final class TareasUiAplazada implements Tareas {
+        final List<Runnable> pendientesUi = new ArrayList<>();
+        @Override public void enFondo(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { pendientesUi.add(trabajo); }
+        void vaciarUi() { while (!pendientesUi.isEmpty()) pendientesUi.remove(0).run(); }
+    }
+
+    @Test void refrescar_cambioDeFuenteDuranteElBarrido_descartaLaViejaYBarreLaNueva() {
+        TareasUiAplazada tareas = new TareasUiAplazada();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla, new EstadoVivo(Reloj.SISTEMA));
+        pantalla.fuente = List.<Object[]>of(ficha(901L, "Viejo", 2500, 1, "es"));
+        buscador.resultado = List.of(matchEnCurso(9901L, 901L), matchTerminado(9903L, 901L));
+        buscador.alPedir = () -> {   // en mitad del primer barrido, el usuario cambia de fuente (cambiarFuenteLive)
+            buscador.alPedir = null;
+            pantalla.fuente = List.<Object[]>of(ficha(902L, "Nuevo", 1500, 3, "es"));
+            p.reiniciarFuente();
+            p.refrescar(true);
+        };
+        p.refrescar(true);
+        // el barrido viejo acabó: no ha escrito nada suyo bajo la fuente nueva (antes: sus tarjetas y «barrido hace 0 min»)
+        assertFalse(p.enCursoSnapshot().containsKey(901L), "sin partidas de la fuente anterior bajo el título nuevo");
+        assertTrue(p.terminadasVigentes().isEmpty(), "ni terminadas de la fuente anterior");
+        assertEquals(0, p.ultimaMs());
+        tareas.vaciarUi();   // el EDT: relanza el forzado que llegó durante el barrido
+        assertEquals(List.of(902L), p.topSnapshot().stream().map(f -> (Long) f[0]).toList(), "la fuente que se ve es la nueva");
+        assertEquals(2, pantalla.cargarFuenteLiveLlamadas, "la nueva se cargó al acabar el barrido viejo");
+        assertTrue(p.ultimaMs() > 0, "y su barrido sí cuenta");
+    }
+
+    @Test void refrescar_forzadoDuranteUnBarrido_seRepiteAlAcabar() {
+        TareasAplazadas tareas = new TareasAplazadas();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla, new EstadoVivo(Reloj.SISTEMA));
+        pantalla.fuente = List.<Object[]>of(ficha(911L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        p.refrescar(true);   // «Actualizar» (o un cambio de fuente) con el barrido en marcha
+        assertEquals(1, tareas.pendientesFondo.size());
+        tareas.pendientesFondo.get(0).run();   // acaba el primero…
+        assertEquals(2, tareas.pendientesFondo.size(), "…y el forzado que llegó entretanto se lanza entonces");
+    }
+
+    @Test void refrescar_cortadoAlCerrarLaPestana_noCuentaComoHechoYConservaLoNoConsultado() {
+        List<Object[]> fuente = new ArrayList<>();
+        for (long i = 1; i <= 20; i++) fuente.add(ficha(920 + i, "J" + i, 1000, (int) i, "es"));   // 2 lotes de 15
+        pantalla.fuente = fuente;
+        Match delSegundoLote = matchEnCurso(9940L, 940L);
+        buscador.resultado = List.of(delSegundoLote);
+        presenter.refrescar(true);   // barrido completo: 940 en partida
+        assertTrue(presenter.enCursoSnapshot().containsKey(940L));
+        presenter.fijarUltimaMs(1234L);
+        buscador.resultado = List.of();
+        buscador.alPedir = () -> pantalla.abierta = false;   // se cierra la pestaña tras el primer lote
+        presenter.refrescar(true);
+        assertEquals(1234L, presenter.ultimaMs(), "cortado: no se apunta como barrido hecho");
+        assertEquals(delSegundoLote, presenter.enCursoSnapshot().get(940L), "a 940 no se le consultó: se queda como estaba");
     }
 
     @Test void refrescar_fallaLaFuente_avisaElErrorYNoRompe() {
@@ -222,6 +291,60 @@ class LiveNowPresenterTest {
         presenter.liveEvento(601L, m, true);
         assertFalse(presenter.enCursoSnapshot().containsKey(601L));
         assertTrue(presenter.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9301L));
+    }
+
+    /** Revisión 1.3, F5: con la hora de fin real (la de la API), las terminadas se ordenan y caducan por ella. */
+    @Test void liveEvento_terminadaConHoraDeFin_laApuntaConEsaHora() {
+        pantalla.fuente = List.<Object[]>of(ficha(611L, "Uno", 1500, 10, "es"));
+        presenter.refrescar(false);
+        Match fin = matchTerminado(9311L, 611L);   // terminó hace 10 min
+        presenter.liveEvento(611L, fin, true);
+        Object[] x = presenter.terminadasVigentes().stream().filter(t -> ((Match) t[0]).id == 9311L).findFirst().orElseThrow();
+        assertEquals(fin.finished.toEpochMilli(), (Long) x[1]);
+    }
+
+    /** Revisión 1.3, F8: el final tardío de la partida A no quita de «en curso» la partida B en la que ya está. */
+    @Test void liveEvento_finalTardioDeUnaPartidaVieja_noQuitaLaNueva() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(621L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        Match b = matchEnCurso(9322L, 621L);
+        p.liveEvento(621L, b, false);           // B empieza
+        p.liveEvento(621L, matchTerminado(9321L, 621L), true);   // llega tarde el final de A
+        assertEquals(b, p.enCursoSnapshot().get(621L), "sigue en B");
+        assertEquals(b, vivo.partida(621L), "y EstadoVivo conserva B");
+        assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9321L), "A, a «Terminadas»");
+    }
+
+    /** Revisión 1.3, F1: el socket pregunta quién tiene Live now en una partida (aunque solo la viera su barrido). */
+    @Test void jugadoresEn_daLosQueElBarridoVioEnEsaPartida() {
+        pantalla.fuente = List.<Object[]>of(ficha(631L, "Uno", 1500, 10, "es"), ficha(632L, "Dos", 1400, 20, "es"), ficha(633L, "Tres", 1300, 30, "es"));
+        Match m = matchEnCurso(9331L, 631L);
+        MatchPlayer dos = new MatchPlayer(); dos.id = 632L; dos.team = 2; m.players.add(dos);
+        buscador.resultado = List.of(m, matchEnCurso(9333L, 633L));
+        presenter.refrescar(true);
+        assertEquals(java.util.Set.of(631L, 632L), new java.util.HashSet<>(presenter.jugadoresEn(9331L)));
+        assertTrue(presenter.jugadoresEn(1L).isEmpty());
+        presenter.liveEvento(631L, m, true);   // y cuando se quita, deja de estar
+        assertEquals(List.of(632L), presenter.jugadoresEn(9331L));
+    }
+
+    /** Menor del revisor: la quitada sin datos (fin null) de la partida A no suelta la partida B en la que ya está. */
+    @Test void liveTerminada_sinPartidaDeLaApi_soloQuitaSiEsEsaPartida() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(641L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        Match a = matchEnCurso(9341L, 641L), b = matchEnCurso(9342L, 641L);
+        p.liveEvento(641L, a, false);
+        p.liveEvento(641L, b, false);         // en el hueco, el socket lo mete en B
+        p.liveTerminada(641L, 9341L, null);   // llega el «sin datos» de A
+        assertEquals(b, p.enCursoSnapshot().get(641L), "sigue en B");
+        assertEquals(b, vivo.partida(641L));
+        p.liveTerminada(641L, 9342L, null);   // y cuando es la suya, sí: a «Terminadas» con la guardada
+        assertFalse(p.enCursoSnapshot().containsKey(641L));
+        assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9342L));
     }
 
     @Test void liveEvento_noRepintaSiLaPantallaNoLoPermite() {
@@ -294,6 +417,79 @@ class LiveNowPresenterTest {
         assertNotNull(tareas.trabajoDemonioPendiente);
     }
 
+    /** Menor del revisor: a un jugador sin consultar se le conserva la partida, pero no si ya se sabe terminada. */
+    @Test void refrescar_cortado_noConservaUnaPartidaSinConsultarQueYaSeSabeTerminada() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        List<Object[]> fuente = new ArrayList<>();
+        for (long i = 1; i <= 20; i++) fuente.add(ficha(950 + i, "J" + i, 1000, (int) i, "es"));   // 2 lotes de 15
+        pantalla.fuente = fuente;
+        buscador.resultado = List.of(matchEnCurso(9970L, 970L));   // 970, en el segundo lote
+        p.refrescar(true);
+        assertTrue(p.enCursoSnapshot().containsKey(970L));
+        vivo.apuntarTerminada(9970L);   // el socket (o espectar) sabe que terminó
+        buscador.resultado = List.of();
+        buscador.alPedir = () -> pantalla.abierta = false;   // barrido cortado tras el primer lote: 970 sin consultar
+        p.refrescar(true);
+        assertFalse(p.enCursoSnapshot().containsKey(970L), "sin consultar, pero terminada: fuera");
+    }
+
+    // ----- el barrido fusiona con lo que llegó del socket entretanto (revisión 1.3, F2) --------
+
+    @Test void refrescar_conservaLaPartidaQueElSocketConfirmoDuranteElBarrido() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(801L, "Y", 1500, 10, "es"), ficha(802L, "Z", 1400, 20, "es"));
+        Match nueva = matchEnCurso(9801L, 801L);
+        buscador.resultado = List.of();   // la foto del lote: nadie en partida todavía
+        buscador.alPedir = () -> {        // mientras tanto, el socket confirma la partida de Y (como hace EnlaceVivo)
+            vivo.marcarJugando(801L, 9801L);
+            p.liveEvento(801L, nueva, false);
+        };
+        p.refrescar(true);
+        assertEquals(nueva, p.enCursoSnapshot().get(801L), "la partida confirmada por el socket no la borra la foto vieja del barrido");
+    }
+
+    @Test void refrescar_quitaLoQueSoloVioUnBarridoAnteriorSiElNuevoNoLoVe() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(811L, "Y", 1500, 10, "es"));
+        buscador.resultado = List.of(matchEnCurso(9811L, 811L));
+        p.refrescar(true);
+        assertTrue(p.enCursoSnapshot().containsKey(811L));
+        buscador.resultado = List.of();   // el barrido siguiente ya no la ve, y el socket no la tiene: fuera, como antes
+        p.refrescar(true);
+        assertFalse(p.enCursoSnapshot().containsKey(811L));
+    }
+
+    @Test void refrescar_noConservaUnaPartidaDelSocketQueYaSeSabeTerminada() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(821L, "Y", 1500, 10, "es"));
+        Match m = matchEnCurso(9821L, 821L);
+        buscador.resultado = List.of();
+        buscador.alPedir = () -> { vivo.marcarJugando(821L, 9821L); p.liveEvento(821L, m, false); vivo.apuntarTerminada(9821L); };
+        p.refrescar(true);
+        assertFalse(p.enCursoSnapshot().containsKey(821L));
+    }
+
+    // ----- puesto de la ficha: la fuente «Grupo» no tiene puesto (revisión 1.3, F3) ----------
+
+    @Test void fichaDeGrupoConRangoCero_notienePuestoNiCuentaComoTop() {
+        Object[] deGrupo = ficha(1L, "Amigo", 1500, 0, "es");   // Campanas.cargarFuenteLive pone rango 0 en «grupo»
+        assertFalse(LiveNowPresenter.conPuesto(deGrupo), "sin puesto: no se pinta «#0»");
+        assertFalse(LiveNowPresenter.enTop(deGrupo, 50), "no cuenta para «top 50 vs top 50» ni para «Solo top contra top»");
+        assertFalse(LiveNowPresenter.enTop(deGrupo, 25), "ni para «élite 25 vs 25»");
+        assertFalse(LiveNowPresenter.enTop(null, 50), "fuera de la fuente: tampoco");
+    }
+
+    @Test void fichaConPuesto_cuentaSoloHastaElTope() {
+        assertTrue(LiveNowPresenter.conPuesto(ficha(1L, "Uno", 2500, 1, "es")));
+        assertTrue(LiveNowPresenter.enTop(ficha(1L, "Uno", 2500, 50, "es"), 50));
+        assertFalse(LiveNowPresenter.enTop(ficha(1L, "Uno", 2500, 51, "es"), 50));
+        assertFalse(LiveNowPresenter.enTop(ficha(1L, "Uno", 2500, 26, "es"), 25));
+    }
+
     // ----- EstadoVivo inyectado, no el singleton global (DEUDA, fila 125) -----------------
 
     @Test void usaElEstadoVivoInyectadoNoElSingletonGlobal() {
@@ -304,5 +500,133 @@ class LiveNowPresenterTest {
         p.refrescar(false);
         assertNotNull(propio.partida(9901L), "se guardó en el EstadoVivo inyectado");
         assertNull(EstadoVivo.SISTEMA.partida(9901L), "y no en el singleton global de la app");
+    }
+
+    // ----- el top de Live now sale del socket con la pestaña cerrada (plan API de la 1.3) -----
+
+    /** Presentador con reloj falso para la gracia del socket. */
+    LiveNowPresenter conReloj(RelojFalso reloj, EstadoVivo vivo, java.util.Set<Long> extra) {
+        return new LiveNowPresenter(buscador, extra, Tareas.EN_LINEA, pantalla, vivo, reloj);
+    }
+
+    @Test void socket_cerradaMenosDeCincoMinutos_siguenLosIdsYReabrirNoResincroniza() {
+        RelojFalso reloj = new RelojFalso();
+        java.util.Set<Long> extra = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), extra);
+        pantalla.fuente = List.<Object[]>of(ficha(701L, "Uno", 1500, 10, "es"), ficha(702L, "Dos", 1400, 20, "es"));
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        assertEquals(java.util.Set.of(701L, 702L), p.idsSocket());
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS - 1);
+        p.soltarSiToca();   // el Timer, si llegara antes de tiempo: no suelta nada
+        assertEquals(java.util.Set.of(701L, 702L), p.idsSocket(), "dentro de la gracia, el top sigue en el socket");
+        p.alAbrir();
+        assertEquals(sincronizadas, pantalla.sincronizarSocketVeces, "reabrir dentro de la gracia no reconecta el socket");
+        reloj.avanzar(60 * 60_000L);
+        assertTrue(p.topSuscrito(), "abierta, el top sigue suscrito aunque pase el tiempo");
+    }
+
+    @Test void socket_pasadaLaGracia_sueltaElTopMenosLasCampanasYVuelveAlReabrir() {
+        RelojFalso reloj = new RelojFalso();
+        java.util.Set<Long> extra = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), extra);
+        pantalla.fuente = List.<Object[]>of(ficha(711L, "Uno", 1500, 10, "es"), ficha(712L, "Dos", 1400, 20, "es"));
+        pantalla.conCampana.add(712L);   // 712 está además en una vista con campana
+        extra.add(713L); pantalla.conCampana.add(713L);   // y 713 solo por la campana
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS);
+        p.soltarSiToca();
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces, "el socket se resincroniza sin el top");
+        assertEquals(java.util.Set.of(712L, 713L), p.idsSocket(), "las campanas se quedan; el resto del top sale");
+        assertFalse(p.topSuscrito());
+        p.soltarSiToca();   // un segundo aviso no vuelve a resincronizar
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces);
+        p.alAbrir();
+        assertEquals(sincronizadas + 2, pantalla.sincronizarSocketVeces, "al reabrir, el top vuelve al socket");
+        assertEquals(java.util.Set.of(711L, 712L, 713L), p.idsSocket());
+    }
+
+    @Test void socket_graciaVencidaSinQueLlegueElTimer_reabrirTambienResincroniza() {
+        RelojFalso reloj = new RelojFalso();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(721L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS + 1);
+        assertTrue(p.idsSocket().isEmpty(), "vencida la gracia, el socket ya no lo pide aunque el Timer no haya pasado");
+        p.alAbrir();
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces);
+        assertEquals(java.util.Set.of(721L), p.idsSocket());
+    }
+
+    /**
+     * Lo que el barrido de reapertura debe reparar: con la pestaña cerrada y el top fuera del socket, nadie avisa del
+     * final de su partida. EstadoVivo lo sigue dando por vivo en ella (el socket lo marcó al confirmarla, como hace
+     * EnlaceVivo), y el barrido conserva lo que EstadoVivo da por vivo (F2): sin olvidar «en curso» al soltar, la partida
+     * vieja taparía la nueva al volver.
+     */
+    @Test void socket_trasSoltarElTop_elBarridoDeReaperturaNoConservaLaPartidaVieja() {
+        RelojFalso reloj = new RelojFalso();
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = conReloj(reloj, vivo, java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(731L, "Uno", 1500, 10, "es"));
+        Match vieja = matchEnCurso(97310L, 731L);
+        buscador.resultado = List.of(vieja);
+        p.refrescar(false);
+        vivo.marcarJugando(731L, vieja.id);   // el socket la confirmó (EnlaceVivo.confirmarEventoSocket)
+        assertEquals(vieja, p.enCursoSnapshot().get(731L));
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS);
+        p.soltarSiToca();
+        // con la pestaña cerrada, la vieja termina (hace más de 2 h: el barrido ya no la trae) y empieza otra
+        Match nueva = matchEnCurso(97311L, 731L);
+        buscador.resultado = List.of(nueva);
+        p.alAbrir();
+        p.refrescar(false);   // lo que hace LiveNowView.alAbrirDespues
+        assertEquals(nueva, p.enCursoSnapshot().get(731L), "la foto del barrido manda: la vieja no tapa la nueva");
+    }
+
+    /** Revisión C1: una confirmación del socket que llega tras soltar (lanzada antes) no deja una partida rancia. */
+    @Test void socket_trasSoltar_unaConfirmacionTardiaNoVuelveAMeterLaPartida() {
+        RelojFalso reloj = new RelojFalso();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(741L, "Uno", 1500, 10, "es"), ficha(742L, "Dos", 1400, 20, "es"));
+        p.refrescar(false);
+        Match enJuego = matchEnCurso(97420L, 742L);
+        p.liveEvento(742L, enJuego, false);
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS);
+        p.soltarSiToca();
+        p.liveEvento(741L, matchEnCurso(97410L, 741L), false);   // «socket-confirmar» que llega tarde
+        assertFalse(p.enCursoSnapshot().containsKey(741L), "suelto el top, nadie avisaría de su final: no entra");
+        p.liveEvento(742L, matchTerminado(97421L, 742L), true);   // un final sí se apunta
+        assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 97421L));
+        p.alAbrir();
+        Match otra = matchEnCurso(97411L, 741L);
+        p.liveEvento(741L, otra, false);   // de vuelta en el socket, los eventos vuelven a contar
+        assertEquals(otra, p.enCursoSnapshot().get(741L));
+    }
+
+    /** Revisión C3: si el Timer avisa antes de tiempo según la hora de pared, dice cuánto falta en vez de abandonar. */
+    @Test void socket_avisoAntesDeTiempo_devuelveLoQueFaltaYNoSuelta() {
+        RelojFalso reloj = new RelojFalso();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(751L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        assertEquals(0, p.soltarSiToca(), "abierta: nada que volver a mirar");
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS - 1_000);
+        assertEquals(1_000, p.soltarSiToca(), "falta un segundo: el Timer se vuelve a armar con eso");
+        assertTrue(p.topSuscrito());
+        assertEquals(sincronizadas, pantalla.sincronizarSocketVeces);
+        reloj.avanzar(1_000);
+        assertEquals(0, p.soltarSiToca());
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces, "ahora sí se suelta");
+        assertEquals(0, p.soltarSiToca(), "y ya suelto, no hay nada más que mirar");
     }
 }

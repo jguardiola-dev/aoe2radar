@@ -1,6 +1,5 @@
 package dev.tirador.aoe2radar.app;
 
-import dev.tirador.aoe2radar.SpoilerFreeRecs;
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Transporte;
@@ -25,7 +24,6 @@ import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import javax.swing.SwingUtilities;
-import java.awt.Frame;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -110,15 +108,20 @@ public class Servicios {
     static void avisarPausa429(long seg) {
         SwingUtilities.invokeLater(() -> avisoPausa429.accept(seg));
     }
+    /** Camino hacia la barra de estado para el mensaje de control.json (arreglo F10 de la revisión 1.3): la ventana
+     *  lo fija en el EDT al construirse (CableadoCromo.configurarVentana), como avisoPausa429. Recibe el texto y lo
+     *  que hay que hacer cuando ya se ha enseñado (marcarlo como visto). Sin ventana, no se enseña ni se marca. */
+    public static volatile java.util.function.BiConsumer<String, Runnable> avisoControl = (txt, alMostrarse) -> {};
+
     /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
-     *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pintar en Swing. */
+     *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pasar el mensaje
+     *  a la ventana. Se marca visto solo cuando la barra lo ha enseñado con la ventana a la vista (F10), y en un
+     *  hilo aparte: el disco, fuera del EDT. Mientras no se enseñe, la recarga de cada hora lo vuelve a traer. */
     public static void cargarControl() {
-        String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""), txt -> guardarConfig("control_msg_visto", txt));
-        if (msg != null) {
-            SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
-            final SpoilerFreeRecs appF = app;
-            if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(msg));
-        }
+        String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""));
+        if (msg != null)
+            SwingUtilities.invokeLater(() -> avisoControl.accept(msg,
+                    () -> new Thread(() -> guardarConfig("control_msg_visto", msg), "control-visto").start()));
     }
     /** Transporte con el timeout de 20 s de control.json (distinto del normal, ya en la 1.1). El de la comprobación
      *  de versión reutiliza TRANSPORTE (mismo timeout que httpText). Cableado junto al propio ControlService, no al
@@ -132,12 +135,14 @@ public class Servicios {
     public static final ControlService CONTROL_SERVICE = new ControlService(TRANSPORTE_CONTROL, TRANSPORTE);
     /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
     public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
-    /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
-    public static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
+    /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto.
+     *  Con la caché por URL (1.3): fichas /profiles 10 min y páginas del ladder 14 min; lo que debe ser de ahora (ELO 1v1,
+     *  hover, recarga forzada del top) va por perfilFresco/clasificacionFresca. /matches, búsqueda y Twitch, nunca. */
+    public static final CompanionApi COMPANION = CompanionApi.conCache(API_CLIENTE, Reloj.SISTEMA);
     /** Las reglas del directo que necesitan la API (ver service.LiveService). */
     public static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);
     /** Los tops de la watchlist: red, decisión y disco de cargarTopLadder/cargarTopClan/vigilarTop (ver service.TopLadderService). */
-    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
+    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
     public static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
             new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
@@ -150,7 +155,7 @@ public class Servicios {
      *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
     public static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
     /** El barrido de Twitch y sus miniaturas (ver service.TwitchService); usa dormir() entre las llamadas una a una. */
-    public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms));
+    public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms), pid -> VIVO.jugando(pid), Reloj.SISTEMA);
 
     public static void dormir(long ms) {
         long fin = System.currentTimeMillis() + ms;

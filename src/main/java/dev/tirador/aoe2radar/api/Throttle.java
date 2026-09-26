@@ -1,7 +1,7 @@
 package dev.tirador.aoe2radar.api;
 
 /**
- * Freno de cortesía con la API del companion (CLAUDE.md): cubo de fichas (ráfaga de 5, luego 1 por segundo) y
+ * Freno de cortesía con la API del companion (docs/ARQUITECTURA.md, «Reglas de desarrollo»): cubo de fichas (ráfaga de 5, luego 1 por segundo) y
  * cortacircuitos ante 429 (pausa global que se dobla si se repite). Toda llamada al companion pasa por aquí.
  */
 public interface Throttle {

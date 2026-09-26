@@ -16,6 +16,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static dev.tirador.aoe2radar.util.Config.guardarConfig;
+import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -68,6 +70,11 @@ class MenuConfiguracionTest {
         @Override public void mostrarMiPerfil() { mostrarMiPerfilVeces++; }
         @Override public void cambiarCuentaPropia() { cambiarCuentaPropiaVeces++; }
         @Override public void mostrarAcercaDe() { mostrarAcercaDeVeces++; }
+        java.util.List<String> grupos = java.util.List.of("Amigos");
+        java.util.List<String> clanes = java.util.List.of();
+        @Override public java.util.List<String> gruposWatchlist() { return grupos; }
+        @Override public java.util.List<String> clanesGuardados() { return clanes; }
+        @Override public java.util.List<dev.tirador.aoe2radar.model.PaisItem> paises() { return java.util.List.of(new dev.tirador.aoe2radar.model.PaisItem("España", "es")); }
     }
 
     private static MenuConfiguracion nuevo(AnfitrionFalso anfitrion) throws Exception {
@@ -102,14 +109,14 @@ class MenuConfiguracionTest {
         return null;
     }
 
-    @Test void elMenuTieneLosDiecisieteItemsDeNivelSuperiorEnOrden() throws Exception {
+    @Test void elMenuTieneLosDieciochoItemsDeNivelSuperiorEnOrden() throws Exception {
         MenuConfiguracion mc = nuevo(new AnfitrionFalso());
         SwingUtilities.invokeAndWait(() -> {
             JPopupMenu menu = mc.menu();
-            assertEquals(17, menu.getComponentCount());
+            assertEquals(18, menu.getComponentCount());
             String[] textosEsperados = {
                     "Idioma", "Tema", "Letra", null /*separador*/,
-                    "Buscar al abrir", "Ejecutar al iniciar Windows", "Iniciar minimizada",
+                    "Abrir en", "Buscar al abrir", "Ejecutar al iniciar Windows", "Iniciar minimizada",
                     "Mostrar ELO en la Watchlist", "Enviar al juego al descargar",
                     "Usar CaptureAge", "Cambiar ruta de CaptureAge…", "Vigilancia de vivos",
                     "Top ladder", "Cambiar carpeta savegame…", null /*separador*/,
@@ -134,6 +141,24 @@ class MenuConfiguracionTest {
             assertFalse(item.isSelected());
             assertFalse(anfitrion.fijarMostrarEloWatchLlamadoCon, "debe avisar al Anfitrion del nuevo valor");
             assertEquals(1, anfitrion.repintarListaJugadoresVeces);
+        });
+    }
+
+    /** «Abrir en» (1.3): sin la clave, ★ Top ladder, como siempre; ahí «Buscar al abrir» no aplica y se ve apagado,
+     *  con un tooltip que lo explica. Con los clanes guardados vacíos, no se puede elegir «★ Top clan». */
+    @Test void abrirEn_porDefectoTopLadderYBuscarAlAbrirApagado() throws Exception {
+        java.nio.file.Files.deleteIfExists(dev.tirador.aoe2radar.util.Config.CONFIG_FILE);
+        AnfitrionFalso anfitrion = new AnfitrionFalso();
+        MenuConfiguracion mc = nuevo(anfitrion);
+        SwingUtilities.invokeAndWait(() -> {
+            mc.refrescarAbrirEn();   // lo que hace el menú al abrirse
+            AbstractButton top = buscarEnMenu(mc.menu(), "★ Top ladder");
+            assertTrue(top.isSelected(), "sin «abrir_en», la app abre en ★ Top ladder");
+            AbstractButton buscar = buscarEnMenu(mc.menu(), "Buscar al abrir");
+            assertFalse(buscar.isEnabled(), "abriendo en ★ no se busca al abrir: el ítem no aplica");
+            assertTrue(buscar.getToolTipText().contains("Abrir en"), "y el tooltip dice por qué");
+            assertFalse(buscarEnMenu(mc.menu(), "★ Top clan…").isEnabled(), "sin clanes guardados no hay clan que elegir");
+            assertTrue(buscarEnMenu(mc.menu(), "Grupo…").isEnabled());
         });
     }
 
@@ -208,6 +233,21 @@ class MenuConfiguracionTest {
             miPerfil.doClick();
             assertEquals(1, anfitrion.mostrarMiPerfilVeces);
         });
+    }
+
+    @Test void cambiarDeCuentaNoBorraLaCuentaAntesDeConfirmarLaNueva() throws Exception {
+        // F16 (revisión 1.3): si el usuario cancela el diálogo del nick, la cuenta anterior sigue ahí.
+        String previo = leerConfig("mi_pid", "");
+        try {
+            guardarConfig("mi_pid", "777");
+            AnfitrionFalso anfitrion = new AnfitrionFalso();
+            MenuConfiguracion mc = nuevo(anfitrion);
+            SwingUtilities.invokeAndWait(mc::cambiarDeCuenta);
+            assertEquals(1, anfitrion.cambiarCuentaPropiaVeces, "pide el nick nuevo");
+            assertEquals("777", leerConfig("mi_pid", ""), "la cuenta se cambia al elegir la nueva, no antes");
+        } finally {
+            guardarConfig("mi_pid", previo);
+        }
     }
 
     @Test void comprobarActualizacionAutomaticaAvisaAlAnfitrionSiHayVersionNueva() throws Exception {

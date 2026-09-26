@@ -1,11 +1,13 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuenteLadder;
+import dev.tirador.aoe2radar.api.FuentePartidas;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.util.Archivos;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import java.nio.charset.StandardCharsets;
@@ -46,13 +48,14 @@ public final class TopLadderService {
     /** Cuánto vale un top ya cargado antes de volver a pedirlo (cargarTopLadder, 1.1). */
     public static final long DIEZ_MINUTOS_MS = 10 * 60_000L;
 
-    private final CompanionApi api;
+    private final FuentePartidas fuente;   // partidas de los del top (vigilarTop)
+    private final FuenteLadder ladder;     // la clasificación (cargarTop)
     private final Reloj reloj;
     private final LongConsumer pausa;
     private final long pausaMs;
 
-    public TopLadderService(CompanionApi api, Reloj reloj, LongConsumer pausa, long pausaMs) {
-        this.api = api; this.reloj = reloj; this.pausa = pausa; this.pausaMs = pausaMs;
+    public TopLadderService(FuentePartidas fuente, FuenteLadder ladder, Reloj reloj, LongConsumer pausa, long pausaMs) {
+        this.fuente = fuente; this.ladder = ladder; this.reloj = reloj; this.pausa = pausa; this.pausaMs = pausaMs;
     }
 
     // ===================== cargarTopLadder =====================
@@ -73,7 +76,9 @@ public final class TopLadderService {
 
     /**
      * Como cargarTopLadder: prueba rm_1v1 y, si no trae nada, el ladder de equipos (id "3"), hasta topN filas. Aprende
-     * país y canal de paso (cache.Paises/Canales), como la 1.1. Va a la red.
+     * país y canal de paso (cache.Paises/Canales), como la 1.1. Va a la red, SIEMPRE de ahora (clasificacionFresca, sin
+     * la caché por URL): el top enseña el ELO de ahora y se sella como recién cargado; lo que evita repetir llamadas es
+     * su propia memoria de 10 min (topFresco), no la caché (revisión del lote API de la 1.3, B1).
      */
     public ResultadoTop cargarTop(String pais, int topN) {
         avisarSiUi("TopLadderService.cargarTop");
@@ -83,7 +88,7 @@ public final class TopLadderService {
         Map<Long, Integer> partidas = new HashMap<>();
         for (String id : new String[]{ "rm_1v1", "3" }) {
             try {
-                for (FilaClasificacion f : api.clasificacion(id, 1, 100, pais).filas()) {
+                for (FilaClasificacion f : ladder.clasificacionFresca(id, 1, 100, pais).filas()) {
                     long pid = f.pid();
                     int rating = f.rating() != null ? f.rating() : -1;
                     String name = String.valueOf(f.nombre());
@@ -117,11 +122,13 @@ public final class TopLadderService {
     /** Formato «firma|topCargado» en la primera línea y «pid;nombre;elo;lastTop» en las demás, con el Path inyectado. */
     public void guardarCache(Path cache, String firma, long cargadoMs, List<FilaCache> filas) {
         try {
-            List<String> lines = new ArrayList<>();
-            lines.add(firma + "|" + cargadoMs);
+            // escritura atómica (util.Archivos): un cierre a mitad no deja un top_cache.txt truncado; mismo contenido
+            // que el Files.write de antes (cada línea con el fin de línea del sistema)
+            StringBuilder b = new StringBuilder();
+            b.append(firma).append('|').append(cargadoMs).append(System.lineSeparator());
             for (FilaCache f : filas)
-                lines.add(f.pid() + ";" + f.nombre() + ";" + f.elo() + ";" + f.ultimaPartidaMs());
-            Files.write(cache, lines, StandardCharsets.UTF_8);
+                b.append(f.pid()).append(';').append(f.nombre()).append(';').append(f.elo()).append(';').append(f.ultimaPartidaMs()).append(System.lineSeparator());
+            Archivos.escribirAtomico(cache, b.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ex) {
             log("top cache: no se pudo guardar: " + causa(ex));
         }
@@ -201,7 +208,7 @@ public final class TopLadderService {
                 csv.append(p.id());
             }
             try {
-                Iterable<Match> leidas = api.partidas(csv.toString(), 1, 100);
+                Iterable<Match> leidas = fuente.partidas(csv.toString(), 1, 100);
                 int nPart = 0, nCurso = 0; Instant masAntigua = null;
                 for (Match m : leidas) {
                     if (m == null) continue;
@@ -228,7 +235,7 @@ public final class TopLadderService {
             if (stopOperacion) break;
             if (!jugando.test(p.id()) || resultado.containsKey(p.id()) || !verificados.contains(p.id())) continue;
             try {
-                Iterable<Match> leidas = api.partidas(p.id(), 1, 3);
+                Iterable<Match> leidas = fuente.partidas(p.id(), 1, 3);
                 Match ultima = null;
                 for (Match m : leidas) { if (m != null) { ultima = m; break; } }
                 if (ultima != null && enCursoReal(ultima, Instant.ofEpochMilli(reloj.ahoraMs()))) {

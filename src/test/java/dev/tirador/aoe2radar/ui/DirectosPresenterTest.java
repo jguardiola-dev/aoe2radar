@@ -2,6 +2,7 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.TwitchService;
+import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -31,6 +32,11 @@ class DirectosPresenterTest {
         List<String> loginsPedidos = new ArrayList<>();
         Runnable alBarrer;   // para simular reentrada desde dentro de barrer()
 
+        List<Player> ultimosOtros;
+        @Override public Resultado barrer(List<Player> visibles, List<Player> otrosVigilados) {
+            ultimosOtros = otrosVigilados;
+            return barrer(visibles);
+        }
         @Override public Resultado barrer(List<Player> visibles) {
             barrerLlamadas++;
             ultimosVisibles = visibles;
@@ -61,6 +67,8 @@ class DirectosPresenterTest {
         @Override public void estado(String texto) { orden.add("estado"); estado = texto; }
         @Override public void repintarLista() { orden.add("repintarLista"); repintarVeces++; }
         @Override public boolean seleccionada() { return seleccionada; }
+        boolean minimizada;
+        @Override public boolean minimizada() { return minimizada; }
         @Override public void miniaturaLista(String login, TwitchService.Miniatura miniatura, long enMs) {
             miniaturasListas.put(login, miniatura);
             ordenMiniaturas.add(login);
@@ -108,6 +116,15 @@ class DirectosPresenterTest {
         List<Player> lista = List.of(new Player(1L, "Uno", ""), new Player(2L, "Dos", ""));
         presenter.vigilarTwitch(visibles(lista));
         assertSame(lista, servicio.ultimosVisibles);
+    }
+
+    /** Revisión 1.3, F10: los demás vigilados (otros grupos, fuente de Live now) llegan también al servicio. */
+    @Test void pasa_tambien_los_otros_vigilados_al_servicio() {
+        List<Player> lista = List.of(new Player(1L, "Uno", ""));
+        List<Player> otros = List.of(new Player(9L, "DelTop", ""));
+        presenter.vigilarTwitch(visibles(lista), () -> otros);
+        assertSame(lista, servicio.ultimosVisibles);
+        assertSame(otros, servicio.ultimosOtros);
     }
 
     @Test void los_visibles_se_leen_solo_si_pasan_las_guardas() {
@@ -204,5 +221,45 @@ class DirectosPresenterTest {
         presenter.cargarMiniaturas(List.of("con-foto", "sin-foto"));
         assertEquals(List.of("con-foto"), pantalla.ordenMiniaturas);
         assertSame(m1, pantalla.miniaturasListas.get("con-foto"));
+    }
+
+    // ----- ritmo del plan API de la 1.3: minimizada, dentro y fuera de Directos ----------------
+
+    final RelojFalso reloj = new RelojFalso();
+    final DirectosPresenter conReloj = new DirectosPresenter(servicio, twitchLive, Tareas.EN_LINEA, pantalla, reloj);
+
+    @Test void minimizada_no_barre_ni_gasta_el_ritmo_y_al_restaurar_barre_en_el_acto() {
+        pantalla.minimizada = true;
+        conReloj.vigilarTwitch(visibles(List.of()));
+        conReloj.reiniciarThrottle();
+        conReloj.vigilarTwitch(visibles(List.of()));   // ni forzado: minimizada nadie lo ve
+        assertEquals(0, servicio.barrerLlamadas);
+        pantalla.minimizada = false;
+        conReloj.vigilarTwitch(visibles(List.of()));   // el primer tick tras restaurar
+        assertEquals(1, servicio.barrerLlamadas);
+    }
+
+    @Test void fuera_de_directos_barre_como_mucho_cada_seis_minutos() {
+        pantalla.seleccionada = false;
+        conReloj.vigilarTwitch(visibles(List.of()));
+        reloj.avanzar(DirectosPresenter.RITMO_EN_DIRECTOS_MS);
+        conReloj.vigilarTwitch(visibles(List.of()));   // 170 s: fuera de Directos, aún no
+        reloj.avanzar(DirectosPresenter.RITMO_FUERA_MS - DirectosPresenter.RITMO_EN_DIRECTOS_MS - 1);
+        conReloj.vigilarTwitch(visibles(List.of()));   // 6 min menos 1 ms: tampoco
+        assertEquals(1, servicio.barrerLlamadas);
+        reloj.avanzar(1);
+        conReloj.vigilarTwitch(visibles(List.of()));
+        assertEquals(2, servicio.barrerLlamadas);
+    }
+
+    @Test void en_directos_sigue_el_ritmo_de_170_segundos() {
+        pantalla.seleccionada = true;
+        conReloj.vigilarTwitch(visibles(List.of()));
+        reloj.avanzar(DirectosPresenter.RITMO_EN_DIRECTOS_MS - 1);
+        conReloj.vigilarTwitch(visibles(List.of()));
+        assertEquals(1, servicio.barrerLlamadas);
+        reloj.avanzar(1);
+        conReloj.vigilarTwitch(visibles(List.of()));
+        assertEquals(2, servicio.barrerLlamadas);
     }
 }

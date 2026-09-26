@@ -93,13 +93,24 @@ public final class TechTreePresenter {
         this.enlaceCivStats = enlaceCivStats;
     }
 
-    /** «techtree-datos»: comprueba si hay catálogo nuevo y lo asegura; vuelve al EDT con el resultado. */
+    // F11 (1.3): la civ que hay que enseñar cuando llegue el catálogo; puede cambiar mientras se descarga.
+    private volatile String civPedidaDatos;
+
+    /** «techtree-datos»: comprueba si hay catálogo nuevo y lo asegura; vuelve al EDT con el resultado y la civ
+     *  pedida MÁS RECIENTE (la de esta llamada o la que llegó después por {@link #actualizarCivPedida}). */
     public void cargarDatos(String civPedida) {
+        civPedidaDatos = civPedida;
         tareas.enFondo("techtree-datos", () -> {
             tt.comprobarActualizacion();
             String err = tt.asegurarDatos();
-            tareas.enUi(() -> pantalla.datosListos(err, civPedida));
+            tareas.enUi(() -> pantalla.datosListos(err, civPedidaDatos));
         });
+    }
+
+    /** F11: con el catálogo aún bajando, se pidió otra civ (desde el perfil o Civ Stats): es la que se enseñará al
+     *  terminar. null no cambia nada (abrir la pestaña sin civ no borra la que ya se había pedido). */
+    public void actualizarCivPedida(String civ) {
+        if (civ != null) civPedidaDatos = civ;
     }
 
     /** «techtree-civ»: descarga (o coge de caché) el árbol de "civ"; si mientras tanto se pidió otra, no pinta. */
@@ -111,9 +122,17 @@ public final class TechTreePresenter {
             Map<String, Object> arbol;
             try { arbol = tt.arbol(civ); }
             catch (Exception ex) { tareas.enUi(() -> pantalla.errorArbol(civ, causa(ex))); return; }
-            // los iconos de esta civ, a memoria ANTES de pintar: el árbol sale entero de golpe
-            for (Object o : arr(arbol.get("units_techs"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")), px - 4); }
-            for (Object o : arr(arbol.get("buildings"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono("Building", lng(n.get("picture_index")), 26); }
+            // los iconos de esta civ, a memoria ANTES de pintar: el árbol sale entero de golpe. Los tamaños
+            // (celda-6 para el nodo/la celda del edificio en la rejilla, 34 fijo para la cabecera del edificio)
+            // son los MISMOS que pide el pintado (TechTreeView.ttPintarArbol): antes no coincidían (px-4 y 26)
+            // y la caché nunca acertaba (revisor, fila 145 de DEUDA).
+            for (Object o : arr(arbol.get("units_techs"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")), TechTreeView.ttTamanoIconoCelda(px)); }
+            for (Object o : arr(arbol.get("buildings"))) {
+                Map<String, Object> n = obj(o);
+                long pic = lng(n.get("picture_index"));
+                pantalla.precalentarIcono("Building", pic, TechTreeView.ttTamanoIconoCelda(px));   // icono en su celda de la rejilla
+                pantalla.precalentarIcono("Building", pic, TechTreeView.TT_ICONO_CABECERA_EDIFICIO);   // icono grande de la cabecera
+            }
             Map<String, Object> arbolListo = arbol;
             tareas.enUi(() -> { if (civ.equals(civEnCurso)) pantalla.arbolListo(civ, arbolListo); });   // ya se pidió otra civ: esta llegó tarde
         });

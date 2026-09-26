@@ -81,18 +81,22 @@ public final class PerfilesCompanion implements ProfileService {
 
     @Override public FichaPerfil fichaConocida(long pid) { return fichas.ultimo(pid); }
 
-    @Override public Integer elo1v1(long pid) {
+    @Override public void olvidarFicha(long pid) { fichas.caducar(pid); api.invalidarPerfil(pid); }
+
+    @Override public Integer elo1v1(long pid) { return elo1v1Leido(pid).elo(); }   // null si no tiene o si falla, como la 1.1
+
+    @Override public Elo1v1 elo1v1Leido(long pid) {
         avisarSiUi("ProfileService.elo1v1");
         try {   // la vía del perfil: la misma que usa el hover, probada
-            Perfil pf = api.perfil(pid);
+            Perfil pf = api.perfilFresco(pid);   // ELO actual: nunca de la caché por URL (tras una partida, EloSesion lo vuelve a pedir)
             aprenderCanal.accept(pid, pf.canal());
             for (Perfil.Ladder lb : pf.ladders()) {
                 String lid = String.valueOf(lb.id());
                 if (!"rm_1v1".equals(lid) && !"3".equals(lid)) continue;
-                if (lb.rating() != null) return lb.rating();
+                if (lb.rating() != null) return new Elo1v1(lb.rating(), false);
             }
-        } catch (Exception ignored) { }
-        return null;
+        } catch (Exception ignored) { return new Elo1v1(null, true); }   // sin log, como la 1.1; pero no es «no tiene» (F11)
+        return new Elo1v1(null, false);
     }
 
     // ----- Vinculadas y familias: estado de la sesión, sin caducidad (en la 1.1, mapas estáticos de CachePerfiles) -----
@@ -133,7 +137,7 @@ public final class PerfilesCompanion implements ProfileService {
     @Override public List<Perfil.Vinculada> vinculadasConElo(long pid) {
         List<Perfil.Vinculada> res = vinculadas(pid);
         vinculadasSesion.put(pid, res);   // antes que los ELO, como la 1.1: un repintado entretanto las ve sin ELO
-        for (Perfil.Vinculada x : res) { long vid = x.pid(); if (elosVinculadas.conocido(vid) == null || elosVinculadas.caducado(vid)) { long pedido = elosVinculadas.ahora(); elosVinculadas.apuntar(vid, elo1v1(vid), pedido); } }
+        for (Perfil.Vinculada x : res) { long vid = x.pid(); if (elosVinculadas.conocido(vid) == null || elosVinculadas.caducado(vid)) { long pedido = elosVinculadas.ahora(); Elo1v1 r = elo1v1Leido(vid); if (!r.fallo()) elosVinculadas.apuntar(vid, r.elo(), pedido); } }   // un fallo no se apunta como «sin ELO» (F11)
         return res;
     }
 

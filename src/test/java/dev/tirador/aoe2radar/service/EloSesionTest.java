@@ -33,6 +33,21 @@ class EloSesionTest {
         assertEquals(0, elo.conocido(1));
     }
 
+    /** Revisión 1.3, F11: un fallo de red no se apunta como «sin ELO»; la reserva se suelta y se puede volver a pedir. */
+    @Test void liberarSueltaLaReservaSinApuntarNada() {
+        assertTrue(elo.reservar(1));
+        elo.liberar(1);
+        assertNull(elo.conocido(1), "no se sabe: ni 0 ni nada");
+        assertTrue(elo.reservar(1), "la próxima vez se vuelve a pedir");
+    }
+
+    @Test void liberarConservaElQueYaHabia() {
+        elo.apuntar(1, 1900);
+        assertTrue(elo.reservar(1));
+        elo.liberar(1);
+        assertEquals(1900, elo.conocido(1), "si el nuevo no se pudo saber, se sigue mostrando el de antes");
+    }
+
     @Test void alTerminarUnaPartidaCaducaPeroNoAntesDeLaEspera() {
         elo.apuntar(1, 1900);
         reloj.ahora += 60_000;

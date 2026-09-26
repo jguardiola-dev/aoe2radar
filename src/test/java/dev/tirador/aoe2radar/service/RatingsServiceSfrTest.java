@@ -136,6 +136,20 @@ class RatingsServiceSfrTest {
         assertEquals(21, ratings.activosDias());
     }
 
+    /** activos_def de ladder.json: se lee tal cual (sfr-data publica 1 y 28); si falta, o falta un campo, queda el anterior. */
+    @Test void activosDefSeLeeDeLadderJsonYSiFaltaQuedaElDefecto() {
+        assertArrayEquals(new int[]{ 1, 28 }, Ladder.activosDef(Map.of("min_partidas", 1L, "dias", 28L), 10, 28));
+        assertArrayEquals(new int[]{ 5, 14 }, Ladder.activosDef(Map.of("min_partidas", 5L, "dias", 14L), 10, 28));
+        assertArrayEquals(new int[]{ 10, 28 }, Ladder.activosDef(null, 10, 28));
+        assertArrayEquals(new int[]{ 10, 21 }, Ladder.activosDef(Map.of("dias", 21L), 10, 28));
+    }
+
+    /** El criterio en palabras: con 1 partida no dice «1 o más partidas y una en los últimos…». */
+    @Test void criterioActivosEnUnaFrase() {
+        assertEquals("al menos una partida en ese ladder en los últimos 28 días", RatingsService.criterioActivos(1, 28));
+        assertEquals("10 o más partidas en ese ladder y una en los últimos 28 días", RatingsService.criterioActivos(10, 28));
+    }
+
     @Test void generadoDevuelveLaFechaDeLadder() {
         Ladder.ladderGenerado = "2026-09-25T03:00:00Z";
         assertEquals("2026-09-25T03:00:00Z", ratings.generado());

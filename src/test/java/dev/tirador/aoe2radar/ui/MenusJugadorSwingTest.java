@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * MenusJugadorSwing con Tareas.EN_LINEA (sin hilos reales) y dobles de EstadoVivo/EloSesion (instancias propias, no
  * el singleton SISTEMA), ProfileService, Navegacion y Acciones. Todo dentro de invokeAndWait: aunque construir un
- * JMenu no exige el EDT, es donde vive en la app real (ver CLAUDE.md, «hilo de la UI»).
+ * JMenu no exige el EDT, es donde vive en la app real (ver docs/ARQUITECTURA.md, «Reglas de desarrollo»: hilo de la interfaz).
  * <p>Cubre lo que se movió tal cual desde SpoilerFreeRecs en la tanda 3 (oleada A2): menú «en partida ahora» (o
  * null si no juega), el orden de fuentes de elo1v1Conocido y que itemJugadorPartida no lanza una segunda petición
  * mientras la primera sigue en vuelo.
@@ -43,11 +43,16 @@ class MenusJugadorSwingTest {
         FichaPerfil fichaConocida;
         Integer eloVinculada;
         Integer elo1v1Respuesta;
+        boolean elo1v1Falla;   // la petición del ELO no se pudo hacer (red, 429…): revisión 1.3, F11
         int llamadasElo1v1;
 
         @Override public FichaPerfil ficha(long pid) { return null; }
         @Override public FichaPerfil fichaConocida(long pid) { return fichaConocida; }
         @Override public Integer elo1v1(long pid) { llamadasElo1v1++; return elo1v1Respuesta; }
+        @Override public Elo1v1 elo1v1Leido(long pid) {
+            if (elo1v1Falla) { llamadasElo1v1++; return new Elo1v1(null, true); }
+            return new Elo1v1(elo1v1(pid), false);
+        }
         @Override public List<Perfil.Vinculada> vinculadas(long pid) { return List.of(); }
         @Override public List<Perfil.Vinculada> vinculadasConElo(long pid) { return List.of(); }
         @Override public List<Perfil.Vinculada> vinculadasConocidas(long pid) { return null; }
@@ -170,10 +175,13 @@ class MenusJugadorSwingTest {
         elo1v1.apuntar(1L, 1500);
         assertEquals(1500, menusSinLive.elo1v1Conocido(1L));
 
-        // 2) ELO_1V1 conocido pero 0 (se preguntó y no tenía): null, sin mirar las demás fuentes.
+        // 2) ELO_1V1 conocido pero 0 (se preguntó y el perfil no tenía): desde la 1.3 (F11) se siguen mirando las
+        //    demás fuentes; antes devolvía null sin mirarlas.
         servicio.eloVinculada = 999;
         elo1v1.apuntar(2L, null);   // apuntar(null) guarda 0
-        assertNull(menusSinLive.elo1v1Conocido(2L));
+        assertEquals(999, menusSinLive.elo1v1Conocido(2L));
+        servicio.eloVinculada = null;
+        assertNull(menusSinLive.elo1v1Conocido(2L), "con 0 y ninguna otra fuente: null");
 
         // 3) Sin ELO_1V1: la ficha de Live now (liveFicha) manda si trae un rating > 0.
         LongFunction<Object[]> liveFicha = pid -> pid == 3L ? new Object[]{ 3L, "Nombre", 1234 } : null;
@@ -210,6 +218,31 @@ class MenusJugadorSwingTest {
         enEdt(() -> menus.itemJugadorPartida(p));
 
         assertEquals(0, servicio.llamadasElo1v1, "no debe pedir el ELO otra vez mientras hay una petición reservada");
+    }
+
+    /** Revisión 1.3, F11: si la petición falla (red, 429), no se recuerda «sin ELO» para toda la sesión. */
+    @Test
+    void itemJugadorPartida_unFalloDeRedNoSeRecuerdaYSeVuelveAPedir() throws Exception {
+        RelojFalso reloj = new RelojFalso(); reloj.ahora = 1_700_000_000_000L;
+        EstadoVivo vivo = new EstadoVivo(reloj);
+        EloSesion elo1v1 = new EloSesion(vivo, reloj, EloSesion.ESPERA);
+        ProfileServiceFalso servicio = new ProfileServiceFalso();
+        servicio.elo1v1Falla = true;
+        MenusJugadorSwing menus = new MenusJugadorSwing(vivo, elo1v1, servicio, new NavegacionFalsa(),
+                pid -> null, Tareas.EN_LINEA, new AccionesFalsas());
+        MatchPlayer p = jugador(70L, "Zutano", 0);
+
+        enEdt(() -> menus.itemJugadorPartida(p));
+        assertEquals(1, servicio.llamadasElo1v1);
+        assertNull(elo1v1.conocido(70L), "un fallo no se apunta como 0");
+
+        servicio.elo1v1Falla = false; servicio.elo1v1Respuesta = 1650;   // el menú se abre otra vez, ya con red
+        AtomicReference<JMenuItem> item = new AtomicReference<>();
+        enEdt(() -> item.set(menus.itemJugadorPartida(p)));
+        enEdt(() -> { });
+        assertEquals(2, servicio.llamadasElo1v1, "se vuelve a pedir (la reserva quedó libre)");
+        assertEquals(1650, elo1v1.conocido(70L));
+        assertTrue(item.get().getText().contains("1650"));
     }
 
     @Test

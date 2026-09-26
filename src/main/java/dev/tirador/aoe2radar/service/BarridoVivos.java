@@ -1,6 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuentePartidas;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.util.Reloj;
@@ -35,13 +35,27 @@ public final class BarridoVivos {
 
     /** El resultado de refrescar a UN jugador: vivo (matchId o null), su ELO 1v1 (o null) y el resumen de su
      *  partida en curso (o null). juegosNocturno solo viene puesto cuando salió del snapshot de ayer (sin red). */
-    public record Refresco(long pid, Long vivo, String resumen, Integer elo, Integer juegosNocturno) { }
+    public record Refresco(long pid, Long vivo, String resumen, Integer elo, Integer juegosNocturno) {
+        /** ¿Este refresco miró de verdad si el jugador está en partida? Solo el que fue a la API. El del snapshot
+         *  nocturno (juegosNocturno puesto) no mira nada: su vivo null significa «sin dato», no «no juega», y quien
+         *  lo aplica no debe tocar el estado en vivo (F4 de la revisión 1.3: apagaba el punto que ya había puesto
+         *  el socket y apuntaba un fin de partida falso). */
+        public boolean sabeSiJuega() { return juegosNocturno == null; }
+    }
 
     /** La decisión de «Buscar partidas»: quién de `res` está vivo (pid→matchId, con su texto) y, de los seguidos
      *  consultados con éxito, quién no apareció vivo (por tanto, fuera). */
     public record DecisionBuscar(Map<Long, Long> vivos, Map<Long, String> infos, Set<Long> fuera) { }
 
-    private final CompanionApi api;
+    /** Jugadores por llamada en vigilarVivos (2 llamadas para 50 seguidos, 4 para 100). */
+    public static final int LOTE_VIVOS = 25;
+    /** Partidas que se piden por lote. Vivo F9 de la revisión 1.3: eran 50 para 25 jugadores (2 por cabeza): con
+     *  compañeros de lote muy activos, la partida larga en curso de uno podía quedar fuera de la página y
+     *  vigilarVivos lo daba por fuera. Con 100 (lo mismo que piden vigilarTop y Live now a /matches)
+     *  son 4 por cabeza, sin una llamada más. */
+    public static final int PARTIDAS_POR_LOTE = 100;
+
+    private final FuentePartidas api;
     private final Reloj reloj;
     private final BiFunction<Match, Long, String> resumen;
     private final Map<Long, int[]> eloAyer;
@@ -49,7 +63,7 @@ public final class BarridoVivos {
     private final long pausaMs;
     private final int porPagina;
 
-    public BarridoVivos(CompanionApi api, Reloj reloj, BiFunction<Match, Long, String> resumen, Map<Long, int[]> eloAyer,
+    public BarridoVivos(FuentePartidas api, Reloj reloj, BiFunction<Match, Long, String> resumen, Map<Long, int[]> eloAyer,
                         LongConsumer pausa, long pausaMs, int porPagina) {
         this.api = api; this.reloj = reloj; this.resumen = resumen; this.eloAyer = eloAyer;
         this.pausa = pausa; this.pausaMs = pausaMs; this.porPagina = porPagina;
@@ -58,7 +72,7 @@ public final class BarridoVivos {
     private Instant ahora() { return Instant.ofEpochMilli(reloj.ahoraMs()); }
 
     /**
-     * vigilarVivos: un lote (hasta 25 ids), una sola llamada a /matches con todos a la vez. De las partidas que
+     * vigilarVivos: un lote (hasta LOTE_VIVOS ids), una sola llamada a /matches con todos a la vez. De las partidas que
      * salen: las en curso de verdad marcan vivo a cada jugador del lote (la primera que se le encuentra); las
      * demás que ya están terminadas se devuelven aparte (para refrescar una fila EN DIRECTO de la tabla). Va a la
      * red.
@@ -68,7 +82,7 @@ public final class BarridoVivos {
         Set<Long> ids = new LinkedHashSet<>(idsLote);
         StringBuilder csv = new StringBuilder();
         for (Long id : idsLote) { if (csv.length() > 0) csv.append(','); csv.append(id); }
-        Iterable<Match> leidas = api.partidas(csv.toString(), 1, 50);
+        Iterable<Match> leidas = api.partidas(csv.toString(), 1, PARTIDAS_POR_LOTE);
         Map<Long, Long> vivos = new HashMap<>();
         Map<Long, String> infos = new HashMap<>();
         List<Match> terminadas = new ArrayList<>();

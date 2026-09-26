@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.tirador</groupId>
   <artifactId>aoe2radar</artifactId>
-  <version>1.2.0-SNAPSHOT</version>
+  <version>1.3.0</version>
   <packaging>jar</packaging>
   <name>aoe2radar</name>
 
@@ -75,7 +75,7 @@
     crear_exe.bat (el script de la 1.1 que hacía este empaquetado) no está en el repo ni en el histórico de
     Git; no ha aparecido en C:\proyectos, el Escritorio ni Documentos. Sus parámetros están deducidos del
     propio código:
-      - Nombre/versión/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE="aoe2radar", VERSION="1.1").
+      - Nombre/versión/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE y VERSION; el número de versión se fija allí).
       - Clase principal: dev.tirador.aoe2radar.SpoilerFreeRecs (la misma del manifest del jar).
       - Icono: AcercaDe.generarIco() documenta literalmente que
         "crear_exe.bat" generaba logo.ico así: java -cp build SpoilerFreeRecs, opción make-ico
@@ -89,8 +89,8 @@
     <profile>
       <id>empaquetar</id>
       <properties>
-        <!-- Sincronizar a mano con Identidad.VERSION hasta que la fase 4 automatice el release. -->
-        <jpackage.appVersion>1.2</jpackage.appVersion>
+        <!-- Se fija a mano: cambiarlo a la vez que util.Identidad.VERSION. -->
+        <jpackage.appVersion>1.3</jpackage.appVersion>
         <jpackage.vendor>12Tirador</jpackage.vendor>
         <jpackage.entrada>${project.build.directory}/jpackage-input</jpackage.entrada>
       </properties>
@@ -203,6 +203,50 @@
                     <argument>--java-options</argument>
                     <argument>-Dfile.encoding=UTF-8</argument>
                   </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- 5) maven-antrun-plugin: dos tareas que jpackage y crear_exe.bat no cubrían, en los dos extremos
+               del empaquetado. Antes (prepare-package, luego de copiar dependencias): borrar target/dist/aoe2radar
+               si quedó de un empaquetado anterior, porque jpackage (tipo app-image) se niega a escribir sobre un
+               destino que ya existe (fila 148 de DEUDA: sin esto, un segundo empaquetado seguido falla). Después
+               (package, TRAS empaquetar-jpackage: por eso este plugin va el último del perfil, y dentro de la
+               misma fase Maven respeta el orden de los plugins del pom): copiar las banderas también junto al
+               exe, como respaldo (la app ya las lee del jar si esa carpeta no está; ver service/Banderas). -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>borrar-dist-anterior</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <!-- Revisor: esto borra la carpeta ENTERA del empaquetado anterior (el .exe, el runtime propio
+                         de jlink y también las banderas que dejó copiar-banderas-al-empaquetado la vez pasada),
+                         no solo un archivo suelto; es justo lo que jpackage necesita encontrarse vacío/ausente. -->
+                    <delete dir="${project.build.directory}/dist/aoe2radar" quiet="true" />
+                  </target>
+                </configuration>
+              </execution>
+              <execution>
+                <id>copiar-banderas-al-empaquetado</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <copy todir="${project.build.directory}/dist/aoe2radar/banderas">
+                      <fileset dir="${project.basedir}/src/main/resources/banderas" />
+                    </copy>
+                  </target>
                 </configuration>
               </execution>
             </executions>

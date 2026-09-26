@@ -82,6 +82,43 @@ class ImagenesJuegoTest {
         assertNull(rutaBandera("no_existe_test"));
     }
 
+    // ----- bandera dentro del jar (el exe de jpackage no trae la carpeta banderas) -----
+
+    @Test void laBanderaVaDentroDelJar() throws IOException {
+        byte[] png = ImagenesJuego.bytesBanderaJar("zw");
+        assertNotNull(png, "la bandera va dentro del jar (src/main/resources/banderas)");
+        assertEquals((byte) 0x89, png[0], "es un png");
+        String url = ImagenesJuego.urlBanderaJar("zw");
+        assertNotNull(url);
+        assertTrue(url.endsWith("/banderas/zw.png"), url);
+    }
+
+    @Test void sinArchivoEnLaCarpetaSaleLaDelJar() throws IOException {
+        // «zzjartest» no existe en ningún sitio: basta para ver que, sin carpeta, se consulta el jar (null, sin fallo)
+        assertNull(ImagenesJuego.bytesBandera("zzjartest"));
+        // y una que sí está en el jar, aunque falte en la carpeta, llega igual por bytesBandera
+        Path enCarpeta = BANDERAS_DIR.resolve("zw.png");
+        byte[] respaldo = Files.exists(enCarpeta) ? Files.readAllBytes(enCarpeta) : null;
+        try {
+            Files.deleteIfExists(enCarpeta);
+            assertArrayEquals(ImagenesJuego.bytesBanderaJar("zw"), ImagenesJuego.bytesBandera("zw"));
+            assertEquals(ImagenesJuego.urlBanderaJar("zw"), ImagenesJuego.urlBandera("zw"));
+        } finally {
+            if (respaldo != null) Files.write(enCarpeta, respaldo);
+        }
+    }
+
+    @Test void laCarpetaGanaAlJar() throws IOException {
+        Path esperado = archivo(BANDERAS_DIR.resolve("carpetaganatest.png"));
+        assertEquals(esperado.toUri().toString(), ImagenesJuego.urlBandera("carpetaganatest"));
+        assertArrayEquals(Files.readAllBytes(esperado), ImagenesJuego.bytesBandera("carpetaganatest"));
+    }
+
+    @Test void banderaInexistenteEsNullEnLasDos() {
+        assertNull(ImagenesJuego.bytesBandera("no_existe_test"));
+        assertNull(ImagenesJuego.urlBandera("no_existe_test"));
+    }
+
     // ----- rutaIconoCiv / rutaMapa ---------------------------------------------------
 
     @Test void rutaIconoCivNoCompruebaExistencia() {

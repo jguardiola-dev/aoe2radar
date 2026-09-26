@@ -71,7 +71,7 @@ public final class SfrDataClient {
             String etag = etags.leer(nombre);
             DescargaSfr.Respuesta r = red.condicional(SFR_DATA + nombre, !etag.isEmpty() && Files.exists(local) ? etag : null, 60);
             if (r.estado() == 304) Files.setLastModifiedTime(local, FileTime.fromMillis(cache.reloj().ahoraMs()));
-            else if (r.estado() / 100 == 2) { Files.write(local, r.cuerpo()); if (r.etag() != null) etags.guardar(nombre, r.etag()); }
+            else if (r.estado() / 100 == 2) { Archivos.escribirAtomico(local, r.cuerpo()); if (r.etag() != null) etags.guardar(nombre, r.etag()); }   // atómica: una copia a medias tendría fecha reciente y se leería 6 h
             else if (!Files.exists(local)) throw new IOException("HTTP " + r.estado() + " (" + nombre + ")");
         }
         byte[] b = Files.readAllBytes(local);

@@ -1,4 +1,4 @@
-# verificar.ps1 — la comprobación de antes de cada commit (CLAUDE.md): compila y pasa los tests con el harness.
+# verificar.ps1 — la comprobación de antes de cada commit (docs/ARQUITECTURA.md, «Reglas de desarrollo»): compila y pasa los tests con el harness.
 # Uso:  .\verificar.ps1            compila + todos los tests (abre la app ~1 min: no toques el PC)
 #       .\verificar.ps1 -Rapido    compila y pasa todos los tests salvo el harness (sin pantalla).
 #                                   Sirve para iterar; NO vale antes de un commit (no pasa el harness).

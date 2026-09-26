@@ -8,6 +8,7 @@ import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.util.Json;
+import dev.tirador.aoe2radar.util.Reloj;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -27,16 +28,73 @@ import static dev.tirador.aoe2radar.util.Json.when;
 /**
  * Los endpoints del companion que usa la app, con su URL construida en un solo sitio (la misma que la 1.1 construía a
  * mano). Todos pasan por ApiClient (freno, cancelación); todos reintentan ante 429 (textoCon429) salvo buscarPerfiles
- * (texto). Devuelven tipos del modelo: los conversores son puros (no aprenden país/canal, salvo parseMatch, ver DEUDA)
+ * (texto). Construida con conCache(…), las fichas (/profiles/{pid}) y las páginas del ladder (/leaderboards) pasan
+ * antes por una caché por URL (CacheRespuestas: 10 y 14 min, 500 entradas, solo 2xx); /matches, la búsqueda y Twitch
+ * nunca: son tiempo real. La app la construye así desde la 1.3 (app.Servicios.COMPANION); el constructor de siempre,
+ * sin caché, queda para los tests.
+ * Devuelven tipos del modelo: los conversores son puros (no aprenden país/canal, salvo parseMatch, ver DEUDA)
  * y no inventan valores: lo que falta queda null (textos, Integer) o -1 (ids y contadores long); cada pantalla decide
  * lo suyo. Fuera de aquí solo lee JSON del companion el socket (LiveService).
  */
-public final class CompanionApi {
+public final class CompanionApi implements FuentePartidas, FuenteLadder {
     public static final String TWITCH_LIVE = "https://api.aoe2companion.com/twitch/live";
 
-    private final ApiClient api;
+    /** Cuánto vale una ficha /profiles/{pid} guardada: ELO, vinculadas y steamId no cambian en minutos. */
+    static final long TTL_PERFIL_MS = 10 * 60_000L;
+    /** Cuánto vale una página de /leaderboards: 14 min, uno menos que el ritmo de la recarga del top y de las campanas
+     *  (15 min). Con 15 justos, la campana podía leer a los 15 min su propia página de hace 15 (plan API de la 1.3). */
+    static final long TTL_LADDER_MS = 14 * 60_000L;
+    /** Máximo de respuestas guardadas (fichas y páginas del ladder juntas); al pasarlo sale la menos usada. */
+    static final int MAX_CACHE = 500;
 
-    public CompanionApi(ApiClient api) { this.api = api; }
+    private final ApiClient api;
+    private final CacheRespuestas cache;   // null: sin caché. Si no: /profiles/{pid} y /leaderboards/…, por URL, solo 2xx
+
+    /** SIN caché: cada lectura sale a la red, como hasta la 1.3 (hoy, solo los tests; la app usa conCache). */
+    public CompanionApi(ApiClient api) { this(api, (CacheRespuestas) null); }
+
+    private CompanionApi(ApiClient api, CacheRespuestas cache) { this.api = api; this.cache = cache; }
+
+    /**
+     * CON caché de fichas y páginas del ladder (10 y 14 min, MAX_CACHE entradas). Reloj: Reloj.SISTEMA en la app, uno
+     * falso en los tests. Quien pida datos que deben ser de ahora (el ELO 1v1, la tarjeta del hover, una recarga que
+     * pide el usuario) tiene que ir por perfilFresco / leaderboardFresca / clasificacionFresca. Un acierto respeta
+     * Detener (ApiClient.comprobarDetenida).
+     */
+    public static CompanionApi conCache(ApiClient api, Reloj reloj) {
+        return new CompanionApi(api, new CacheRespuestas(reloj, MAX_CACHE));
+    }
+
+    /**
+     * Json.parse(textoCon429(url)) pasando antes por la caché (si la hay): si url está y no ha caducado, no sale a la red
+     * (ni gasta ficha del freno). Cada lectura parsea de nuevo: quien llama recibe su propio objeto.
+     */
+    private Object jsonConCache(String url, long ttlMs) throws IOException, InterruptedException {
+        String guardado = cache == null ? null : cache.vigente(url);
+        if (guardado != null) { api.comprobarDetenida(); return Json.parse(guardado); }   // Detener también corta los aciertos
+        return jsonFresco(url, ttlMs);
+    }
+
+    /**
+     * Siempre a la red; lo que llegue sustituye lo guardado (para quien pide «forzar» o «actualizar»). Solo se guarda
+     * una respuesta 2xx que además se deja leer: un error (no 2xx, red) o un cuerpo ilegible salen como excepción, igual
+     * que sin caché, y no se guardan.
+     */
+    private Object jsonFresco(String url, long ttlMs) throws IOException, InterruptedException {
+        String cuerpo = api.textoCon429(url);
+        Object json = Json.parse(cuerpo);
+        if (cache != null) cache.poner(url, cuerpo, ttlMs);
+        return json;
+    }
+
+    /** Olvida la respuesta guardada de esta URL exacta (la de perfil(…) o leaderboard(…)); la siguiente irá a la red. */
+    public void invalidar(String url) { if (cache != null) cache.invalidar(url); }
+
+    /** Olvida la ficha guardada de pid (p. ej. tras «Actualizar hoy», para que el ELO de la ficha no sea el de antes). */
+    public void invalidarPerfil(long pid) { invalidar(urlPerfil(pid)); }
+
+    /** Lecturas que la caché ha ahorrado a la red desde el arranque. */
+    public long aciertosCache() { return cache == null ? 0 : cache.aciertos(); }
 
     /** GET /matches?profile_ids=…&page=…&per_page=… (ids: uno o varios separados por comas). Raíz del JSON (interno). */
     Object matches(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
@@ -49,7 +107,7 @@ public final class CompanionApi {
      * bucle la pide; si el bucle corta con break, las siguientes no se leen, igual que el bucle a mano de la 1.1.
      * Se recorre UNA sola vez: recorrerlo de nuevo volvería a leer (y a aprender) las partidas.
      */
-    public Iterable<Match> partidas(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
+    @Override public Iterable<Match> partidas(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
         List<Object> brutas = arr(val(obj(matches(ids, pagina, porPagina)), "matches"));
         return () -> new Iterator<>() {
             int i;
@@ -66,7 +124,7 @@ public final class CompanionApi {
     }
 
     /** Como partidas(String…) para un solo jugador. */
-    public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+    @Override public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
         return partidas(String.valueOf(pid), pagina, porPagina);
     }
 
@@ -88,7 +146,7 @@ public final class CompanionApi {
      * Una página de partidas de un jugador, convertida entera (para paginaciones que recorren la página completa y
      * deciden con «brutas» si es la última). Si el bucle puede cortar a media página, usar partidas(…), que es perezoso.
      */
-    public PaginaPartidas pagina(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
+    @Override public PaginaPartidas pagina(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
         return aPagina(matches(pid, pagina, porPagina));
     }
 
@@ -100,10 +158,17 @@ public final class CompanionApi {
         return new PaginaPartidas(List.copyOf(legibles), brutas.size());
     }
 
-    /** GET /profiles/{pid}, ya convertido (ver aPerfil). */
+    /** GET /profiles/{pid}, ya convertido (ver aPerfil). Si hay caché (conCache), 10 min (TTL_PERFIL_MS). */
     public Perfil perfil(long pid) throws IOException, InterruptedException {
-        return aPerfil(obj(Json.parse(api.textoCon429(Http.API + "/profiles/" + pid))));
+        return aPerfil(obj(jsonConCache(urlPerfil(pid), TTL_PERFIL_MS)));
     }
+
+    /** Como perfil(pid), pero siempre a la red (y renueva la caché): para lo que el usuario pide «forzar». */
+    public Perfil perfilFresco(long pid) throws IOException, InterruptedException {
+        return aPerfil(obj(jsonFresco(urlPerfil(pid), TTL_PERFIL_MS)));
+    }
+
+    static String urlPerfil(long pid) { return Http.API + "/profiles/" + pid; }
 
     /**
      * Conversión pura de /profiles/{pid}: sin filtrar ni aprender nada. Cada campo se lee con las mismas claves y la
@@ -156,15 +221,33 @@ public final class CompanionApi {
         return str(o);
     }
 
-    /** GET /leaderboards/{id}?page=…&per_page=… y, si pais no es null, &country=pais (también si es ""). */
+    /**
+     * GET /leaderboards/{id}?page=…&per_page=… y, si pais no es null, &country=pais (también si es ""). Si hay caché
+     * (conCache), 14 min (TTL_LADDER_MS) por URL completa: la misma página del mismo ladder y país, pedida por dos pantallas, sale
+     * una vez a la red. Cada llamada recibe su propio mapa (se guarda el texto, no el objeto).
+     */
     public Map<String, Object> leaderboard(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
-        return obj(Json.parse(api.textoCon429(Http.API + "/leaderboards/" + id + "?page=" + pagina + "&per_page=" + porPagina
-                + (pais != null ? "&country=" + pais : ""))));
+        return obj(jsonConCache(urlLeaderboard(id, pagina, porPagina, pais), TTL_LADDER_MS));
+    }
+
+    /** Como leaderboard(…), pero siempre a la red (y renueva la caché): para lo que el usuario pide «forzar». */
+    public Map<String, Object> leaderboardFresca(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
+        return obj(jsonFresco(urlLeaderboard(id, pagina, porPagina, pais), TTL_LADDER_MS));
+    }
+
+    static String urlLeaderboard(String id, int pagina, int porPagina, String pais) {
+        return Http.API + "/leaderboards/" + id + "?page=" + pagina + "&per_page=" + porPagina
+                + (pais != null ? "&country=" + pais : "");
     }
 
     /** Como leaderboard(…), ya convertida (ver aClasificacion). */
-    public Clasificacion clasificacion(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
+    @Override public Clasificacion clasificacion(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
         return aClasificacion(leaderboard(id, pagina, porPagina, pais));
+    }
+
+    /** Como leaderboardFresca(…), ya convertida: para la recarga del top que pide el usuario. */
+    @Override public Clasificacion clasificacionFresca(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
+        return aClasificacion(leaderboardFresca(id, pagina, porPagina, pais));
     }
 
     /**

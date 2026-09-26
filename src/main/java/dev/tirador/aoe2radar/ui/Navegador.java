@@ -113,7 +113,7 @@ public final class Navegador implements Navegacion {
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ladder");
         ratings.alAbrirAntes();
@@ -129,7 +129,7 @@ public final class Navegador implements Navegacion {
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "civstats");
         civStats.subirArriba();
@@ -148,7 +148,7 @@ public final class Navegador implements Navegacion {
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
         perfil.marcarAbierta();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "perfil");
         subirArriba(perfil.panel());
@@ -186,7 +186,7 @@ public final class Navegador implements Navegacion {
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
         ((CardLayout) centroCards.getLayout()).show(centroCards, "techtree");
         partidas.taparResultados(); watchlist.apagarForma();
         SwingUtilities.invokeLater(this::actualizarControlesTabla);
@@ -218,7 +218,7 @@ public final class Navegador implements Navegacion {
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
         if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
-        if (liveNow != null) liveNow.ahoraAbierta = false; if (ahoraBtn != null) ahoraBtn.setSelected(false);
+        if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
         if (splitPrincipal != null && ttDivisorPrevio >= 0) { SwingUtilities.invokeLater(() -> { if (watchlist.norteWatchRef != null) { watchlist.norteWatchRef.revalidate(); watchlist.norteWatchRef.repaint(); } }); splitPrincipal.setDividerLocation(ttDivisorPrevio); splitPrincipal.setOneTouchExpandable(false); ttDivisorPrevio = -1; }
         if (mostrar) { partidas.taparResultados(); watchlist.apagarForma(); }   // cambiar de pantalla apaga el modo consulta y la forma
         ((CardLayout) centroCards.getLayout()).show(centroCards, mostrar ? "directos" : "recs");
@@ -235,7 +235,7 @@ public final class Navegador implements Navegacion {
             case "civstats" -> abrirCivStats();
             case "ahora" -> abrirAhora();
             case "techtree" -> abrirTechTree(d.civ());
-            case "perfil" -> abrirPerfil(d.pid(), d.nombre());
+            case "perfil" -> { perfil.antesDeVolverPorHistorial(d.pid()); abrirPerfil(d.pid(), d.nombre()); }   // F10: pestaña cerrada → pestaña nueva
             default -> mostrarDirectos(false);
         }
     }

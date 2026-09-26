@@ -1,6 +1,8 @@
 package dev.tirador.aoe2radar.ui;
 
+import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.service.ControlService;
+import dev.tirador.aoe2radar.service.VistaInicial;
 
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
@@ -18,6 +20,8 @@ import java.awt.FlowLayout;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
 import static dev.tirador.aoe2radar.ui.TemaApp.TEMA_CLARO;
@@ -69,12 +73,21 @@ public final class MenuConfiguracion {
         void mostrarMiPerfil();
         void cambiarCuentaPropia();
         void mostrarAcercaDe();
+        /** «Abrir en»: los grupos del combo de la Watchlist (sin «Todos» ni las vistas ★). */
+        List<String> gruposWatchlist();
+        /** «Abrir en»: los clanes guardados en ★ Top clan (solo se puede abrir en uno de ellos). */
+        List<String> clanesGuardados();
+        /** «Abrir en»: todos los países, con su nombre en el idioma de la app. */
+        List<PaisItem> paises();
     }
 
     private final Anfitrion anfitrion;
     private final ControlService controlService;
     private final JPopupMenu menu;
     private final JPanel esquina;
+    // «Abrir en» (1.3): se rehacen al abrir el menú (refrescarAbrirEn), porque grupos y clanes cambian con la sesión
+    private final JRadioButtonMenuItem abrirTop, abrirPais, abrirClan, abrirGrupo, abrirTodos;
+    private final JCheckBoxMenuItem buscarAbrirItem;
 
     /** Construye el menú completo y la esquina «Mi perfil», en el mismo orden que antes en
      *  construirBarraSuperior (hoy CableadoCromo.construirBarraSuperior). {@code autoSgItem} es un campo YA
@@ -133,9 +146,39 @@ public final class MenuConfiguracion {
 
         JCheckBoxMenuItem buscarAbrirItem = new JCheckBoxMenuItem(t("Buscar al abrir", "Search on startup"),
                 Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")));
-        buscarAbrirItem.setToolTipText(t("Al abrir la app, busca partidas de tus seguidos automáticamente", "Search your watchlist automatically when the app opens"));
+        this.buscarAbrirItem = buscarAbrirItem;
         buscarAbrirItem.addActionListener(e ->
                 guardarConfig("buscar_al_abrir", String.valueOf(buscarAbrirItem.isSelected())));
+
+        // «Abrir en» (decisión de Jorge, 1.3): la vista de la Watchlist con la que abre la app; ver service.VistaInicial
+        JMenu abrirMenu = new JMenu(t("Abrir en", "Open in"));
+        abrirMenu.setToolTipText(t("La vista de la Watchlist con la que abre la app (por defecto, ★ Top ladder)",
+                "The Watchlist view the app opens in (★ Top ladder by default)"));
+        ButtonGroup gAbrir = new ButtonGroup();
+        abrirTop = new JRadioButtonMenuItem();
+        abrirPais = new JRadioButtonMenuItem();
+        abrirClan = new JRadioButtonMenuItem();
+        abrirGrupo = new JRadioButtonMenuItem();
+        abrirTodos = new JRadioButtonMenuItem();
+        abrirTop.addActionListener(e -> guardarAbrirEn(VistaInicial.Eleccion.TOP_LADDER));
+        abrirTodos.addActionListener(e -> guardarAbrirEn(VistaInicial.Eleccion.TODOS_LOS_GRUPOS));
+        abrirPais.addActionListener(e -> {
+            List<PaisItem> ps = anfitrion.paises();
+            PaisItem actual = null;
+            VistaInicial.Eleccion ahora = eleccionAbrirEn();
+            for (PaisItem pi : ps) if (ahora.tipo() == VistaInicial.Tipo.PAIS && pi.code().equals(ahora.valor())) actual = pi;
+            Object elegido = JOptionPane.showInputDialog(anfitrion.padre(), t("¿El top de qué país?", "Which country's top?"),
+                    t("Abrir en", "Open in"), JOptionPane.PLAIN_MESSAGE, null, ps.toArray(), actual);
+            if (elegido instanceof PaisItem pi) guardarAbrirEn(new VistaInicial.Eleccion(VistaInicial.Tipo.PAIS, pi.code()));
+            else refrescarAbrirEn();   // cancelado: la marca vuelve a lo guardado
+        });
+        abrirClan.addActionListener(e -> elegirYGuardar(VistaInicial.Tipo.CLAN, anfitrion.clanesGuardados(), t("¿Qué clan?", "Which clan?")));
+        abrirGrupo.addActionListener(e -> elegirYGuardar(VistaInicial.Tipo.GRUPO, anfitrion.gruposWatchlist(), t("¿Qué grupo?", "Which group?")));
+        for (JRadioButtonMenuItem it : new JRadioButtonMenuItem[]{ abrirTop, abrirPais, abrirClan, abrirGrupo, abrirTodos }) {
+            gAbrir.add(it);
+            abrirMenu.add(it);
+        }
+        pintarAbrirEn(VistaInicial.leer(leerConfig(VistaInicial.CLAVE, "top")), null, null, null);   // la ventana aún no tiene Watchlist: sin listas
 
         JCheckBoxMenuItem autoWinItem = new JCheckBoxMenuItem(t("Ejecutar al iniciar Windows", "Run at Windows startup"),
                 Boolean.parseBoolean(leerConfig("autoarranque", "false")));
@@ -203,6 +246,7 @@ public final class MenuConfiguracion {
             guardarConfig("elo_watchlist", String.valueOf(eloWatchItem.isSelected()));
             anfitrion.repintarListaJugadores();
         });
+        configMenu.add(abrirMenu);
         configMenu.add(buscarAbrirItem);
         configMenu.add(autoWinItem);
         configMenu.add(iniMinItem);
@@ -268,6 +312,11 @@ public final class MenuConfiguracion {
         configMenu.add(updItem);
         configMenu.add(aboutItem);
         configBtn.addActionListener(e -> configMenu.show(configBtn, 0, configBtn.getHeight()));
+        configMenu.addPopupMenuListener(new javax.swing.event.PopupMenuListener() {   // grupos y clanes de ahora mismo
+            @Override public void popupMenuWillBecomeVisible(javax.swing.event.PopupMenuEvent e) { refrescarAbrirEn(); }
+            @Override public void popupMenuWillBecomeInvisible(javax.swing.event.PopupMenuEvent e) { }
+            @Override public void popupMenuCanceled(javax.swing.event.PopupMenuEvent e) { }
+        });
         this.menu = configMenu;
 
         JPanel esquinaPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));   // Configuración: arriba a la derecha, siempre
@@ -280,13 +329,81 @@ public final class MenuConfiguracion {
             @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
             void menu(MouseEvent e) {
                 JPopupMenu pm = new JPopupMenu();
-                JMenuItem otra = new JMenuItem(t("Cambiar de cuenta…", "Change account…")); otra.addActionListener(a -> { guardarConfig("mi_pid", ""); anfitrion.cambiarCuentaPropia(); }); pm.add(otra);
+                JMenuItem otra = new JMenuItem(t("Cambiar de cuenta…", "Change account…")); otra.addActionListener(a -> cambiarDeCuenta()); pm.add(otra);
                 pm.show(miPerfilBtn, e.getX(), e.getY());
             }
         });
         esquinaPanel.add(miPerfilBtn);
         esquinaPanel.add(configBtn);
         this.esquina = esquinaPanel;
+    }
+
+    /** «Cambiar de cuenta…» (arreglo F16 de la revisión 1.3): solo pide el nick nuevo. La cuenta guardada se sustituye
+     *  cuando el usuario elige la nueva (MiPartidaPresenter.buscarMiNick → fijarIdentidad); si cancela o no la
+     *  encuentra, se queda la anterior. Antes se borraba mi_pid aquí, antes de preguntar. Paquete: lo prueba
+     *  MenuConfiguracionTest (el popup del clic derecho necesita pantalla). */
+    void cambiarDeCuenta() { anfitrion.cambiarCuentaPropia(); }
+
+    // ----- «Abrir en» -----
+
+    /** Lo guardado en «Abrir en», comprobado contra lo que existe hoy (si ya no existe, ★ Top ladder). */
+    private VistaInicial.Eleccion eleccionAbrirEn() {
+        List<String> codigos = new ArrayList<>();
+        for (PaisItem pi : anfitrion.paises()) codigos.add(pi.code());
+        return VistaInicial.resolver(VistaInicial.leer(leerConfig(VistaInicial.CLAVE, "top")), codigos,
+                anfitrion.clanesGuardados(), anfitrion.gruposWatchlist());
+    }
+
+    private void guardarAbrirEn(VistaInicial.Eleccion e) {
+        guardarConfig(VistaInicial.CLAVE, e.aConfig());
+        refrescarAbrirEn();
+    }
+
+    /** Clan o grupo: se elige de la lista (con el actual preseleccionado); cancelar deja lo que había. */
+    private void elegirYGuardar(VistaInicial.Tipo tipo, List<String> opciones, String pregunta) {
+        VistaInicial.Eleccion ahora = eleccionAbrirEn();
+        Object elegido = JOptionPane.showInputDialog(anfitrion.padre(), pregunta, t("Abrir en", "Open in"),
+                JOptionPane.PLAIN_MESSAGE, null, opciones.toArray(), ahora.tipo() == tipo ? ahora.valor() : null);
+        if (elegido instanceof String s) guardarAbrirEn(new VistaInicial.Eleccion(tipo, s));
+        else refrescarAbrirEn();
+    }
+
+    /** Pone «Abrir en» y «Buscar al abrir» como diga la config, con los grupos, clanes y países de ahora. */
+    void refrescarAbrirEn() {
+        pintarAbrirEn(eleccionAbrirEn(), anfitrion.paises(), anfitrion.clanesGuardados(), anfitrion.gruposWatchlist());
+    }
+
+    /** Listas null: aún no se conocen (al construir el menú, antes que la Watchlist): no se deshabilita nada. */
+    private void pintarAbrirEn(VistaInicial.Eleccion e, List<PaisItem> paises, List<String> clanes, List<String> grupos) {
+        String topPais = WatchlistView.textoTopPais(), topClan = WatchlistView.textoTopClan();
+        abrirTop.setText(WatchlistView.TOP_LADDER);
+        abrirPais.setText(topPais + (e.tipo() == VistaInicial.Tipo.PAIS ? ": " + nombrePais(paises, e.valor()) : "") + "…");
+        abrirClan.setText(topClan + (e.tipo() == VistaInicial.Tipo.CLAN ? ": " + e.valor() : "") + "…");
+        abrirGrupo.setText(t("Grupo", "Group") + (e.tipo() == VistaInicial.Tipo.GRUPO ? ": " + e.valor() : "") + "…");
+        abrirTodos.setText(t("Todos", "All"));
+        abrirClan.setEnabled(clanes == null || !clanes.isEmpty());
+        abrirClan.setToolTipText(clanes != null && clanes.isEmpty()
+                ? t("Guarda antes un clan en ★ Top clan («Guardar clan»)", "Save a clan first in ★ Clan top (“Save clan”)") : null);
+        abrirGrupo.setEnabled(grupos == null || !grupos.isEmpty());
+        JRadioButtonMenuItem marcado = switch (e.tipo()) {
+            case TOP -> abrirTop;
+            case PAIS -> abrirPais;
+            case CLAN -> abrirClan;
+            case GRUPO -> abrirGrupo;
+            case TODOS -> abrirTodos;
+        };
+        marcado.setSelected(true);
+        // «Buscar al abrir» solo tiene sentido si la app abre en tus seguidos (un grupo o «Todos»)
+        buscarAbrirItem.setEnabled(e.buscaAlAbrir());
+        buscarAbrirItem.setToolTipText(e.buscaAlAbrir()
+                ? t("Al abrir la app, busca partidas de tus seguidos automáticamente", "Search your watchlist automatically when the app opens")
+                : t("Solo se aplica si la app abre en un grupo o en «Todos» (Configuración → Abrir en): en los tops ★ no se busca al abrir.",
+                    "Only applies when the app opens in a group or in “All” (Settings → Open in): the ★ tops don't search on startup."));
+    }
+
+    private static String nombrePais(List<PaisItem> paises, String code) {
+        if (paises != null) for (PaisItem pi : paises) if (pi.code().equals(code)) return pi.nombre();
+        return code.toUpperCase(java.util.Locale.ROOT);
     }
 
     /** El popup del botón «Configuración ▾» (lo lee ComponentesTema para repintarlo al cambiar de tema). */

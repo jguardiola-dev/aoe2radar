@@ -1,5 +1,10 @@
 package dev.tirador.aoe2radar.service;
 
+import dev.tirador.aoe2radar.api.ApiClient;
+import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.Throttle;
+import dev.tirador.aoe2radar.api.Transporte;
+import dev.tirador.aoe2radar.model.Player;
 import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
@@ -9,6 +14,10 @@ import java.awt.Image;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.ArrayList;
+import java.util.List;
+
+import static dev.tirador.aoe2radar.cache.Canales.CANAL_DE;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -69,5 +78,89 @@ class TwitchServiceCompanionTest {
 
     @Test void decodificarYEscalar_con_bytes_invalidos_devuelve_null() {
         assertNull(TwitchServiceCompanion.decodificarYEscalar(new byte[]{ 1, 2, 3 }, 96, 54));
+    }
+
+    // ----- barrer con los demás vigilados (revisión 1.3, F10) ------------------------------
+
+    /** Responde el listado global a «?game=13389» y apunta las consultas de canal una a una («?channel=»). */
+    static final class TransporteTwitch implements Transporte {
+        final List<String> canalesPedidos = new ArrayList<>();
+        @Override public Respuesta get(String url) {
+            if (url.contains("?channel=")) { canalesPedidos.add(url); return new Respuesta(200, "[]"); }
+            return new Respuesta(200, "[{\"user_login\":\"canaltop\",\"user_name\":\"CanalTop\",\"title\":\"t\",\"language\":\"en\",\"viewer_count\":10,\"type\":\"live\"},"
+                    + "{\"user_login\":\"fulano\",\"user_name\":\"Fulano\",\"title\":\"t\",\"language\":\"es\",\"viewer_count\":5,\"type\":\"live\"}]");
+        }
+    }
+    static final class ThrottleSinFreno implements Throttle {
+        @Override public void adquirir(java.util.function.BooleanSupplier cancelar) { }
+        @Override public long registrar429() { return 0; }
+    }
+
+    @Test void barrer_cruzaALosOtrosVigiladosSoloPorSuCanalConocidoYSinLlamadasExtra() {
+        long conCanal = 7_000_001L, soloNick = 7_000_002L, canalApagado = 7_000_003L;
+        TransporteTwitch red = new TransporteTwitch();
+        TwitchServiceCompanion servicio = new TwitchServiceCompanion(new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false)), ms -> { });
+        CANAL_DE.put(conCanal, "CanalTop");       // el ladder ya nos dijo su canal
+        CANAL_DE.put(canalApagado, "canal_bajo"); // canal conocido, pero no está en el listado global
+        try {
+            TwitchService.Resultado r = servicio.barrer(List.of(), List.of(
+                    new Player(conCanal, "Otro", ""), new Player(soloNick, "Fulano", ""), new Player(canalApagado, "Lejano", "")));
+            assertFalse(r.fallo());
+            assertArrayEquals(new String[]{ "canaltop", "t", "10" }, r.enVivo().get(conCanal), "de la fuente de Live now, por su canal conocido: TW");
+            assertNull(r.enVivo().get(soloNick), "a los otros vigilados no se les adivina el canal por el nick");
+            assertNull(r.enVivo().get(canalApagado));
+            assertTrue(red.canalesPedidos.isEmpty(), "ni se consulta su canal uno a uno (el tope de 12 es para la lista visible)");
+        } finally {
+            CANAL_DE.remove(conCanal); CANAL_DE.remove(canalApagado);
+        }
+    }
+
+    // ----- consultas canal a canal: solo quien juega, y 10 min de memoria de «no emite» (plan API de la 1.3) -----
+
+    @Test void barrer_consultaUnoAUnoSoloAQuienJuegaYRecuerdaDiezMinutosQueNoEmite() {
+        long juega = 7_100_001L, noJuega = 7_100_002L;
+        TransporteTwitch red = new TransporteTwitch();   // a «?channel=» responde [] (no emite)
+        dev.tirador.aoe2radar.util.RelojFalso reloj = new dev.tirador.aoe2radar.util.RelojFalso();
+        java.util.Set<Long> jugando = new java.util.HashSet<>(java.util.Set.of(juega));
+        TwitchServiceCompanion servicio = new TwitchServiceCompanion(new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false)),
+                ms -> { }, jugando::contains, reloj);
+        CANAL_DE.put(juega, "canal_juega"); CANAL_DE.put(noJuega, "canal_nojuega");   // canales conocidos, fuera del top 20
+        List<Player> visibles = List.of(new Player(juega, "Juega", ""), new Player(noJuega, "NoJuega", ""));
+        try {
+            servicio.barrer(visibles);
+            assertEquals(1, red.canalesPedidos.size(), "solo se pregunta por el canal de quien está en partida");
+            assertTrue(red.canalesPedidos.get(0).endsWith("?channel=canal_juega"));
+            reloj.avanzar(TwitchServiceCompanion.SIN_DIRECTO_MS - 1);
+            servicio.barrer(visibles);
+            assertEquals(1, red.canalesPedidos.size(), "comprobado hace menos de 10 min y no emitía: no se repite");
+            reloj.avanzar(1);
+            servicio.barrer(visibles);
+            assertEquals(2, red.canalesPedidos.size(), "pasados 10 min, se vuelve a mirar");
+            jugando.add(noJuega);
+            servicio.barrer(visibles);
+            assertEquals(3, red.canalesPedidos.size(), "en cuanto el otro entra en partida, también se le pregunta");
+            assertTrue(red.canalesPedidos.get(2).endsWith("?channel=canal_nojuega"));
+        } finally {
+            CANAL_DE.remove(juega); CANAL_DE.remove(noJuega);
+        }
+    }
+
+    @Test void barrer_unFalloDeRedAlConsultarElCanalNoCuentaComoNoEmite() {
+        long juega = 7_100_011L;
+        List<String> pedidos = new ArrayList<>();
+        Transporte red = url -> {
+            if (url.contains("?channel=")) { pedidos.add(url); return new Transporte.Respuesta(500, "caído"); }
+            return new Transporte.Respuesta(200, "[]");
+        };
+        TwitchServiceCompanion servicio = new TwitchServiceCompanion(new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false)),
+                ms -> { }, pid -> true, new dev.tirador.aoe2radar.util.RelojFalso());
+        CANAL_DE.put(juega, "canal_caido");
+        try {
+            servicio.barrer(List.of(new Player(juega, "Juega", "")));
+            servicio.barrer(List.of(new Player(juega, "Juega", "")));
+            assertEquals(2, pedidos.size(), "sin respuesta no se sabe si emite: se vuelve a preguntar");
+        } finally {
+            CANAL_DE.remove(juega);
+        }
     }
 }

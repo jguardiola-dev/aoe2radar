@@ -47,7 +47,7 @@ public interface TechTreeService {
     /** Nombre legible de una clase de bonus (id de TT_CLASES), en el idioma de la app. Sin red. */
     String clase(int id);
 
-    /** Descarga un archivo relativo (bajo TT_RAW) a la carpeta de techtree. Va a la red. */
+    /** Trae un archivo relativo (bajo TT_RAW) a la carpeta de techtree: del jar si lo trae y sigue valiendo, si no de la red. Puede ir a la red. */
     void descargar(String rel) throws Exception;
 
     /**

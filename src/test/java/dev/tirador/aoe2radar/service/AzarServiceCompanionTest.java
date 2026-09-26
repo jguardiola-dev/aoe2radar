@@ -316,4 +316,24 @@ class AzarServiceCompanionTest {
         assertEquals(999L, res.get(0).id);
         assertEquals(base + 1, res.get(0).gte);
     }
+
+    /** Revisión 1.3 (textos): el «Muestreando el ladder… (n/5)» del GTE era el único progreso sin t(). */
+    @Test void buscarGte_sinMuestra_elProgresoSaleEnElIdiomaDeLaApp() throws Exception {
+        String idiomaPrevio = dev.tirador.aoe2radar.util.I18n.IDIOMA;
+        dev.tirador.aoe2radar.util.I18n.IDIOMA = "en";
+        try {
+            long ahora = Instant.now().getEpochSecond();
+            FakeTransporte red = new FakeTransporte();
+            ladderDeUnaPagina(red, ahora);
+            red.responder(urlPartidas(111, 1), jsonUnaPartida1v1(999, 111, 222));
+            red.responder(urlPartidas(222, 1), jsonUnaPartida1v1(999, 111, 222));
+            AzarServiceCompanion s = servicio(red, sinMuestra());
+            List<String> progreso = new java.util.ArrayList<>();
+            s.buscarGte(Instant.now().minus(Duration.ofHours(48)), progreso::add);
+            assertTrue(progreso.stream().anyMatch(p -> p.startsWith("Sampling the ladder")), "progreso: " + progreso);
+            assertTrue(progreso.stream().noneMatch(p -> p.startsWith("Muestreando")), "progreso: " + progreso);
+        } finally {
+            dev.tirador.aoe2radar.util.I18n.IDIOMA = idiomaPrevio;
+        }
+    }
 }

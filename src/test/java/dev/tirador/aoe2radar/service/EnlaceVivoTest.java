@@ -73,7 +73,12 @@ class EnlaceVivoTest {
         @Override public List<Long> idsTodosJugadores() { return todos; }
         @Override public List<Long> idsTopLadder() { return topLadder; }
         @Override public Set<Long> idsSocketExtra() { return extra; }
-        @Override public void liveEvento(long pid, Match m, boolean terminada) { avisos.add("liveEvento:" + pid + ":" + terminada); }
+        final List<Match> partidasLive = new ArrayList<>();   // la partida que llegó con cada liveEvento (null si ninguna)
+        @Override public void liveEvento(long pid, Match m, boolean terminada) { avisos.add("liveEvento:" + pid + ":" + terminada); partidasLive.add(m); }
+        final java.util.Map<Long, List<Long>> liveNow = new java.util.HashMap<>();   // matchId → quiénes tiene Live now en ella
+        final List<Long> idsTerminadaLive = new ArrayList<>();   // el matchId que llegó con cada liveTerminada
+        @Override public void liveTerminada(long pid, long matchId, Match fin) { avisos.add("liveEvento:" + pid + ":true"); partidasLive.add(fin); idsTerminadaLive.add(matchId); }
+        @Override public List<Long> jugadoresLiveNow(long matchId) { return liveNow.getOrDefault(matchId, List.of()); }
         @Override public void avisarSiCampana(long pid, Match m) { avisos.add("campana:" + pid); }
         @Override public void avisarMiPartida(long pid, Match m) { avisos.add("miPartida:" + pid); }
         @Override public void avisarTrasCambio() { avisos.add("avisarTrasCambio"); }
@@ -148,6 +153,17 @@ class EnlaceVivoTest {
         assertTrue(vivo.terminada(555));
     }
 
+    /** Revisión 1.3, F8: el final tardío de la partida A no saca al jugador de la partida B en la que ya está. */
+    @Test void finalTardioDeUnaPartidaViejaNoSacaDeLaNueva() {
+        vivo.marcarJugando(7, 556);   // ya está en B
+        Match a = partida(555, 7);
+        a.finished = Instant.now();
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchUpdated", a)), Set.of(7L));
+        assertEquals(556L, vivo.matchDe(7), "sigue en B");
+        assertTrue(vivo.terminada(555), "A sí queda apuntada como terminada");
+        assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos, "Live now la recibe igual (a «Terminadas»)");
+    }
+
     // Decisión de Jorge (fase 4): matchRemoved solo saca a los jugadores si la API confirma que la partida terminó,
     // y se le pregunta 3 min después (antes la API aún no lo sabe). comprobarQuitada se llama a mano: es lo que hace
     // el hilo «socket-quitada» cuando vence la espera.
@@ -180,6 +196,25 @@ class EnlaceVivoTest {
         assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos);
         assertFalse(vivo.jugando(7));
         assertTrue(vivo.terminada(555));
+    }
+
+    /** Revisión 1.3, F5: la terminada llega a Live now con la partida de la API (con su hora de fin), no con null. */
+    @Test void quitadaConfirmadaPasaALiveNowLaPartidaDeLaApiConSuFin() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 1);
+        Match fin = vistas.partidasLive.get(0);
+        assertNotNull(fin, "antes llegaba null y Live now pintaba «hace 0 min»");
+        assertEquals(555L, fin.id);
+        assertNotNull(fin.finished);
+    }
+
+    @Test void quitadaSinDatosSigueSinPartidaParaLiveNow() {
+        red.cuerpo = "{\"matches\":[]}";
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 2);   // último intento sin datos: sale sin partida (no hay otra)
+        assertEquals(1, vistas.partidasLive.size());
+        assertNull(vistas.partidasLive.get(0));
     }
 
     @Test void quitadaDeUnaPartidaQueLaApiVeVivaNoSacaANadie() {
@@ -240,6 +275,50 @@ class EnlaceVivoTest {
         assertFalse(vivo.jugando(7));
         assertFalse(vivo.terminada(555));
         assertTrue(vivo.marcarJugando(7, 555), "el barrido puede volver a marcarlo cuando la API vuelva");
+    }
+
+    // revisión 1.3, F1: una partida que solo vio el barrido de Live now (nadie la marcó en EstadoVivo) también se quita
+
+    @Test void quitadaDeUnaPartidaQueSoloTieneLiveNowProgramaLaComprobacion() {
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        assertEquals(List.of(EnlaceVivo.ESPERA_QUITADA_MS), esperasQuitada(), "antes se ignoraba y la tarjeta se quedaba «en partida»");
+    }
+
+    @Test void quitadaConfirmadaSacaDeLiveNowALosQueSoloVioSuBarrido() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.comprobarQuitada(555, 1);
+        assertEquals(1, red.llamadas);
+        assertEquals(List.of("liveEvento:8:true"), vistas.avisos, "a Live now, con la partida de la API; la watchlist no cambia");
+        assertNotNull(vistas.partidasLive.get(0));
+        assertTrue(vivo.terminada(555));
+    }
+
+    /** Menor del revisor: sin datos, Live now recibe igual el matchId (no un null que le haga soltar cualquier partida). */
+    @Test void quitadaSinDatosDeLiveNowPasaElIdDeLaPartida() {
+        red.cuerpo = "{\"matches\":[]}";
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.comprobarQuitada(555, 2);   // último intento sin datos
+        assertEquals(List.of("liveEvento:8:true"), vistas.avisos);
+        assertNull(vistas.partidasLive.get(0), "sin partida de la API");
+        assertEquals(List.of(555L), vistas.idsTerminadaLive, "pero con el id: Live now solo quita esa");
+    }
+
+    /** Menor del revisor: dos matchRemoved seguidos de una partida que solo vio Live now programan una sola espera. */
+    @Test void dosQuitadasDeUnaPartidaSoloDeLiveNowProgramanUnaSolaComprobacion() {
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        assertEquals(1, esperasQuitada().size());
+    }
+
+    @Test void quitadaConMarcadosYDeLiveNowNoAvisaDosVecesAlMismo() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vivo.marcarJugando(7, 555);
+        vistas.liveNow.put(555L, List.of(7L, 8L));
+        enlace.comprobarQuitada(555, 1);
+        assertEquals(List.of("liveEvento:7:true", "liveEvento:8:true", "avisarTrasCambio"), vistas.avisos);
     }
 
     @Test void quitadaSinJugadoresMarcadosNoVaALaRedNiProgramaNada() {

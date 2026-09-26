@@ -72,6 +72,13 @@ public final class EloSesion {
         enVuelo.remove(pid);
     }
 
+    /**
+     * La petición reservada no pudo saber el ELO (red, 429…): libera la reserva SIN apuntar nada. Un fallo no es «no
+     * tiene»: si se guardara 0, nadie volvería a pedirlo en toda la sesión (revisión 1.3, F11). La próxima vez que
+     * haga falta se vuelve a pedir; si ya había uno recordado, se sigue mostrando ese.
+     */
+    public void liberar(long pid) { enVuelo.remove(pid); }
+
     /** Como apuntar(pid, elo, pedidoMs) con una petición de ahora mismo (respuestas inmediatas y tests). */
     public void apuntar(long pid, Integer elo) { apuntar(pid, elo, reloj.ahoraMs()); }
 }
