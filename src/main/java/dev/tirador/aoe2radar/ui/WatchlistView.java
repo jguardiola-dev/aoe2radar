@@ -2106,7 +2106,7 @@ public final class WatchlistView {
         int nAmbito = 0;
         for (Player p : (modoTop() ? topLadder : todosJugadores))
             if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && VIVO.jugando(p.id())) nAmbito++;
-        if (soloVivosBtn != null)
+        if (soloVivosBtn != null) {
             soloVivosBtn.setText("\u25CF " + t("Jugando", "Playing") + (nAmbito > 0 ? " (" + nAmbito + ")" : ""));
             soloVivosBtn.setToolTipText(null);   // sin tooltip: el chip se explica solo
             if (resumenWatch != null) {
@@ -2114,6 +2114,7 @@ public final class WatchlistView {
                 for (int i = 0; i < playersModel.size(); i++) totalAmbito++;
                 resumenWatch.setText(totalAmbito + t(" jugadores", " players") + " \u00B7 " + nAmbito + t(" jugando", " playing"));
             }
+        }
         tituloWatch.setTitle(nVivos == 0 ? "Watchlist"
                 : "Watchlist \u2014 " + nVivos + t(" jugando", " playing"));
         if (soloVivosBtn != null && soloVivosBtn.isSelected()) aplicarFiltroGrupo();
