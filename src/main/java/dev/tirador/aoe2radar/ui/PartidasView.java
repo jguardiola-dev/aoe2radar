@@ -55,7 +55,12 @@ import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
  * en {@link AzarService}: aquí solo queda escribir el resultado en la tabla, igual que fetchMatches/download).
  * Movida tal cual desde SpoilerFreeRecs (fase 3, tanda 3, oleada B).
  * <p>
- * fetchMatches/download/buscarAleatorias/buscarGte SIGUEN siendo {@code SwingWorker} aquí (la tanda lo permite
+ * Desde la 1.3 esta clase es la FACHADA: conserva la API, las interfaces y el estado que leen la ventana y los tests,
+ * y delega el trabajo en {@link PartidasTabla} (+ {@link MatchesTableModel}), {@link MenuPartida},
+ * {@link CabeceraSujetos}, {@link DescargasPartidas} y {@link BusquedasPartidas}, que la reciben y leen su estado.
+ * <p>
+ * fetchMatches/download/buscarAleatorias/buscarGte SIGUEN siendo {@code SwingWorker} (ahora en BusquedasPartidas y
+ * DescargasPartidas; la tanda lo permite
  * explícitamente: reescribirlos con {@code Tareas} cambiaría cuándo se pinta cada trozo de publish/process).
  * Lo que sí se aisló en {@link PartidasPresenter}, sin Swing, es {@code vigente()} (la comprobación de caducidad
  * por opSerial que cada uno hace al terminar, antes de decidir qué pintar) y los tres filtros de la tabla.
