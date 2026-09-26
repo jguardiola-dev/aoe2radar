@@ -2,11 +2,15 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.util.Reloj;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -64,6 +68,18 @@ class LiveNowPresenterTest {
         final List<Runnable> pendientesFondo = new ArrayList<>();
         @Override public void enFondo(String nombre, Runnable trabajo) { pendientesFondo.add(trabajo); }
         @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { trabajo.run(); }
+    }
+
+    /** Guarda el nombre de hilo con el que se llamó enFondo/enFondoDemonio, sin ejecutar el trabajo demonio (así
+     *  pedirClanes() no llega a tocar ConsultasLadder de verdad): para comprobar que un hilo movido a un
+     *  presentador conserva su nombre (DEUDA, fila 124). */
+    static final class TareasQueGuardaNombre implements Tareas {
+        String ultimoNombreFondo, ultimoNombreDemonio;
+        Runnable trabajoDemonioPendiente;
+        @Override public void enFondo(String nombre, Runnable trabajo) { ultimoNombreFondo = nombre; trabajo.run(); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { ultimoNombreDemonio = nombre; trabajoDemonioPendiente = trabajo; }
         @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
         @Override public void enUi(Runnable trabajo) { trabajo.run(); }
     }
@@ -216,5 +232,84 @@ class LiveNowPresenterTest {
         presenter.liveEvento(701L, matchEnCurso(9401L, 701L), false);
         assertEquals(pintarAntes, pantalla.pintarVeces);
         assertTrue(presenter.enCursoSnapshot().containsKey(701L));   // el estado se actualiza igual; solo el repintado se salta
+    }
+
+    // ----- ficha: mismo candado que topSnapshot/conTop (DEUDA, fila 123) ------------------
+
+    /** Sin el candado, un escritor que hace conTop(t -> { t.clear(); t.addAll(...); }) mientras un lector recorre
+     *  ahoraTop en ficha() dispara casi siempre una ConcurrentModificationException en unos pocos cientos de ms:
+     *  esta es la mutación que demuestra el arreglo (quítalo y este test se pone en rojo). */
+    @Test void ficha_esSeguraFrenteAEscriturasConcurrentesDeAhoraTop() throws InterruptedException {
+        List<Object[]> base = new ArrayList<>();
+        for (long i = 0; i < 400; i++) base.add(ficha(i, "J" + i, 1000, (int) i, "es"));
+        presenter.conTop(t -> t.addAll(base));
+        AtomicBoolean parar = new AtomicBoolean(false);
+        AtomicReference<Throwable> error = new AtomicReference<>();
+        Thread escritor = new Thread(() -> {
+            try { while (!parar.get()) presenter.conTop(t -> { t.clear(); t.addAll(base); }); }
+            catch (Throwable ex) { error.set(ex); }
+        }, "test-escritor-ahoraTop");
+        Thread lector = new Thread(() -> {
+            try { long fin = System.currentTimeMillis() + 500; while (System.currentTimeMillis() < fin) presenter.ficha(200L); }
+            catch (Throwable ex) { error.set(ex); }
+        }, "test-lector-ficha");
+        escritor.start(); lector.start();
+        lector.join(3000);
+        parar.set(true);
+        escritor.join(1000);
+        assertNull(error.get(), () -> "ficha() debe leer bajo el mismo candado que topSnapshot/conTop: " + error.get());
+    }
+
+    // ----- pedirResultado / pedirClanes: hilos movidos desde LiveNowView (DEUDA, fila 124) ------
+
+    @Test void pedirResultado_consultaLaApiConElCsvDeUnSoloPidYActualizaWonAntesDeAvisar() {
+        TareasQueGuardaNombre tareas = new TareasQueGuardaNombre();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla);
+        Match m = matchTerminado(9501L, 501L);
+        Match conResultado = matchTerminado(9501L, 501L);
+        conResultado.players.get(0).won = true;
+        buscador.resultado = List.of(conResultado);
+        boolean[] avisado = { false };
+        p.pedirResultado(m, () -> avisado[0] = true);
+        assertEquals("resultado", tareas.ultimoNombreFondo, "el hilo conserva su nombre de antes (log y volcados de hilos)");
+        assertEquals(List.of("501"), buscador.csvsPedidos, "mismo CSV que LiveService.partidas(pid0, 1, 5)");
+        assertEquals(Boolean.TRUE, m.players.get(0).won, "el won de la partida original queda actualizado");
+        assertTrue(avisado[0], "el callback se llama al terminar, en el EDT (tareas.enUi)");
+    }
+
+    @Test void pedirResultado_siLaApiFallaNoRompeYAunAsiAvisa() {
+        buscador.falla = new RuntimeException("sin red");
+        boolean[] avisado = { false };
+        presenter.pedirResultado(matchTerminado(9502L, 502L), () -> avisado[0] = true);
+        assertTrue(avisado[0]);
+    }
+
+    @Test void pedirClanes_lanzaUnHiloDemonioLlamadoClanes() {
+        TareasQueGuardaNombre tareas = new TareasQueGuardaNombre();
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla);
+        p.pedirClanes();
+        assertEquals("clanes", tareas.ultimoNombreDemonio);
+        assertNotNull(tareas.trabajoDemonioPendiente);
+    }
+
+    // ----- EstadoVivo inyectado, no el singleton global (DEUDA, fila 125) -----------------
+
+    @Test void usaElEstadoVivoInyectadoNoElSingletonGlobal() {
+        EstadoVivo propio = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, propio);
+        pantalla.fuente = List.<Object[]>of(ficha(9901L, "Uno", 1500, 10, "es"));
+        buscador.resultado = List.of(matchEnCurso(99001L, 9901L));
+        p.refrescar(false);
+        assertNotNull(propio.partida(9901L), "se guardó en el EstadoVivo inyectado");
+        assertNull(EstadoVivo.SISTEMA.partida(9901L), "y no en el singleton global de la app");
+    }
+
+    @Test void constructorDeCuatroArgumentosSigueUsandoElSistemaGlobal() {
+        long pid = 9902L;
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla);
+        pantalla.fuente = List.<Object[]>of(ficha(pid, "Uno", 1500, 10, "es"));
+        buscador.resultado = List.of(matchEnCurso(99002L, pid));
+        p.refrescar(false);
+        assertNotNull(EstadoVivo.SISTEMA.partida(pid), "el constructor de siempre (el que usa LiveNowView) sigue pasando SISTEMA");
     }
 }

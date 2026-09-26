@@ -2,6 +2,7 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 
 import java.time.Duration;
@@ -60,6 +61,9 @@ public final class LiveNowPresenter {
     private final Buscador buscador;
     private final Tareas tareas;
     private final Pantalla pantalla;
+    /** Quién está en partida ahora: antes se leía siempre del singleton EstadoVivo.SISTEMA (DEUDA, fila 125);
+     *  se inyecta para poder probar el presentador con un EstadoVivo propio, sin tocar el de toda la app. */
+    private final EstadoVivo estadoVivo;
 
     /** {pid, nombre, rating, rango, país} de la fuente elegida (ver Campanas.cargarFuenteLive). */
     private final List<Object[]> ahoraTop = new ArrayList<>();
@@ -73,17 +77,28 @@ public final class LiveNowPresenter {
     private long ahoraTopMs, ahoraUltimaMs;
     private boolean ahoraCargando;
 
+    /** La de la app: quien construye el presentador (LiveNowView) pasa EstadoVivo.SISTEMA explícitamente. */
     public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla) {
+        this(buscador, socketExtra, tareas, pantalla, EstadoVivo.SISTEMA);
+    }
+
+    /** Con el EstadoVivo inyectado (DEUDA, fila 125): la usan los tests para no compartir el singleton de toda
+     *  la app entre pruebas. */
+    public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla, EstadoVivo estadoVivo) {
         this.buscador = buscador;
         this.socketExtra = socketExtra;
         this.tareas = tareas;
         this.pantalla = pantalla;
+        this.estadoVivo = estadoVivo;
     }
 
-    /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null. Sin candado, igual que la
-     *  1.1 (liveFicha): esta lectura nunca se sincronizó, y no se cambia ahora. */
+    /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null. Bajo el mismo candado que
+     *  topSnapshot/conTop (DEUDA, fila 123: antes se recorría ahoraTop sin candado, con riesgo de
+     *  ConcurrentModificationException si el barrido lo estaba reescribiendo a la vez). */
     public Object[] ficha(long pid) {
-        for (Object[] f : ahoraTop) if ((Long) f[0] == pid) return f;
+        synchronized (ahoraTop) {
+            for (Object[] f : ahoraTop) if ((Long) f[0] == pid) return f;
+        }
         return null;
     }
 
@@ -177,11 +192,11 @@ public final class LiveNowPresenter {
                 // anidados en este orden (liveTerminadas → ahoraEnCurso → EstadoVivo, que es hoja): nadie los coge al revés
                 synchronized (liveTerminadas) {
                     synchronized (ahoraEnCurso) {
-                        vivos.values().removeIf(m -> liveTerminadas.containsKey(m.id) || EstadoVivo.SISTEMA.terminada(m.id));
+                        vivos.values().removeIf(m -> liveTerminadas.containsKey(m.id) || estadoVivo.terminada(m.id));
                         ahoraEnCurso.clear(); ahoraEnCurso.putAll(vivos);
                     }
                 }
-                for (Map.Entry<Long, Match> en : vivos.entrySet()) EstadoVivo.SISTEMA.guardarPartida(en.getKey(), en.getValue());
+                for (Map.Entry<Long, Match> en : vivos.entrySet()) estadoVivo.guardarPartida(en.getKey(), en.getValue());
                 ahoraUltimaMs = System.currentTimeMillis();
                 tareas.enUi(pantalla::pintar);
             } catch (Exception ex) {
@@ -199,14 +214,37 @@ public final class LiveNowPresenter {
     public void liveEvento(long pid, Match m, boolean terminada) {
         if (ficha(pid) == null) return;
         if (terminada) {
-            Match viva = EstadoVivo.SISTEMA.soltarPartida(pid);
+            Match viva = estadoVivo.soltarPartida(pid);
             Match fin = m != null ? m : viva;
             if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, System.currentTimeMillis() }); }
             synchronized (ahoraEnCurso) { ahoraEnCurso.remove(pid); }
         } else if (m != null) {
-            EstadoVivo.SISTEMA.guardarPartida(pid, m);
+            estadoVivo.guardarPartida(pid, m);
             synchronized (ahoraEnCurso) { ahoraEnCurso.put(pid, m); }
         }
         if (pantalla.puedeRepintar()) tareas.enUi(pantalla::pintar);
     }
+
+    /**
+     * «resultado»: pide a la API el resultado real de la partida m (el socket avisa del final antes de que la
+     * API lo tenga listo, así que solo se pide si el usuario lo pulsa). Actualiza el {@code won} de cada
+     * MatchPlayer de m y llama a alListo en el EDT cuando termine. Movido tal cual desde LiveNowView (DEUDA,
+     * fila 124): mismo nombre de hilo, misma llamada (CSV de un solo pid, igual que LiveService.partidas(long,…)),
+     * mismo orden de pintado (alListo solo se llama al final, en el EDT).
+     */
+    public void pedirResultado(Match m, Runnable alListo) {
+        long pid0 = m.players.get(0).id;
+        tareas.enFondo("resultado", () -> {
+            try {
+                for (Match x : buscador.partidas(String.valueOf(pid0), 1, 5))
+                    if (x != null && x.id == m.id) { for (MatchPlayer mp : m.players) for (MatchPlayer xp : x.players) if (xp.id == mp.id) mp.won = xp.won; break; }
+            } catch (Exception ex) { log("resultado: " + causa(ex)); }
+            tareas.enUi(alListo);
+        });
+    }
+
+    /** «clanes»: si el catálogo de clanes del ladder aún no está en memoria, lo trae en un hilo demonio (nadie
+     *  espera el resultado: la próxima vez que el usuario escriba ya estará). Movido tal cual desde LiveNowView
+     *  (DEUDA, fila 124): mismo nombre de hilo; la vista sigue decidiendo cuándo hace falta (clanesCargados()). */
+    public void pedirClanes() { tareas.enFondoDemonio("clanes", () -> ConsultasLadder.asegurarLadder(false)); }
 }

@@ -44,7 +44,8 @@ public final class TechTreePresenter {
         void errorArbol(String civ, String motivo);
 
         /** El tamaño de celda con el que hay que precargar los iconos antes de pintar (lee el visor, sin red);
-         *  se llama fuera del EDT, en el hilo techtree-civ, como en la 1.1; lee Swing (ver DEUDA). */
+         *  se llama en el EDT, ANTES de lanzar el hilo techtree-civ (ver DEUDA, fila 118: antes se leía fuera
+         *  del EDT y podía chocar con un repintado real del visor). */
         int celdaPx();
 
         /** A memoria (o a la cola de descarga si falta) el icono tipo/id a ese tamaño: no se usa el resultado aquí, solo precalienta la caché;
@@ -77,6 +78,10 @@ public final class TechTreePresenter {
     // La última civ pedida a pedirArbol(): si el árbol de una civ vieja llega tarde, no se pinta.
     private volatile String civEnCurso;
 
+    /** La civ pedida ahora mismo (o null si aún no se pidió ninguna): única fuente de verdad (antes también vivía
+     *  como ttCivPedida en TechTreeView, ver DEUDA, fila 117); la vista la lee de aquí. */
+    public String civEnCurso() { return civEnCurso; }
+
     public TechTreePresenter(TechTreeService tt, StatsService stats, FiltroStats filtroStats, Tareas tareas,
                               Pantalla pantalla, TechTreeView.Anfitrion anfitrion, TechTreeView.EnlaceCivStats enlaceCivStats) {
         this.tt = tt;
@@ -100,11 +105,13 @@ public final class TechTreePresenter {
     /** «techtree-civ»: descarga (o coge de caché) el árbol de "civ"; si mientras tanto se pidió otra, no pinta. */
     public void pedirArbol(String civ) {
         civEnCurso = civ;
+        int px = pantalla.celdaPx();   // se lee AQUÍ, en el hilo que llama (el EDT): celdaPx mira el visor de Swing y no es
+        // seguro leerlo desde el hilo de fondo (ver DEUDA, fila 118); ya calculado, se pasa al hilo sin volver a tocar Swing.
         tareas.enFondo("techtree-civ", () -> {
             Map<String, Object> arbol;
             try { arbol = tt.arbol(civ); }
             catch (Exception ex) { tareas.enUi(() -> pantalla.errorArbol(civ, causa(ex))); return; }
-            int px = pantalla.celdaPx();   // los iconos de esta civ, a memoria ANTES de pintar: el árbol sale entero de golpe
+            // los iconos de esta civ, a memoria ANTES de pintar: el árbol sale entero de golpe
             for (Object o : arr(arbol.get("units_techs"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")), px - 4); }
             for (Object o : arr(arbol.get("buildings"))) { Map<String, Object> n = obj(o); pantalla.precalentarIcono("Building", lng(n.get("picture_index")), 26); }
             Map<String, Object> arbolListo = arbol;

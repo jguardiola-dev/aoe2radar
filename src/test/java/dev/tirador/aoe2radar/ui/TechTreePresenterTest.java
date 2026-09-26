@@ -75,6 +75,7 @@ class TechTreePresenterTest {
         String civArbolListo; Map<String, Object> arbolListo;
         String civError, motivoError;
         int celdaPx = 40;
+        int celdaPxLlamadas;
         int iconosPrecalentados;
         int actualizarWrLlamadas;
         int iconosActualizadosLlamadas;
@@ -83,11 +84,21 @@ class TechTreePresenterTest {
         @Override public void datosListos(String error, String civPedida) { datosListosLlamado = true; ultimoError = error; ultimaCivPedida = civPedida; }
         @Override public void arbolListo(String civ, Map<String, Object> arbol) { civArbolListo = civ; this.arbolListo = arbol; }
         @Override public void errorArbol(String civ, String motivo) { civError = civ; motivoError = motivo; }
-        @Override public int celdaPx() { return celdaPx; }
+        @Override public int celdaPx() { celdaPxLlamadas++; return celdaPx; }
         @Override public void precalentarIcono(String tipo, long id, int px) { iconosPrecalentados++; }
         @Override public void iconosActualizados() { iconosActualizadosLlamadas++; }
         @Override public void estadoWr(String texto) { ultimoEstadoWr = texto; }
         @Override public void actualizarWr() { actualizarWrLlamadas++; }
+    }
+
+    /** Un Tareas que encola el trabajo de fondo (enFondo) en vez de ejecutarlo: así se puede comprobar qué pasó
+     *  ANTES de que el hilo de fondo llegara a correr, como con dos hilos reales. enUi sigue en el acto. */
+    static final class TareasAplazadas implements Tareas {
+        final List<Runnable> pendientesFondo = new ArrayList<>();
+        @Override public void enFondo(String nombre, Runnable trabajo) { pendientesFondo.add(trabajo); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { trabajo.run(); }
     }
 
     static class AnfitrionFake implements TechTreeView.Anfitrion {
@@ -169,6 +180,27 @@ class TechTreePresenterTest {
         ref[0] = new TechTreePresenter(tt, stats, filtroStats, Tareas.EN_LINEA, pantalla, anfitrion, enlaceCivStats);
         ref[0].pedirArbol("vieja");
         assertEquals("nueva", pantalla.civArbolListo);   // solo se pintó la última, nunca "vieja"
+    }
+
+    /** DEUDA fila 118: celdaPx() lee el visor de Swing y no es seguro leerlo fuera del EDT; se debe leer en el
+     *  hilo que llama a pedirArbol (el EDT) ANTES de lanzar el hilo de fondo, no dentro de él. Con un Tareas
+     *  que encola en vez de ejecutar el trabajo de fondo, si celdaPx() se llamara dentro del hilo, el contador
+     *  seguiría en 0 justo después de pedirArbol (el trabajo encolado no se ha ejecutado todavía). */
+    @Test void pedirArbolLeeCeldaPxEnElHiloQueLlamaAntesDeLanzarElHiloDeFondo() {
+        TareasAplazadas tareas = new TareasAplazadas();
+        TechTreePresenter p = crear(tareas);
+        tt.arbolCiv = Map.of("units_techs", List.of());
+        p.pedirArbol("aztecs");
+        assertEquals(1, pantalla.celdaPxLlamadas, "celdaPx() se lee de inmediato, en el hilo que llama");
+        assertEquals(1, tareas.pendientesFondo.size(), "el trabajo de red/precarga de iconos sigue yendo a un hilo de fondo");
+    }
+
+    @Test void civEnCursoEsLaMismaFuenteQuePedirArbol() {
+        TechTreePresenter p = crear(Tareas.EN_LINEA);
+        assertNull(p.civEnCurso());
+        tt.arbolCiv = Map.of("units_techs", List.of());
+        p.pedirArbol("britons");
+        assertEquals("britons", p.civEnCurso());
     }
 
     @Test void cargarStatsVentanaYaCargadaNoVaARed() {

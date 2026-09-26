@@ -179,10 +179,25 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
     /** La parte de vista de abrirLadder que va ANTES del cromo (taparResultados/apagarForma/actualizarControlesTabla). */
     public void alAbrirAntes() {
         subirArriba(ladderPanel);
-        SwingUtilities.invokeLater(() -> {   // la tabla de comparados, con el alto que dejaste (230 px la primera vez)
-            int alto = Math.max(60, Integer.parseInt(leerConfig("ratings_tabla_alto", "230")));
-            if (ladderDivisor.getHeight() > alto + 100) ladderDivisor.setDividerLocation(ladderDivisor.getHeight() - alto - ladderDivisor.getDividerSize());
-        });
+        SwingUtilities.invokeLater(this::aplicarAltoComparados);
+    }
+
+    /** Reparte el alto de la tabla de comparados (230 px por defecto, o lo que el usuario dejara) apenas el
+     *  divisor tenga alto real. La primera vez que se abre Ratings, el divisor puede seguir midiendo 0 (aún no
+     *  se ha mostrado ni una vez): antes el reparto se perdía sin más; ahora un ComponentListener de un solo uso
+     *  lo aplica en cuanto llegue el primer componentResized (DEUDA, fila 13). */
+    private void aplicarAltoComparados() {
+        int alto = Math.max(60, Integer.parseInt(leerConfig("ratings_tabla_alto", "230")));
+        if (ladderDivisor.getHeight() > alto + 100) {
+            ladderDivisor.setDividerLocation(ladderDivisor.getHeight() - alto - ladderDivisor.getDividerSize());
+        } else if (ladderDivisor.getHeight() == 0) {
+            ladderDivisor.addComponentListener(new java.awt.event.ComponentAdapter() {
+                @Override public void componentResized(java.awt.event.ComponentEvent e) {
+                    ladderDivisor.removeComponentListener(this);
+                    aplicarAltoComparados();
+                }
+            });
+        }
     }
 
     /** La parte de vista de abrirLadder que va DESPUÉS del cromo: arranca la carga si hace falta. */
