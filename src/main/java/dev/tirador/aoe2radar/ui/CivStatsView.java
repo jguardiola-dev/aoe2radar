@@ -337,9 +337,9 @@ public final class CivStatsView {
         stFilaTend = filaTend;
         cuerpo.add(filaTend);
         cuerpo.add(Box.createVerticalStrut(10));
-        stTituloMatriz = tituloSeccion(tituloMatriz("*"),
-                t("Solo en modos 1v1. Cada celda es el winrate de la civ de la fila cuando se enfrenta a la de la columna: verde si gana, rojo si pierde; más intenso cuanto más lejos del 50 %. Gris: menos de 20 partidas. Pasa el ratón para ver la cifra y clica el nombre de una fila para seleccionar esa civ. Los datos no traen matchups por mapa: con un mapa elegido, la matriz sigue siendo de todos los mapas.",
-                "1v1 modes only. Each cell is the row civ's win rate when facing the column civ: green if it wins, red if it loses; stronger the further from 50%. Grey: fewer than 20 games. Hover for the figure and click a row name to select that civ. The data has no per-map matchups: with a map chosen, the matrix is still for all maps."));
+        stTituloMatriz = tituloSeccion(tituloMatriz("*", "*"),
+                t("Solo en modos 1v1. Cada celda es el winrate de la civ de la fila cuando se enfrenta a la de la columna: verde si gana, rojo si pierde; más intenso cuanto más lejos del 50 %. Gris: menos de 20 partidas. Pasa el ratón para ver la cifra y clica el nombre de una fila para seleccionar esa civ. Con un mapa elegido, la matriz es de ese mapa; si no hay matchups de ese mapa (datos antiguos o pocas partidas), es de todos los mapas y el título lo dice.",
+                "1v1 modes only. Each cell is the row civ's win rate when facing the column civ: green if it wins, red if it loses; stronger the further from 50%. Grey: fewer than 20 games. Hover for the figure and click a row name to select that civ. With a map chosen, the matrix is for that map; if there are no matchups for that map (old data or few games), it is for all maps and the title says so."));
         stTituloMatriz.setAlignmentX(0f);
         JPanel filaMatriz = new JPanel(new BorderLayout(8, 0));
         filaMatriz.setAlignmentX(0f); filaMatriz.setMaximumSize(new Dimension(Integer.MAX_VALUE, 28));
@@ -572,28 +572,43 @@ public final class CivStatsView {
         ajustarFilasCivStats();
         stTendencias.datos(porPick.subList(0, Math.min(5, porPick.size())));
         boolean unoContraUno = filtroStats.modo().endsWith("_1v1");
-        stTituloMatriz.setText(tituloMatriz(filtroStats.mapa()) + "  \u24D8");   // D2: con un mapa elegido, avisa de que la matriz es de todos
         stTituloMatriz.setVisible(unoContraUno); stMatriz.setVisible(unoContraUno);
         if (unoContraUno) stMatriz.datos(v, lista);
+        stTituloMatriz.setText(tituloMatriz(filtroStats.mapa(), unoContraUno ? stMatriz.mapaUsado : "*") + "  \u24D8");   // D2: si el mapa elegido no tiene matchups propios, avisa de que la matriz es de todos
         stEstado.setText(t("Resumen del ", "Summary of ") + v.hasta() + (partidas < POCAS_PARTIDAS ? "  ·  " + t("pocas partidas con estos filtros: prueba 90 o 365 días", "few games with these filters: try 90 or 365 days") : ""));
         civStatsPanel.revalidate(); civStatsPanel.repaint();
     }
 
     /**
-     * D2 (1.3, decisión de Jorge: la matriz debería filtrar por mapa). Los matchups que publica sfr-data
-     * (civstats/ventanas/v*.json.gz, campo "matchups") son filas [modo, tramo, civA, civB, n, winsA]: no traen
-     * mapa, así que la matriz no puede filtrar. Mientras build_data.py no los publique por mapa, el título lo
-     * dice cuando hay un mapa elegido. Pura: la prueba CivStatsViewTest.
+     * D2 (1.3, decisión de Jorge: la matriz filtra por mapa). sfr-data publica «matchups» (todos los mapas, mapa
+     * "*") y, desde la 1.5.4, «matchups_mapa» (por mapa, solo 1v1 y mapas con MIN_PARTIDAS_CIV partidas). La matriz
+     * usa las del mapa elegido si las hay (ver mapaMatriz); si no, el agregado, y entonces el título avisa de que
+     * es de todos los mapas. Pura: la prueba CivStatsViewTest.
      */
-    static String tituloMatriz(String mapa) {
+    static String tituloMatriz(String mapaPedido, String mapaUsado) {
         String base = t("Matchups (civ de la fila contra civ de la columna)", "Matchups (row civ against column civ)");
-        return mapa == null || "*".equals(mapa) ? base : base + " · " + t("todos los mapas", "all maps");
+        return avisoTodosLosMapas(mapaPedido, mapaUsado) ? base + " · " + t("todos los mapas", "all maps") : base;
+    }
+
+    /** Hay un mapa elegido pero la matriz es del agregado (no había matchups de ese mapa). */
+    static boolean avisoTodosLosMapas(String mapaPedido, String mapaUsado) {
+        return mapaPedido != null && !"*".equals(mapaPedido) && "*".equals(mapaUsado);
+    }
+
+    /**
+     * Qué filas de matchups pinta la matriz: las del mapa pedido si hay alguna de ese modo y tramo (datos de
+     * sfr-data 1.5.4 o posterior y mapa con partidas suficientes); si no, "*" (el agregado de todos los mapas).
+     */
+    static String mapaMatriz(List<Matchup> matchups, String modo, String mapa, java.util.function.Predicate<String> tramoOk) {
+        if (mapa == null || "*".equals(mapa)) return "*";
+        for (Matchup mu : matchups) if (mapa.equals(mu.mapa()) && mu.modo().equals(modo) && tramoOk.test(mu.tramo())) return mapa;
+        return "*";
     }
 
     /** La matriz de matchups en una ventana a pantalla completa, con celdas grandes y scroll. */
     public void mostrarMatrizGrande() {
         if (stMatriz == null || stMatriz.civs.isEmpty()) return;
-        JDialog d = new JDialog(ventana, t("Matchups · ", "Matchups · ") + modoNombre(filtroStats.modo()) + " · " + tramoNombre(filtroStats.tramo()) + " · " + ventanaNombre(filtroStats.ventana()) + ("*".equals(filtroStats.mapa()) ? "" : " · " + t("todos los mapas", "all maps")), JDialog.ModalityType.MODELESS);
+        JDialog d = new JDialog(ventana, t("Matchups · ", "Matchups · ") + modoNombre(filtroStats.modo()) + " · " + tramoNombre(filtroStats.tramo()) + " · " + ventanaNombre(filtroStats.ventana()) + (avisoTodosLosMapas(filtroStats.mapa(), stMatriz.mapaUsado) ? " · " + t("todos los mapas", "all maps") : "*".equals(stMatriz.mapaUsado) ? "" : " · " + nombreMapaStats(stats.ventana(filtroStats.ventana()), stMatriz.mapaUsado)), JDialog.ModalityType.MODELESS);
         MatrizPanel grande = new MatrizPanel();
         grande.copiarDe(stMatriz);
         Rectangle pantalla = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
@@ -768,6 +783,7 @@ public final class CivStatsView {
     class MatrizPanel extends JPanel {
         List<String> civs = List.of();
         Map<String, int[]> celdas = Map.of();   // "a|b" → {n, wins de a}
+        String mapaUsado = "*";                  // D2: mapa de las filas pintadas ("*" = todos los mapas)
         int celda = 13, margenIzq = 126, margenSup = 112;
         MatrizPanel() {
             setOpaque(false);
@@ -801,16 +817,18 @@ public final class CivStatsView {
             List<String> cs = new ArrayList<>();
             for (CivAgg a : orden) cs.add(a.civ());
             Map<String, int[]> m = new HashMap<>();
+            String mapa = mapaMatriz(v.matchups(), filtroStats.modo(), filtroStats.mapa(), tr -> stats.tramoEnRango(tr, v.tramos(), filtroStats.tramo()));
             for (Matchup mu : v.matchups()) {
+                if (!mu.mapa().equals(mapa)) continue;
                 if (!mu.modo().equals(filtroStats.modo())) continue;
                 if (!stats.tramoEnRango(mu.tramo(), v.tramos(), filtroStats.tramo())) continue;
                 int[] ab = m.computeIfAbsent(mu.ca() + "|" + mu.cb(), k -> new int[2]); ab[0] += mu.n(); ab[1] += mu.wa();
                 int[] ba = m.computeIfAbsent(mu.cb() + "|" + mu.ca(), k -> new int[2]); ba[0] += mu.n(); ba[1] += mu.n() - mu.wa();
             }
-            civs = cs; celdas = m;
+            civs = cs; celdas = m; mapaUsado = mapa;
             redimensionar();
         }
-        void copiarDe(MatrizPanel otro) { civs = otro.civs; celdas = otro.celdas; redimensionar(); }
+        void copiarDe(MatrizPanel otro) { civs = otro.civs; celdas = otro.celdas; mapaUsado = otro.mapaUsado; redimensionar(); }
         int[] celdaEn(Point p) {
             int c = (p.x - margenIzq) / celda, f = (p.y - margenSup) / celda;
             if (p.x < margenIzq || p.y < margenSup || c < 0 || f < 0 || c >= civs.size() || f >= civs.size()) return null;
