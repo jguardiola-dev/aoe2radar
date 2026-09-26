@@ -48,7 +48,6 @@ import javax.swing.JToolTip;
 import javax.swing.JViewport;
 import javax.swing.JWindow;
 import javax.swing.SwingUtilities;
-import javax.swing.SwingWorker;
 import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
 import java.awt.BorderLayout;
@@ -88,7 +87,6 @@ import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
-import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
@@ -331,6 +329,7 @@ public final class WatchlistView {
     final WatchlistHoverCard tarjetaHover = new WatchlistHoverCard(this);
     final WatchlistMenu menuLista = new WatchlistMenu(this);
     final WatchlistTrabajos trabajos = new WatchlistTrabajos(this);
+    final WatchlistDialogos dialogosLista = new WatchlistDialogos(this);
 
     /** Ver ui.WatchlistView.EnlacePartidas y ui.WatchlistView.Anfitrion para el contrato completo. */
     public WatchlistView(Window ventana, ProfileService perfiles,
@@ -1272,29 +1271,6 @@ public final class WatchlistView {
         return familiaSvc.mejorAlt(pid, todosJugadores, perfiles.familia(pid), eloWatch);
     }
 
-    /** Consulta las vinculadas de un seguido y casa las que YA sigues. */
-    private void vincularExistentes(Player p) {
-        status.setText(t("Buscando cuentas vinculadas de ", "Looking up linked accounts of ") + p.name() + "…");
-        new SwingWorker<List<Perfil.Vinculada>, Void>() {
-            @Override protected List<Perfil.Vinculada> doInBackground() { return perfiles.vinculadas(p.id()); }
-            @Override protected void done() {
-                List<Perfil.Vinculada> vinc;
-                try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
-                Set<Long> familia = familiaSvc.vincularExistentes(p.id(), vinc, WatchlistView.this::containsPlayerId);
-                if (familia.size() < 2) {
-                    status.setText(t("No sigues ninguna otra cuenta vinculada de ", "You don't follow any other linked account of ")
-                            + p.name() + t(". Usa «Cuentas vinculadas…» para añadirlas.", ". Use “Linked accounts…” to add them."));
-                    return;
-                }
-                marcarVinculo(familia);
-                savePlayers();
-                aplicarFiltroGrupo();
-                status.setText(t("Vinculadas ", "Linked ") + familia.size()
-                        + t(" cuentas: ahora comparten fila en la lista.", " accounts: they now share a row in the list."));
-            }
-        }.execute();
-    }
-
     // ===== Grupos ========================================================================================
 
     public String grupoActivo() {   // null = «Todos»
@@ -1336,60 +1312,7 @@ public final class WatchlistView {
         aplicarFiltroGrupo();
     }
 
-    /** Diálogo de gestión: crear, renombrar y borrar grupos sin tocar jugadores. */
-    void gestionarGrupos() {
-        DefaultListModel<String> modelo = new DefaultListModel<>();
-        Runnable recargar = () -> {
-            modelo.clear();
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            gs.add(GRUPO_GENERAL);
-            gs.addAll(gruposConfig());
-            for (Player p : todosJugadores) gs.add(p.grupo());
-            for (String g : gs) modelo.addElement(g);
-        };
-        recargar.run();
-        JList<String> lista = new JList<>(modelo);
-        lista.setVisibleRowCount(8);
-        JButton nuevo = new JButton(t("Nuevo…", "New…"));
-        JButton renombrar = new JButton(t("Renombrar…", "Rename…"));
-        JButton borrar = new JButton(t("Borrar", "Delete"));
-        nuevo.addActionListener(a -> {
-            String n = JOptionPane.showInputDialog(ventana, t("Nombre del grupo nuevo:", "New group name:"),
-                    t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { registrarGrupo(limpiarGrupo(n)); recargar.run(); }
-        });
-        renombrar.addActionListener(a -> {
-            String sel = lista.getSelectedValue();
-            if (sel == null || sel.equalsIgnoreCase(GRUPO_GENERAL)) return;
-            String n = JOptionPane.showInputDialog(ventana, t("Nuevo nombre para «", "New name for “") + sel + "»:",
-                    t("Renombrar grupo", "Rename group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { renombrarGrupo(sel, limpiarGrupo(n)); recargar.run(); }
-        });
-        borrar.addActionListener(a -> {
-            String sel = lista.getSelectedValue();
-            if (sel == null || sel.equalsIgnoreCase(GRUPO_GENERAL)) return;
-            int r = JOptionPane.showConfirmDialog(ventana,
-                    t("Se borrará el grupo «", "Group “") + sel
-                            + t("». Sus jugadores pasarán a General. ¿Continuar?",
-                                "” will be deleted. Its players move to General. Continue?"),
-                    t("Borrar grupo", "Delete group"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (r == JOptionPane.YES_OPTION) { borrarGrupo(sel); recargar.run(); }
-        });
-        lista.addListSelectionListener(a -> {
-            String sel = lista.getSelectedValue();
-            boolean editable = sel != null && !sel.equalsIgnoreCase(GRUPO_GENERAL);
-            renombrar.setEnabled(editable);
-            borrar.setEnabled(editable);
-        });
-        renombrar.setEnabled(false);
-        borrar.setEnabled(false);
-        JPanel botones = new JPanel(new GridLayout(3, 1, 0, 6));
-        botones.add(nuevo); botones.add(renombrar); botones.add(borrar);
-        JPanel cont = new JPanel(new BorderLayout(8, 0));
-        cont.add(new JScrollPane(lista), BorderLayout.CENTER);
-        cont.add(botones, BorderLayout.EAST);
-        JOptionPane.showMessageDialog(ventana, cont, t("Gestionar grupos", "Manage groups"), JOptionPane.PLAIN_MESSAGE);
-    }
+    void gestionarGrupos() { dialogosLista.gestionarGrupos(); }
 
     public String grupoDestino() {
         String g = grupoActivo();
@@ -1406,64 +1329,7 @@ public final class WatchlistView {
         ofrecerVinculadasTrasAlta(p.id(), p.name(), g);
     }
 
-    /**
-     * Ficha a varios de golpe; pregunta UNA vez si buscar sus cuentas vinculadas y lo hace en segundo plano.
-     * BUG corregido (fase 2, service.ListaSeguidos): la 1.1 mutaba todosJugadores y llamaba a marcarVinculo
-     * desde doInBackground (hilo de fondo) mientras el EDT recorre esa misma lista. Ahora, en el mismo punto
-     * donde la 1.1 mutaba, se aplica con SwingUtilities.invokeAndWait: la mutación ocurre en el EDT y
-     * doInBackground espera a que termine antes de seguir con el siguiente jugador; así, al acabar el
-     * bucle, ya está todo aplicado (done() no puede adelantarse al último hallazgo). Los textos de
-     * estado siguen yendo por publish/process, como antes.
-     */
-    public void ficharVarios(List<Player> lista, String g) {
-        List<Player> nuevos = listaSeguidos.ficharVarios(todosJugadores, lista, g);
-        savePlayers();
-        rebuildGrupos();
-        aplicarFiltroGrupo();
-        refrescarWatchlist();
-        status.setText(nuevos.size() + t(" jugadores añadidos a «", " players added to \u201C") + g + "\u00bb.");
-        if (nuevos.isEmpty()) return;
-        int r = JOptionPane.showConfirmDialog(ventana,
-                t("¿Buscar las cuentas vinculadas de los ", "Look up the linked accounts of the ") + nuevos.size()
-                        + t(" jugadores y añadirlas al grupo? (una consulta por jugador, en segundo plano)", " players and add them to the group? (one lookup per player, in the background)"),
-                t("Cuentas vinculadas", "Linked accounts"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-        if (r != JOptionPane.YES_OPTION) return;
-        anfitrion.trabajando(true);
-        final long miSerial = anfitrion.opSerial();
-        final int[] anadidas = { 0 };
-        new SwingWorker<Void, String>() {
-            @Override protected Void doInBackground() {
-                anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
-                for (Player p : nuevos) {
-                    if (anfitrion.detenerOperacion()) break;
-                    publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "\u2026");
-                    try {
-                        List<Perfil.Vinculada> vinc = perfiles.vinculadas(p.id());
-                        SwingUtilities.invokeAndWait(() -> {
-                            try {
-                                Set<Long> familia = new HashSet<>(); familia.add(p.id());
-                                for (Perfil.Vinculada v : vinc) {
-                                    long vid = v.pid();
-                                    if (listaSeguidos.ficharSiNuevo(todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
-                                    familia.add(vid);
-                                }
-                                if (familia.size() > 1) marcarVinculo(familia);
-                            } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
-                        });
-                    } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
-                    anfitrion.dormir(pausaMs / 2);
-                }
-                return null;
-            }
-            @Override protected void process(List<String> ch) { status.setText(ch.get(ch.size() - 1)); }
-            @Override protected void done() {
-                if (miSerial != anfitrion.opSerial()) return;
-                anfitrion.trabajando(false);
-                savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-                status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + "\u00bb.");
-            }
-        }.execute();
-    }
+    public void ficharVarios(List<Player> lista, String g) { dialogosLista.ficharVarios(lista, g); }
 
     // visible para esGrupoDeUsuario (y para el menú "mover a grupo")
     Set<String> gruposExistentes() {
@@ -1488,36 +1354,7 @@ public final class WatchlistView {
         status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + "\u00bb.");
     }
 
-    /** Pregunta a qué grupo fichar (preseleccionado el activo), con «Nuevo grupo…». null = cancelado. */
-    public String elegirGrupoDialog(String nombreJugador) {
-        Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-        gs.add(GRUPO_GENERAL);
-        for (Player x : todosJugadores) gs.add(x.grupo());
-        gs.addAll(gruposConfig());
-        String nuevoO = t("+ Nuevo grupo\u2026", "+ New group\u2026");
-        List<String> ops = new ArrayList<>(gs);
-        ops.add(nuevoO);
-        JComboBox<String> cb = new JComboBox<>(ops.toArray(String[]::new));
-        String pre = grupoActivo();
-        if (pre != null && gs.contains(pre)) cb.setSelectedItem(pre);
-        JPanel pnl = new JPanel(new BorderLayout(0, 6));
-        pnl.add(new JLabel(t("¿A qué grupo añadir a ", "Which group should ") + nombreJugador + (t("?", " join?"))), BorderLayout.NORTH);
-        pnl.add(cb, BorderLayout.CENTER);
-        int r = JOptionPane.showConfirmDialog(ventana, pnl, t("Añadir al grupo", "Add to group"),
-                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
-        if (r != JOptionPane.OK_OPTION) return null;
-        String sel = String.valueOf(cb.getSelectedItem());
-        if (sel.equals(nuevoO)) {
-            String nombre = JOptionPane.showInputDialog(ventana, t("Nombre del nuevo grupo:", "New group name:"), "");
-            if (nombre == null || nombre.trim().isEmpty()) return null;
-            // fila 102 de DEUDA: mismo camino que el resto de altas de grupo (limpiarGrupo + registrarGrupo, que
-            // llama a listaSeguidos.registrarGrupo y escribe con ","), en vez de repetir aquí esa lógica a mano.
-            String limpio = limpiarGrupo(nombre);
-            registrarGrupo(limpio);
-            return limpio;
-        }
-        return sel;
-    }
+    public String elegirGrupoDialog(String nombreJugador) { return dialogosLista.elegirGrupoDialog(nombreJugador); }
 
     /** Rellena el combo con «Todos», los grupos existentes y «+ Nuevo grupo…»,
      *  conservando la selección guardada. */
@@ -1586,21 +1423,7 @@ public final class WatchlistView {
         actualizarIndicadoresVivos();
     }
 
-    void crearGrupoDialog() {
-        String nombre = JOptionPane.showInputDialog(ventana,
-                t("Nombre del grupo nuevo:", "New group name:"),
-                t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-        if (nombre == null || nombre.isBlank()) return;
-        String limpio = limpiarGrupo(nombre);
-        guardarConfig("grupo_activo", limpio);
-        registrarGrupo(limpio);
-        grupoCombo.setSelectedItem(limpio);
-        aplicarFiltroGrupo();
-        actualizarIndicadoresVivos();
-        status.setText(t("Grupo «", "Group “") + limpio
-                + t("» activo: los próximos jugadores que añadas caerán ahí.",
-                    "” active: players you add next will go there."));
-    }
+    void crearGrupoDialog() { dialogosLista.crearGrupoDialog(); }
 
     void refrescarCabeceraOrden() {
         if (cabLabel == null) return;
@@ -1782,71 +1605,8 @@ public final class WatchlistView {
 
     // ===== Alta de jugadores =============================================================================
 
-    /** Tras fichar a alguien: si tiene cuentas vinculadas, ofrecer añadirlas
-     *  todas al mismo grupo de una vez. */
-    public void ofrecerVinculadasTrasAlta(long profileId, String nombre, String grupo) {
-        new SwingWorker<List<Perfil.Vinculada>, Void>() {
-            final Map<Long, Integer> elosV = new HashMap<>();
-            @Override protected List<Perfil.Vinculada> doInBackground() {
-                List<Perfil.Vinculada> vinc = perfiles.vinculadas(profileId);
-                for (Perfil.Vinculada v : vinc) {
-                    Integer e = perfiles.elo1v1(v.pid());
-                    if (e != null) elosV.put(v.pid(), e);
-                    anfitrion.dormir(pausaMs / 2);
-                }
-                return vinc;
-            }
-            @Override protected void done() {
-                List<Perfil.Vinculada> vinc;
-                try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
-                List<Perfil.Vinculada> nuevas = new ArrayList<>();
-                for (Perfil.Vinculada v : vinc) if (!containsPlayerId(v.pid())) nuevas.add(v);
-                if (nuevas.isEmpty()) return;
-                StringBuilder sb = new StringBuilder();
-                for (Perfil.Vinculada v : nuevas) sb.append(sb.isEmpty() ? "" : ", ").append(v.nombre());
-                int r = JOptionPane.showConfirmDialog(ventana,
-                        nombre + t(" tiene ", " has ") + nuevas.size()
-                                + t(" cuentas vinculadas: ", " linked accounts: ") + sb
-                                + t(".\n¿Añadirlas también al grupo «", ".\nAdd them to group “") + grupo
-                                + t("»?", "” too?"),
-                        t("Cuentas vinculadas", "Linked accounts"),
-                        JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-                if (r != JOptionPane.YES_OPTION) return;
-                Set<Long> familia = new HashSet<>();
-                familia.add(profileId);
-                for (Perfil.Vinculada v : nuevas) {
-                    todosJugadores.add(new Player(v.pid(), v.nombre(), grupo));
-                    familia.add(v.pid());
-                }
-                for (Perfil.Vinculada v : vinc) if (containsPlayerId(v.pid())) familia.add(v.pid());
-                eloWatch.putAll(elosV);
-                marcarVinculo(familia);
-                savePlayers();
-                rebuildGrupos();
-                aplicarFiltroGrupo();
-                refrescarWatchlist();
-                status.setText(nuevas.size() + t(" cuentas vinculadas añadidas a «", " linked accounts added to “")
-                        + grupo + "\u00bb.");
-            }
-        }.execute();
-    }
-
-    /** Un jugador concreto elegido de una sugerencia: en Perfil se abre directamente; en el resto, las mismas tres opciones del buscador, sin repetir la búsqueda. */
-    public void jugadorElegido(long pid, String nombre) {
-        if (anfitrion.perfilAbierto()) { navegacion.abrirPerfil(pid, nombre); return; }
-        String verO = t("Ver sus partidas", "View their games"), perfO = t("Ver perfil", "View profile"), addO = t("Añadir al grupo\u2026", "Add to group\u2026"), canO = t("Cancelar", "Cancel");
-        int r0 = JOptionPane.showOptionDialog(ventana, nombre + "  ·  " + pid, t("Resultados", "Results"), JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null, new Object[]{ perfO, verO, addO, canO }, perfO);
-        if (r0 == 0) navegacion.abrirPerfil(pid, nombre);
-        else if (r0 == 1) {
-            Player pl = new Player(pid, nombre, grupoDestino());
-            enlacePartidas.fijarObjetivo(pl, vistaActualId());
-            playersList.clearSelection(); aplicarFiltroGrupo(); enlacePartidas.mostrarDirectos(false); enlacePartidas.fetchMatches();
-        } else if (r0 == 2) {
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.add(GRUPO_GENERAL); for (Player x : todosJugadores) gs.add(x.grupo()); gs.addAll(gruposConfig());
-            Object g = JOptionPane.showInputDialog(ventana, t("Grupo:", "Group:"), t("Añadir a la watchlist", "Add to the watchlist"), JOptionPane.PLAIN_MESSAGE, null, gs.toArray(), grupoDestino());
-            if (g != null) ficharDesdeTop(new Player(pid, nombre, String.valueOf(g)), String.valueOf(g));
-        }
-    }
+    public void ofrecerVinculadasTrasAlta(long profileId, String nombre, String grupo) { dialogosLista.ofrecerVinculadasTrasAlta(profileId, nombre, grupo); }
+    public void jugadorElegido(long pid, String nombre) { dialogosLista.jugadorElegido(pid, nombre); }
 
     /** ¿La respuesta a la búsqueda «q» ya no sirve porque el usuario siguió escribiendo? (el texto actual del
      *  campo ya no es «q»). Mismo criterio que el buscador de nick de la 1.1: comparar contra el texto YA
@@ -1867,80 +1627,7 @@ public final class WatchlistView {
         return new Player(Long.parseLong(r[0]), r[1], grupo);
     }
 
-    public void addPlayerDialog(boolean soloVer) { addPlayerDialog(soloVer, null); }
-
-    public void addPlayerDialog(boolean soloVer, String nickInicial) {
-        String q = nickInicial != null && !nickInicial.isBlank() ? nickInicial
-                : JOptionPane.showInputDialog(ventana, t("Nick del jugador:", "Player nick:"),
-                        t("Buscar jugador", "Find player"), JOptionPane.PLAIN_MESSAGE);
-        if (q == null || q.isBlank()) return;
-        status.setText(t("Buscando \"", "Searching \"") + q.trim() + "\"…");
-        new SwingWorker<List<String[]>, Void>() {
-            // decisión 8 (DEUDA fila 112): mismo buscador que Ratings/Perfil/Live/Cara a cara (service.BusquedaPerfiles):
-            // local primero, luego la API, sin duplicados y con el mismo formato de fila. Antes esta vista llamaba a
-            // la API a mano (con su propio formato, sin t() en "partidas") y solo después completaba con lo local.
-            @Override protected List<String[]> doInBackground() {
-                return busqueda.buscar(q.trim());
-            }
-            @Override protected void done() {
-                try {
-                    List<String[]> res = get();
-                    if (res.isEmpty()) { status.setText(t("Sin resultados para \"", "No results for \"") + q.trim() + "\"."); return; }
-                    String[] opciones = res.stream().map(r -> r[2]).toArray(String[]::new);
-                    JComboBox<String> cbSel = new JComboBox<>(opciones);
-                    JPanel pnl = new JPanel(new BorderLayout(0, 6));
-                    pnl.add(new JLabel(t("Elige el jugador:", "Pick the player:")), BorderLayout.NORTH);
-                    pnl.add(cbSel, BorderLayout.CENTER);
-                    String verO = t("Ver sus partidas", "View their games");
-                    String perfO = t("Ver perfil", "View profile");
-                    String addO = t("Añadir al grupo\u2026", "Add to group\u2026");
-                    String canO = t("Cancelar", "Cancel");
-                    boolean perfilAbierto = anfitrion.perfilAbierto();
-                    int r0;
-                    if (perfilAbierto && res.size() == 1) r0 = 0;   // en la pestaña Perfil, el buscador de arriba abre el perfil directamente
-                    else r0 = JOptionPane.showOptionDialog(ventana, pnl, t("Resultados", "Results"),
-                            JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
-                            perfilAbierto ? new Object[]{ perfO, canO } : new Object[]{ perfO, verO, addO, canO }, perfO);
-                    if (perfilAbierto && r0 != 0) { status.setText(t("Listo.", "Ready.")); return; }
-                    if (r0 != 0 && r0 != 1 && r0 != 2) { status.setText(t("Listo.", "Ready.")); return; }
-                    final boolean verPerfil = r0 == 0, verAhora = r0 == 1;
-                    // Por ÍNDICE, no por texto (ver jugadorDeFila): dos filas locales pueden compartir texto.
-                    Player p = jugadorDeFila(res, cbSel.getSelectedIndex(), grupoDestino());
-                    if (p == null) { status.setText(t("Listo.", "Ready.")); return; }
-                    if (verPerfil) { status.setText(t("Listo.", "Ready.")); navegacion.abrirPerfil(p.id(), p.name()); return; }
-                    if (verAhora) {
-                        enlacePartidas.fijarObjetivo(p, vistaActualId());
-                        playersList.clearSelection();   // la selección vieja no debe filtrar al invitado
-                        aplicarFiltroGrupo();   // la fila flotante, visible EN EL ACTO (también en los tops)
-                        new Thread(() -> {   // ELO del invitado para su fila flotante
-                            Integer ei = perfiles.elo1v1(p.id());
-                            if (ei != null) SwingUtilities.invokeLater(() -> {
-                                eloWatch.put(p.id(), ei);
-                                playersList.repaint();
-                                enlacePartidas.refrescarSujetos(enlacePartidas.ultimosSujetos(), enlacePartidas.invitado() != null);   // el ELO recién llegado, a la cabecera
-                            });
-                        }).start();
-                        enlacePartidas.fetchMatches();
-                        return;
-                    }
-                    String gElegido = elegirGrupoDialog(p.name());
-                    if (gElegido == null) { status.setText(t("Listo.", "Ready.")); return; }
-                    final Player pAdd = new Player(p.id(), p.name(), gElegido);
-                    if (!containsPlayerId(pAdd.id())) {
-                        todosJugadores.add(pAdd);
-                        savePlayers();
-                        rebuildGrupos();
-                        aplicarFiltroGrupo();
-                        refrescarWatchlist();
-                    }
-                    ofrecerVinculadasTrasAlta(pAdd.id(), pAdd.name(), pAdd.grupo());
-                    status.setText(t("Listo.", "Ready."));
-                } catch (Exception ex) {
-                    status.setText(t("Error buscando: ", "Search error: ") + causa(ex));
-                }
-            }
-        }.execute();
-    }
+    public void addPlayerDialog(boolean soloVer, String nickInicial) { dialogosLista.addPlayerDialog(soloVer, nickInicial); }
 
     // ===== Persistencia ===================================================================================
 
