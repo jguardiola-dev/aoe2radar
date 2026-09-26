@@ -9,7 +9,8 @@ app, and for another person (or an agent) to understand the project in an aftern
 ## Layers (inside out)
 ```
 model     Plain data: Match, MatchPlayer, Player, Actividad, Forma, LadderRow… No Swing, no network.
-api       Companion client: ApiClient (REST), OngoingSocket (websocket). Transport + parsing only.
+api       Companion client: ApiClient (the only text path to the network) + CompanionApi (REST endpoints),
+          SocketVivo (websocket), Throttle/ThrottleCubo (throttle + circuit breaker). Transport + parsing only.
 sfrdata   sfr-data client: SfrDataClient (index/shards/elo_ayer/muestra/civstats/ladder), with a disk cache.
 techtree  aoe2techtree data (data.json, per-civ trees, per-language strings), with a disk cache and ETag.
           Same layer as sfrdata: an external source of precomputed data. The icons (ImageIcon) belong to ui.
@@ -21,18 +22,18 @@ service   Business rules: ProfileService (profile = shard + "Actualizar hoy"), L
           removes anyone; only a check confirmed by the API does, finished, with retries for up to 3 h),
           FormService (form by subtraction + fallback), RecService (downloads/send to game, with
           RecService.recSana deciding whether the copy on disk is good or must be downloaded again),
-          WatchlistService (groups, tops, clans: split into ListaSeguidos, Familias, FiltroLista, BarridoVivos,
-          TopLadderService, Campanas, AnotacionesService + api.SteamApi; their state moves to AppState in phase 3),
-          StatsService (civ stats), Throttle (throttle + circuit breaker),
-          ControlService (control.json).
-ui        Swing: one view per tab (WatchlistView, MatchesView, LiveView, ProfileView, RatingsView,
-          CivStatsView, TechTreeView) and its presenter (…Presenter). Views do not call the network: they ask
+          the watchlist (groups, tops, clans; there is no WatchlistService class: it is split into ListaSeguidos,
+          Familias, FiltroLista, BarridoVivos, TopLadderService, Campanas, AnotacionesService + api.SteamApi),
+          StatsService (civ stats), ControlService (control.json).
+ui        Swing: one view per tab (WatchlistView, PartidasView, DirectosView, LiveNowView, PerfilView,
+          RatingsView, CivStatsView, TechTreeView) and its presenter (…Presenter). Views do not call the network: they ask
           the presenter and paint what the presenter gives them.
 app       Main (startup, theme, wiring) and Servicios (the composition root: creates and connects, in a fixed
-          order, every service that talks to the companion). The shared UI state (AppState: which view,
-          which player, which filters) lives in ui, in small pieces (ui.FiltroStats is the first one), so
-          that views can use it without depending on app (phase 3 decision: if it lived in app, ui would
-          import outwards).
+          order, every service that talks to the companion). The shared UI state lives in ui, in small
+          pieces: ui.AppState (the active view and the navigation history, with listeners), ui.Navegador
+          (the shared tab chrome and back/forward buttons; it implements ui.Navegacion) and ui.FiltroStats.
+          It lives in ui so that views can use it without depending on app (phase 3 decision: if it lived
+          in app, ui would import outwards).
 (root)    SpoilerFreeRecs (the JFrame: declares the fields the views share and calls the wiring in order
           from the constructor) and the Cableado*/AccionesVentana classes, which do that wiring and the
           "open something" actions; they live in the root package (not in app or ui) so they can read the
@@ -51,27 +52,33 @@ imports (zero hand-written exceptions) and `verificar.ps1` runs it; the root pac
 `Cableado*`/`AccionesVentana`) is not checked by the script, because it is the composition of the window,
 not a layer.
 
-## Key contracts (interfaces)
-- `ApiClient`: `List<Match> matches(List<Long> pids, int page, int perPage)`, `Profile profile(long pid)`,
-  `List<LadderRow> leaderboard(String lb, int page, String country)`, `List<PlayerHit> search(String q)`…
-  Everything it returns goes through `Throttle`. No Swing.
-- `SfrDataClient`: `Optional<Shard> shard(long pid)`, `EloSnapshot eloAyer()`, `EloSnapshot eloHace7()`,
-  `Muestra muestraAyer()`, `CivStatsWindow civStats(String ventana)`, `Ladder ladder()`.
+## Key contracts
+Signatures as they are in the code today (simplified: `throws` clauses left out).
+- `api.ApiClient` (class): `String texto(String url)` and `String textoCon429(String url)`: the only text path
+  to the network. Every call goes through `Throttle`; a 429 is reported through a callback, never through Swing.
+- `api.CompanionApi` (class, on top of `ApiClient`): `partidas(long pid, int pagina, int porPagina)`,
+  `Perfil perfil(long pid)`, `Clasificacion clasificacion(String id, int pagina, int porPagina, String pais)`,
+  `List<PerfilEncontrado> buscarPerfiles(String q)`, `twitchDirectos()`…
+- `sfrdata.SfrDataClient` (class): three ways to download, by file: `byte[] datos(nombre)` (the «data» branch,
+  with ETag), `byte[] diario(nombre, timeoutS[, caducidad])` (the «perfiles» release) and
+  `byte[] versionado(base, nombre, version, timeoutS)` (profile packages and deltas). Parsing is done by
+  `Ladder`, `Snapshots`, `CivStats`, `PerfilesSfr`…
 - `CacheService(Reloj)`: a single rule (`fresh = age < expiry`, values in `Caducidad`) and two pieces:
   `CacheMemoria<K,V>` per key, with `vigente(k)` (must it be requested again?) and `ultimo(k)` (what do I paint
   meanwhile?), and `Sello` for a single value (`fresco()`/`marcar()`); plus `archivoFresco(Path, caducidad)` for
   disk. The caller does the loading (no `get(key, ttl, load)`): each call site has its own policy on failure.
   Not caches: the activity of the open profile, linked players and families (session state:
   ProfileService/AppState).
-- `Throttle`: `void adquirir(cancelar)` (token bucket: burst of 5, then 1/s; Stop cuts the wait) and
+- `api.Throttle` (interface; implementation `api.ThrottleCubo`): `void adquirir(cancelar)` (token bucket: burst of 5, then 1/s; Stop cuts the wait) and
   `long registrar429()` (global pause 60→120→240→300 s per episode; it is forgotten after 10 min with no 429
   since the last pause ended).
 - Presenters: they receive events from the view (`onBuscar(nick)`, `onAbrirPerfil(pid)`), call services on a
-  worker thread and hand back to the EDT an immutable `…ViewModel` that the view paints.
+  worker thread (`Tareas.enFondo`) and, back on the EDT (`Tareas.enUi`), tell the view what to paint through
+  its `Pantalla` interface (there are no `…ViewModel` classes).
 
 ## Phases with acceptance criteria
 **Phase 0 · Safety net.** Git repo, Maven, `SpoilerFreeRecs.java` inside `src/main/java`, screenshot harness
-as a test (`RegresionCapturas`: the 23 current screenshots, compared pixel by pixel with a tolerance).
+as a test (`RegresionCapturas`: the 23 screenshots of that time, 29 today; compared pixel by pixel with a tolerance).
 Done when `mvn test` reproduces the screenshots in green.
 
 **Phase 1 · Mechanical split.** Extract classes and methods into the packages without changing a single line
@@ -97,10 +104,13 @@ deleted from the original. Done when no `ui` class imports `java.net` or knows `
 lines; all views live in `ui`, with `Cableado*`/`AccionesVentana` in the root package.
 
 **Phase 4 · Wrap-up.** Recorded debt resolved or discarded with a reason, technical `README`, jpackage from
-Maven, release 1.2. Almost all the debt in `DEUDA.md` has been resolved or discarded (with a reason, dated
-2026-09-26); a few low-risk rows remain open (priority `baja`/`media`), plus row 137 (split `WatchlistView`/
-`PartidasView`), postponed to 1.2.x by Jorge's decision. Packaging with `jpackage` already exists as a Maven
-profile (`-Pempaquetar`, see README_TECNICO.md); the 1.2 release itself is still pending.
+Maven, release 1.2. Almost all the debt in `DEUDA.md` was resolved or discarded (with a reason, dated
+2026-09-26). Packaging with `jpackage` is a Maven profile (`-Pempaquetar`, see README_TECNICO.md).
+**Closed:** 1.2 is released (tag `v1.2`, GitHub release).
+
+**Version 1.3 (in progress).** Split `WatchlistView`/`PartidasView` (DEUDA row 137, postponed from 1.2), the
+remaining low-risk debt rows (priority `baja`/`media`), the user README and the move of the public docs to
+English.
 
 ## Development rules (Reglas de desarrollo)
 
@@ -138,7 +148,7 @@ Jorge's decisions of 2026-09-26 (closing the phase 4 debt):
 6. «Solo vivos» with a collapsed family shows it if ANY of its members is playing, not only the head.
 7. Right-clicking a player row in the profile lists always offers «Abrir perfil en pestaña nueva».
 8. «Añadir jugador» searches locally first and then the API, with the same row format as the other searches.
-9. Splitting `WatchlistView`/`PartidasView` (DEUDA row 137) is postponed to 1.2.x; the window
+9. Splitting `WatchlistView`/`PartidasView` (DEUDA row 137) is postponed to after 1.2 (now part of 1.3); the window
    (`SpoilerFreeRecs.java`) is split to under 300 lines already in phase 3/4.
 
 ## Known debt at the start
