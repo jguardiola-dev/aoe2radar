@@ -111,6 +111,18 @@ class CaraACaraPresenterTest {
         assertEquals(0, perfiles.anioSfrLlamadas);
     }
 
+    /** F4 (3): el año del rival llega de sfr-data: se avisa a la vista con su pid y su fecha «hasta» (para que su
+     *  perfil, abierto luego desde la caché, tenga «Actualizar hoy»), aunque el diálogo ya mire otro cruce. */
+    @Test void pedir_anio_rival_de_sfr_data_avisa_del_origen() {
+        List<String> avisos = new java.util.ArrayList<>();
+        CaraACaraPresenter p = new CaraACaraPresenter(perfiles, busqueda, Tareas.EN_LINEA, actividadCache, (pid, hasta) -> avisos.add(pid + "@" + hasta));
+        perfiles.anioSfr = new AnioSfr(new Actividad(9L, "Rival", List.of(), true, 1, 1L), "2026-09-24", "es");
+        p.pedirAnioRival(9L, "Rival", () -> false, arF -> { });
+        assertEquals(List.of("9@2026-09-24"), avisos);
+        p.pedirAnioRival(9L, "Rival", () -> true, arF -> { });   // ya en caché: no viene de sfr-data en esta llamada
+        assertEquals(1, avisos.size());
+    }
+
     /** B4: si no está en caché, se pide a sfr-data y el resultado se deja en la caché (para la próxima vez). */
     @Test void pedir_anio_rival_sin_cache_pide_a_sfr_data_y_la_rellena() {
         Actividad a = new Actividad(9L, "Rival", List.of(), true, 1, 1L);
@@ -146,6 +158,31 @@ class CaraACaraPresenterTest {
         presenter.pedirAnioRival(9L, "", () -> true, arF -> { });
         assertEquals("#9", perfiles.ultimoNombreSiFalta);
         assertEquals("#9", actividadCache.get(9L).nombre());
+    }
+
+    /** B2: un primer anioSfr null (p. ej. PerfilesSfr.indice() con la red caída) no marca al rival para la sesión:
+     *  al volver a fijar el cruce, se reintenta y, si ya va bien, se pinta. */
+    @Test void anio_rival_null_se_reintenta_al_volver_a_fijar() {
+        perfiles.anioSfr = null;
+        Actividad[] pintado = new Actividad[1];
+        presenter.pedirAnioRival(9L, "Rival", () -> true, arF -> pintado[0] = arF);
+        assertNull(pintado[0]);
+        Actividad a = new Actividad(9L, "Rival", List.of(), true, 1, 1L);
+        perfiles.anioSfr = new AnioSfr(a, "2026-09-24", "es");
+        presenter.pedirAnioRival(9L, "Rival", () -> true, arF -> pintado[0] = arF);
+        assertEquals(2, perfiles.anioSfrLlamadas);
+        assertSame(a, pintado[0]);
+    }
+
+    /** B2: una ficha que volvió null (429 o corte) se vuelve a pedir la próxima vez. */
+    @Test void ficha_null_se_reintenta() {
+        perfiles.ficha = null;
+        FichaPerfil[] pintado = new FichaPerfil[1];
+        presenter.pedirFicha(3L, p -> pintado[0] = p);
+        FichaPerfil f = new FichaPerfil(Map.of("rm_1v1", new int[]{ 1500, 10 }), "es", "", 5);
+        perfiles.ficha = f;
+        presenter.pedirFicha(3L, p -> pintado[0] = p);
+        assertSame(f, pintado[0]);
     }
 
     @Test void pedir_ficha_pinta_siempre_sin_comprobar_caducidad() {

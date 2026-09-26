@@ -116,12 +116,8 @@ final class CableadoCentro {
                     @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
                     @Override public void ficharDesdeTop(long pid, String nombre, String grupo) { v.watchlist.ficharDesdeTop(new Player(pid, nombre, grupo), grupo); }
                     @Override public List<String> gruposDeJugadores() { Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); for (Player x : v.todosJugadores) gs.add(x.grupo()); return new ArrayList<>(gs); }
-                    @Override public Set<Long> idsDeGrupo(String grupo) { Set<Long> ids = new HashSet<>(); for (Player x : v.todosJugadores) if (x.grupo().equalsIgnoreCase(grupo)) ids.add(x.id()); return ids; }
                     @Override public List<String> gruposGuardados() { return new ArrayList<>(v.watchlist.gruposConfig()); }
                     @Override public String grupoGeneral() { return WatchlistView.GRUPO_GENERAL; }
-                    @Override public List<String> clanesGuardados() { return v.watchlist.clanesGuardados(); }
-                    @Override public boolean hayTop250() { if (v.liveNow == null) return false; boolean[] hay = { false }; v.liveNow.conTop(l -> hay[0] = !l.isEmpty()); return hay[0]; }
-                    @Override public Set<Long> idsTop250() { Set<Long> s = new HashSet<>(); if (v.liveNow != null) v.liveNow.conTop(l -> { for (Object[] x : l) s.add((Long) x[0]); }); return s; }
                     @Override public boolean ultimoClicFueCtrl() { return v.ultimoClicCtrl; }
                     @Override public void pedirAlias(long pid, String nombreOriginal) { v.dialogos.pedirAlias(pid, nombreOriginal); }
                     @Override public void pedirNota(long pid, String nombre) { v.dialogos.pedirNota(pid, nombre); }

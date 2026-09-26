@@ -19,6 +19,8 @@ public final class CivStatsPresenter {
     private final Tareas tareas;
     private final Pantalla pantalla;
     private boolean cargando;
+    /** F2 (1.3): la ventana pedida mientras otra se descargaba (null si ninguna); solo se toca en el EDT. */
+    private String pendiente;
 
     public CivStatsPresenter(StatsService stats, Tareas tareas, Pantalla pantalla) {
         this.stats = stats;
@@ -26,15 +28,21 @@ public final class CivStatsPresenter {
         this.pantalla = pantalla;
     }
 
-    /** Pide (si no hay ya una carga en curso) el resumen de la ventana y vuelve al EDT con el resultado. */
+    /** Pide el resumen de la ventana y vuelve al EDT con el resultado. Si ya hay una carga en curso, no lanza
+     *  otra: apunta la ventana y, al terminar la que está en vuelo, pide esta si es distinta (F2). */
     public void cargar(String ventana) {
-        if (cargando) return;
+        if (cargando) { pendiente = ventana; return; }
         cargando = true;
         pantalla.mostrarEstado(t("Descargando el resumen de ", "Downloading the summary for ") + NombresStats.ventanaNombre(ventana).toLowerCase(Locale.ROOT) + "…");
         tareas.enFondo("civstats-datos", () -> {
             String err = stats.asegurar(ventana, true);
             tareas.enUi(() -> {
                 cargando = false;
+                String siguiente = pendiente;
+                pendiente = null;
+                // F2: durante la descarga se eligió otra ventana: esta ya no es la vigente; se pide la nueva y no se
+                // pinta nada de la vieja (datosListos buscaría la ventana nueva, aún sin datos, y no diría nada)
+                if (siguiente != null && !siguiente.equals(ventana)) { cargar(siguiente); return; }
                 if (err != null) { pantalla.mostrarEstado(t("No se pudieron cargar las estadísticas: ", "Couldn't load the statistics: ") + err); return; }
                 pantalla.datosListos();
             });

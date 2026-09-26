@@ -142,6 +142,18 @@ class TechTreePresenterTest {
         assertEquals("aztecs", pantalla.ultimaCivPedida);
     }
 
+    /** F11 (1.3): primer arranque, el catálogo aún bajando; se pide aztecs y luego, antes de que termine, britons
+     *  (clic en una civ del perfil o de Civ Stats). Al terminar hay que enseñar britons, no la civ del principio. */
+    @Test void civPedidaDuranteLaCargaDelCatalogoEsLaQueSeEnsena() {
+        TareasAplazadas tareas = new TareasAplazadas();
+        TechTreePresenter p = crear(tareas);
+        p.cargarDatos("aztecs");
+        p.actualizarCivPedida("britons");
+        p.actualizarCivPedida(null);   // abrir la pestaña sin civ no borra la pedida
+        tareas.pendientesFondo.remove(0).run();
+        assertEquals("britons", pantalla.ultimaCivPedida);
+    }
+
     @Test void cargarDatosError() {
         TechTreePresenter p = crear(Tareas.EN_LINEA);
         tt.errorAsegurar = "sin conexión";
