@@ -35,4 +35,8 @@ public final class CacheMemoria<K, V> {
 
     /** Guarda v para k con la hora de ahora (no admite null: «no hay» es no guardar). */
     public void poner(K k, V v) { mapa.put(k, new Entrada<>(Objects.requireNonNull(v), cache.reloj().ahoraMs())); }
+
+    /** Da por caducado lo guardado para k: vigente(k) pasa a null, pero ultimo(k) lo sigue dando (para enseñar algo si
+     *  la próxima lectura falla). Sin nada guardado, no hace nada. */
+    public void caducar(K k) { mapa.computeIfPresent(k, (clave, e) -> new Entrada<>(e.valor(), Long.MIN_VALUE / 2)); }
 }

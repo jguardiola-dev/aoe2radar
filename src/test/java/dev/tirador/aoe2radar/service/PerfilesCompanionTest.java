@@ -466,6 +466,23 @@ class PerfilesCompanionTest {
 
     // ----- con la caché por URL (plan API de la 1.3): el ELO 1v1 nunca sale de ella -----
 
+    /** Revisión C5: olvidarFicha (lo que hace «Actualizar hoy» antes de pedir la ficha) salta las dos cachés, la de
+     *  la sesión y la de URL; la ficha de antes sigue como «conocida» por si la nueva falla. */
+    @Test void olvidarFicha_laSiguienteVaALaRedYLaConocidaSeConserva() {
+        CompanionApi conCache = CompanionApi.conCache(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false), reloj);
+        PerfilesCompanion s = new PerfilesCompanion(conCache, fichas, (pid, v) -> { }, (pid, v) -> { }, null, null,
+                new EloSesion(estadoVivo, reloj, EloSesion.ESPERA));
+        red.cuerpo = "{\"country\":\"es\",\"games\":10}";
+        FichaPerfil antes = s.ficha(9_101L);
+        s.ficha(9_101L);
+        assertEquals(1, peticiones(9_101L), "sin olvidar, de lo guardado");
+        s.olvidarFicha(9_101L);
+        assertSame(antes, s.fichaConocida(9_101L), "la de antes sigue a mano");
+        red.cuerpo = "{\"country\":\"es\",\"games\":11}";
+        assertEquals(11, s.ficha(9_101L).partidas(), "la cabecera, de ahora");
+        assertEquals(2, peticiones(9_101L), "ni la caché de la sesión ni la de URL la sirvieron");
+    }
+
     @Test void elo1v1_conCachePorUrl_siempreVaALaRed() {
         CompanionApi conCache = CompanionApi.conCache(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false), reloj);
         PerfilesCompanion s = new PerfilesCompanion(conCache, fichas, (pid, v) -> { }, (pid, v) -> { }, null, null,

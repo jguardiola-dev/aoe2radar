@@ -376,6 +376,19 @@ class PerfilPresenterTest {
         assertSame(perfiles.ficha, pantalla.hoyFicha);
     }
 
+    /** Revisión C5 del lote API: «Actualizar hoy» olvida la ficha guardada ANTES de pedirla, para que la cabecera sea de ahora. */
+    @Test void actualizar_hoy_olvida_la_ficha_guardada_antes_de_pedirla() {
+        List<String> orden = new ArrayList<>();
+        PerfilesFalso conOrden = new PerfilesFalso() {
+            @Override public void olvidarFicha(long pid) { orden.add("olvidar " + pid); }
+            @Override public FichaPerfil ficha(long pid) { orden.add("ficha " + pid); return super.ficha(pid); }
+        };
+        conOrden.ficha = new FichaPerfil(Map.of(), "es", "", 0);
+        pantalla.pidAbierto = 5L;
+        new PerfilPresenter(conOrden, ratings, busqueda, Tareas.EN_LINEA, eloWatch, new HashMap<>(), pantalla).actualizarHoy(5L);
+        assertEquals(List.of("olvidar 5", "ficha 5"), orden);
+    }
+
     /** F9: «Actualizar hoy» con la ficha caída (ficha() devuelve null) pero traerHoy bien: se pinta con la última
      *  ficha conocida, no con null (que dejaba «Sin datos de perfil» y sin chips de ELO). */
     @Test void actualizar_hoy_con_la_ficha_caida_usa_la_ultima_conocida() {

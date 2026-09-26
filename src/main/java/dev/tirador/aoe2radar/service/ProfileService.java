@@ -104,4 +104,11 @@ public interface ProfileService {
      * Va a la red.
      */
     int traerHoy(long pid) throws IOException, InterruptedException;
+
+    /**
+     * Olvida la ficha guardada de pid (la de la sesión y, si la fuente guarda respuestas, la de la caché por URL), para
+     * que la próxima ficha(pid) salga de la red: «Actualizar hoy» quiere la cabecera de ahora. fichaConocida sigue
+     * dando la de antes. Sin red. Por defecto (dobles de prueba), nada.
+     */
+    default void olvidarFicha(long pid) { }
 }
