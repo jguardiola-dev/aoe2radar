@@ -50,8 +50,8 @@ public class Main {
                 for (StackTraceElement st : ex.getStackTrace()) sb.append("    at ").append(st).append("\n");
                 try { Files.writeString(enCarpetaBase("arranque_error.log"), sb.toString()); } catch (Exception ignored) { }
                 JOptionPane.showMessageDialog(null,
-                        NOMBRE + t(" no ha podido arrancar.\nDetalle guardado en arranque_error.log (junto al exe).\n\n",
-                                " could not start.\nDetails saved to arranque_error.log (next to the exe).\n\n") + ex,
+                        NOMBRE + t(" no ha podido arrancar.\nDetalle guardado en " + enCarpetaBase("arranque_error.log").toAbsolutePath() + "\n\n",
+                                " could not start.\nDetails saved to " + enCarpetaBase("arranque_error.log").toAbsolutePath() + "\n\n") + ex,
                         NOMBRE, JOptionPane.ERROR_MESSAGE);
                 System.exit(2);
             }
