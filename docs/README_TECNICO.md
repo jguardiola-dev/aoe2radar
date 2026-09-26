@@ -40,6 +40,19 @@ resizes and retries once before really failing. If the first screenshot comes ou
 `AvisoHarness.logonUiActivo` checks whether the Windows lock screen (`LogonUI.exe`) is among the running
 processes, only to make the error message clearer; it never decides on its own that the session is locked.
 
+## Continuous integration (GitHub Actions)
+`.github/workflows/build.yml` runs on every push and pull request to `main` and to the `fase-*` branches, on a
+`windows-latest` runner: Java 21 (Temurin) with the Maven cache, `python tools/capas.py`, and
+`mvn -B test "-Dtest=!RegresionCapturas"`. It is the same check as `.\verificar.ps1 -Rapido`.
+- The screenshot harness never runs in CI: it takes the screen, and its reference images depend on the
+  resolution, scaling and fonts of the development PC. It only runs with `-Dharness=si` (what the full
+  `verificar.ps1` passes), and CI excludes it by name as well.
+- Windows runner on purpose: several tests assume Windows paths (`SistemaTest`, `EspectarTest`,
+  `AvisoHarnessTest`, the invalid-path case of "Enviar al juego").
+- If a run fails, the Surefire reports are attached to it as the `surefire-reports` artifact.
+- The result is on the repo's **Actions** tab and next to each commit/PR. A green CI does not replace the full
+  harness before closing a group of commits: that one still runs on the development PC.
+
 ## Packaging (Maven profile `empaquetar`)
 The normal build (`mvn test`, `mvn package`) does not produce the `.exe`: that lives in a separate profile
 that is **not activated automatically**, so it does not affect or slow down day-to-day work.
