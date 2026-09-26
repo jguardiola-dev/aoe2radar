@@ -30,7 +30,8 @@ import static dev.tirador.aoe2radar.util.Json.when;
  * mano). Todos pasan por ApiClient (freno, cancelación); todos reintentan ante 429 (textoCon429) salvo buscarPerfiles
  * (texto). Construida con conCache(…), las fichas (/profiles/{pid}) y las páginas del ladder (/leaderboards) pasan
  * antes por una caché por URL (CacheRespuestas: 10 y 14 min, 500 entradas, solo 2xx); /matches, la búsqueda y Twitch
- * nunca: son tiempo real. Con el constructor de siempre, sin caché (comportamiento de la 1.3).
+ * nunca: son tiempo real. La app la construye así desde la 1.3 (app.Servicios.COMPANION); el constructor de siempre,
+ * sin caché, queda para los tests.
  * Devuelven tipos del modelo: los conversores son puros (no aprenden país/canal, salvo parseMatch, ver DEUDA)
  * y no inventan valores: lo que falta queda null (textos, Integer) o -1 (ids y contadores long); cada pantalla decide
  * lo suyo. Fuera de aquí solo lee JSON del companion el socket (LiveService).
@@ -49,15 +50,16 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
     private final ApiClient api;
     private final CacheRespuestas cache;   // null: sin caché. Si no: /profiles/{pid} y /leaderboards/…, por URL, solo 2xx
 
-    /** SIN caché: cada lectura sale a la red, como hasta la 1.3 (lo que hoy construye app.Servicios). */
+    /** SIN caché: cada lectura sale a la red, como hasta la 1.3 (hoy, solo los tests; la app usa conCache). */
     public CompanionApi(ApiClient api) { this(api, (CacheRespuestas) null); }
 
     private CompanionApi(ApiClient api, CacheRespuestas cache) { this.api = api; this.cache = cache; }
 
     /**
      * CON caché de fichas y páginas del ladder (10 y 14 min, MAX_CACHE entradas). Reloj: Reloj.SISTEMA en la app, uno
-     * falso en los tests. Antes de usarla en la app, quien pida datos que deben ser de ahora (el ELO tras una partida,
-     * una recarga que pide el usuario) tiene que ir por perfilFresco / leaderboardFresca / clasificacionFresca.
+     * falso en los tests. Quien pida datos que deben ser de ahora (el ELO 1v1, la tarjeta del hover, una recarga que
+     * pide el usuario) tiene que ir por perfilFresco / leaderboardFresca / clasificacionFresca. Un acierto respeta
+     * Detener (ApiClient.comprobarDetenida).
      */
     public static CompanionApi conCache(ApiClient api, Reloj reloj) {
         return new CompanionApi(api, new CacheRespuestas(reloj, MAX_CACHE));
