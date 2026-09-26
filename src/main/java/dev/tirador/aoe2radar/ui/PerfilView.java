@@ -68,6 +68,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongFunction;
 
 import static dev.tirador.aoe2radar.service.NombresStats.nombreCivStats;
@@ -226,7 +227,10 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     private JPanel actVinculadasPanel;
     private JLabel actNotaLinea;
     private String actNombreReal = "";
-    private final Set<Long> vinculadasPedidas = new HashSet<>();
+    // Fila 129: se escribe desde el hilo de fondo "perfil-hoy" (PerfilPresenter.actualizarHoy llama a
+    // marcarVinculadasPedidas antes de traerHoy, directamente en el hilo, sin pasar por enUi) y se lee en el
+    // EDT (actPintarVinculadas, el clic de "comprobar"): con un HashSet normal ese cruce de hilos no es seguro.
+    private final Set<Long> vinculadasPedidas = ConcurrentHashMap.newKeySet();
     private JDialog histDialogo; private int histPagina; private String histModo = "*";
     private long historialEnTabla;   // pid cuyo histórico está en la tabla (para que la pestaña Partidas no vuelva a buscar)
     private javax.swing.Timer perfilSeleccionTimer;
