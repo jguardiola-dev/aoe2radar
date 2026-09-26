@@ -70,7 +70,8 @@ Tabla resumida; el detalle de qué conoce cada capa y los contratos clave está 
 | `cache` | `CacheService`: cachés en memoria y disco con TTL, una sola implementación. |
 | `service` | Reglas de negocio: `ProfileService`, `LiveService`, `FormService`, `RecService`, `WatchlistService`, `RatingsService`, `Throttle`, `ControlService`… |
 | `ui` | Una vista por pestaña (`…View`) y su presentador (`…Presenter`). Las vistas no llaman a la red. |
-| (Main) | `SpoilerFreeRecs` arranca la app, monta el tema y conecta vistas con servicios; queda de menos de 300 líneas al cerrar la fase 3. |
+| `app` | `Main` (arranque real: `--make-ico`, catálogos, idioma, tema, ventana en el EDT) y `Servicios` (raíz de composición: crea y conecta, en un orden fijo, los servicios que hablan con el companion). |
+| (paquete raíz) | `SpoilerFreeRecs` es la ventana (`JFrame`): declara los campos que comparten las vistas y llama al cableado en orden desde el constructor; hoy menos de 300 líneas. Las clases `Cableado*`/`AccionesVentana` (mismo paquete, para leer esos campos sin volverlos `public`) hacen la composición (qué vista con qué servicio) y las acciones de «abrir algo» (URL, Twitch, espectar, CaptureAge). |
 
 Regla de dependencia: cada capa solo conoce las de más adentro (`ui` conoce `service` y `model`, nunca al
 revés). Se comprueba en cada `verificar.ps1` con `tools/capas.py`, que falla si aparece una flecha hacia

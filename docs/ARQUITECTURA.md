@@ -28,6 +28,10 @@ app       Main (arranque, tema, wiring) y Servicios (la raíz de composición: c
           vista, qué jugador, qué filtros) vive en ui, en piezas pequeñas (ui.FiltroStats es la primera), para
           que las vistas lo usen sin depender de app (decisión de la fase 3: si viviera en app, ui importaría
           hacia fuera).
+(raíz)    SpoilerFreeRecs (el JFrame: declara los campos que comparten las vistas y llama al cableado en orden
+          desde el constructor) y las clases Cableado*/AccionesVentana, que hacen ese cableado y las acciones
+          de «abrir algo»; viven en el paquete raíz (no en app ni en ui) para leer los campos de la ventana sin
+          volverlos public.
 util      Json, t() (i18n), formatos, Log.
 ```
 Regla de dependencia: cada capa solo conoce las de dentro. `ui` conoce `service` y `model`; `service` conoce
@@ -71,8 +75,9 @@ servicio tiene tests y ningún `httpText` vive fuera de `api`.
 
 **Fase 3 · Vistas y presentadores.** Pestaña a pestaña, como «estrangulador»: cada pestaña sale ENTERA de
 `SpoilerFreeRecs.java` a su vista + presentador y su código se borra del original. Hecho cuando ninguna clase
-de `ui` importa `java.net` ni conoce `ApiClient`, y `SpoilerFreeRecs.java` queda como un `Main` de menos de
-300 líneas.
+de `ui` importa `java.net` ni conoce `ApiClient`, y `SpoilerFreeRecs.java` queda como la ventana (`JFrame`) de
+menos de 300 líneas, con el cableado en `Cableado*`/`AccionesVentana` y el arranque en `app.Main`/`app.Servicios`.
+Tras la tanda 4 (oleada B + pasada final), `SpoilerFreeRecs.java` está en 297 líneas.
 
 **Fase 4 · Cierre.** Deuda anotada resuelta o descartada con motivo, `README` técnico, jpackage desde Maven,
 release 1.2.
