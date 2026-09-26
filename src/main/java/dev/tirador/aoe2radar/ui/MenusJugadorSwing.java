@@ -83,9 +83,10 @@ public final class MenusJugadorSwing implements MenusJugador {
     @Override public JMenu deJugador(long pid, String nombre) { return menuDeJugador(pid, nombre); }
     @Override public JMenu perfilNavegador(long pid) { return menuPerfilNavegador(pid); }
 
-    /** El ELO 1v1 que ya se conoce de pid sin ir a la red, o null. */
+    /** El ELO 1v1 que ya se conoce de pid sin ir a la red, o null. Un 0 recordado («el perfil no tiene») no corta la
+     *  búsqueda: se siguen mirando la ficha de Live now, la vinculada y el perfil en caché (revisión 1.3, F11). */
     @Override public Integer elo1v1Conocido(long pid) {
-        Integer e = elo1v1.conocido(pid); if (e != null) return e > 0 ? e : null;
+        Integer e = elo1v1.conocido(pid); if (e != null && e > 0) return e;
         Object[] f = liveFicha.apply(pid); if (f != null && (Integer) f[2] > 0) return (Integer) f[2];
         e = servicioPerfil.eloVinculada(pid); if (e != null && e > 0) return e;
         FichaPerfil perfil = servicioPerfil.fichaConocida(pid); if (perfil != null && perfil.ladders().get("rm_1v1") instanceof int[] v && v[0] > 0) return v[0];
@@ -100,7 +101,9 @@ public final class MenusJugadorSwing implements MenusJugador {
         it.setIconTextGap(6);
         it.addActionListener(a -> navegacion.abrirPerfil(p.id, nombre));
         if (((e1 == null && elo1v1.conocido(p.id) == null) || elo1v1.caducado(p.id)) && elo1v1.reservar(p.id)) tareas.enFondo("elo-1v1", () -> {   // el ELO 1v1 se pide una vez y se rellena en el propio ítem
-            long pedido = elo1v1.ahora(); Integer e = servicioPerfil.elo1v1(p.id); elo1v1.apuntar(p.id, e, pedido);
+            long pedido = elo1v1.ahora(); ProfileService.Elo1v1 r = servicioPerfil.elo1v1Leido(p.id);
+            if (r.fallo()) { elo1v1.liberar(p.id); return; }   // no se pudo saber: no se recuerda como «sin ELO» (F11)
+            Integer e = r.elo(); elo1v1.apuntar(p.id, e, pedido);
             if (e != null && e > 0) SwingUtilities.invokeLater(() -> it.setText(nombre + "  1v1 " + e + (p.civ != null && !p.civ.isBlank() ? "  ·  " + p.civ : "")));
         });
         return it;

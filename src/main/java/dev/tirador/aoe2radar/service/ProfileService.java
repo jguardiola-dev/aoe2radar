@@ -40,6 +40,17 @@ public interface ProfileService {
      */
     Integer elo1v1(long pid);
 
+    /** Lo que devuelve {@link #elo1v1Leido}: el ELO 1v1 (null: el perfil no tiene) o, con fallo=true, que no se
+     *  pudo saber (red, 429…). */
+    record Elo1v1(Integer elo, boolean fallo) { }
+
+    /**
+     * Como elo1v1, pero distingue «no tiene» de «no se pudo saber»: lo que se recuerda para toda la sesión
+     * (EloSesion) no puede ser un fallo de red (revisión 1.3, F11). Por defecto (dobles de prueba) no hay fallos:
+     * null es «no tiene», como en elo1v1. Va a la red.
+     */
+    default Elo1v1 elo1v1Leido(long pid) { return new Elo1v1(elo1v1(pid), false); }
+
     /**
      * Las cuentas vinculadas según el companion (linked_profiles), SIEMPRE de la red: sin la propia ni repetidas, sin
      * nombre «null», país en mayúsculas ("" si falta). Lista vacía si falla (queda en el log). De paso apunta la familia

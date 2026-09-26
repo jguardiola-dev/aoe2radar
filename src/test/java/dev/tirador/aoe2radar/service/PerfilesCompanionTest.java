@@ -239,6 +239,27 @@ class PerfilesCompanionTest {
         assertNull(servicio.elo1v1(54L));
     }
 
+    // revisión 1.3, F11: elo1v1Leido distingue «no tiene» de «no se pudo saber»; elo1v1 sigue dando null en ambos
+    @Test void elo1v1LeidoDistingueNoTieneDeFallo() {
+        red.cuerpo = "{\"leaderboards\":[{\"leaderboard_id\":\"3\",\"rating\":1234}]}";
+        assertEquals(new ProfileService.Elo1v1(1234, false), servicio.elo1v1Leido(57L));
+        red.cuerpo = "{\"leaderboards\":[{\"leaderboard_id\":\"4\",\"rating\":999}]}";
+        assertEquals(new ProfileService.Elo1v1(null, false), servicio.elo1v1Leido(58L), "no tiene 1v1: no es un fallo");
+        red.estado = 500;
+        assertEquals(new ProfileService.Elo1v1(null, true), servicio.elo1v1Leido(59L), "la red falló: fallo");
+    }
+
+    @Test void vinculadasConEloNoRecuerdaUnFalloComoSinElo() {
+        red.cuerpoPorUrl.put("/profiles/90", "{\"linked_profiles\":[{\"profile_id\":91,\"name\":\"Ana\",\"games\":10}]}");
+        red.cuerpoPorUrl.put("/profiles/91", "{esto no es json");   // la petición del ELO de 91 falla
+        servicio.vinculadasConElo(90L);
+        assertNull(servicio.eloVinculada(91L), "no se sabe: null, no 0 («no tiene»)");
+        red.cuerpoPorUrl.put("/profiles/91", "{\"leaderboards\":[{\"leaderboard_id\":\"3\",\"rating\":1500}]}");
+        servicio.vinculadasConElo(90L);
+        assertEquals(2, peticiones(91L), "la segunda vez se vuelve a pedir");
+        assertEquals(1500, servicio.eloVinculada(91L));
+    }
+
     @Test void elo1v1NoTieneCacheDosLlamadasSeguidasHacenDosPeticiones() {
         red.cuerpo = "{\"leaderboards\":[{\"leaderboard_id\":\"3\",\"rating\":1000}]}";
         servicio.elo1v1(55L);
