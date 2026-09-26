@@ -20,8 +20,6 @@ import dev.tirador.aoe2radar.service.TopLadderService;
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
-import javax.swing.BoxLayout;
-import javax.swing.DefaultListCellRenderer;
 import javax.swing.DefaultListModel;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
@@ -31,13 +29,11 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
 import javax.swing.JList;
-import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.JProgressBar;
 import javax.swing.JRootPane;
 import javax.swing.JScrollBar;
-import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JSplitPane;
 import javax.swing.JTable;
@@ -46,21 +42,13 @@ import javax.swing.JToggleButton;
 import javax.swing.JViewport;
 import javax.swing.JWindow;
 import javax.swing.SwingUtilities;
-import javax.swing.ToolTipManager;
-import javax.swing.UIManager;
 import java.awt.BorderLayout;
-import java.awt.Color;
 import java.awt.Component;
-import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
-import java.awt.FontMetrics;
 import java.awt.GridLayout;
-import java.awt.Insets;
 import java.awt.Point;
-import java.awt.Rectangle;
 import java.awt.Window;
-import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -72,11 +60,8 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 
-import static dev.tirador.aoe2radar.ui.Componentes.colorVivoHex;
-import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
-import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Log.log;
@@ -323,6 +308,7 @@ public final class WatchlistView {
     final WatchlistTrabajos trabajos = new WatchlistTrabajos(this);
     final WatchlistDialogos dialogosLista = new WatchlistDialogos(this);
     final WatchlistControles controles = new WatchlistControles(this);
+    final WatchlistLista listaVista = new WatchlistLista(this);
 
     /** Ver ui.WatchlistView.EnlacePartidas y ui.WatchlistView.Anfitrion para el contrato completo. */
     public WatchlistView(Window ventana, ProfileService perfiles,
@@ -357,193 +343,7 @@ public final class WatchlistView {
     // jugadores seguidos con su ELO y su «en vivo», y los botones para quitarlos).
     // Devuelve el panel para que el constructor lo pase al split principal.
     private void construirPanel() {
-        // Panel izquierdo: jugadores seguidos (la selección filtra la tabla)
-        playersList.setVisibleRowCount(12);
-        playersList.addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) { enlacePartidas.applyFilters(); anfitrion.seleccionCambiada(); }   // con Ratings o Perfil abiertos, la selección se refleja allí
-        });
-        delBtn = new JButton(t("Quitar del grupo", "Remove from group"));
-
-        playersList.addMouseListener(new MouseAdapter() {   // botón central sobre un jugador: su perfil en pestaña nueva
-            @Override public void mousePressed(MouseEvent e) {
-                if (!SwingUtilities.isMiddleMouseButton(e)) return;
-                int idx = playersList.locationToIndex(e.getPoint());
-                if (idx < 0 || !playersList.getCellBounds(idx, idx).contains(e.getPoint())) return;
-                Player p = playersModel.get(idx);
-                navegacion.abrirPerfilEnPestana(p.id(), anfitrion.nombreVisible(p.id(), p.name()));
-                e.consume();
-            }
-        });
-        playersList.setCellRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                                    boolean isSelected, boolean cellHasFocus) {
-                JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof Player p) {
-                    char marca = marcaFila.getOrDefault(p.id(), ' ');
-                    boolean vivo = VIVO.jugando(p.id())
-                            || (marca != 'H' && vivoFamilia.getOrDefault(p.id(), false));
-                    Integer elo = eloWatch.get(p.id());
-                    Integer rank = modoTop() ? rankTop.get(p.id()) : null;
-                    String punto = vivo ? "<font color='#" + colorVivoHex() + "'>\u25CF</font>" : "";
-                    String col1 = rank != null ? "<font color='gray'>" + rank + ".</font>"
-                            : marca == 'P' ? "\u25B8" : marca == 'E' ? "\u25BE" : "";
-                    String eloTxt = (elo != null && mostrarEloWatch) ? String.valueOf(elo) : "";
-                    int w0 = Math.max(150, list.getWidth() - 22);
-                    FontMetrics fmSub = l.getFontMetrics(l.getFont());   // para truncar sublíneas en píxeles reales
-                    int maxChars = Math.max(10, (w0 - 76 - anchoCeldaElo(w0) - (formaVisible ? 72 : 0)) / 7);
-                    String nombreVis = anfitrion.nombreVisible(p.id(), p.name());
-                    String tip = aliases.containsKey(p.id())
-                            ? t("Nick real: ", "Real nick: ") + p.name() : null;
-                    String notaP = dialogos.notaDe(p.id());
-                    if (notaP != null) tip = (tip == null ? "" : tip + " \u2014 ") + t("Nota: ", "Note: ") + notaP + t(" (clic en \u270E para editar)", " (click \u270E to edit)");
-
-                    if (nombreVis.length() > maxChars) {
-                        nombreVis = nombreVis.substring(0, maxChars - 1) + "\u2026";
-                        tip = p.name();
-                    }
-                    String[] st = twitchLive.get(p.id());   // solo para pintar el badge: sin tooltip del título (tapaba la tarjeta)
-                    l.setToolTipText(tip);   // ni «jugando ahora» ni el título del stream: el punto, la sublínea y Directos ya lo cuentan
-                    Match enCurso = vivo ? VIVO.partida(p.id()) : null;   // una sola lectura: el socket puede soltarla entre dos
-                    String mapaVivo = enCurso != null && enCurso.map != null ? enCurso.map : null;
-                    if (mapaVivo != null) {   // el mapa cabe en lo que sobra tras el nick; si no cabe, se recorta con «…» y, si ni siquiera hay sitio, no se pinta (el ELO nunca se tapa)
-                        int sitio = maxChars - nombreVis.length() - 3;
-                        if (sitio < 6) mapaVivo = null;
-                        else if (mapaVivo.length() > sitio) mapaVivo = mapaVivo.substring(0, sitio - 1) + "\u2026";
-                    }
-                    String nick = (vivo ? "<font color='" + (temaOscuroActivo ? "#ffd56a" : "#b06a00") + "'>" + escapeHtml(nombreVis) + "</font>" + (mapaVivo != null ? " <font color='#8a8a8a'>\u00B7</font> <font color='" + (temaOscuroActivo ? "#ffd56a" : "#b06a00") + "'>" + escapeHtml(mapaVivo) + "</font>" : "") : escapeHtml(nombreVis))   // en partida: nick en ámbar y el mapa al lado
-                            + (dialogos.notaDe(p.id()) != null ? " <font color='#8a8a8a'>\u270E</font>" : "")
-                            + (modoTop() && containsPlayerId(p.id()) ? " <font color='#8a8a8a'>\u2605</font>" : "");   // ya fichado
-                    if (marca == 'H')   // hija: sangría fija y un punto menos, legible
-                        nick = "&nbsp;&nbsp;&nbsp;<span style='font-size:0.92em'>" + nick + "</span>";
-                    l.setBorder(null);   // renderer compartido: se fija SIEMPRE
-                    String[] alt = marca == 'H' ? null : mejorAlt(p.id());
-                    if (alt != null) {
-                        eloTxt = eloTxt + " <font color='#8a8a8a'>\u21A5" + alt[1] + "</font>";
-                        tip = (tip == null ? "" : tip + " \u2014 ")
-                                + t("Su cuenta ", "Their account ") + alt[0]
-                                + t(" está a ", " sits at ") + alt[1]
-                                + t(" (clic para ver su perfil)", " (click to view their profile)");
-                    }
-                    int w = Math.max(150, list.getWidth() - 22);   // el HTML no refluye: ancho explícito
-                    l.setText("<html><table width='" + w + "' cellpadding='0' cellspacing='0'><tr>"
-                            + "<td width='24' align='right'>" + col1 + "</td>"
-                            + "<td width='14' align='center'>" + punto + "</td>"
-                            + "<td width='20' align='center'>" + (modoPais() ? "" : Iconos.banderaHtml(anfitrion.paisDe(p.id()))) + "</td>"   // en «Top país» todas serían la misma: solo en el selector
-                            + "<td nowrap align='left'>" + nick + "</td>"
-                            + "<td width='26' align='center'>" + (st != null
-                                    ? "<font color='#9146FF'><b>TW</b></font>" : "") + "</td>"
-                            + (formaVisible ? "<td width='72' align='center'>" + celdaForma(p.id()) + "</td>" : "")
-                            + "<td width='" + anchoCeldaElo(w0) + "' align='right'>" + eloTxt + "</td></tr>"
-                            + "</table>"
-                            // Las sublíneas van FUERA de la tabla, como bloques propios: un colspan dentro
-                            // cambia el reparto de anchos de las columnas y descoloca puesto/punto/nick
-                            + (vivo
-                                ? "<div style='margin-left:38px'>" + subtextoVivo(p.id(), fmSub, w0 - 44) + "</div>"
-                                : "")
-                            + (dialogos.notaDe(p.id()) != null
-                                ? "<div style='margin-left:38px'><font color='#b08d57'>\u270E "
-                                  + escapeHtml(dev.tirador.aoe2radar.util.Formato.truncarPx(dialogos.notaDe(p.id()), fmSub, w0 - 60)) + "</font></div>"
-                                : "")
-                            + "</html>");
-                }
-                return l;
-            }
-        });
-        playersList.addMouseListener(new MouseAdapter() {
-            @Override public void mousePressed(MouseEvent e)  {
-                ocultarHoverCard(true);
-                if (!e.isPopupTrigger() && e.getButton() == MouseEvent.BUTTON1) {
-                    int idxH = playersList.locationToIndex(e.getPoint());
-                    if (idxH >= 0 && playersList.getCellBounds(idxH, idxH).contains(e.getPoint())) {
-                        String bajo = textoBajo(idxH, e.getPoint());   // lo que hay pintado bajo el ratón, de verdad
-                        Player ph = playersModel.get(idxH);
-                        if (enlacePartidas.invitado() != null) {
-                            enlacePartidas.limpiarInvitado();
-                            enlacePartidas.limpiarSujetos();
-                            enlacePartidas.refrescarSujetos(List.of(), false);
-                            enlacePartidas.actualizarTextoBuscar();
-                        }
-                        if (bajo.contains("\u270E") || sobreNota(idxH, e.getPoint())) { dialogos.pedirNota(ph.id(), ph.name()); return; }
-                        int wL = playersList.getWidth() - 22, eloW = anchoCeldaElo(wL);
-                        int formaW = formaVisible ? 72 : 0;
-                        boolean zonaTwFormula = e.getX() >= wL - eloW - formaW - 40 && e.getX() <= wL - eloW - formaW + 8;   // respaldo (la columna de forma desplaza el badge)
-                        if (bajo.contains("TW") || (bajo.isEmpty() && zonaTwFormula)) {
-                            String[] stT = twitchLive.get(ph.id());
-                            if (stT != null) { anfitrion.abrirUrl("https://twitch.tv/" + stT[0]); return; }
-                        }
-                        if (bajo.contains("\u21A5") && marcaFila.getOrDefault(ph.id(), ' ') != 'H') {
-                            String[] altA = mejorAlt(ph.id());
-                            if (altA != null && altA.length > 2) {
-                                try { navegacion.abrirPerfil(Long.parseLong(altA[2]), altA[0]); return; }
-                                catch (NumberFormatException ignored) { }
-                            }
-                        }
-                        if (twitchLive.containsKey(ph.id()) && e.getX() > wL / 2)   // rastro: si un TW no reacciona, el log dice qué vio
-                            log("clic sin acción en zona derecha (x=" + e.getX() + " de " + wL + ", bajo='" + bajo.trim() + "')");
-                    }
-                }
-                if (!e.isPopupTrigger() && e.getButton() == MouseEvent.BUTTON1 && e.getX() < 26) {
-                    int idx = playersList.locationToIndex(e.getPoint());
-                    if (idx >= 0 && playersList.getCellBounds(idx, idx).contains(e.getPoint())) {
-                        Player p = playersModel.get(idx);
-                        char m = marcaFila.getOrDefault(p.id(), ' ');
-                        if (m == 'P' || m == 'E') {
-                            if (!vinculosExpandidos.remove(p.vinculo())) vinculosExpandidos.add(p.vinculo());
-                            aplicarFiltroGrupo();
-                            return;
-                        }
-                    }
-                }
-                maybePopup(e);
-            }
-            @Override public void mouseReleased(MouseEvent e) { maybePopup(e); }
-            void maybePopup(MouseEvent e) {
-                if (!e.isPopupTrigger()) return;
-                int idx = playersList.locationToIndex(e.getPoint());
-                if (idx < 0) return;
-                Rectangle celda = playersList.getCellBounds(idx, idx);
-                if (celda == null || !celda.contains(e.getPoint())) return;   // clic fuera de los nicks
-                if (!playersList.isSelectedIndex(idx)) playersList.setSelectedIndex(idx);   // si ya está en la selección, se conserva la múltiple
-                Player p = playersModel.get(idx);
-                menuContextualWatchlist(p, e);
-            }
-            @Override public void mouseClicked(MouseEvent e) {
-                if (e.getClickCount() == 1 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
-                    int idx1 = playersList.locationToIndex(e.getPoint());
-                    boolean sobreFila = idx1 >= 0 && playersList.getCellBounds(idx1, idx1).contains(e.getPoint());
-                    if (!sobreFila) { playersList.clearSelection(); enlacePartidas.actualizarTextoBuscar(); }   // como el Explorador: clic en el vacío = sin selección
-                    return;
-                }
-                if (e.getClickCount() == 2 && SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
-                    int idx = playersList.locationToIndex(e.getPoint());
-                    if (idx >= 0) {
-                        Player p = playersModel.get(idx);
-                        String bajo = textoBajo(idx, e.getPoint());
-                        if (bajo.contains("TW") || bajo.contains("\u21A5") || bajo.contains("\u270E") || sobreNota(idx, e.getPoint())) return;   // el clic simple ya actuó
-                        playersList.setSelectedIndex(idx);   // doble clic = sus partidas, SIEMPRE (espectar vive en el clic derecho)
-                        enlacePartidas.fetchMatches();
-                    }
-                }
-            }
-        });
-        delBtn.addActionListener(e -> {
-            List<Player> sel = playersList.getSelectedValuesList();
-            if (sel.isEmpty()) return;
-            StringBuilder nombres = new StringBuilder();
-            for (Player p : sel) nombres.append(nombres.isEmpty() ? "" : ", ").append(p.name());
-            int r = JOptionPane.showConfirmDialog(ventana,
-                    t("Se quitará de la Watchlist a: ", "This will remove from the Watchlist: ") + nombres
-                            + t(". ¿Continuar?", ". Continue?"),
-                    t("Quitar jugador", "Remove player"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (r != JOptionPane.YES_OPTION) return;
-            for (Player p : sel) {
-                playersModel.removeElement(p);
-                todosJugadores.removeIf(x -> x.id() == p.id());
-            }
-            savePlayers();
-            rebuildGrupos();
-            enlacePartidas.applyFilters();
-        });
+        listaVista.construirLista();
         JPanel row2 = new JPanel(new GridLayout(1, 1, 4, 0));
         row2.add(delBtn);   // «Quitar filtro» sobra: la selección se suelta clicando en el fondo
         JPanel leftButtons = new JPanel(new GridLayout(1, 1, 0, 4));
@@ -554,95 +354,7 @@ public final class WatchlistView {
         tituloWatch.setTitleFont(tituloWatch.getTitleFont().deriveFont(Font.BOLD, 13f));
         left.setBorder(tituloWatch);
         controles.construir(left);
-        JLabel cabLabelLocal = new JLabel();
-        cabLabelLocal.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0,
-                UIManager.getColor("Component.borderColor") != null
-                        ? UIManager.getColor("Component.borderColor") : Color.GRAY));
-        cabLabelLocal.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        cabLabelLocal.setToolTipText(t("Clic en Nick o en ELO para ordenar por esa columna",
-                "Click Nick or ELO to sort by that column"));
-        this.cabLabel = cabLabelLocal;
-        cabLabelLocal.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) {
-                int wC = cabLabel.getWidth();
-                String actual = leerConfig("orden_watch", "elo");
-                String nuevo = e.getX() >= wC - 60 ? "elo"
-                        : (formaVisible && e.getX() >= wC - 60 - 72 - 30) ? ("forma".equals(actual) ? "forma_asc" : "forma")   // 2.º clic: invierte
-                        : "alfa";
-                guardarConfig("orden_watch", nuevo);
-                aplicarFiltroGrupo();
-                refrescarCabeceraOrden();
-            }
-        });
-        JPanel cabecera = new JPanel(new BorderLayout());
-        cabecera.add(cabLabel, BorderLayout.CENTER);
-        hoverTimer = new javax.swing.Timer(600, ev -> {
-            if (hoverPid != 0 && hoverPantalla != null && hoverProcede()) {
-                for (int i = 0; i < playersModel.size(); i++)   // el pid ya quedó fijado al mover: mostramos directamente
-                    if (playersModel.get(i).id() == hoverPid) {
-                        mostrarPerfilCard(hoverPid, playersModel.get(i).name(), hoverPantalla);
-                        return;
-                    }
-            }
-        });
-        hoverTimer.setRepeats(false);
-        playersList.addMouseMotionListener(new MouseAdapter() {
-            @Override public void mouseMoved(MouseEvent e) {
-                int idx = playersList.locationToIndex(e.getPoint());
-                long pid = 0;
-                if (idx >= 0 && playersList.getCellBounds(idx, idx).contains(e.getPoint()))
-                    pid = playersModel.get(idx).id();
-                if (pid != 0 && enZonaForma(e.getPoint())) pid = 0;   // sobre la celda Forma no sale la tarjeta: sale su tooltip
-                String bajoM = pid != 0 ? textoBajo(idx, e.getPoint()) : "";   // mano sobre TW, \u21A5 y \u270E
-                boolean clicable = bajoM.contains("TW") || bajoM.contains("\u21A5") || bajoM.contains("\u270E")
-                        || (pid != 0 && sobreNota(idx, e.getPoint()));
-                playersList.setCursor(Cursor.getPredefinedCursor(clicable ? Cursor.HAND_CURSOR : Cursor.DEFAULT_CURSOR));
-                if (pid != hoverPid) {
-                    if (hoverCard != null) ocultarHoverCard();
-                    hoverTimer.stop();
-                    hoverPid = pid;
-                    if (false && pid != 0) {   // tarjeta flotante desactivada: el ELO ya está en la lista y el perfil a un doble clic (y cada tarjeta era una llamada a la API)
-                        hoverPantalla = e.getLocationOnScreen();
-                        hoverTimer.restart();
-                    }
-                }
-            }
-        });
-        playersList.addMouseListener(new MouseAdapter() {
-            @Override public void mouseExited(MouseEvent e) { ocultarHoverCard(); }
-        });
-        ToolTipManager.sharedInstance().registerComponent(playersList);
-        playersList.addComponentListener(new java.awt.event.ComponentAdapter() {
-            @Override public void componentResized(java.awt.event.ComponentEvent e) { refrescarCabeceraOrden(); }
-        });
-        JPanel listWrap = new JPanel(new BorderLayout());
-
-        JScrollPane listScroll = new JScrollPane(playersList);
-        listScroll.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
-        listScroll.getViewport().addMouseListener(new MouseAdapter() {   // el hueco bajo la última fila es del visor
-            @Override public void mousePressed(MouseEvent e) {
-                if (SwingUtilities.isLeftMouseButton(e) && !e.isControlDown() && !e.isShiftDown()) {
-                    playersList.clearSelection();
-                    enlacePartidas.actualizarTextoBuscar();
-                }
-            }
-        });
-        listScroll.getViewport().addChangeListener(e -> {
-            ocultarHoverCard();
-            int vw = listScroll.getViewport().getWidth();
-            if (vw > 0 && playersList.getFixedCellWidth() != vw)
-                playersList.setFixedCellWidth(vw);   // orden, no sugerencia: invalida el caché de medidas
-            refrescarCabeceraOrden();
-        });
-        sujetosPanel.setLayout(new BoxLayout(sujetosPanel, BoxLayout.Y_AXIS));
-        sujetosPanel.setVisible(false);
-        JPanel norteLista = new JPanel(new BorderLayout());
-        norteLista.add(sujetosPanel, BorderLayout.NORTH);
-        norteLista.add(cabecera, BorderLayout.SOUTH);   // la cabecera, pegada a su lista
-        listWrap.add(norteLista, BorderLayout.NORTH);
-        listWrap.add(listScroll, BorderLayout.CENTER);
-        left.add(listWrap, BorderLayout.CENTER);
-        refrescarCabeceraOrden();
+        listaVista.construirCentro(left);
         left.add(leftButtons, BorderLayout.SOUTH);
         left.setPreferredSize(new Dimension(280, 0));
     }
@@ -655,38 +367,6 @@ public final class WatchlistView {
         for (Player x : todosJugadores) gs.add(x.grupo());
         gs.addAll(gruposConfig());
         return gs;
-    }
-
-    /** Subtexto de quien está en partida, con el estilo de Live now: rival en color normal, civs en gris, mapa y reloj en ámbar. Se recorta a la anchura: primero cae el reloj, luego las civs, y al final se acorta el rival. */
-    private String subtextoVivo(long pid, FontMetrics fm, int px) {
-        Match m = VIVO.partida(pid);
-        String amb = temaOscuroActivo ? "#ffd56a" : "#b06a00";
-        if (m == null || !anfitrion.enCursoReal(m)) {
-            String info = VIVO.info(pid);
-            return "<font color='#8a8a8a'>" + escapeHtml(dev.tirador.aoe2radar.util.Formato.truncarPx(info != null ? info : t("partida en curso \u2014 detalle en el próximo tick", "game in progress \u2014 details next tick"), fm, px)) + "</font>";
-        }
-        MatchPlayer yo = null; for (MatchPlayer mp : m.players) if (mp.id == pid) yo = mp;
-        List<String> rivales = new ArrayList<>();
-        MatchPlayer rivalUnico = null;
-        for (MatchPlayer mp : m.players) { if (mp.id == pid) continue; if (yo != null && mp.team == yo.team) continue; rivales.add(anfitrion.nombreVisible(mp.id, mp.name) + (mp.rating != null ? " (" + mp.rating + ")" : "")); rivalUnico = mp; }
-        boolean unoContraUno = m.players.size() == 2 && rivales.size() == 1;
-        String prefijo = unoContraUno ? "vs " : "TG " + (m.players.size() / 2) + "v" + (m.players.size() / 2);
-        String rival = unoContraUno ? String.join(", ", rivales) : "";   // en equipos, los nombres van en el clic derecho
-        String civs = unoContraUno && yo != null && yo.civ != null && rivalUnico != null && rivalUnico.civ != null ? yo.civ + "\u2013" + rivalUnico.civ : "";
-        String mapa = "";   // el mapa va ya en la línea del nick
-        String reloj = "";  // sin reloj: molestaba
-        // recorte por anchura, midiendo el texto plano
-        java.util.function.Function<String[], String> plano = partes -> partes[0] + partes[1] + (partes[2].isEmpty() ? "" : " " + partes[2]) + (mapa.isEmpty() ? "" : " \u00B7 " + mapa) + (partes[3].isEmpty() ? "" : " \u00B7 " + partes[3]);
-        String[] partes = { prefijo, rival, civs, reloj };
-        if (fm.stringWidth(plano.apply(partes)) > px) partes[3] = "";
-        if (fm.stringWidth(plano.apply(partes)) > px) partes[2] = "";
-        while (fm.stringWidth(plano.apply(partes)) > px && partes[1].length() > 4) partes[1] = partes[1].substring(0, partes[1].length() - 2).trim() + "\u2026";
-        StringBuilder h = new StringBuilder();
-        h.append("<font color='#8a8a8a'>").append(escapeHtml(partes[0])).append("</font>").append(escapeHtml(partes[1]));
-        if (!partes[2].isEmpty()) h.append(" <font color='#8a8a8a'>").append(escapeHtml(partes[2])).append("</font>");
-        if (!mapa.isEmpty()) h.append(" <font color='#8a8a8a'>\u00B7</font> <font color='").append(amb).append("'>").append(escapeHtml(mapa)).append("</font>");
-        if (!partes[3].isEmpty()) h.append(" <font color='#8a8a8a'>\u00B7</font> <font color='").append(amb).append("'>").append(partes[3]).append("</font>");
-        return h.toString();
     }
 
     public boolean enZonaForma(Point p) {
@@ -720,64 +400,6 @@ public final class WatchlistView {
     /** Copia del top actual (ladder/país/clan): la consulta sincronizarSocket (cromo) para vigilar también el top. */
     public List<Player> topLadderSnapshot() { synchronized (topLadder) { return new ArrayList<>(topLadder); } }
 
-    /** ¿Qué texto hay pintado bajo el punto p en la fila idx? Pregunta a la vista HTML
-     *  real del renderer (exacto sea cual sea el ancho), o "" si no hay texto ahí. */
-    private String textoBajo(int idx, Point p) {
-        try {
-            Rectangle b = playersList.getCellBounds(idx, idx);
-            if (b == null || !b.contains(p)) return "";
-            Component c = playersList.getCellRenderer().getListCellRendererComponent(
-                    playersList, playersModel.get(idx), idx, false, false);
-            if (!(c instanceof JLabel l)) return "";
-            l.setBounds(0, 0, b.width, b.height);
-            Object vo = l.getClientProperty(javax.swing.plaf.basic.BasicHTML.propertyKey);
-            if (!(vo instanceof javax.swing.text.View v)) return "";
-            Insets in = l.getInsets();
-            Rectangle alloc = new Rectangle(in.left, in.top, b.width - in.left - in.right, b.height - in.top - in.bottom);
-            v.setSize(alloc.width, alloc.height);   // sin tamaño, la vista responde con coordenadas colapsadas
-            int x = p.x - b.x, y = p.y - b.y;
-            javax.swing.text.Position.Bias[] bias = new javax.swing.text.Position.Bias[1];
-            int pos = v.viewToModel(x, y, alloc, bias);
-            if (pos < 0) return "";
-            java.awt.Shape s = v.modelToView(Math.max(0, pos - 1), alloc, javax.swing.text.Position.Bias.Forward);
-            Rectangle r = s.getBounds();
-            r.grow(6, 2);   // tolerancia de unos píxeles alrededor del glifo
-            if (!r.contains(x, y)) return "";
-            javax.swing.text.Document d = v.getDocument();
-            int ini = Math.max(0, pos - 3), fin = Math.min(d.getLength(), pos + 3);
-            return d.getText(ini, fin - ini);
-        } catch (Exception ex) {
-            return "";
-        }
-    }
-
-    /** ¿El punto p cae sobre la sublínea «\u270E nota» de la fila idx (toda la línea, no solo el lápiz)? */
-    private boolean sobreNota(int idx, Point p) {
-        try {
-            if (idx < 0 || dialogos.notaDe(playersModel.get(idx).id()) == null) return false;
-            Rectangle b = playersList.getCellBounds(idx, idx);
-            if (b == null || !b.contains(p)) return false;
-            Component c = playersList.getCellRenderer().getListCellRendererComponent(
-                    playersList, playersModel.get(idx), idx, false, false);
-            if (!(c instanceof JLabel l)) return false;
-            l.setBounds(0, 0, b.width, b.height);
-            Object vo = l.getClientProperty(javax.swing.plaf.basic.BasicHTML.propertyKey);
-            if (!(vo instanceof javax.swing.text.View v)) return false;
-            Insets in = l.getInsets();
-            Rectangle alloc = new Rectangle(in.left, in.top, b.width - in.left - in.right, b.height - in.top - in.bottom);
-            v.setSize(alloc.width, alloc.height);
-            int x = p.x - b.x, y = p.y - b.y;
-            javax.swing.text.Document d = v.getDocument();
-            String todo = d.getText(0, d.getLength());
-            int lapiz = todo.lastIndexOf('\u270E');   // el último \u270E es el de la sublínea
-            if (lapiz < 0) return false;
-            Rectangle rNota = v.modelToView(lapiz, alloc, javax.swing.text.Position.Bias.Forward).getBounds();
-            return y >= rNota.y - 2 && y <= rNota.y + rNota.height + 2 && x >= rNota.x - 6;   // la línea entera, desde el lápiz
-        } catch (Exception ex) {
-            return false;
-        }
-    }
-
     // ----- Forma reciente (±ELO en una ventana de horas; 1v1 ranked) --------------
 
     static String formaLarga(Forma f) {
@@ -796,13 +418,6 @@ public final class WatchlistView {
     void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) { trabajos.cargarForma(objetivo, horas, alTerminar); }
     List<Player> objetivoForma() { return trabajos.objetivoForma(); }
     public void actualizarTextoForma() { trabajos.actualizarTextoForma(); }
-
-    private String celdaForma(long pid) {
-        Forma f = formaActiva().get(pid);
-        if (f == null) return "<font color='#8a8a8a'>\u2014</font>";   // sin consultar
-        String col = f.diff() > 0 ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : f.diff() < 0 ? (temaOscuroActivo ? "#e57373" : "#c62828") : "#8a8a8a";
-        return "<font color='" + col + "'>" + escapeHtml(f.corta()) + "</font>";
-    }
 
     private String rachaTexto(long pid, Forma f) {
         int n = 0; boolean gana = true;
@@ -1064,24 +679,7 @@ public final class WatchlistView {
 
     void crearGrupoDialog() { dialogosLista.crearGrupoDialog(); }
 
-    void refrescarCabeceraOrden() {
-        if (cabLabel == null) return;
-        String ordenCfg = leerConfig("orden_watch", "elo");
-        boolean porForma = formaVisible && ordenCfg.startsWith("forma");
-        boolean formaAsc = "forma_asc".equals(ordenCfg);
-        boolean porElo = !porForma && mostrarEloWatch && "elo".equals(ordenCfg);
-        String ordenable = " <font color='#8a8a8a'>\u21C5</font>";   // «⇅»: aquí también se puede ordenar
-        cabLabel.setToolTipText(t("Clic en una cabecera para ordenar por Nick, ELO o Forma", "Click a header to sort by Nick, ELO or Recent form"));
-        cabLabel.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        int w = Math.max(150, playersList.getWidth() > 0 ? playersList.getWidth() - 22 : 250);
-        cabLabel.setText("<html><table width='" + w + "' cellpadding='0' cellspacing='0'><tr>"
-                + "<td width='24'></td><td width='14'></td>"
-                + "<td><b>Nick" + (porElo || porForma ? ordenable : " \u2193") + "</b></td>"
-                + (formaVisible ? "<td width='72' align='center'><b>" + t("Forma ", "Form ") + (ventanaForma <= 24 ? "24h" : "7d")
-                        + (porForma ? (formaAsc ? " \u2191" : " \u2193") : ordenable) + "</b></td>" : "")
-                + "<td width='" + anchoCeldaElo(Math.max(150, playersList.getWidth() - 22)) + "' align='right'><b>" + (mostrarEloWatch ? "ELO" + (porElo ? " \u2193" : ordenable) : "") + "</b></td>"
-                + "</tr></table></html>");
-    }
+    void refrescarCabeceraOrden() { listaVista.refrescarCabeceraOrden(); }
 
     void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
 
