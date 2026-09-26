@@ -560,9 +560,8 @@ public final class PartidasView {
                     if (x.vinculo() == p.vinculo()) selIds.add(x.id());
         }
 
-        String sgCfg = leerConfig("savegame", null);
-        Path sgConocida = (sgCfg != null && Files.isDirectory(Path.of(sgCfg))) ? Path.of(sgCfg) : null;
         Instant ahora = Instant.now();
+        List<Match> terminadas = new ArrayList<>();
 
         view.clear();
         for (Match m : all) {
@@ -581,17 +580,49 @@ public final class PartidasView {
                 m.enDisco = false;
                 m.enJuego = false;
             } else {
-                m.enDisco = Files.exists(anfitrion.destino(m));
-                m.enJuego = sgConocida != null
-                        && Files.exists(sgConocida.resolve(anfitrion.destino(m).getFileName().toString()));
+                terminadas.add(m);   // «en disco»/«en juego»: se miran en el disco, fuera del EDT (abajo)
             }
             view.add(m);
         }
         tableModel.fireTableDataChanged();
+        marcarEnDiscoEnFondo(terminadas);
         mostrarGuiaVacia(all.isEmpty());
         actualizarTextoBuscar();
         if (!all.isEmpty())
             anfitrion.estado(view.size() + t(" de ", " of ") + all.size() + t(" partidas (según filtros).", " games (per filters)."));
+    }
+
+    /** Solo pinta el último cálculo de «en disco» (applyFilters puede llamarse varias veces seguidas). EDT. */
+    private long generacionEnDisco;
+
+    /** «✓ en disco» / «✓✓ en juego» de cada fila terminada: antes eran dos Files.exists por partida en el EDT (hasta
+     *  1.200 con el tope de 600) más leer config.properties; ahora se miran en un hilo de fondo y las filas se
+     *  repintan al llegar (sin tocar la selección). Lo que se pinta al final es lo mismo que antes; en el primer
+     *  instante, las filas nuevas enseñan su «N POV»/«¿?» hasta que llega la respuesta del disco (revisión 1.3). */
+    void marcarEnDiscoEnFondo(List<Match> terminadas) {
+        if (terminadas.isEmpty()) return;
+        final long gen = ++generacionEnDisco;
+        final List<Match> filas = new ArrayList<>(terminadas);
+        new SwingWorker<boolean[][], Void>() {
+            @Override protected boolean[][] doInBackground() {
+                String sgCfg = leerConfig("savegame", null);
+                Path sgConocida = (sgCfg != null && Files.isDirectory(Path.of(sgCfg))) ? Path.of(sgCfg) : null;
+                boolean[][] marcas = new boolean[filas.size()][2];
+                for (int i = 0; i < filas.size(); i++) {
+                    Path destino = anfitrion.destino(filas.get(i));
+                    marcas[i][0] = Files.exists(destino);
+                    marcas[i][1] = sgConocida != null && Files.exists(sgConocida.resolve(destino.getFileName().toString()));
+                }
+                return marcas;
+            }
+            @Override protected void done() {
+                if (gen != generacionEnDisco) return;   // llegó otro applyFilters: manda el suyo
+                boolean[][] marcas;
+                try { marcas = get(); } catch (Exception ex) { return; }
+                for (int i = 0; i < filas.size(); i++) { filas.get(i).enDisco = marcas[i][0]; filas.get(i).enJuego = marcas[i][1]; }
+                if (!view.isEmpty()) tableModel.fireTableRowsUpdated(0, view.size() - 1);
+            }
+        }.execute();
     }
 
     // ======================================================================

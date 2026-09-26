@@ -473,6 +473,25 @@ class PartidasViewTest {
         });
     }
 
+    // ----- applyFilters: «en disco» fuera del EDT -----
+
+    @Test void applyFilters_miraElDiscoFueraDelEdtYAcabaPintandoLoMismo() throws Exception {
+        Match enDisco = partida(8401, A, Instant.now().minusSeconds(600));
+        Match sinRec = partida(8402, A, Instant.now().minusSeconds(900));
+        java.nio.file.Files.write(recs.resolve("8401.aoe2record"), new byte[10]);
+        anfitrion.destinoEnEdt.clear();
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(enDisco, sinRec), A, "grupo|General"));   // llama a applyFilters
+        esperar(() -> enDisco.enDisco, "que llegue la marca «en disco»");
+        asentar();
+        assertFalse(sinRec.enDisco);
+        assertFalse(anfitrion.destinoEnEdt.isEmpty(), "se miró el disco");
+        assertFalse(anfitrion.destinoEnEdt.contains(true), "los Files.exists de cada partida no van en el EDT");
+        enEdt(() -> {
+            assertEquals("✓ en disco", vista.tableModel.getValueAt(vista.view.indexOf(enDisco), 7));
+            assertNotEquals("✓ en disco", vista.tableModel.getValueAt(vista.view.indexOf(sinRec), 7));
+        });
+    }
+
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
         enlace.jugadores.addAll(List.of(A, B));
         CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
