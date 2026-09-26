@@ -287,7 +287,7 @@ class RegresionCapturas {
         // Se ignora la fila de cabecera entera (padre de directosContador), no solo sus etiquetas: el ancho de
         // «N espectadores · Actualizado hh:mm:ss» desplaza el desplegable Idioma y el botón Refrescar.
         foto("shot_watchlist.png", () -> new JComponent[]{ (JComponent) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.directos.tablaDirectos), (JComponent) app.directos.directosContador.getParent() });
-        SwingUtilities.invokeAndWait(() -> app.ladderBtn.doClick());
+        SwingUtilities.invokeAndWait(() -> app.navegador.ladderBtn.doClick());
         for (int i = 0; i < 80 && (Ladder.ladderHists.isEmpty()); i++) Thread.sleep(250);
         Thread.sleep(1500);
         // Carrera de la app (DEUDA.md): al abrir el ladder programa «tabla de 230 px» solo si el divisor ya tiene alto.
@@ -321,7 +321,7 @@ class RegresionCapturas {
         Thread.sleep(800);
         foto("shot_ladder_ew.png");
         // ----- Civ Stats
-        SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());
+        SwingUtilities.invokeAndWait(() -> app.navegador.civStatsBtn.doClick());
         for (int i = 0; i < 120 && !CivStats.VENTANAS_STATS.containsKey(app.filtroStats.ventana()); i++) Thread.sleep(250);
         Thread.sleep(2500);
         cerrarDialogos();
@@ -336,7 +336,7 @@ class RegresionCapturas {
         Thread.sleep(1200);
         System.out.println("stats filas tabla: " + app.civStats.stModelo.getRowCount() + " | fila0: " + java.util.Arrays.toString(app.civStats.stModelo.getDataVector().get(0).toArray()) + " | tramo=" + app.filtroStats.tramo() + " mapa=" + app.filtroStats.mapa());
         // ----- Tech tree con WR
-        SwingUtilities.invokeAndWait(() -> app.techTreeBtn.doClick());
+        SwingUtilities.invokeAndWait(() -> app.navegador.techTreeBtn.doClick());
         for (int i = 0; i < 160 && (TechTreeDatos.ttData == null || app.techTree.ttCivCombo.getItemCount() == 0); i++) Thread.sleep(250);
         Thread.sleep(4000);
         SwingUtilities.invokeAndWait(() -> app.techTree.ttCivCombo.setSelectedItem(TechTreeDatos.ttNombreCiv("Aztecs")));
@@ -372,7 +372,7 @@ class RegresionCapturas {
         }
         HistorialDisco.ACTIVIDAD_CACHE.put(1L, new Actividad(1L, "12Tirador", ms, true, 9, System.currentTimeMillis()));
         CachePerfiles.PERFIL_CACHE.poner(1L, new FichaPerfil(Map.of("rm_1v1", new int[]{ 1905, 260, 1960, 1240, 1100 }, "rm_team", new int[]{ 2110, 800, 2150, 800, 600 }, "ew_1v1", new int[]{ 1400, 300, 1450, 40, 30 }), "es", "TSK", 3810L));
-        SwingUtilities.invokeAndWait(() -> app.perfilBtn.doClick());
+        SwingUtilities.invokeAndWait(() -> app.navegador.perfilBtn.doClick());
         Thread.sleep(800);
         foto("shot_perfil_vacio.png");
         SwingUtilities.invokeAndWait(() -> app.abrirPerfil(1L, "12Tirador"));
@@ -388,11 +388,11 @@ class RegresionCapturas {
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(app::volverAtras);
         Thread.sleep(800);
-        System.out.println("tras volver: perfil abierto=" + app.perfil.abierto() + " pid=" + app.perfil.pidAbierto() + " pestañas=" + app.perfil.perfilPestanas.size() + " activa=" + app.perfil.perfilPestanaActiva + " historial=" + app.historial.size());
+        System.out.println("tras volver: perfil abierto=" + app.perfil.abierto() + " pid=" + app.perfil.pidAbierto() + " pestañas=" + app.perfil.perfilPestanas.size() + " activa=" + app.perfil.perfilPestanaActiva + " historial=" + app.navegador.estado.tamanoHistorial());
         foto("shot_perfil_atras.png");
         SwingUtilities.invokeAndWait(app::irAdelante);
         Thread.sleep(600);
-        System.out.println("tras adelante: techtree=" + app.techTreeBtn.isSelected() + " pos=" + app.historialPos + "/" + app.historial.size());
+        System.out.println("tras adelante: techtree=" + app.navegador.techTreeBtn.isSelected() + " pos=" + app.navegador.estado.historialPos() + "/" + app.navegador.estado.tamanoHistorial());
         // «Ahora»: inyectar top y partidas en curso para ver la tabla
         Match mv = new Match(); mv.id = 555; mv.started = java.time.Instant.now().minusSeconds(900); mv.map = "Arabia"; mv.mode = "1v1 Random Map";
         MatchPlayer a1 = new MatchPlayer(); a1.id = 1; a1.name = "12Tirador"; a1.civ = "Aztecas"; a1.team = 1; a1.rating = 1905;
@@ -403,7 +403,7 @@ class RegresionCapturas {
         app.liveNow.conEnCurso(enCurso -> { enCurso.put(1L, mv); enCurso.put(3L, mv); });
         app.liveNow.fijarUltimaMs(System.currentTimeMillis());
         app.liveNow.conTerminadas(terminadas -> { Match mt = new Match(); mt.id = 556; mt.started = java.time.Instant.now().minusSeconds(3000); mt.finished = java.time.Instant.now().minusSeconds(600); mt.map = "Arena"; mt.mode = "1v1 Random Map"; mt.players.add(a1); mt.players.add(a2); terminadas.put(556L, new Object[]{ mt, System.currentTimeMillis() - 600_000 }); });
-        SwingUtilities.invokeAndWait(() -> { app.ahoraBtn.doClick(); });
+        SwingUtilities.invokeAndWait(() -> { app.navegador.ahoraBtn.doClick(); });
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(() -> app.mostrarToast("\u25CF Hera ha empezado una partida \u00B7 vs Viper 2732 (Mongoles\u2013Francos) \u00B7 Arabia", 555));
         Thread.sleep(700);
@@ -442,7 +442,7 @@ class RegresionCapturas {
         System.out.println("pct rango 12Tirador todos rm_1v1: " + ConsultasLadder.percentilRango("rm_1v1", 260) + " | por rating activos: " + ConsultasLadder.percentilRating("rm_1v1", true, 1905) + " | novato: " + ConsultasLadder.percentilRating("rm_1v1", true, 760));
         SwingUtilities.invokeAndWait(() -> { app.civStats.stRango.rango("1600-1800|*"); app.civStats.stRango.alCambiar.accept("1600-1800|*"); app.civStats.stMapaCombo.setSelectedIndex(3); });
         Thread.sleep(1500);
-        SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());
+        SwingUtilities.invokeAndWait(() -> app.navegador.civStatsBtn.doClick());
         Thread.sleep(1500);
         foto("shot_civstats_2000_mapa.png");
         SwingUtilities.invokeAndWait(() -> { app.civStats.stRango.rango("*"); app.civStats.stRango.alCambiar.accept("*"); app.civStats.stMapaCombo.setSelectedIndex(0); });
@@ -555,7 +555,7 @@ class RegresionCapturas {
 
         // Se vuelve a Civ Stats (la pestaña activa antes de este bloque): mostrarDirectos(false) la había
         // deseleccionado. abrirCivStats() no pide nada por red: sfr-data ya está en caché de esta ejecución.
-        SwingUtilities.invokeAndWait(() -> app.civStatsBtn.doClick());
+        SwingUtilities.invokeAndWait(() -> app.navegador.civStatsBtn.doClick());
         Thread.sleep(400);
     }
 }
