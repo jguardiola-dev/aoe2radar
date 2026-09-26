@@ -644,16 +644,8 @@ class WatchlistViewTest {
         assertFalse(WatchlistView.sugerenciaCaducada("tirador", "tirador "));   // el trim es parte del criterio
     }
 
-    @Test void agregarLocalesSinRepetir_noDuplicaPorId() {
-        List<String[]> out = new ArrayList<>();
-        out.add(new String[]{ "1", "Uno", "Uno · es" });
-        List<String[]> locales = List.of(
-                new String[]{ "1", "Uno", "Uno · es" },           // ya está: no se añade
-                new String[]{ "2", "Dos", "Dos · ar" });          // nuevo: se añade
-        WatchlistView.agregarLocalesSinRepetir(out, locales);
-        assertEquals(2, out.size());
-        assertEquals("2", out.get(1)[0]);
-    }
+    // agregarLocalesSinRepetir (y su test) se borraron con la decisión 8 (DEUDA fila 112): addPlayerDialog ya no
+    // fusiona API+local a mano, delega en busqueda.buscar (BusquedaPerfilesCompanionTest cubre esa fusión).
 
     private static String t(String es, String en) { return dev.tirador.aoe2radar.util.I18n.t(es, en); }
 }
