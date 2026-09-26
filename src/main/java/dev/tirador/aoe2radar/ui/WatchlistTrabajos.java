@@ -1,6 +1,5 @@
 package dev.tirador.aoe2radar.ui;
 
-import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.BarridoVivos;
 import dev.tirador.aoe2radar.service.TopLadderService;
@@ -139,12 +138,9 @@ final class WatchlistTrabajos {
      *  su último 1v1 terminado). Solo toca la lista, nunca la tabla: los
      *  resultados de las partidas siguen sin verse. */
     public void refrescarWatchlist() {
-        if (wv.modoTop()) return;   // el top se alimenta del leaderboard y del río
-        List<Player> objetivo = new ArrayList<>();
-        for (int i = 0; i < wv.playersModel.size(); i++) {
-            Player p = wv.playersModel.get(i);
-            if (wv.presenter.watchBarridos.add(p.id())) objetivo.add(p);
-        }
+        List<Player> visibles = new ArrayList<>();
+        for (int i = 0; i < wv.playersModel.size(); i++) visibles.add(wv.playersModel.get(i));
+        List<Player> objetivo = wv.presenter.objetivoBarrido(visibles);   // en los tops, ninguno
         if (objetivo.isEmpty()) return;
         new SwingWorker<Void, BarridoVivos.Refresco>() {
             @Override protected Void doInBackground() {
@@ -166,23 +162,9 @@ final class WatchlistTrabajos {
                 return null;
             }
             @Override protected void process(List<BarridoVivos.Refresco> chunks) {
-                for (BarridoVivos.Refresco r : chunks) aplicarRefresco(r);
-                wv.actualizarIndicadoresVivos();
+                wv.presenter.procesarRefrescos(chunks);
             }
         }.execute();
-    }
-
-    /** Un refresco de refrescarWatchlist, ya en el EDT: vivo y ELO. Con el ELO del snapshot nocturno no se sabe si
-     *  juega (sabeSiJuega() false): el estado en vivo no se toca, lo lleva el socket (F4 de la revisión 1.3). */
-    void aplicarRefresco(BarridoVivos.Refresco r) {
-        if (r.sabeSiJuega()) {
-            if (r.vivo() != null) {
-                if (WatchlistView.VIVO.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) WatchlistView.VIVO.ponerInfo(r.pid(), r.resumen());
-            } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
-        }
-        if (r.elo() != null) {
-            if (r.sabeSiJuega()) wv.presenter.ponerEloFresco(r.pid(), r.elo()); else wv.presenter.ponerEloDeAnoche(r.pid(), r.elo());   // F5: ¿fresco o de anoche?
-        }
     }
 
     /** Vigilancia periódica de TODA la watchlist: solo detecta quién está jugando ahora. Se salta el tick si
@@ -211,24 +193,7 @@ final class WatchlistTrabajos {
                 return null;
             }
             @Override protected void process(List<BarridoVivos.Lote> chunks) {
-                boolean tablaTocada = false;
-                for (BarridoVivos.Lote c : chunks) {
-                    for (Long id : c.idsLote()) {
-                        Long vm = c.vivos().get(id);
-                        if (vm != null) { WatchlistView.VIVO.marcarJugando(id, vm, c.infos().get(id)); }
-                        else { WatchlistView.VIVO.marcarFuera(id); }
-                    }
-                    for (Match fresco : c.terminadas())
-                        for (Match m : wv.all)
-                            if (m.id == fresco.id && m.finished == null) {
-                                m.finished = fresco.finished;   // la EN DIRECTO de la tabla acabó:
-                                m.players = fresco.players;     // fecha real y resultado disponibles
-                                tablaTocada = true;
-                            }
-                }
-                if (tablaTocada) wv.enlacePartidas.applyFilters();
-                else wv.enlacePartidas.repintarTabla();   // p. ej. una viva que cruza el umbral de fantasma
-                wv.actualizarIndicadoresVivos();
+                wv.presenter.procesarLotes(chunks, wv.all);
             }
             @Override protected void done() { wv.vigilando = false; }
         }.execute();

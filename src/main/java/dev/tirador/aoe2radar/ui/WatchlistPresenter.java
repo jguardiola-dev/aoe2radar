@@ -5,6 +5,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.service.BarridoVivos;
 import dev.tirador.aoe2radar.service.Campanas;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.Familias;
@@ -422,6 +423,59 @@ public final class WatchlistPresenter {
         for (Player p : (modoTop() ? top.topLadder : todosJugadores))
             if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && vivo.jugando(p.id())) nAmbito++;
         return nAmbito;
+    }
+
+    // ===== Barridos de vivos (el SwingWorker y su publish siguen en WatchlistTrabajos; esto es su process) ======
+
+    /** A quién barre refrescarWatchlist: los visibles que aún no se han mirado en este arranque (y los marca). En los
+     *  tops, ninguno: el top se alimenta del leaderboard y del río. */
+    List<Player> objetivoBarrido(List<Player> visibles) {
+        if (modoTop()) return List.of();   // el top se alimenta del leaderboard y del río
+        List<Player> objetivo = new ArrayList<>();
+        for (Player p : visibles) if (watchBarridos.add(p.id())) objetivo.add(p);
+        return objetivo;
+    }
+
+    /** El process de refrescarWatchlist (EDT): aplica cada refresco y repinta los indicadores. */
+    void procesarRefrescos(List<BarridoVivos.Refresco> chunks) {
+        for (BarridoVivos.Refresco r : chunks) aplicarRefresco(r);
+        pantalla.indicadoresVivos();
+    }
+
+    /** Un refresco de refrescarWatchlist, ya en el EDT: vivo y ELO. Con el ELO del snapshot nocturno no se sabe si
+     *  juega (sabeSiJuega() false): el estado en vivo no se toca, lo lleva el socket (F4 de la revisión 1.3). */
+    void aplicarRefresco(BarridoVivos.Refresco r) {
+        if (r.sabeSiJuega()) {
+            if (r.vivo() != null) {
+                if (vivo.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) vivo.ponerInfo(r.pid(), r.resumen());
+            } else { vivo.marcarFuera(r.pid()); }
+        }
+        if (r.elo() != null) {
+            if (r.sabeSiJuega()) ponerEloFresco(r.pid(), r.elo()); else ponerEloDeAnoche(r.pid(), r.elo());   // F5: ¿fresco o de anoche?
+        }
+    }
+
+    /** El process de vigilarVivos (EDT): marca quién juega y quién no en cada lote y, si una partida EN DIRECTO de
+     *  la tabla de Partidas ({@code all}, la MISMA lista que la de Partidas) ha terminado, le pone fecha y resultado. */
+    void procesarLotes(List<BarridoVivos.Lote> chunks, List<Match> all) {
+        boolean tablaTocada = false;
+        for (BarridoVivos.Lote c : chunks) {
+            for (Long id : c.idsLote()) {
+                Long vm = c.vivos().get(id);
+                if (vm != null) { vivo.marcarJugando(id, vm, c.infos().get(id)); }
+                else { vivo.marcarFuera(id); }
+            }
+            for (Match fresco : c.terminadas())
+                for (Match m : all)
+                    if (m.id == fresco.id && m.finished == null) {
+                        m.finished = fresco.finished;   // la EN DIRECTO de la tabla acabó:
+                        m.players = fresco.players;     // fecha real y resultado disponibles
+                        tablaTocada = true;
+                    }
+        }
+        if (tablaTocada) pantalla.enlace().applyFilters();
+        else pantalla.enlace().repintarTabla();   // p. ej. una viva que cruza el umbral de fantasma
+        pantalla.indicadoresVivos();
     }
 
     // ===== ELO de anoche frente a ELO fresco (F5 de la revisión 1.3) ======================================

@@ -606,6 +606,78 @@ class WatchlistPresenterTest {
         assertEquals(1, s.size());
     }
 
+    // ===== barridos de vivos (el process de los SwingWorker) ============================================================
+
+    @Test void objetivoBarrido_unaVezPorArranqueYNuncaEnLosTops() {
+        List<Player> visibles = List.of(new Player(1L, "Uno", "G"), new Player(2L, "Dos", "G"));
+        pantalla.grupo = WatchlistView.TOP_LADDER;
+        assertEquals(List.of(), p.objetivoBarrido(visibles));
+        assertTrue(p.watchBarridos.isEmpty(), "en los tops ni se marcan");
+        pantalla.grupo = "G";
+        p.watchBarridos.add(1L);
+        assertEquals(List.of(2L), ids(p.objetivoBarrido(visibles)));
+        assertEquals(List.of(), p.objetivoBarrido(visibles), "ya barridos");
+    }
+
+    @Test void procesarRefrescos_vivoYEloSegunDeDondeVengan() {
+        vivo.marcarJugando(1L, 11L);
+        p.procesarRefrescos(List.of(new dev.tirador.aoe2radar.service.BarridoVivos.Refresco(1L, null, null, 1500, 40),   // snapshot
+                new dev.tirador.aoe2radar.service.BarridoVivos.Refresco(2L, 22L, "vs X", 1600, null)));                   // API, jugando
+        assertTrue(vivo.jugando(1L), "el snapshot no sabe si juega: no apaga");
+        assertNull(p.eloParaResta(1L), "ELO de anoche");
+        assertTrue(vivo.jugando(2L));
+        assertEquals("vs X", vivo.info(2L));
+        assertEquals(1600, p.eloParaResta(2L), "ELO fresco");
+        assertEquals(List.of("indicadores"), pantalla.llamadas);
+    }
+
+    /** EnlacePartidas sin efectos (para sobrescribir solo lo que se quiere mirar). */
+    static class EnlaceMudo implements WatchlistView.EnlacePartidas {
+        @Override public void fetchMatches() { }
+        @Override public void mostrarDirectos(boolean mostrar) { }
+        @Override public void refrescarSujetos(List<Player> tracked, boolean esInvitado) { }
+        @Override public List<Player> ultimosSujetos() { return List.of(); }
+        @Override public void taparResultados() { }
+        @Override public void applyFilters() { }
+        @Override public void actualizarTextoBuscar() { }
+        @Override public void limpiarSujetos() { }
+        @Override public void sincronizarSocket() { }
+        @Override public String resumenVivo(Match m, long pid) { return null; }
+        @Override public String refNombre(Match m) { return ""; }
+        @Override public void repintarTabla() { }
+        @Override public void fijarObjetivo(Player p, String vistaId) { }
+        @Override public Player invitado() { return null; }
+        @Override public void limpiarInvitado() { }
+        @Override public String vistaDelInvitado() { return ""; }
+        @Override public boolean sujetosPanelVisible() { return false; }
+        @Override public String vistaDeSujetos() { return ""; }
+    }
+
+    @Test void procesarLotes_marcaVivosYCierraLasTerminadas() {
+        List<String> tabla = new ArrayList<>();
+        pantalla.enlace = new EnlaceMudo() {
+            @Override public void applyFilters() { tabla.add("filtrar"); }
+            @Override public void repintarTabla() { tabla.add("repintar"); }
+        };
+        vivo.marcarJugando(3L, 33L);
+        Match enTabla = new Match(); enTabla.id = 500L;
+        Match otra = new Match(); otra.id = 600L;
+        List<Match> all = new ArrayList<>(List.of(enTabla, otra));
+        Match fresco = new Match(); fresco.id = 500L; fresco.finished = java.time.Instant.ofEpochSecond(1000);
+        var lote = new dev.tirador.aoe2radar.service.BarridoVivos.Lote(Set.of(1L, 3L), Map.of(1L, 10L), Map.of(1L, "info"), List.of(fresco));
+        p.procesarLotes(List.of(lote), all);
+        assertTrue(vivo.jugando(1L));
+        assertEquals("info", vivo.info(1L));
+        assertFalse(vivo.jugando(3L), "en el lote y sin partida: fuera");
+        assertEquals(fresco.finished, enTabla.finished, "la EN DIRECTO de la tabla acabó: fecha real");
+        assertNull(otra.finished);
+        assertEquals(List.of("filtrar"), tabla);
+        assertEquals(List.of("indicadores"), pantalla.llamadas);
+        tabla.clear();
+        p.procesarLotes(List.of(new dev.tirador.aoe2radar.service.BarridoVivos.Lote(Set.of(), Map.of(), Map.of(), List.of(fresco))), all);
+        assertEquals(List.of("repintar"), tabla, "ya estaba terminada: solo repintar");
+    }
+
     // ===== campanas y avisos ============================================================================================
 
     @Test void refrescarCampanas_calculaEnFondoYSincronizaEnElEdt() {

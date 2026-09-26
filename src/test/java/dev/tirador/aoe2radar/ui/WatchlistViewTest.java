@@ -925,12 +925,12 @@ class WatchlistViewTest {
         long pid = 987_654_321L;
         EstadoVivo.SISTEMA.marcarJugando(pid, 555L);   // el socket ya lo vio en partida
         try {
-            watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 42));
+            watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 42));
             assertTrue(EstadoVivo.SISTEMA.jugando(pid), "el snapshot no sabe si juega: el punto del socket se queda");
             assertNull(EstadoVivo.SISTEMA.finMs(pid), "ni fin de partida falso");
             assertEquals(1500, eloWatch.get(pid), "el ELO del snapshot sí se aplica");
 
-            watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1510, null));
+            watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1510, null));
             assertFalse(EstadoVivo.SISTEMA.jugando(pid), "el de la API sí manda: vivo null = fuera");
         } finally { EstadoVivo.SISTEMA.marcarFuera(pid); }
     }
@@ -940,11 +940,11 @@ class WatchlistViewTest {
      *  va por la vía exacta (porSerie). Un ELO fresco (API, leaderboard) vuelve a valer para la resta. */
     @Test void eloParaResta_elDelSnapshotNoValeComoEloActual() {
         long pid = 42L;
-        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 30));   // del snapshot
+        watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 30));   // del snapshot
         assertEquals(1500, eloWatch.get(pid), "la lista sigue enseñando el ELO del snapshot");
         assertNull(WatchlistPresenter.eloParaResta(pid, eloWatch, watchlist.presenter.eloDelSnapshot), "restar anoche de anoche da 0: no vale");
 
-        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1523, null));   // de la API
+        watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1523, null));   // de la API
         assertEquals(1523, WatchlistPresenter.eloParaResta(pid, eloWatch, watchlist.presenter.eloDelSnapshot), "un ELO fresco sí vale para la resta");
         EstadoVivo.SISTEMA.marcarFuera(pid);
     }
