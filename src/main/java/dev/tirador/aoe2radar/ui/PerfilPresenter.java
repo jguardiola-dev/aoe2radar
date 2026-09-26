@@ -283,6 +283,8 @@ public final class PerfilPresenter {
 
     /** Pausa entre perfiles precalentados por la API (4 s, como en la 1.1). El test la baja. */
     long pausaPrecargaMs = 4000;
+    /** Pausa tras un perfil que cubre sfr-data (bajar su paquete de GitHub): corta, pero sin ráfagas. El test la baja. */
+    long pausaPrecargaSfrMs = 1000;
 
     /**
      * El trabajo de precalentar, sin la espera inicial (el test lo llama directo). «Nocturno primero» (1.3): antes de
@@ -305,9 +307,11 @@ public final class PerfilPresenter {
             Actividad base = actividadCache.get(pid);
             if (base == null) base = cargarDeDisco.apply(pid);
             if (base == null || System.currentTimeMillis() - base.ms() < 6 * 3_600_000L) continue;
+            boolean enSfr = false;
             try {
-                if (perfiles.anioSfr(pid, base.nombre()) != null) continue;   // en el alcance de sfr-data: sin API
+                enSfr = perfiles.anioSfr(pid, base.nombre()) != null;   // en el alcance de sfr-data: sin API
             } catch (Exception ex) { log("precarga perfil " + pid + " (sfr-data): " + causa(ex)); }
+            if (enSfr) { Thread.sleep(pausaPrecargaSfrMs); continue; }
             try { perfiles.historial(pid, base.nombre(), base, false, 3, a -> { }, () -> false); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
             Thread.sleep(pausaPrecargaMs);
         }

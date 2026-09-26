@@ -78,11 +78,25 @@ class PerfilPresenterTest {
             }
         };
         PerfilPresenter p = new PerfilPresenter(perfilesPre, ratings, busqueda, Tareas.EN_LINEA, eloWatch, new HashMap<>(), pantalla);
-        p.pausaPrecargaMs = 0;
+        p.pausaPrecargaMs = 0; p.pausaPrecargaSfrMs = 0;
         p.precalentarAhora(dir, pid -> actividad(pid, "J" + pid, List.of()));   // ms de 2023: más de 6 h, toca refrescar
         java.util.Collections.sort(aSfr); java.util.Collections.sort(alaApi);
         assertEquals(List.of(1L, 2L, 3L), aSfr, "se mira sfr-data para todos");
         assertEquals(List.of(2L, 3L), alaApi, "el 1 lo tiene sfr-data: ninguna llamada a la API por él");
+    }
+
+    /** Revisión: el perfil que cubre sfr-data también deja una pausa (corta) antes del siguiente: sin ráfagas a GitHub. */
+    @Test void precalentarPausaTambienTrasUnPerfilDeSfrData(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        for (long pid : new long[]{ 1, 2 }) java.nio.file.Files.writeString(dir.resolve(pid + ".json"), "{}");
+        PerfilesFalso perfilesPre = new PerfilesFalso() {
+            @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) { return new AnioSfr(PerfilPresenterTest.this.actividad(pid, "J", List.of()), "", null); }
+            @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, BooleanSupplier cancelar) { throw new AssertionError("sin API"); }
+        };
+        PerfilPresenter p = new PerfilPresenter(perfilesPre, ratings, busqueda, Tareas.EN_LINEA, eloWatch, new HashMap<>(), pantalla);
+        p.pausaPrecargaMs = 0; p.pausaPrecargaSfrMs = 150;
+        long t0 = System.nanoTime();
+        p.precalentarAhora(dir, pid -> actividad(pid, "J" + pid, List.of()));
+        assertTrue((System.nanoTime() - t0) / 1_000_000 >= 300, "una pausa de 150 ms por cada uno de los 2 perfiles de sfr-data");
     }
 
     static class RatingsFalso implements RatingsService {
