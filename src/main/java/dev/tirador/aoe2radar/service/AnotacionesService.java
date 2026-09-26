@@ -23,13 +23,13 @@ public final class AnotacionesService {
 
     /**
      * Antes, dentro de pedirAlias: nuevo debe llegar ya recortado (trim), como hacía la app. Si nuevo está vacío o es
-     * igual al original, se quita del mapa; si no, se guarda. OJO (comportamiento de la 1.1, no se toca): la config se
-     * guarda siempre con el valor de «nuevo» tal cual, aunque el mapa lo haya quitado por ser igual al original — así
-     * que ese caso deja «alias_&lt;pid&gt;» con el nombre original en el archivo (se anota en DEUDA).
+     * igual al original, se quita del mapa Y se borra la clave de config (arreglo de DEUDA fila 101: antes de la
+     * fase 4, el caso «igual al original» dejaba «alias_&lt;pid&gt;=Original» en el archivo, así que al reiniciar la
+     * app reaparecía como alias; ahora se guarda vacío, igual que hace ponerNota con las notas vacías).
      */
     public void ponerAlias(long pid, String original, String nuevo) {
-        if (nuevo.isEmpty() || nuevo.equals(original)) alias.remove(pid); else alias.put(pid, nuevo);
-        guardarConfig.accept("alias_" + pid, nuevo);
+        if (nuevo.isEmpty() || nuevo.equals(original)) { alias.remove(pid); guardarConfig.accept("alias_" + pid, ""); }
+        else { alias.put(pid, nuevo); guardarConfig.accept("alias_" + pid, nuevo); }
     }
 
     /** Antes, dentro de pedirNota (y borrarNota, con nota ""): vacía quita la nota; si no, la guarda. */
