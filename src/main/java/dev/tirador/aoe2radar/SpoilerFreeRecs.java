@@ -289,65 +289,16 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // el import static de más arriba, con el mismo nombre y valor.
 
     // tarjeta, filaBarra, enlaceVerTodo y las ventanas de lista/tabla completa (ver ui.Listas); RegresionCapturas la usa por el nombre del campo.
-    final Listas listas = new Listas(this, v -> ultimoClicCtrl = v);
+    final Listas listas = CableadoJugador.listas(this);   // cableado en CableadoJugador (fase 3, tanda 4, B1)
 
 
     /** Diálogos de un jugador (nota, alias, cuentas vinculadas, nicks anteriores): ver ui.DialogosJugador. Lo que
      *  toca la tabla/lista de la ventana llega por su Anfitrion; la red de Steam, por RedSteam (ui no importa api). */
-    final dev.tirador.aoe2radar.ui.DialogosJugador dialogos = new dev.tirador.aoe2radar.ui.DialogosJugador(this, ANOTACIONES, SERVICIO_PERFIL,
-            new dev.tirador.aoe2radar.ui.DialogosJugador.RedSteam() {
-                @Override public String steamId(long pid) throws Exception { return COMPANION.perfil(pid).steamId(); }
-                @Override public List<String[]> alias(String steamId) throws Exception { return steam.alias(steamId); }
-            },
-            new dev.tirador.aoe2radar.ui.DialogosJugador.Anfitrion() {
-                @Override public void repintarLista() { playersList.repaint(); }
-                @Override public void refrescarAlturas() { watchlist.refrescarAlturasWatch(); }
-                @Override public void refrescarTabla() { partidas.refrescarTabla(); }
-                @Override public void ajustarColumnasTabla() { partidas.ajustarColumnas(); }
-                @Override public void actualizarControles() { actualizarControlesTabla(); }
-                @Override public void refrescarSujetos() { partidas.refrescarSujetos(partidas.ultimosSujetos, invitado != null); }   // el ELO recién llegado, a la cabecera
-                @Override public void mostrarEstado(String texto) { status.setText(texto); }
-                @Override public boolean enWatchlist(long pid) { return watchlist.containsPlayerId(pid); }
-                @Override public void ponerEloWatch(long pid, int elo) { eloWatch.put(pid, elo); }
-                @Override public Set<String> gruposDisponibles() { return watchlist.gruposParaFichar(); }
-                @Override public String grupoActivo() { return watchlist.grupoActivo(); }
-                @Override public void agregarJugador(long pid, String nombre, String grupo) { todosJugadores.add(new Player(pid, nombre, grupo)); }
-                @Override public void guardarJugadores() { watchlist.savePlayers(); }
-                @Override public void reconstruirGrupos() { watchlist.rebuildGrupos(); }
-                @Override public void marcarFamiliaVinculada(Set<Long> familia) { watchlist.marcarVinculo(familia); }
-                @Override public void aplicarFiltro() { watchlist.aplicarFiltroGrupo(); }
-                @Override public void refrescarWatchlist() { watchlist.refrescarWatchlist(); }
-                @Override public void pausaCortesia() { dormir(PAUSA_MS / 2); }
-            });
+    final dev.tirador.aoe2radar.ui.DialogosJugador dialogos = CableadoJugador.dialogos(this);   // cableado en CableadoJugador (fase 3, tanda 4, B1)
 
     /** Menús de jugador para las vistas: ver ui.MenusJugadorSwing (implementación real). Lo que necesita de la
      *  ventana y no es navegación llega por Acciones. */
-    final dev.tirador.aoe2radar.ui.MenusJugador menus = new dev.tirador.aoe2radar.ui.MenusJugadorSwing(VIVO, ELO_1V1, SERVICIO_PERFIL, this,
-            pid -> SpoilerFreeRecs.this.liveNow != null ? SpoilerFreeRecs.this.liveNow.liveFicha(pid) : null, dev.tirador.aoe2radar.ui.Tareas.SWING,
-            new dev.tirador.aoe2radar.ui.MenusJugadorSwing.Acciones() {
-                @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
-                @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-                @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
-                @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
-                @Override public String notaDe(long pid) { return SpoilerFreeRecs.this.notaDe(pid); }
-                @Override public void pedirAlias(long pid, String nombreOriginal) { SpoilerFreeRecs.this.pedirAlias(pid, nombreOriginal); }
-                @Override public void pedirNota(long pid, String nombre) { SpoilerFreeRecs.this.pedirNota(pid, nombre); }
-                @Override public void borrarNota(long pid, String nombre) { SpoilerFreeRecs.this.borrarNota(pid, nombre); }
-                @Override public void mostrarVinculadas(long pid, String nombre) { SpoilerFreeRecs.this.mostrarVinculadas(pid, nombre); }
-                @Override public void nicksAnteriores(long pid, String nombre) { SpoilerFreeRecs.this.nicksAnteriores(pid, nombre); }
-                @Override public boolean enWatchlist(long pid) { return watchlist.containsPlayerId(pid); }
-                @Override public Set<String> gruposDisponibles() { return watchlist.gruposParaFichar(); }
-                @Override public void anadirAWatchlist(long pid, String nombre, String grupo) {
-                    todosJugadores.add(new Player(pid, nombre, grupo));
-                    watchlist.savePlayers();
-                    watchlist.rebuildGrupos();
-                    watchlist.aplicarFiltroGrupo();
-                    watchlist.refrescarWatchlist();
-                    status.setText(nombre + t(" añadido a «", " added to \u201C") + grupo + "\u00bb.");
-                    watchlist.ofrecerVinculadasTrasAlta(pid, nombre, grupo);   // siempre que alguien entra en un grupo, se revisan sus cuentas vinculadas
-                }
-                @Override public String elegirGrupoDialog(String nombreSugerido) { return watchlist.elegirGrupoDialog(nombreSugerido); }
-            });
+    final dev.tirador.aoe2radar.ui.MenusJugador menus = CableadoJugador.menus(this);   // cableado en CableadoJugador (fase 3, tanda 4, B1)
 
     // «Al azar por ELO» / «Guess the ELO»: muestreo, filtros y caché de sesión viven en el servicio (una sola
     // instancia por ventana, con techTree.claveCivDeNombre y dormir() de la propia ventana como colaboradores).
@@ -366,15 +317,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // ----- Estado UI ---------------------------------------------------------
     final List<Player> todosJugadores = new ArrayList<>();          // fuente de verdad (todos los grupos)
     final DefaultListModel<Player> playersModel = new DefaultListModel<>();
-    final JList<Player> playersList = new JList<>(playersModel) {
-        @Override public String getToolTipText(MouseEvent e) {   // sobre la celda Forma: su tooltip; en el resto, el de la fila
-            if (watchlist.formaVisible() && watchlist.enZonaForma(e.getPoint())) {
-                int i = locationToIndex(e.getPoint());
-                if (i >= 0 && getCellBounds(i, i).contains(e.getPoint())) return watchlist.tipForma(playersModel.get(i).id());
-            }
-            return super.getToolTipText(e);
-        }
-    };
+    final JList<Player> playersList = CableadoWatchlist.playersList(this);   // cableado en CableadoWatchlist (fase 3, tanda 4, B1)
     final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
     javax.swing.Timer vigilante;      // barrido periódico del «en directo» (nunca del ELO)
     final JSpinner hoursSpinner = new JSpinner(new SpinnerNumberModel(
@@ -459,13 +402,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** El botón «Perfil»: el jugador seleccionado en la watchlist o, si no hay, la página con el buscador. No es
      *  navegación (no decide CÓMO se abre, decide A QUIÉN): se queda en la ventana y ui.Navegador lo invoca como
      *  colaborador (Runnable) cuando se pulsa la pestaña directamente, ver conectarVistas/construirFilaVistas. */
-    void perfilDesdeBoton() {
-        List<Player> sel = playersList.getSelectedValuesList();
-        if (!sel.isEmpty()) abrirPerfil(sel.get(0).id(), nombreVisible(sel.get(0).id(), sel.get(0).name()));
-        else if (partidas.ultimosSujetos.size() == 1 && partidas.recsCards != null && partidas.recsCards.isShowing()) abrirPerfil(partidas.ultimosSujetos.get(0).id(), nombreVisible(partidas.ultimosSujetos.get(0).id(), partidas.ultimosSujetos.get(0).name()));   // «Partidas de: X» → su perfil
-        else if (perfil.pidAbierto() > 0 && ACTIVIDAD_CACHE.containsKey(perfil.pidAbierto())) abrirPerfil(perfil.pidAbierto(), perfil.nombreAbierto());
-        else abrirPerfil(0, "");
-    }
+    void perfilDesdeBoton() { CableadoJugador.perfilDesdeBoton(this); }   // logica movida a CableadoJugador (fase 3, tanda 4, B1);
+    // this::perfilDesdeBoton se pasa al construir el Navegador, mas abajo en este mismo constructor
 
     // matchDeMuestra/gteDesdeMuestra/azarDesdeMuestra/azarEnsenadas: movidos a service.AzarServiceCompanion
     // (lógica pura del azar/GTE, ver T3-A3). gamesWatch se queda: lo usa FormService, no el azar.
@@ -504,7 +442,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // inicializador no compila («might not have been initialized»), aunque solo se fuera a usar más tarde.
     final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig, this::esGrupoDeUsuarioWatchlist);
     /** Ver el comentario de "campanas": separado en un método para poder pasarlo como Predicate ahí mismo. */
-    private boolean esGrupoDeUsuarioWatchlist(String nombre) { return watchlist != null && watchlist.esGrupoDeUsuario(nombre); }
+    private boolean esGrupoDeUsuarioWatchlist(String nombre) { return CableadoWatchlist.esGrupoDeUsuarioWatchlist(this, nombre); }   // logica movida a CableadoWatchlist (fase 3, tanda 4, B1)
     javax.swing.Timer campanasTimer;   // barrido de campanas (Watchlist): el toast que dispara se sacó a ui.BarraEstado (T4-Z3)
 
     /** El aviso flotante («X ha empezado una partida»): ver ui.BarraEstado. */
@@ -646,31 +584,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** La Watchlist (panel izquierdo): ver ui.WatchlistView. */
     final WatchlistView watchlist;
 
-    /** Lo que la Watchlist pide a Partidas (ui.PartidasView, campo {@code partidas}): ver
-     *  ui.WatchlistView.EnlacePartidas. objetivoForzado/invitado/vistaDelInvitado siguen en la ventana. */
-    private WatchlistView.EnlacePartidas watchlistEnlacePartidas() {
-        return new WatchlistView.EnlacePartidas() {
-            @Override public void fetchMatches() { partidas.fetchMatches(partidas.fetchBtn); }
-            @Override public void mostrarDirectos(boolean mostrar) { SpoilerFreeRecs.this.mostrarDirectos(mostrar); }
-            @Override public void refrescarSujetos(List<Player> tracked, boolean esInvitado) { partidas.refrescarSujetos(tracked, esInvitado); }
-            @Override public List<Player> ultimosSujetos() { return partidas.ultimosSujetos; }
-            @Override public void taparResultados() { partidas.taparResultados(); }
-            @Override public void applyFilters() { partidas.applyFilters(); }
-            @Override public void actualizarTextoBuscar() { partidas.actualizarTextoBuscar(); }
-            @Override public void limpiarSujetos() { dev.tirador.aoe2radar.ui.PartidasView.SUJETOS.clear(); }
-            @Override public void sincronizarSocket() { SpoilerFreeRecs.this.sincronizarSocket(); }
-            @Override public String resumenVivo(Match m, long pid) { return ReglasPartida.resumenVivo(m, pid); }
-            @Override public String refNombre(Match m) { return partidas.refNombre(m); }
-            @Override public void repintarTabla() { partidas.table.repaint(); }
-            @Override public void fijarObjetivo(Player p, String vistaId) { objetivoForzado = p;   // aunque ya esté en un grupo (entonces no es invitado, pero sí el objetivo)
-                invitado = p; vistaDelInvitado = vistaId; }
-            @Override public Player invitado() { return invitado; }
-            @Override public void limpiarInvitado() { invitado = null; }
-            @Override public String vistaDelInvitado() { return vistaDelInvitado; }
-            @Override public boolean sujetosPanelVisible() { return sujetosPanel != null && sujetosPanel.isVisible(); }
-            @Override public String vistaDeSujetos() { return partidas.vistaDeSujetos; }
-        };
-    }
+    // watchlistEnlacePartidas(): movido a CableadoWatchlist (fase 3, tanda 4, B1); solo lo llamaba CableadoWatchlist.construir.
 
     /** Lo que ui.BarraEstado necesita del resto de la ventana: el freno de cancelación real (api.Cancelacion)
      *  y la red (api.Http, java.net) viven aquí porque ui no puede importarlos; «operacionTerminada» reactiva
@@ -694,59 +608,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         };
     }
 
-    /** Lo que la Watchlist pide al resto de la ventana (cromo, red que no es de servicio): ver
-     *  ui.WatchlistView.Anfitrion. */
-    private WatchlistView.Anfitrion watchlistAnfitrion() {
-        return new WatchlistView.Anfitrion() {
-            @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
-            @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
-            @Override public void aprenderPais(long pid, String pais) { dev.tirador.aoe2radar.cache.Paises.aprenderPais(pid, pais); }
-            @Override public void aprenderCanal(long pid, String canal) { dev.tirador.aoe2radar.cache.Canales.aprenderCanal(pid, canal); }
-            @Override public void cargarEloAyer() { Snapshots.cargarEloAyer(); }
-            @Override public boolean clanesVacios() { return dev.tirador.aoe2radar.sfrdata.Ladder.clanes.isEmpty(); }
-            @Override public void asegurarLadderEnFondo() { dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar(false); }
-            @Override public List<Map.Entry<String, Integer>> sugerirClanes(String texto) { return dev.tirador.aoe2radar.service.ConsultasLadder.sugerirClanes(texto); }
-            @Override public void trabajando(boolean on) { SpoilerFreeRecs.this.trabajando(on); }
-            @Override public long opSerial() { return barraEstado.opSerial(); }
-            @Override public void marcarHiloOperacionActual() { hiloOperacion = Thread.currentThread(); }
-            @Override public boolean detenerOperacion() { return stopOperacion; }
-            @Override public void dormir(long ms) { Servicios.dormir(ms); }
-            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-            @Override public void espectar(Player p) { SpoilerFreeRecs.this.espectar(p); }
-            @Override public java.nio.file.Path rutaCaptureAge() { return dev.tirador.aoe2radar.service.Juego.rutaCaptureAge(); }
-            @Override public void lanzarCaptureAge(java.nio.file.Path rec) { SpoilerFreeRecs.this.lanzarCaptureAge(rec); }
-            @Override public void mostrarToast(String texto, long matchId) { SpoilerFreeRecs.this.mostrarToast(texto, matchId); }
-            @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) {
-                JPanel toastActual = barraEstado.toast();
-                if (toastActual == null) return;
-                JButton perf = new JButton(t("Su perfil", "Their profile")); perf.setFocusable(false); perf.setMargin(new Insets(0, 6, 0, 6)); perf.addActionListener(a -> accionPerfil.run());
-                JButton cara = new JButton(t("Cara a cara", "Head-to-head")); cara.setFocusable(false); cara.setMargin(new Insets(0, 6, 0, 6)); cara.addActionListener(a -> accionCaraACara.run());
-                JPanel acc = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0)); acc.setOpaque(false); acc.add(perf); acc.add(cara);
-                toastActual.add(acc, BorderLayout.SOUTH); toastActual.revalidate();
-            }
-            @Override public void abrirPerfilYCaraACara(long pid, String miNombre, long rivalId, String rivalNombre) {
-                abrirPerfil(pid, miNombre);
-                javax.swing.Timer tt = new javax.swing.Timer(1200, ev -> { if (perfil.pidAbierto() == pid) perfil.abrirCaraACaraCon(rivalId, rivalNombre); });
-                tt.setRepeats(false); tt.start();
-            }
-            @Override public Object[] tarjetaPerfilCache(long pid) { return perfilCardCache.vigente(pid); }
-            @Override public void tarjetaPerfilGuardar(long pid, Object[] valor) { perfilCardCache.poner(pid, valor); }
-            @Override public boolean perfilAbierto() { return perfil.abierto(); }
-            @Override public Icon iconoVista(String tipo) { return SpoilerFreeRecs.iconoVista(tipo); }
-            @Override public void seleccionCambiada() { if (ratings != null) ratings.sincronizarSeleccion(); if (perfil != null) perfil.sincronizarSeleccion(); }
-            @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-            @Override public List<dev.tirador.aoe2radar.model.PerfilEncontrado> buscarPerfilesApi(String q) throws Exception { return COMPANION.buscarPerfiles(q); }
-            @Override public Perfil perfilApi(long pid) throws Exception { return COMPANION.perfil(pid); }
-            @Override public dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception { return COMPANION.pagina(pid, pagina, porPagina); }
-            @Override public void reiniciarThrottleDirectos() { directos.reiniciarThrottle(); }
-            @Override public void vigilarTwitchDirectos() { directos.vigilarTwitch(); }
-            @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { miPartida.mostrarSuperposicion(texto, fichas, ms); }
-            @Override public void actualizarSocketExtra(Set<Long> ids) {
-                if (liveNow != null) { for (Object[] f : liveNow.topSnapshot()) ids.add((Long) f[0]); liveNow.socketExtra.retainAll(ids); liveNow.socketExtra.addAll(ids); }
-            }
-            @Override public String ahoraNombre(long pid) { return liveNow.ahoraNombre(pid); }
-        };
-    }
+    // watchlistAnfitrion(): movido a CableadoWatchlist (fase 3, tanda 4, B1); solo lo llamaba CableadoWatchlist.construir.
 
     /** El cromo de navegación (pestañas, historial, esqueleto de los abrir*): ver ui.Navegador/ui.AppState.
      *  La ventana implementa ui.Navegacion delegando en él (fase 3, tanda 4, T4-Z1). Se crea al principio del
@@ -762,12 +624,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         navegador = new dev.tirador.aoe2radar.ui.Navegador(status, partidas, this::perfilDesdeBoton);
 
         sujetosPanel = new JPanel();
-        watchlist = new WatchlistView(this, SERVICIO_PERFIL, BUSQUEDA, TOP_LADDER_SERVICE, formaService, campanas,
-                barridoVivos, ELO_1V1, menus, dialogos, this,
-                Tareas.SWING, watchlistEnlacePartidas(), watchlistAnfitrion(),
-                todosJugadores, playersModel, playersList, eloWatch, gamesWatch, twitchLive, ALIASES,
-                status, progreso, partidas.all, sujetosPanel, PLAYERS_FILE, Config.CONFIG_FILE.resolveSibling("top_cache.txt"),
-                PAUSA_MS, PER_PAGE);
+        watchlist = CableadoWatchlist.construir(this);   // cableado en CableadoWatchlist (fase 3, tanda 4, B1)
         JPanel left = watchlist.panel();
 
         JPanel top = construirBarraSuperior(temaInicial);
