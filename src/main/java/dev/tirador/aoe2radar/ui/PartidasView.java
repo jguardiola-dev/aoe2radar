@@ -242,7 +242,7 @@ public final class PartidasView {
      *  el botón «Buscar partidas» y, a continuación, «Al azar por ELO…»/«Guess the ELO!». La ventana la llama
      *  justo donde antes seguía construyendo fila1 a mano (después de «Últimas N horas»). */
     public void agregarFilaConsulta(JPanel fila1) {
-        fetchBtn.addActionListener(e -> fetchMatches(fetchBtn));
+        fetchBtn.addActionListener(e -> busquedas.alternar(fetchBtn));   // el botón (y Enter) alterna Buscar/Detener
         modeCombo.setPrototypeDisplayValue("RM Team MegaRandom XL");
         modeCombo.addActionListener(e -> { if (!actualizandoCombos) applyFilters(); });
         parModo = par(new JLabel(t("Modo:", "Mode:")), modeCombo);

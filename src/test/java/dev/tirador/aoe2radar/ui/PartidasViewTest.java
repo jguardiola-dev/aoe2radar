@@ -268,4 +268,61 @@ class PartidasViewTest {
         });
         assertFalse(anfitrion.pedidas.contains(B.id()), "tras la × no se consulta a nadie más");
     }
+
+    // ----- watchlist F8: pedir las partidas de otro jugador con una búsqueda en marcha -----
+
+    @Test void otraBusquedaConUnaEnMarcha_cancelaLaAnteriorYBuscaAlNuevo() throws Exception {
+        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) { enA.countDown(); soltarA.await(5, TimeUnit.SECONDS); }
+            if (pid == B.id()) { enB.countDown(); soltarB.await(5, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        enlace.invitado = A;
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));   // doble clic en A (EnlacePartidas.fetchMatches)
+        assertTrue(enA.await(5, TimeUnit.SECONDS));
+        enlace.invitado = B;
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));   // doble clic en B mientras A sigue
+        assertTrue(enB.await(5, TimeUnit.SECONDS), "se busca a B");
+        asentar();   // el done() de la búsqueda de A (cancelada) ya pasó: no debe soltar la de B
+        enEdt(() -> {
+            assertNotNull(vista.fetchWorker, "la búsqueda de B sigue siendo la búsqueda en marcha");
+            assertTrue(anfitrion.progreso, "y su barra de progreso sigue encendida");
+        });
+        soltarB.countDown();
+        esperar(() -> vista.fetchWorker == null, "que la búsqueda de B termine");
+        soltarA.countDown();   // la petición en vuelo de A acaba después: no debe pisar nada
+        asentar();
+        enEdt(() -> {
+            assertTrue(anfitrion.pedidas.contains(B.id()), "se busca a B");
+            assertEquals(1, vista.all.size());
+            assertEquals(B.id(), vista.all.get(0).players.get(0).id, "la tabla es la de B");
+            assertNull(vista.fetchWorker);
+            assertFalse(anfitrion.progreso);
+            assertTrue(anfitrion.estado.startsWith("1 de 1 partidas"), "estado: " + anfitrion.estado);
+        });
+    }
+
+    @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) { enA.countDown(); soltarA.await(5, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        enEdt(() -> vista.fetchBtn.doClick());
+        assertTrue(enA.await(5, TimeUnit.SECONDS));
+        enEdt(() -> vista.fetchBtn.doClick());   // el mismo botón, ahora «Detener»
+        soltarA.countDown();
+        asentar();
+        enEdt(() -> {
+            assertNull(vista.fetchWorker);
+            assertTrue(vista.all.isEmpty());
+            assertEquals("Búsqueda detenida.", anfitrion.estado);
+        });
+        assertFalse(anfitrion.pedidas.contains(B.id()));
+    }
 }

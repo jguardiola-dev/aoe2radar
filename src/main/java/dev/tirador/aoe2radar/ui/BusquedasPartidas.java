@@ -237,11 +237,20 @@ final class BusquedasPartidas {
         }.execute();
     }
 
-    public void fetchMatches(JButton btn) {
+    /** El botón «Buscar partidas» (y la guía, que lo pulsa): con una búsqueda en marcha dice «Detener» y la
+     *  cancela; si no, busca. */
+    public void alternar(JButton btn) {
         if (vista.fetchWorker != null) {
             vista.fetchWorker.cancel(true);
             return;
         }
+        fetchMatches(btn);
+    }
+
+    /** Busca las partidas de quien toque (invitado, perfil abierto, selección o grupo). Si ya había una búsqueda
+     *  en marcha, la cancela y lanza esta (revisión 1.3, watchlist F8: un doble clic en otro jugador, «Ver sus
+     *  partidas» o «Buscar partidas de…» durante una búsqueda antes la cancelaban sin buscar al nuevo). */
+    public void fetchMatches(JButton btn) {
         if (vista.enlaceWatchlist.objetivoForzado() == null && vista.enlaceWatchlist.invitado() == null && vista.anfitrion.perfilAbierto() && vista.anfitrion.perfilAbiertoPid() > 0 && vista.enlaceWatchlist.seleccionSize() == 0) {
             vista.enlaceWatchlist.fijarObjetivoForzado(new Player(vista.anfitrion.perfilAbiertoPid(), vista.anfitrion.perfilNombreAbierto(), vista.enlaceWatchlist.grupoDestino()));
             vista.anfitrion.mostrarDirectos(false);
@@ -282,6 +291,12 @@ final class BusquedasPartidas {
             else for (int i = 0; i < vista.enlaceWatchlist.totalJugadores(); i++) sel.add(vista.enlaceWatchlist.jugador(i));
         }
         final List<Player> tracked = (vista.enlaceWatchlist.invitado() == null && !vista.enlaceWatchlist.modoTop()) ? vista.enlaceWatchlist.conFamilias(sel) : sel;
+        SwingWorker<?, ?> anterior = vista.fetchWorker;
+        if (anterior != null) {   // la nueva sustituye a la que estaba en marcha (su done() ya no toca nada: ver abajo)
+            log("buscar: nueva búsqueda con otra en marcha; se cancela la anterior");
+            vista.fetchWorker = null;
+            anterior.cancel(true);
+        }
         PartidasView.SUJETOS.clear();
         vista.filtroSujetos.clear();
         if (vista.rivalField != null && !vista.rivalField.getText().isEmpty()) vista.rivalField.setText("");
@@ -314,6 +329,12 @@ final class BusquedasPartidas {
                 vista.anfitrion.estado(msgs.get(msgs.size() - 1));
             }
             @Override protected void done() {
+                if (vista.fetchWorker != this && vista.fetchWorker != null) {
+                    // Otra búsqueda la sustituyó (fetchMatches con una en marcha): esa es la que manda ahora en el
+                    // botón, el progreso y la tabla; esta no toca nada (ni siquiera fetchWorker, que es de la nueva).
+                    log("buscar #" + miSerial + ": sustituida por otra búsqueda; resultado ignorado");
+                    return;
+                }
                 if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) { log("buscar #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual()); vista.fetchWorker = null; return; }
                 vista.fetchWorker = null;
                 vista.actualizarTextoBuscar();
