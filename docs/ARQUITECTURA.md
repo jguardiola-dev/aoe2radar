@@ -1,140 +1,149 @@
-# Arquitectura objetivo y plan de migración
+# Target architecture and migration plan
 
-## Por qué migrar
-Un archivo de 13.900 líneas funciona, pero no se puede sostener: cualquier cambio obliga a leerlo entero, no
-hay tests, y la lógica de datos (freno, cachés, socket) está mezclada con la pintura Swing. El objetivo no es
-«código bonito»: es poder cambiar una cosa sin romper otra, probarlo sin abrir la app, y que otra persona (o
-un agente) entienda el proyecto en una tarde.
+## Why migrate
+A 13,900-line file works, but it cannot be maintained: any change means reading all of it, there are no
+tests, and the data logic (throttle, caches, socket) is mixed with the Swing painting. The goal is not
+"pretty code": it is being able to change one thing without breaking another, to test it without opening the
+app, and for another person (or an agent) to understand the project in an afternoon.
 
-## Capas (de dentro hacia fuera)
+## Layers (inside out)
 ```
-model     Datos puros: Match, MatchPlayer, Player, Actividad, Forma, LadderRow… Sin Swing, sin red.
-api       Cliente del companion: ApiClient (REST), OngoingSocket (websocket). Solo transporte + parseo.
-sfrdata   Cliente de sfr-data: SfrDataClient (index/shards/elo_ayer/muestra/civstats/ladder), con caché en disco.
-techtree  Datos de aoe2techtree (data.json, árboles por civ, cadenas por idioma), con caché en disco y ETag.
-          Misma capa que sfrdata: fuente externa de datos precalculados. Los iconos (ImageIcon) son de ui.
-cache     CacheService: cachés en memoria y disco con TTL, una sola implementación para todas.
-service   Reglas de negocio: ProfileService (perfil = shard + «Actualizar hoy»), LiveService (Live now: barrido +
-          socket + fantasmas), EnlaceVivo (protocolo del socket de partidas en vivo sobre api.SocketVivo: salud
-          de la conexión —revisarSalud cierra y reconecta si pasan 10 min sin mensajes ni pong— y la regla del
-          «fantasma»: desde la decisión de Jorge del 2026-09-26, un matchRemoved del companion ya NO saca a
-          nadie; solo lo hace una comprobación confirmada por la API, finished, con reintento hasta 3 h),
-          FormService (forma por resta + fallback), RecService (descargas/enviar al juego, con RecService.recSana
-          decidiendo si la copia en disco vale o hay que volver a bajarla),
-          WatchlistService (grupos, tops, clanes: repartido en ListaSeguidos, Familias, FiltroLista, BarridoVivos,
-          TopLadderService, Campanas, AnotacionesService + api.SteamApi; su estado pasa a AppState en la fase 3),
-          StatsService (civ stats), Throttle (freno + cortacircuitos),
+model     Plain data: Match, MatchPlayer, Player, Actividad, Forma, LadderRow… No Swing, no network.
+api       Companion client: ApiClient (REST), OngoingSocket (websocket). Transport + parsing only.
+sfrdata   sfr-data client: SfrDataClient (index/shards/elo_ayer/muestra/civstats/ladder), with a disk cache.
+techtree  aoe2techtree data (data.json, per-civ trees, per-language strings), with a disk cache and ETag.
+          Same layer as sfrdata: an external source of precomputed data. The icons (ImageIcon) belong to ui.
+cache     CacheService: in-memory and disk caches with TTL, one single implementation for all of them.
+service   Business rules: ProfileService (profile = shard + "Actualizar hoy"), LiveService (Live now: sweep +
+          socket + ghosts), EnlaceVivo (protocol of the live-matches socket on top of api.SocketVivo: connection
+          health —revisarSalud closes and reconnects after 10 min with no message and no pong— and the
+          "ghost" rule: since Jorge's decision of 2026-09-26, a matchRemoved from the companion NO longer
+          removes anyone; only a check confirmed by the API does, finished, with retries for up to 3 h),
+          FormService (form by subtraction + fallback), RecService (downloads/send to game, with
+          RecService.recSana deciding whether the copy on disk is good or must be downloaded again),
+          WatchlistService (groups, tops, clans: split into ListaSeguidos, Familias, FiltroLista, BarridoVivos,
+          TopLadderService, Campanas, AnotacionesService + api.SteamApi; their state moves to AppState in phase 3),
+          StatsService (civ stats), Throttle (throttle + circuit breaker),
           ControlService (control.json).
-ui        Swing: una vista por pestaña (WatchlistView, MatchesView, LiveView, ProfileView, RatingsView,
-          CivStatsView, TechTreeView) y su presentador (…Presenter). Las vistas no llaman a la red: piden al
-          presentador y pintan lo que el presentador les da.
-app       Main (arranque, tema, wiring) y Servicios (la raíz de composición: crea y conecta, en un orden fijo,
-          todos los servicios que hablan con el companion). El estado compartido de la interfaz (AppState: qué
-          vista, qué jugador, qué filtros) vive en ui, en piezas pequeñas (ui.FiltroStats es la primera), para
-          que las vistas lo usen sin depender de app (decisión de la fase 3: si viviera en app, ui importaría
-          hacia fuera).
-(raíz)    SpoilerFreeRecs (el JFrame: declara los campos que comparten las vistas y llama al cableado en orden
-          desde el constructor) y las clases Cableado*/AccionesVentana, que hacen ese cableado y las acciones
-          de «abrir algo»; viven en el paquete raíz (no en app ni en ui) para leer los campos de la ventana sin
-          volverlos public.
-util      Json, t() (i18n), formatos, Log, Reloj (inyectable), Archivos (escritura atómica con respaldo: escribe
-          a un temporal y mueve con ATOMIC_MOVE; si el move falla —p. ej. Windows con el destino abierto—
-          escribe directo, como en la 1.1, en vez de perder el dato).
+ui        Swing: one view per tab (WatchlistView, MatchesView, LiveView, ProfileView, RatingsView,
+          CivStatsView, TechTreeView) and its presenter (…Presenter). Views do not call the network: they ask
+          the presenter and paint what the presenter gives them.
+app       Main (startup, theme, wiring) and Servicios (the composition root: creates and connects, in a fixed
+          order, every service that talks to the companion). The shared UI state (AppState: which view,
+          which player, which filters) lives in ui, in small pieces (ui.FiltroStats is the first one), so
+          that views can use it without depending on app (phase 3 decision: if it lived in app, ui would
+          import outwards).
+(root)    SpoilerFreeRecs (the JFrame: declares the fields the views share and calls the wiring in order
+          from the constructor) and the Cableado*/AccionesVentana classes, which do that wiring and the
+          "open something" actions; they live in the root package (not in app or ui) so they can read the
+          window's fields without making them public.
+util      Json, t() (i18n), formats, Log, Reloj (injectable clock), Archivos (atomic write with fallback: writes
+          to a temp file and moves it with ATOMIC_MOVE; if the move fails —e.g. Windows with the target file
+          open— it writes directly, as in 1.1, instead of losing the data).
 ```
-Regla de dependencia: cada capa solo conoce las de dentro. `ui` conoce `service` y `model`; `service` conoce
-`api`, `sfrdata`, `techtree`, `cache`, `model`; `api`, `sfrdata` y `techtree` conocen `cache` (guardan en ella lo que
-descargan), `model` y `util`, y `sfrdata`/`techtree` además `api` (transporte HTTP y freno); `cache` conoce `model` y `util`; `util` lo puede usar cualquiera y no conoce a nadie (salvo
-`model` si hiciera falta); `model` no conoce a nadie. Si una flecha va hacia fuera, está mal. Además, ninguna
-clase de `ui` importa `java.net` (la red va siempre por `service`/`api`). `tools/capas.py` audita las dos cosas
-por import (cero excepciones a mano) y lo lanza `verificar.ps1`; el paquete raíz (`SpoilerFreeRecs`/`Cableado*`/
-`AccionesVentana`) no lo audita el script, porque es la composición de la ventana, no una capa.
+Dependency rule: each layer only knows the inner ones. `ui` knows `service` and `model`; `service` knows
+`api`, `sfrdata`, `techtree`, `cache`, `model`; `api`, `sfrdata` and `techtree` know `cache` (they store what
+they download in it), `model` and `util`, and `sfrdata`/`techtree` also know `api` (HTTP transport and
+throttle); `cache` knows `model` and `util`; `util` can be used by anyone and knows no one (except `model` if
+needed); `model` knows no one. If an arrow points outwards, it is wrong. Also, no `ui` class imports
+`java.net` (the network always goes through `service`/`api`). `tools/capas.py` checks both things from the
+imports (zero hand-written exceptions) and `verificar.ps1` runs it; the root package (`SpoilerFreeRecs`/
+`Cableado*`/`AccionesVentana`) is not checked by the script, because it is the composition of the window,
+not a layer.
 
-## Contratos clave (interfaces)
+## Key contracts (interfaces)
 - `ApiClient`: `List<Match> matches(List<Long> pids, int page, int perPage)`, `Profile profile(long pid)`,
   `List<LadderRow> leaderboard(String lb, int page, String country)`, `List<PlayerHit> search(String q)`…
-  Todo lo que devuelva pasa por `Throttle`. Nada de Swing.
+  Everything it returns goes through `Throttle`. No Swing.
 - `SfrDataClient`: `Optional<Shard> shard(long pid)`, `EloSnapshot eloAyer()`, `EloSnapshot eloHace7()`,
   `Muestra muestraAyer()`, `CivStatsWindow civStats(String ventana)`, `Ladder ladder()`.
-- `CacheService(Reloj)`: una sola regla (`fresco = edad < caducidad`, cifras en `Caducidad`) y dos piezas:
-  `CacheMemoria<K,V>` por clave, con `vigente(k)` (¿hay que volver a pedirlo?) y `ultimo(k)` (¿qué pinto mientras?),
-  y `Sello` para un dato suelto (`fresco()`/`marcar()`); más `archivoFresco(Path, caducidad)` para el disco. La carga
-  la hace quien llama (no `get(clave, ttl, cargar)`): cada sitio tiene su política ante fallos. No son caché la
-  actividad del perfil abierto, las vinculadas ni las familias (estado de sesión: ProfileService/AppState).
-- `Throttle`: `void adquirir(cancelar)` (cubo de fichas: ráfaga de 5, luego 1/s; Detener corta la espera) y
-  `long registrar429()` (pausa global 60→120→240→300 s por episodio; se olvida tras 10 min sin 429 desde que acabó la última pausa).
-- Presentadores: reciben eventos de la vista (`onBuscar(nick)`, `onAbrirPerfil(pid)`), llaman a servicios en
-  un hilo de trabajo y devuelven al EDT un `…ViewModel` inmutable que la vista pinta.
+- `CacheService(Reloj)`: a single rule (`fresh = age < expiry`, values in `Caducidad`) and two pieces:
+  `CacheMemoria<K,V>` per key, with `vigente(k)` (must it be requested again?) and `ultimo(k)` (what do I paint
+  meanwhile?), and `Sello` for a single value (`fresco()`/`marcar()`); plus `archivoFresco(Path, caducidad)` for
+  disk. The caller does the loading (no `get(key, ttl, load)`): each call site has its own policy on failure.
+  Not caches: the activity of the open profile, linked players and families (session state:
+  ProfileService/AppState).
+- `Throttle`: `void adquirir(cancelar)` (token bucket: burst of 5, then 1/s; Stop cuts the wait) and
+  `long registrar429()` (global pause 60→120→240→300 s per episode; it is forgotten after 10 min with no 429
+  since the last pause ended).
+- Presenters: they receive events from the view (`onBuscar(nick)`, `onAbrirPerfil(pid)`), call services on a
+  worker thread and hand back to the EDT an immutable `…ViewModel` that the view paints.
 
-## Fases con criterios de aceptación
-**Fase 0 · Red de seguridad.** Repo Git, Maven, `SpoilerFreeRecs.java` dentro de `src/main/java`, harness de
-capturas como test (`RegresionCapturas`: las 23 fotos actuales, comparadas píxel a píxel con tolerancia).
-Hecho cuando `mvn test` reproduce las capturas en verde.
+## Phases with acceptance criteria
+**Phase 0 · Safety net.** Git repo, Maven, `SpoilerFreeRecs.java` inside `src/main/java`, screenshot harness
+as a test (`RegresionCapturas`: the 23 current screenshots, compared pixel by pixel with a tolerance).
+Done when `mvn test` reproduces the screenshots in green.
 
-**Fase 1 · Partición mecánica.** Extraer clases y métodos a los paquetes sin cambiar una línea de lógica.
-Orden: model → util → api → sfrdata → cache (y estado de Live/socket). Hecho cuando todo el código estático
-que no es de interfaz ha salido de `SpoilerFreeRecs.java` y el harness sigue verde. La interfaz (paneles
-internos, código de cada pestaña) NO se parte aquí: se reparte en la fase 3, cuando ya hay servicios con tests
-(decisión del 2026-09-24: partirla ahora creaba ficheros que seguían dependiendo de la ventana entera y la
-fase 3 los habría rehecho).
-**Cerrada el 2026-09-24** (rama `fase-1-particion`): 51 ficheros en model, util, api, cache, sfrdata, techtree,
-service y ui; lo que queda fuera está listado en `DEUDA.md` («cierre fase 1»).
+**Phase 1 · Mechanical split.** Extract classes and methods into the packages without changing a single line
+of logic. Order: model → util → api → sfrdata → cache (and Live/socket state). Done when all the static code
+that is not UI has left `SpoilerFreeRecs.java` and the harness is still green. The UI (inner panels, the
+code of each tab) is NOT split here: it is split in phase 3, once there are services with tests
+(decision of 2026-09-24: splitting it now created files that still depended on the whole window, and
+phase 3 would have redone them).
+**Closed on 2026-09-24** (branch `fase-1-particion`): 51 files in model, util, api, cache, sfrdata, techtree,
+service and ui; what remains outside is listed in `DEUDA.md` ("cierre fase 1").
 
-**Fase 2 · Servicios con contrato.** Interfaces + implementaciones + tests unitarios con dobles (sin red).
-Aquí se unifican las tres cachés y los tres sitios donde hoy se decide «¿llamo a la API?». Hecho cuando cada
-servicio tiene tests y ningún `httpText` vive fuera de `api`.
+**Phase 2 · Services with contracts.** Interfaces + implementations + unit tests with test doubles (no
+network). This is where the three caches and the three places that today decide "do I call the API?" are
+unified. Done when every service has tests and no `httpText` lives outside `api`.
 
-**Fase 3 · Vistas y presentadores.** Pestaña a pestaña, como «estrangulador»: cada pestaña sale ENTERA de
-`SpoilerFreeRecs.java` a su vista + presentador (patrón Presentador/Pantalla/Anfitrion/Tareas, detallado en
-[docs/README_TECNICO.md](README_TECNICO.md#cómo-se-añade-una-vista-nueva-patrón-vista--presentador)) y su
-código se borra del original. Hecho cuando ninguna clase de `ui` importa `java.net` ni conoce `ApiClient`, y
-`SpoilerFreeRecs.java` queda como la ventana (`JFrame`) de menos de 300 líneas, con el cableado en
-`Cableado*`/`AccionesVentana` y el arranque en `app.Main`/`app.Servicios`.
-**Cerrada** (tanda 4, oleada B + pasada final, y su cierre de deuda en fase 4): `SpoilerFreeRecs.java` en 299
-líneas; todas las vistas viven en `ui`, con `Cableado*`/`AccionesVentana` en el paquete raíz.
+**Phase 3 · Views and presenters.** Tab by tab, as a "strangler": each tab leaves `SpoilerFreeRecs.java`
+WHOLE for its view + presenter (Presenter/Screen/Host/Tasks pattern, detailed in
+[docs/README_TECNICO.md](README_TECNICO.md#how-to-add-a-new-view-view--presenter-pattern)) and its code is
+deleted from the original. Done when no `ui` class imports `java.net` or knows `ApiClient`, and
+`SpoilerFreeRecs.java` is left as the window (`JFrame`) in fewer than 300 lines, with the wiring in
+`Cableado*`/`AccionesVentana` and startup in `app.Main`/`app.Servicios`.
+**Closed** (batch 4, wave B + final pass, and its debt closure in phase 4): `SpoilerFreeRecs.java` at 299
+lines; all views live in `ui`, with `Cableado*`/`AccionesVentana` in the root package.
 
-**Fase 4 · Cierre.** Deuda anotada resuelta o descartada con motivo, `README` técnico, jpackage desde Maven,
-release 1.2. Resuelta o descartada casi toda la deuda de `DEUDA.md` (con motivo, fecha 2026-09-26); quedan
-abiertas unas pocas filas de bajo riesgo (prioridad `baja`/`media`) y la fila 137 (partir `WatchlistView`/
-`PartidasView`), aplazada a la 1.2.x por decisión de Jorge. El empaquetado con `jpackage` ya existe como perfil
-Maven (`-Pempaquetar`, ver README_TECNICO.md); falta la release 1.2 en sí.
+**Phase 4 · Wrap-up.** Recorded debt resolved or discarded with a reason, technical `README`, jpackage from
+Maven, release 1.2. Almost all the debt in `DEUDA.md` has been resolved or discarded (with a reason, dated
+2026-09-26); a few low-risk rows remain open (priority `baja`/`media`), plus row 137 (split `WatchlistView`/
+`PartidasView`), postponed to 1.2.x by Jorge's decision. Packaging with `jpackage` already exists as a Maven
+profile (`-Pempaquetar`, see README_TECNICO.md); the 1.2 release itself is still pending.
 
-## Reglas de desarrollo
+## Development rules (Reglas de desarrollo)
 
-- **Hilo de la interfaz:** todo lo que toca Swing va en el EDT (`SwingUtilities.invokeLater` o `Tareas.enUi`); la red
-  y el disco, nunca. Los servicios avisan en el log si se les llama desde el EDT (`util.Hilos.avisarSiUi`).
-- **Cortesía con la API del companion:** freno global (1 llamada/s con ráfaga de 5), cortacircuitos ante 429 y
-  «nocturno primero»: lo que den los resúmenes de sfr-data no se pide a la API. Estas reglas viven en un solo sitio
-  (`api.Throttle`/`api.ApiClient`).
-- **Capas:** `tools/capas.py` comprueba qué paquete puede importar a cuál (y que `ui` no importe `java.net`).
-- **Harness de capturas:** `RegresionCapturas` compara 29 capturas con sus referencias. Si una cambia sin que el
-  cambio fuera intencionado, es un bug: se investiga, no se regraba la referencia.
-- **Commits:** cada commit compila y pasa `verificar.ps1 -Rapido` (sin pantalla); el harness completo
-  (`verificar.ps1`) antes de integrar un grupo de cambios. Mensajes en español que empiezan por el paquete tocado.
-- **Cambios delicados** (socket de vivos, freno, estado compartido): revisión antes del commit y test que falle sin
-  el arreglo.
+- **UI thread:** everything that touches Swing runs on the EDT (`SwingUtilities.invokeLater` or `Tareas.enUi`);
+  network and disk access, never. Services log a warning if they are called from the EDT
+  (`util.Hilos.avisarSiUi`).
+- **Courtesy with the companion API:** global throttle (1 call/s with a burst of 5), circuit breaker on 429,
+  and "nightly first": whatever the sfr-data summaries provide is not requested from the API. These rules
+  live in one single place (`api.Throttle`/`api.ApiClient`).
+- **Layers:** `tools/capas.py` checks which package may import which (and that `ui` does not import `java.net`).
+- **Screenshot harness:** `RegresionCapturas` compares 29 screenshots with their references. If one changes
+  and the change was not intended, it is a bug: it gets investigated, the reference is not re-recorded.
+- **Commits:** every commit compiles and passes `verificar.ps1 -Rapido` (no screen needed); the full harness
+  (`verificar.ps1`) runs before merging a group of changes. Commit messages are in Spanish and start with the
+  package they touch.
+- **Delicate changes** (live-matches socket, throttle, shared state): review before the commit, and a test
+  that fails without the fix.
 
-## Decisiones cerradas (no reabrir)
-Civ Stats en una sola página; forma solo como dato de ELO (sin W-L); listas del perfil a 5; Live now sin scroll
-horizontal; sin tarjetas flotantes; «nocturno primero» (sfr-data antes que API); perfil sin llamadas al abrir y
-«Actualizar hoy» explícito; freno 1 req/s; cortacircuitos 429; aviso de Microsoft y créditos tal como están.
+## Closed decisions (Decisiones cerradas): do not reopen
+Civ Stats on a single page; form only as ELO data (no W-L); profile lists capped at 5; Live now without
+horizontal scroll; no floating cards; "nightly first" (sfr-data before the API); profile with no calls on
+opening and an explicit "Actualizar hoy"; throttle at 1 req/s; circuit breaker on 429; Microsoft notice and
+credits as they are.
 
-Decisiones de Jorge del 2026-09-26 (cierre de la deuda de fase 4):
-1. Países y tops («★ Top país», «★ Top clan») en el idioma de la app, no siempre en español; con migración de
-   `grupo_activo` y de las campanas guardadas para que sigan casando en el otro idioma.
-2. El aviso de pausa por la API (429) muestra la cuenta atrás («Esperando a la API (N s): la API pide calma…»)
-   en Buscar y Twitch.
-3. El socket ya no se cree el aviso «partida quitada» (`matchRemoved`); solo cuenta «terminada» (`finished`),
-   confirmada por la API.
-4. «Enviar al juego» usa la rec ya descargada si parece sana (tamaño > 0 y abre como zip); si no, descarga.
-5. Mover UN jugador de grupo conserva su vínculo de familia, igual que mover varios.
-6. «Solo vivos» con una familia plegada la muestra si juega CUALQUIERA de sus miembros, no solo la cabeza.
-7. El clic derecho en las listas del perfil siempre ofrece «Abrir perfil en pestaña nueva» en una fila de jugador.
-8. «Añadir jugador» busca primero en local y luego en la API, con el mismo formato de fila que los demás buscadores.
-9. Partir `WatchlistView`/`PartidasView` (fila 137 de DEUDA) se aplaza a la 1.2.x; la ventana (`SpoilerFreeRecs.java`)
-   sí se parte a menos de 300 líneas ya en la fase 3/4.
+Jorge's decisions of 2026-09-26 (closing the phase 4 debt):
+1. Countries and tops («★ Top país», «★ Top clan») in the app's language, not always in Spanish; with a
+   migration of `grupo_activo` and of the saved alerts (`Campanas`) so they still match in the other language.
+2. The API pause notice (429) shows the countdown («Esperando a la API (N s): la API pide calma…») in
+   Search and Twitch.
+3. The socket no longer trusts the "match removed" notice (`matchRemoved`); only "finished" (`finished`)
+   counts, confirmed by the API.
+4. «Enviar al juego» uses the already downloaded rec if it looks sound (size > 0 and it opens as a zip);
+   otherwise, it downloads it.
+5. Moving ONE player to another group keeps their family link, the same as moving several.
+6. «Solo vivos» with a collapsed family shows it if ANY of its members is playing, not only the head.
+7. Right-clicking a player row in the profile lists always offers «Abrir perfil en pestaña nueva».
+8. «Añadir jugador» searches locally first and then the API, with the same row format as the other searches.
+9. Splitting `WatchlistView`/`PartidasView` (DEUDA row 137) is postponed to 1.2.x; the window
+   (`SpoilerFreeRecs.java`) is split to under 300 lines already in phase 3/4.
 
-## Deuda conocida al empezar
-- ~~Mapas `vivoWatch`/`vivoInfo` escritos desde hilos de fondo y leídos en el EDT~~ (resuelto en la fase 2: service.EstadoVivo).
-- Tres cachés distintas (perfilCardCache, ACTIVIDAD_CACHE, cachés en disco) con reglas distintas.
-- `config.properties` como único almacén de estado; sin migraciones.
-- `EtiquetaRecorte` y los anchos medidos de Live now: lógica de layout mezclada con datos.
+## Known debt at the start
+- ~~`vivoWatch`/`vivoInfo` maps written from background threads and read on the EDT~~ (resolved in phase 2:
+  service.EstadoVivo).
+- Three different caches (perfilCardCache, ACTIVIDAD_CACHE, disk caches) with different rules.
+- `config.properties` as the only state store; no migrations.
+- `EtiquetaRecorte` and the measured widths of Live now: layout logic mixed with data.
