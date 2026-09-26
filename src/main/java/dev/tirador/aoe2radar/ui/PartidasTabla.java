@@ -6,10 +6,6 @@ import dev.tirador.aoe2radar.model.MatchPlayer;
 import javax.swing.AbstractAction;
 import javax.swing.JComponent;
 import javax.swing.JLabel;
-import javax.swing.JMenu;
-import javax.swing.JMenuItem;
-import javax.swing.JOptionPane;
-import javax.swing.JPopupMenu;
 import javax.swing.JTable;
 import javax.swing.KeyStroke;
 import javax.swing.SwingConstants;
@@ -26,10 +22,7 @@ import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
 
-import static dev.tirador.aoe2radar.service.NombresStats.posicionNombre;
-import static dev.tirador.aoe2radar.service.ReglasPartida.posicionEnEquipo;
 import static dev.tirador.aoe2radar.ui.Componentes.colorVivoTabla;
-import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -170,82 +163,7 @@ final class PartidasTabla {
                 int mr = vista.table.convertRowIndexToModel(r);
                 if (mr < 0 || mr >= vista.view.size()) return;
                 Match m = vista.view.get(mr);
-                JPopupMenu menu = new JPopupMenu();
-                if (m.gte == 0) {
-                    List<MatchPlayer> conId = new ArrayList<>();
-                    for (MatchPlayer mp : m.players) if (mp.id > 0) conId.add(mp);
-                    if (!conId.isEmpty()) {
-                        MatchPlayer titular = null; for (MatchPlayer mp : conId) if (mp.id == m.refId) titular = mp;
-                        if (conId.size() <= 2)
-                            for (MatchPlayer mp : conId) { Integer e1 = vista.menus.elo1v1Conocido(mp.id); if (e1 == null) e1 = mp.rating; JMenu mj = vista.menus.deJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "")); mj.setIcon(iconoBandera(vista.anfitrion.paisDe(mp.id))); menu.add(mj); }
-                        else if (titular != null) {
-                            for (MatchPlayer mp : conId) if (mp.id == titular.id) menu.add(vista.menus.deJugador(mp.id, mp.name));
-                            JMenu al = new JMenu(t("Aliados", "Allies")), ri = new JMenu(t("Rivales", "Opponents"));
-                            for (MatchPlayer mp : conId) { if (mp.id == titular.id) continue; String pos = posicionEnEquipo(m, mp); JMenu dst = mp.team == titular.team ? al : ri; Integer e1 = vista.menus.elo1v1Conocido(mp.id); JMenu sub = vista.menus.deJugador(mp.id, mp.name + (e1 != null ? "  " + e1 : "") + (pos == null ? "" : "  \u00B7 " + posicionNombre(pos))); sub.setIcon(iconoBandera(vista.anfitrion.paisDe(mp.id))); dst.add(sub); }
-                            if (al.getItemCount() > 0) menu.add(al); if (ri.getItemCount() > 0) menu.add(ri);
-                        } else {
-                            JMenu js = new JMenu(t("Jugadores de la partida", "Match players"));
-                            for (MatchPlayer mp : conId) js.add(vista.menus.deJugador(mp.id, mp.name));
-                            menu.add(js);
-                        }
-                        menu.addSeparator();
-                    }
-                }
-                if (vista.anfitrion.enCursoReal(m)) {
-                    JMenuItem esp = new JMenuItem(t("Espectar en directo", "Spectate live"));
-                    esp.addActionListener(a -> vista.anfitrion.espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id));
-                    menu.add(esp);
-                    if (dev.tirador.aoe2radar.service.Juego.rutaCaptureAge() != null) {
-                        JMenuItem espCa = new JMenuItem(t("Espectar con CaptureAge", "Spectate with CaptureAge"));
-                        espCa.addActionListener(a -> {
-                            vista.anfitrion.lanzarCaptureAge(null);
-                            vista.anfitrion.espectarVerificando(m.players.isEmpty() ? 0 : m.players.get(0).id, m.id);
-                        });
-                        menu.add(espCa);
-                    }
-                } else {
-                    if (m.enDisco) {
-                        JMenuItem env = new JMenuItem(t("Enviar al juego", "Send to game"));
-                        // enviarInteligente (no enviarASavegame a secas): decisión 94/95, "si no [parece sana],
-                        // descarga como hoy" — con un archivo sano se comporta igual que antes (enviarASavegame).
-                        env.addActionListener(a -> vista.enviarInteligente(List.of(m)));
-                        menu.add(env);
-                    } else {
-                        JMenuItem dl = new JMenuItem(t("Descargar", "Download"));
-                        dl.addActionListener(a -> vista.download(List.of(m)));
-                        menu.add(dl);
-                    }
-                    menu.addSeparator();
-                    JMenuItem rev = new JMenuItem(t("Revelar resultado\u2026", "Reveal result\u2026"));
-                    rev.addActionListener(a -> vista.revelarResultado());
-                    menu.add(rev);
-                    if (m.gte == 0) {
-                        java.util.LinkedHashSet<String> civsP = new java.util.LinkedHashSet<>();
-                        for (MatchPlayer mp : m.players) if (mp.civ != null && !mp.civ.isBlank()) civsP.add(mp.civ);
-                        if (civsP.size() <= 2) {
-                            for (String cv : civsP) { JMenuItem it = new JMenuItem("Tech tree: " + cv); it.addActionListener(a -> vista.navegacion.abrirTechTree(cv)); menu.add(it); }
-                        } else {
-                            JMenu sub = new JMenu("Tech tree");
-                            for (String cv : civsP) { JMenuItem it = new JMenuItem(cv); it.addActionListener(a -> vista.navegacion.abrirTechTree(cv)); sub.add(it); }
-                            menu.add(sub);
-                        }
-                    }
-                    if (m.gte == 0) {
-                        JMenuItem ana = new JMenuItem(t("Análisis de la partida (¡spoilers!)\u2026",
-                                "Match analysis (spoilers!)\u2026"));
-                        ana.addActionListener(a -> {
-                            int ok = JOptionPane.showConfirmDialog(vista.ventana,
-                                    t("Se abrirá el análisis completo en aoe2insights: resultado, estrategias y minimapa.\n¿Seguro?",
-                                      "This opens the full analysis on aoe2insights: result, strategies and minimap.\nSure?"),
-                                    t("Análisis con spoilers", "Analysis with spoilers"),
-                                    JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-                            if (ok == JOptionPane.YES_OPTION)
-                                vista.anfitrion.abrirUrl("https://www.aoe2insights.com/match/" + m.id + "/");
-                        });
-                        menu.add(ana);
-                    }
-                }
-                menu.show(vista.table, e.getX(), e.getY());
+                vista.menuPartida.mostrar(e, m);
             }
             @Override public void mouseClicked(MouseEvent e) {
                 int r0 = vista.table.rowAtPoint(e.getPoint()), c0 = vista.table.columnAtPoint(e.getPoint());

@@ -175,6 +175,7 @@ public final class PartidasView {
     final PartidasTexto texto;
     /** Las piezas en que se parte la vista (1.3): reciben esta fachada y leen su estado por ella. */
     final PartidasTabla tabla;
+    final MenuPartida menuPartida;
 
     /** Los buscados actuales: negrita en la tabla y cabecera «Partidas de:». Estático porque azar/GTE y
      *  {@code enfrentamiento()} lo comparten, igual que en la 1.1 (antes vivía en SpoilerFreeRecs). */
@@ -238,6 +239,7 @@ public final class PartidasView {
         this.anfitrion = anfitrion;
         this.texto = new PartidasTexto(anfitrion::nombreVisible);
         this.tabla = new PartidasTabla(this);
+        this.menuPartida = new MenuPartida(this);
     }
 
     static String todosModos() { return t("Todos los modos", "All modes"); }
@@ -624,35 +626,6 @@ public final class PartidasView {
                            "Spoiler-free: winner, ±ELO and duration are never shown. Double-click a row = download."));
             anfitrion.ajustarGrisesNota(oscuro);
         }
-    }
-
-    void revelarResultado() {
-        List<Match> sel = selectedRows();
-        if (sel.size() != 1) { anfitrion.estado(t("Selecciona una sola partida para revelar.", "Select a single game to reveal.")); return; }
-        Match m = sel.get(0);
-        if (m.finished == null) {
-            anfitrion.estado(anfitrion.enCursoReal(m)
-                    ? t("Esa partida sigue EN DIRECTO: no hay resultado que revelar todavía.",
-                        "That game is still LIVE: no result to reveal yet.")
-                    : t("Esa partida quedó colgada en el servidor (crash): no tiene resultado.",
-                        "That game hung on the server (crash): it has no result."));
-            return;
-        }
-        int r = JOptionPane.showConfirmDialog(ventana,
-                t("Vas a ver el resultado de esta partida (ganador, ±ELO y duración).\n¿Seguro?",
-                  "You are about to see this game's result (winner, ±ELO and duration).\nSure?"),
-                t("Revelar resultado", "Reveal result"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (r != JOptionPane.YES_OPTION) return;
-        if (m.gte > 0) {
-            JOptionPane.showMessageDialog(ventana, PartidasTexto.textoResultado(m), t("Resultado", "Result"), JOptionPane.PLAIN_MESSAGE);
-            return;
-        }
-        String verAn = t("Ver análisis en aoe2insights\u2026", "View analysis on aoe2insights\u2026");
-        String cerrar = t("Cerrar", "Close");
-        int ra = JOptionPane.showOptionDialog(ventana, PartidasTexto.textoResultado(m), t("Resultado", "Result"),
-                JOptionPane.DEFAULT_OPTION, JOptionPane.PLAIN_MESSAGE, null,
-                new Object[]{ cerrar, verAn }, cerrar);
-        if (ra == 1) anfitrion.abrirUrl("https://www.aoe2insights.com/match/" + m.id + "/");
     }
 
     // ======================================================================
