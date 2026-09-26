@@ -47,13 +47,17 @@ class EnlaceVivoTest {
     }
     static final class PlanificadorFalso implements SocketVivo.Planificador {
         int periodicas;
-        @Override public Tarea despues(long ms, Runnable r) { return () -> false; }
+        /** Esperas pedidas con despues(), en orden, y sus tareas (no se ejecutan solas: el test decide). */
+        final List<Long> esperas = new ArrayList<>();
+        final List<Runnable> tareas = new ArrayList<>();
+        @Override public Tarea despues(long ms, Runnable r) { synchronized (esperas) { esperas.add(ms); tareas.add(r); } return () -> false; }
         @Override public void cada(long ms, Runnable r) { periodicas++; }
     }
     static final class TransporteFalso implements Transporte {
         String cuerpo = "{\"matches\":[]}";
         int estado = 200;
-        @Override public Respuesta get(String url) { return new Respuesta(estado, cuerpo); }
+        volatile int llamadas;
+        @Override public Respuesta get(String url) { llamadas++; return new Respuesta(estado, cuerpo); }
     }
     static final class ThrottleSinFreno implements Throttle {
         @Override public void adquirir(BooleanSupplier cancelar) { }
@@ -144,12 +148,107 @@ class EnlaceVivoTest {
         assertTrue(vivo.terminada(555));
     }
 
-    @Test void eventoQuitadaSacaDeEstadoVivoYAvisaSinRed() {
+    // Decisión de Jorge (fase 4): matchRemoved solo saca a los jugadores si la API confirma que la partida terminó,
+    // y se le pregunta 3 min después (antes la API aún no lo sabe). comprobarQuitada se llama a mano: es lo que hace
+    // el hilo «socket-quitada» cuando vence la espera.
+
+    List<Long> esperasQuitada() {
+        synchronized (planificador.esperas) { return planificador.esperas.stream().filter(ms -> ms == EnlaceVivo.ESPERA_QUITADA_MS).toList(); }
+    }
+
+    @Test void eventoQuitadaNoSacaANadieAlMomentoNiVaALaRedYProgramaLaComprobacion() throws InterruptedException {
         vivo.marcarJugando(7, 555);
         enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
+        Thread.sleep(50);
+        assertTrue(vistas.avisos.isEmpty(), "sin avisos hasta que la API confirme");
+        assertEquals(555L, vivo.matchDe(7));
+        assertEquals(0, red.llamadas, "no se pregunta al momento");
+        assertEquals(List.of(EnlaceVivo.ESPERA_QUITADA_MS), esperasQuitada());
+    }
+
+    @Test void dosQuitadasDeLaMismaPartidaProgramanUnaSolaComprobacion() {
+        vivo.marcarJugando(7, 555);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555), new SocketVivo.Quitada(555)), Set.of(7L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
+        assertEquals(1, esperasQuitada().size());
+    }
+
+    @Test void quitadaConfirmadaPorLaApiSacaDeEstadoVivoYAvisa() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 1);
         assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos);
         assertFalse(vivo.jugando(7));
         assertTrue(vivo.terminada(555));
+    }
+
+    @Test void quitadaDeUnaPartidaQueLaApiVeVivaNoSacaANadie() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(10), false) + "]}";
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 1);
+        assertEquals(1, red.llamadas);
+        assertTrue(vistas.avisos.isEmpty(), "sigue en juego: ni avisos ni cambios");
+        assertEquals(555L, vivo.matchDe(7));
+        assertFalse(vivo.terminada(555), "no se apunta como terminada: podría volver a marcarse");
+        assertEquals(List.of(EnlaceVivo.ESPERA_QUITADA_MS), esperasQuitada(), "viva: se vuelve a mirar en 3 min (tope: 3 h de enCursoReal)");
+    }
+
+    @Test void laTareaProgramadaComprueba_yUnaQuitadaResueltaLiberaLaPartida() throws InterruptedException {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vivo.marcarJugando(7, 555);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
+        Runnable tarea; synchronized (planificador.esperas) { tarea = planificador.tareas.get(planificador.esperas.indexOf(EnlaceVivo.ESPERA_QUITADA_MS)); }
+        tarea.run();   // lo que hace el planificador al vencer: arranca el hilo «socket-quitada»
+        esperarAvisos(vistas, 2);
+        assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos);
+        assertTrue(vivo.terminada(555));
+        vivo.marcarJugando(8, 556);   // otra partida quitada después: se programa sin que la anterior la bloquee
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(556)), Set.of(8L));
+        assertEquals(2, esperasQuitada().size());
+    }
+
+    @Test void unaQuitadaResueltaSinNadieDentroLiberaLaPartidaParaOtraQuitada() {
+        vivo.marcarJugando(7, 555);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
+        vivo.marcarFuera(7);                 // salió por otro camino (barrido, matchUpdated) antes de la comprobación
+        enlace.comprobarQuitada(555, 1);     // no queda nadie: no va a la red y libera la partida
+        assertEquals(0, red.llamadas);
+        vivo.marcarJugando(7, 555);          // vuelve a marcarse (la partida no se apuntó como terminada)
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
+        assertEquals(2, esperasQuitada().size(), "la segunda quitada se programa: la primera no la bloquea");
+    }
+
+    @Test void quitadaSinDatosReintentaUnaVezYLuegoSaca() {
+        red.cuerpo = "{\"matches\":[]}";   // la API no la tiene: SIN_DATOS
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 1);
+        assertTrue(vistas.avisos.isEmpty());
+        assertEquals(555L, vivo.matchDe(7));
+        assertEquals(List.of(EnlaceVivo.ESPERA_QUITADA_MS), esperasQuitada(), "un reintento programado");
+        enlace.comprobarQuitada(555, 2);
+        assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos, "sin datos tras el reintento: fuera, para no dejarlo colgado");
+        assertFalse(vivo.jugando(7));
+        assertFalse(vivo.terminada(555), "sin datos no es «terminada»: un barrido puede volver a marcarlo");
+        assertEquals(1, esperasQuitada().size(), "no hay un tercer intento");
+    }
+
+    @Test void quitadaConLaApiCaidaTrasElReintentoNoLaBloqueaTresHoras() {
+        red.estado = 500;   // la API falla: SIN_DATOS con error
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 1);
+        enlace.comprobarQuitada(555, 2);
+        assertFalse(vivo.jugando(7));
+        assertFalse(vivo.terminada(555));
+        assertTrue(vivo.marcarJugando(7, 555), "el barrido puede volver a marcarlo cuando la API vuelva");
+    }
+
+    @Test void quitadaSinJugadoresMarcadosNoVaALaRedNiProgramaNada() {
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
+        enlace.comprobarQuitada(555, 1);   // y si vence una espera cuando ya no queda nadie, tampoco
+        assertEquals(0, red.llamadas);
+        assertTrue(vistas.avisos.isEmpty());
+        assertTrue(esperasQuitada().isEmpty());
+        assertFalse(vivo.terminada(555));
     }
 
     // ===== sincronizarSocket: mismo orden de ids que la base =====

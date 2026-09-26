@@ -94,11 +94,23 @@ public final class EstadoVivo {
         rival.remove(pid);
     }
 
+    /** Quiénes están ahora marcados como jugando la partida matchId (vacío si nadie). No cambia nada. */
+    public synchronized List<Long> jugadoresDe(long matchId) {
+        List<Long> en = new ArrayList<>();
+        for (Map.Entry<Long, Long> e : matchDe.entrySet()) if (e.getValue() == matchId) en.add(e.getKey());
+        return en;
+    }
+
     /** La partida matchId ha terminado: fuera todos los que estaban en ella (y se apunta como terminada). Devuelve quiénes eran. */
     public synchronized List<Long> quitarPartida(long matchId) {
         apuntarTerminada(matchId);
-        List<Long> fuera = new ArrayList<>();
-        for (Map.Entry<Long, Long> e : matchDe.entrySet()) if (e.getValue() == matchId) fuera.add(e.getKey());
+        return sacarDePartida(matchId);
+    }
+
+    /** Como quitarPartida pero SIN apuntarla como terminada (no se sabe si terminó): fuera todos los que estaban en
+     *  ella, y un barrido posterior puede volver a marcarlos. Devuelve quiénes eran. */
+    public synchronized List<Long> sacarDePartida(long matchId) {
+        List<Long> fuera = jugadoresDe(matchId);
         for (long pid : fuera) marcarFuera(pid);
         return fuera;
     }
