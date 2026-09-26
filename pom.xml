@@ -228,6 +228,9 @@
                 </goals>
                 <configuration>
                   <target>
+                    <!-- Revisor: esto borra la carpeta ENTERA del empaquetado anterior (el .exe, el runtime propio
+                         de jlink y también las banderas que dejó copiar-banderas-al-empaquetado la vez pasada),
+                         no solo un archivo suelto; es justo lo que jpackage necesita encontrarse vacío/ausente. -->
                     <delete dir="${project.build.directory}/dist/aoe2radar" quiet="true" />
                   </target>
                 </configuration>

@@ -63,11 +63,13 @@ final class AccionesVentana {
         // disco para siempre si nadie lo barre. UNA vez al arrancar, en un hilo de fondo (nunca bloquea el EDT
         // ni retrasa el resto del arranque), se limpian los de más de un día en las carpetas donde escribirAtomico
         // escribe: la de trabajo (config.properties) y sfrdata (paises.txt, perfiles_shards).
-        new Thread(() -> {
+        Thread hiloLimpiarTemporales = new Thread(() -> {
             limpiarTemporales(Path.of("."), "config.properties", Duration.ofDays(1));
             limpiarTemporales(LADDER_DIR, "paises.txt", Duration.ofDays(1));
             limpiarTemporales(LADDER_DIR.resolve("perfiles_shards"), "", Duration.ofDays(1));
-        }, "limpiar-temporales").start();
+        }, "limpiar-temporales");
+        hiloLimpiarTemporales.setDaemon(true);   // revisor: limpieza de arranque, no debe retrasar el cierre de la app
+        hiloLimpiarTemporales.start();
         cargarCanales();
         v.watchlist.loadPlayers();
         v.watchlist.sanearVinculosHuerfanos();

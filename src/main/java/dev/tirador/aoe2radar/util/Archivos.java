@@ -2,6 +2,7 @@ package dev.tirador.aoe2radar.util;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -77,8 +78,13 @@ public final class Archivos {
                     log("archivos: limpiar temporales: no se pudo revisar/borrar " + p + ": " + causa(ex));
                 }
             });
-        } catch (IOException ex) {
-            log("archivos: limpiar temporales: no se pudo listar " + dir + ": " + causa(ex));
+        } catch (IOException | UncheckedIOException ex) {
+            // UncheckedIOException: no solo Files.list() puede fallar al abrir "dir" (esa parte ya es IOException),
+            // el propio recorrido del Stream (el iterador del directorio, dentro de forEach) también puede toparse
+            // con un error de E/S a media lectura (p. ej. si algo borra "dir" mientras se recorre) y lo envuelve así,
+            // sin que el try/catch de cada archivo (arriba) llegue a verlo (revisor, fila 145: limpieza de arranque
+            // en un hilo de fondo, un fallo aquí no debe tirar el hilo ni el arranque).
+            log("archivos: limpiar temporales: no se pudo listar " + dir + ": " + causa(ex instanceof UncheckedIOException u ? u.getCause() : ex));
         }
     }
 }
