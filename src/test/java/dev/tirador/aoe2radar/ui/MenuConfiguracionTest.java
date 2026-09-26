@@ -16,6 +16,8 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static dev.tirador.aoe2radar.util.Config.guardarConfig;
+import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -208,6 +210,21 @@ class MenuConfiguracionTest {
             miPerfil.doClick();
             assertEquals(1, anfitrion.mostrarMiPerfilVeces);
         });
+    }
+
+    @Test void cambiarDeCuentaNoBorraLaCuentaAntesDeConfirmarLaNueva() throws Exception {
+        // F16 (revisión 1.3): si el usuario cancela el diálogo del nick, la cuenta anterior sigue ahí.
+        String previo = leerConfig("mi_pid", "");
+        try {
+            guardarConfig("mi_pid", "777");
+            AnfitrionFalso anfitrion = new AnfitrionFalso();
+            MenuConfiguracion mc = nuevo(anfitrion);
+            SwingUtilities.invokeAndWait(mc::cambiarDeCuenta);
+            assertEquals(1, anfitrion.cambiarCuentaPropiaVeces, "pide el nick nuevo");
+            assertEquals("777", leerConfig("mi_pid", ""), "la cuenta se cambia al elegir la nueva, no antes");
+        } finally {
+            guardarConfig("mi_pid", previo);
+        }
     }
 
     @Test void comprobarActualizacionAutomaticaAvisaAlAnfitrionSiHayVersionNueva() throws Exception {
