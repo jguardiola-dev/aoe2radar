@@ -111,8 +111,9 @@ public final class LiveNowPresenter {
     /** Cuándo se cerró la pestaña; -1 si está abierta o nunca se cerró. Lo escribe el EDT y lo lee el hilo del socket
      *  (idsSocket), por eso es volatile. */
     private volatile long cerradaMs = -1;
-    /** ¿Ya se soltó el top del socket (y se olvidó «en curso»)? Solo lo tocan alAbrir y soltarSiToca, en el EDT. */
-    private boolean soltado;
+    /** ¿Ya se soltó el top del socket (y se olvidó «en curso»)? Lo escriben alAbrir y soltarSiToca, en el EDT; lo lee
+     *  liveEvento desde el hilo del socket (revisión C1), por eso es volatile. */
+    private volatile boolean soltado;
 
     /** ¿El top de la fuente sigue suscrito al socket? Sí con la pestaña abierta y durante GRACIA_SOCKET_MS tras cerrarla. */
     public boolean topSuscrito() {
@@ -143,13 +144,20 @@ public final class LiveNowPresenter {
      * da por vivo (F2), pero EstadoVivo tampoco se entera ya de los finales de quien solo vigilaba Live now: sin
      * olvidarlo, una partida terminada con la pestaña cerrada seguiría «en curso» al volver y taparía la nueva. El
      * barrido de apertura (forzado: se olvida también su hora) lo rehace entero. No hace nada si la pestaña se reabrió
-     * o la gracia no ha vencido. Desde el EDT (el Timer de LiveNowView).
+     * o ya se soltó. Desde el EDT (el Timer de LiveNowView).
+     * <p>Devuelve los ms que aún faltan si el aviso llegó antes de tiempo (el Timer de Swing no cuenta con la hora de
+     * pared que usa cerradaMs: un ajuste del reloj o un Timer adelantado lo dejarían sin soltar para siempre); quien
+     * llama vuelve a armarlo con eso. 0 si no hay que volver a mirar (revisión C3).
      */
-    public void soltarSiToca() {
-        if (soltado || topSuscrito()) return;
+    public long soltarSiToca() {
+        long c = cerradaMs;
+        if (soltado || c < 0) return 0;
+        long falta = GRACIA_SOCKET_MS - (reloj.ahoraMs() - c);
+        if (falta > 0) return falta;
         soltado = true;
         olvidarEnCurso();
         pantalla.sincronizarSocket();
+        return 0;
     }
 
     /**
@@ -166,8 +174,10 @@ public final class LiveNowPresenter {
     }
 
     private void olvidarEnCurso() {
-        synchronized (ahoraEnCurso) { ahoraEnCurso.clear(); }
-        ahoraUltimaMs = 0;   // el próximo refrescar(false) no se queda en «solo pintar»: barrido completo
+        synchronized (ahoraEnCurso) {   // la hora, con el mismo candado con que el barrido la apunta (revisión C4)
+            ahoraEnCurso.clear();
+            ahoraUltimaMs = 0;   // el próximo refrescar(false) no se queda en «solo pintar»: barrido completo
+        }
     }
 
     /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null. Bajo el mismo candado que
@@ -353,6 +363,10 @@ public final class LiveNowPresenter {
      */
     public void liveEvento(long pid, Match m, boolean terminada) {
         if (ficha(pid) == null) return;
+        // Revisión C1: con el top suelto del socket, una confirmación que llega tarde (EnlaceVivo.confirmarEventoSocket,
+        // hilo «socket-confirmar», lanzada antes de soltar) no vuelve a meter una partida en «en curso»: ya nadie avisaría
+        // de su final y se quedaría rancia. El barrido de reapertura la trae si sigue viva. Los finales sí se apuntan.
+        if (!terminada && soltado) return;
         if (terminada) {
             if (m != null) { apuntarTerminada(pid, m.id, m); }
             else {   // sin partida: no se sabe cuál terminó; como antes (el socket ya pasa por liveTerminada con su id)

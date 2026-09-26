@@ -589,4 +589,44 @@ class LiveNowPresenterTest {
         p.refrescar(false);   // lo que hace LiveNowView.alAbrirDespues
         assertEquals(nueva, p.enCursoSnapshot().get(731L), "la foto del barrido manda: la vieja no tapa la nueva");
     }
+
+    /** Revisión C1: una confirmación del socket que llega tras soltar (lanzada antes) no deja una partida rancia. */
+    @Test void socket_trasSoltar_unaConfirmacionTardiaNoVuelveAMeterLaPartida() {
+        RelojFalso reloj = new RelojFalso();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(741L, "Uno", 1500, 10, "es"), ficha(742L, "Dos", 1400, 20, "es"));
+        p.refrescar(false);
+        Match enJuego = matchEnCurso(97420L, 742L);
+        p.liveEvento(742L, enJuego, false);
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS);
+        p.soltarSiToca();
+        p.liveEvento(741L, matchEnCurso(97410L, 741L), false);   // «socket-confirmar» que llega tarde
+        assertFalse(p.enCursoSnapshot().containsKey(741L), "suelto el top, nadie avisaría de su final: no entra");
+        p.liveEvento(742L, matchTerminado(97421L, 742L), true);   // un final sí se apunta
+        assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 97421L));
+        p.alAbrir();
+        Match otra = matchEnCurso(97411L, 741L);
+        p.liveEvento(741L, otra, false);   // de vuelta en el socket, los eventos vuelven a contar
+        assertEquals(otra, p.enCursoSnapshot().get(741L));
+    }
+
+    /** Revisión C3: si el Timer avisa antes de tiempo según la hora de pared, dice cuánto falta en vez de abandonar. */
+    @Test void socket_avisoAntesDeTiempo_devuelveLoQueFaltaYNoSuelta() {
+        RelojFalso reloj = new RelojFalso();
+        LiveNowPresenter p = conReloj(reloj, new EstadoVivo(Reloj.SISTEMA), java.util.concurrent.ConcurrentHashMap.newKeySet());
+        pantalla.fuente = List.<Object[]>of(ficha(751L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        int sincronizadas = pantalla.sincronizarSocketVeces;
+        assertEquals(0, p.soltarSiToca(), "abierta: nada que volver a mirar");
+        p.alCerrar();
+        reloj.avanzar(LiveNowPresenter.GRACIA_SOCKET_MS - 1_000);
+        assertEquals(1_000, p.soltarSiToca(), "falta un segundo: el Timer se vuelve a armar con eso");
+        assertTrue(p.topSuscrito());
+        assertEquals(sincronizadas, pantalla.sincronizarSocketVeces);
+        reloj.avanzar(1_000);
+        assertEquals(0, p.soltarSiToca());
+        assertEquals(sincronizadas + 1, pantalla.sincronizarSocketVeces, "ahora sí se suelta");
+        assertEquals(0, p.soltarSiToca(), "y ya suelto, no hay nada más que mirar");
+    }
 }
