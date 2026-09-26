@@ -235,7 +235,7 @@ public final class LiveNowPresenter {
                         // que el socket confirmó entretanto (EstadoVivo la tiene como la de ese jugador y no terminó)
                         // se queda, aunque su lote ya se hubiera consultado. El socket no la volvería a mandar. Y los
                         // que no se pudieron consultar (F7) se quedan como estaban: no hay dato nuevo que los quite.
-                        ahoraEnCurso.entrySet().removeIf(en -> !sinDatos.contains(en.getKey()) && !sigueSegunSocket(en.getKey(), en.getValue()));
+                        ahoraEnCurso.entrySet().removeIf(en -> yaTerminada(en.getValue()) || (!sinDatos.contains(en.getKey()) && !sigueSegunSocket(en.getKey(), en.getValue())));   // sin consultar no resucita una terminada
                         vivos.keySet().removeAll(ahoraEnCurso.keySet());   // para esos jugadores, el socket es más reciente que la foto
                         ahoraEnCurso.putAll(vivos);
                         if (sinDatos.isEmpty()) ahoraUltimaMs = System.currentTimeMillis();   // F7: cortado o con huecos no cuenta como hecho
@@ -253,6 +253,13 @@ public final class LiveNowPresenter {
                 if (otra) tareas.enUi(() -> refrescar(true));   // F7: lo que se pidió durante el barrido, desde el EDT
             }
         });
+    }
+
+    /** ¿Se sabe ya que la partida m terminó (Live now o EstadoVivo)? Entonces no se conserva en «en curso» por ningún
+     *  motivo, tampoco por no haber podido consultar a su jugador (revisión 1.3, menor del revisor). Con los candados
+     *  de liveTerminadas y ahoraEnCurso cogidos (EstadoVivo es hoja). */
+    private boolean yaTerminada(Match m) {
+        return m == null || liveTerminadas.containsKey(m.id) || estadoVivo.terminada(m.id);
     }
 
     /** ¿La partida m de pid (de ahoraEnCurso) sigue en curso según el socket? Sí si EstadoVivo tiene a pid en esa misma

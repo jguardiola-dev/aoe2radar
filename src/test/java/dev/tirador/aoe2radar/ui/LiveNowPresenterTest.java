@@ -399,6 +399,23 @@ class LiveNowPresenterTest {
         assertNotNull(tareas.trabajoDemonioPendiente);
     }
 
+    /** Menor del revisor: a un jugador sin consultar se le conserva la partida, pero no si ya se sabe terminada. */
+    @Test void refrescar_cortado_noConservaUnaPartidaSinConsultarQueYaSeSabeTerminada() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        List<Object[]> fuente = new ArrayList<>();
+        for (long i = 1; i <= 20; i++) fuente.add(ficha(950 + i, "J" + i, 1000, (int) i, "es"));   // 2 lotes de 15
+        pantalla.fuente = fuente;
+        buscador.resultado = List.of(matchEnCurso(9970L, 970L));   // 970, en el segundo lote
+        p.refrescar(true);
+        assertTrue(p.enCursoSnapshot().containsKey(970L));
+        vivo.apuntarTerminada(9970L);   // el socket (o espectar) sabe que terminó
+        buscador.resultado = List.of();
+        buscador.alPedir = () -> pantalla.abierta = false;   // barrido cortado tras el primer lote: 970 sin consultar
+        p.refrescar(true);
+        assertFalse(p.enCursoSnapshot().containsKey(970L), "sin consultar, pero terminada: fuera");
+    }
+
     // ----- el barrido fusiona con lo que llegó del socket entretanto (revisión 1.3, F2) --------
 
     @Test void refrescar_conservaLaPartidaQueElSocketConfirmoDuranteElBarrido() {
