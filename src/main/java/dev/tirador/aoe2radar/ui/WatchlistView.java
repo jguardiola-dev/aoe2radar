@@ -1490,7 +1490,6 @@ public final class WatchlistView {
         vigilandoTop = true;
         List<Player> top = new ArrayList<>(topLadder);
         new SwingWorker<TopLadderService.ResultadoVigilancia, Void>() {
-            final List<Match> terminadasRio = new ArrayList<>();
             @Override protected TopLadderService.ResultadoVigilancia doInBackground() {
                 return topLadderService.vigilarTop(top, VIVO::jugando, VIVO::matchDe,
                         (pid, m) -> {   // el lote: alguien aparece en curso (ver DEUDA: avisarSiCampana sigue en el hilo de fondo, como en la 1.1)
@@ -1514,16 +1513,10 @@ public final class WatchlistView {
                         if (v != null) VIVO.marcarJugando(p.id(), v);
                         else { VIVO.marcarFuera(p.id()); }   // el REST manda al quitar
                     }
-                    boolean tablaTocada = false;
-                    for (Match fresco : terminadasRio)
-                        for (Match m : all)
-                            if (m.id == fresco.id && m.finished == null) {
-                                m.finished = fresco.finished;   // la EN DIRECTO de la tabla ya acabó
-                                m.players = fresco.players;
-                                tablaTocada = true;
-                            }
-                    if (tablaTocada) enlacePartidas.applyFilters();
-                    else enlacePartidas.repintarTabla();
+                    // fila 109 de DEUDA: aquí había un "terminadasRio" que nunca se rellenaba (nada de este
+                    // método añadía partidas a esa lista); el bloque que lo consumía no actuaba nunca, así que
+                    // el resultado real siempre era el repintado simple. Se borra el muerto, no el comportamiento.
+                    enlacePartidas.repintarTabla();
                     actualizarIndicadoresVivos();
                 } catch (Exception ignored) { }
             }
