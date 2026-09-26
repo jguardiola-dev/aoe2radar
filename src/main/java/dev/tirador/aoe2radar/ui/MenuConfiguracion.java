@@ -77,9 +77,10 @@ public final class MenuConfiguracion {
     private final JPanel esquina;
 
     /** Construye el menú completo y la esquina «Mi perfil», en el mismo orden que antes en
-     *  construirBarraSuperior. {@code autoSgItem} es un campo YA existente de la ventana (lo usa también
-     *  Partidas para saber si copia la rec al savegame), no uno nuevo: se recibe ya construido.
-     *  abrirDonacion() se queda en la ventana (usa java.net.URI, que ui no puede importar). */
+     *  construirBarraSuperior (hoy CableadoCromo.construirBarraSuperior). {@code autoSgItem} es un campo YA
+     *  existente de la ventana (lo usa también Partidas para saber si copia la rec al savegame), no uno nuevo:
+     *  se recibe ya construido. abrirDonacion() vive en AccionesVentana.abrirDonacion (usa java.net.URI, que
+     *  ui no puede importar). */
     public MenuConfiguracion(String temaInicial, JCheckBoxMenuItem autoSgItem, ControlService controlService,
                               Anfitrion anfitrion) {
         this.anfitrion = anfitrion;

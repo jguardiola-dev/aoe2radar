@@ -136,7 +136,8 @@ public final class BarraEstado {
     }
 
     /** La franja de estado: progreso/detener/continuar a la izquierda, el mensaje en el centro, firma/café/
-     *  actualizar a la derecha. Layout idéntico al que construía SpoilerFreeRecs.construirBarraInferior. */
+     *  actualizar a la derecha. Layout idéntico al que construye CableadoCromo.construirBarraInferior (antes,
+     *  SpoilerFreeRecs.construirBarraInferior). */
     public JPanel construirFila() {
         JLabel f = new JLabel("<html>" + AUTOR + " · <u>" + TWITCH + "</u></html>");
         f.setFont(f.getFont().deriveFont(Font.PLAIN, 11f));

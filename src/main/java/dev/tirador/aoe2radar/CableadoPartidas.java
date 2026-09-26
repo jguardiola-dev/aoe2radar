@@ -26,11 +26,14 @@ import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 
 /** Cableado de la pestaña «Partidas»: ver ui.PartidasView/ui.PartidasPresenter (fase 3, tanda 3, oleada B). Se
- *  construye en el mismo punto de siempre (field initializer de la ventana, antes de configurarVentana y de
- *  crear la Watchlist, igual que dialogos/menus/azarService/recService/barridoVivos) para que sus botones
- *  existan cuando construirBarraSuperior los necesite. Las dos interfaces que necesita del resto de la ventana
- *  (EnlaceWatchlist: la Watchlist y sus jugadores; Anfitrion: todo lo demás) son cableado puro, sin estado
- *  propio: por eso salen de la ventana a esta clase (pasada final, fase 3, tanda 4). */
+ *  construye en el mismo punto de siempre (field initializer de la ventana, antes de CableadoCromo.configurarVentana
+ *  y de crear la Watchlist, igual que dialogos/menus/azarService/recService/barridoVivos) para que sus botones
+ *  existan cuando CableadoCromo.construirBarraSuperior los necesite. Las dos interfaces que necesita del resto de
+ *  la ventana (EnlaceWatchlist: la Watchlist y sus jugadores; Anfitrion: todo lo demás) son cableado puro, sin
+ *  estado propio: por eso salen de la ventana a esta clase (pasada final, fase 3, tanda 4).
+ *  <p>La Watchlist llega a este cableado envuelta en EnlaceWatchlist, y sus métodos solo se EVALÚAN cuando algo
+ *  los llama (nunca al construir el objeto): por eso partidas puede construirse antes que watchlist (que no es
+ *  un field initializer, se asigna en el cuerpo del constructor de la ventana) sin NullPointerException. */
 final class CableadoPartidas {
     private CableadoPartidas() { }
 

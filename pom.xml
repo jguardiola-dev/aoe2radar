@@ -77,8 +77,9 @@
     propio código:
       - Nombre/versión/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE="aoe2radar", VERSION="1.1").
       - Clase principal: dev.tirador.aoe2radar.SpoilerFreeRecs (la misma del manifest del jar).
-      - Icono: SpoilerFreeRecs.java y AcercaDe.generarIco() documentan literalmente que
-        "crear_exe.bat" generaba logo.ico así: java -cp build SpoilerFreeRecs, opción make-ico.
+      - Icono: AcercaDe.generarIco() documenta literalmente que
+        "crear_exe.bat" generaba logo.ico así: java -cp build SpoilerFreeRecs, opción make-ico
+        (hoy ese modo make-ico lo atiende app.Main, al que SpoilerFreeRecs.main sigue delegando).
       - jpackage con runtime propio (jlink implícito) y tipo app-image: el .gitignore de la 1.1 ya ignoraba
         una carpeta `/app` en la raíz, que es el nombre típico de destino de un app-image.
     Aquí el destino vive en target/ (ya ignorado por completo), no en la raíz, para que `mvn clean` también

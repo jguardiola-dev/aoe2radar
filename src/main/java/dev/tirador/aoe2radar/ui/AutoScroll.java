@@ -17,7 +17,7 @@ import java.awt.event.MouseEvent;
  * navegar atrás/adelante, en cualquier panel con scroll de la ventana. Es infraestructura de
  * TODA la ventana, no de una vista concreta; el atrás/adelante (con el caso especial del cara a
  * cara) se lo pide a {@link Anfitrion}. Sale tal cual de
- * SpoilerFreeRecs.instalarAutoScroll/pararAutoScroll.
+ * SpoilerFreeRecs.instalarAutoScroll/pararAutoScroll (ya no existen: el cableado vive en CableadoCromo.autoScroll).
  */
 public final class AutoScroll {
 

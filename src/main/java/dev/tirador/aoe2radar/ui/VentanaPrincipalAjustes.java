@@ -11,8 +11,8 @@ import java.util.List;
  * Ajustes de la ventana principal al construirla: cierre, foco perdido e iconos. La geometría en
  * sí (tamaño, posición, divisor) vive en {@link VentanaGuardada}; lo que toca a otras vistas al
  * cerrar (el socket en vivo) o al perder el foco (la hover-card de la watchlist) se lo pide a
- * {@link Anfitrion} en vez de conocerlas por nombre. Sale tal cual de
- * SpoilerFreeRecs.configurarVentana.
+ * {@link Anfitrion} en vez de conocerlas por nombre. Sale tal cual de lo que era
+ * SpoilerFreeRecs.configurarVentana (hoy CableadoCromo.configurarVentana).
  */
 public final class VentanaPrincipalAjustes {
 
