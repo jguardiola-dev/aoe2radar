@@ -66,7 +66,10 @@ class PartidasLogicaTest {
     AzarFalso azar;
     PartidasView vista;
 
+    byte[] configPrevio;
+
     @BeforeEach void crear() throws Exception {
+        configPrevio = PartidasViewTest.savegameDePrueba(recs);   // sin diálogos reales: ver PartidasViewTest
         idiomaPrevio = IDIOMA;
         IDIOMA = "es";
         enlace = new PartidasViewTest.EnlaceFalso();
@@ -92,6 +95,7 @@ class PartidasLogicaTest {
     @AfterEach void cerrar() throws Exception {
         SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
         IDIOMA = idiomaPrevio;
+        PartidasViewTest.restaurarConfig(configPrevio);
     }
 
     static MatchPlayer mp(long id, String nombre, int equipo, Integer rating) {

@@ -164,7 +164,28 @@ class PartidasViewTest {
     RecFalso rec;
     PartidasView vista;
 
+    /** config.properties de antes del test (null si no había): lo restaura cerrar(). */
+    byte[] configPrevio;
+
+    /** Cada test corre con la carpeta savegame de config apuntando a una carpeta temporal suya: así
+     *  obtenerSavegame(true) nunca depende del config.properties de la máquina ni cae en detectarSavegames, que con
+     *  varios perfiles del juego abre el diálogo real «Elige tu carpeta savegame» en la pantalla. Devuelve el config
+     *  de antes (null si no había) para {@link #restaurarConfig}. */
+    static byte[] savegameDePrueba(Path carpetaTest) throws java.io.IOException {
+        Path cfg = dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
+        byte[] previo = java.nio.file.Files.exists(cfg) ? java.nio.file.Files.readAllBytes(cfg) : null;
+        Path sg = java.nio.file.Files.createDirectories(carpetaTest.resolve("savegame-del-test"));
+        dev.tirador.aoe2radar.util.Config.guardarConfig("savegame", sg.toString());
+        return previo;
+    }
+
+    static void restaurarConfig(byte[] previo) throws java.io.IOException {
+        Path cfg = dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
+        if (previo != null) java.nio.file.Files.write(cfg, previo); else java.nio.file.Files.deleteIfExists(cfg);
+    }
+
     @BeforeEach void crear() throws Exception {
+        configPrevio = savegameDePrueba(recs);
         idiomaPrevio = IDIOMA;
         IDIOMA = "es";
         enlace = new EnlaceFalso();
@@ -188,6 +209,7 @@ class PartidasViewTest {
     @AfterEach void cerrar() throws Exception {
         SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
         IDIOMA = idiomaPrevio;
+        restaurarConfig(configPrevio);
     }
 
     // ----- utilidades -----
@@ -634,6 +656,8 @@ class PartidasViewTest {
             esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "que acabe el primero");
             anfitrion.soltarDestino = null;
             anfitrion.estados.clear();
+            anfitrion.estado = "";   // si no, la espera de abajo la cumplía el resumen del PRIMERO y el tercero acababa
+                                     // fuera de conSavegame, ya sin carpeta en config (abría el diálogo real)
             enEdt(() -> vista.enviarInteligente(List.of(m)));   // acabado el primero, se puede volver a enviar
             esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "el tercero");
             assertFalse(anfitrion.estados.stream().anyMatch(s -> s.startsWith("Ya se está enviando")));
