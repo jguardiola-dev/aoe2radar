@@ -452,7 +452,15 @@ public final class WatchlistView {
     /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, pais y clan. */
     public void refrescarCampanas() {
         Set<String> s = campanas.campanas();
-        if (s.isEmpty()) { campanaIds.clear(); SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket); return; }
+        if (s.isEmpty()) {
+            campanaIds.clear();
+            // F11 de la 1.3: al apagar la última campana, el socket también deja de vigilar esa lista (antes solo
+            // se vaciaba campanaIds y el socket seguía con los ids viejos). Conjunto MUTABLE: el anfitrión le suma
+            // el top de Live now, si está abierto.
+            anfitrion.actualizarSocketExtra(new HashSet<>());
+            SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket);
+            return;
+        }
         // Copia de todosJugadores AQUÍ, en el EDT (refrescarCampanas siempre se llama desde él: botón de campana,
         // Timer de Swing, arranque): mismo riesgo que la fila 106 si el hilo de fondo recorriera la lista de
         // verdad mientras el EDT la muta (altas, bajas, rebuildGrupos...).

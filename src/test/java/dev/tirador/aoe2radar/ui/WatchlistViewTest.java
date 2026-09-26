@@ -171,7 +171,8 @@ class WatchlistViewTest {
         @Override public void reiniciarThrottleDirectos() { }
         @Override public void vigilarTwitchDirectos() { }
         @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { }
-        @Override public void actualizarSocketExtra(Set<Long> ids) { }
+        final List<Set<Long>> socketExtra = new ArrayList<>();
+        @Override public void actualizarSocketExtra(Set<Long> ids) { ids.add(-1L); socketExtra.add(ids); }   // como el real: le suma el top de Live now (el set debe ser mutable)
         @Override public String ahoraNombre(long pid) { return String.valueOf(pid); }
     }
 
@@ -645,6 +646,15 @@ class WatchlistViewTest {
     }
 
     // ===== alta de jugador: solo lo que no abre diálogo =========================================================
+
+    /** F11 de la revisión 1.3: al apagar la última campana, el socket debe dejar de vigilar sus jugadores (antes
+     *  campanaIds se vaciaba pero actualizarSocketExtra no se llamaba y el socket seguía con los ids viejos). */
+    @Test void refrescarCampanas_sinCampanasLimpiaElExtraDelSocket() {
+        // la config de "campanas" en este test es (k, def) -> def: sin campanas
+        watchlist.refrescarCampanas();
+        assertEquals(1, anfitrion.socketExtra.size(), "sin campanas también hay que avisar al socket");
+        assertEquals(Set.of(-1L), anfitrion.socketExtra.get(0), "solo lo que añade el anfitrión (Live now), nada de las campanas");
+    }
 
     @Test void sugerenciaCaducada_siElTextoCambio() {
         assertTrue(WatchlistView.sugerenciaCaducada("tirador", "otra cosa"));
