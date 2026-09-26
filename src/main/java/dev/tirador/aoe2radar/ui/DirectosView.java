@@ -283,6 +283,11 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         idiomaDirCombo.addItem(t("Todos", "All"));
         for (String c : idiomas) { codigosIdiomaDir.add(c); idiomaDirCombo.addItem(nombreIdioma(c)); }
         int sel = codigosIdiomaDir.indexOf(idiomaSel);
+        if (sel < 0 && !idiomaSel.isBlank()) {   // el idioma guardado sin canales hoy: sigue elegido, con «(0)», y el combo explica la tabla vacía
+            codigosIdiomaDir.add(idiomaSel);
+            idiomaDirCombo.addItem(nombreIdioma(idiomaSel) + " (0)");
+            sel = codigosIdiomaDir.size() - 1;
+        }
         if (sel >= 0) idiomaDirCombo.setSelectedIndex(sel + 1);
         rearmandoIdiomas = false;
         modeloDirectos.setRowCount(0);
