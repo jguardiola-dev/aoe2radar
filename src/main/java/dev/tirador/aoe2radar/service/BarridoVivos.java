@@ -47,6 +47,14 @@ public final class BarridoVivos {
      *  consultados con éxito, quién no apareció vivo (por tanto, fuera). */
     public record DecisionBuscar(Map<Long, Long> vivos, Map<Long, String> infos, Set<Long> fuera) { }
 
+    /** Jugadores por llamada en vigilarVivos (2 llamadas para 50 seguidos, 4 para 100). */
+    public static final int LOTE_VIVOS = 25;
+    /** Partidas que se piden por lote. Vivo F9 de la revisión 1.3: eran 50 para 25 jugadores (2 por cabeza): con
+     *  compañeros de lote muy activos, la partida larga en curso de uno podía quedar fuera de la página y
+     *  vigilarVivos lo daba por fuera. Con 100 (lo mismo que piden vigilarTop y Live now a /matches)
+     *  son 4 por cabeza, sin una llamada más. */
+    public static final int PARTIDAS_POR_LOTE = 100;
+
     private final CompanionApi api;
     private final Reloj reloj;
     private final BiFunction<Match, Long, String> resumen;
@@ -64,7 +72,7 @@ public final class BarridoVivos {
     private Instant ahora() { return Instant.ofEpochMilli(reloj.ahoraMs()); }
 
     /**
-     * vigilarVivos: un lote (hasta 25 ids), una sola llamada a /matches con todos a la vez. De las partidas que
+     * vigilarVivos: un lote (hasta LOTE_VIVOS ids), una sola llamada a /matches con todos a la vez. De las partidas que
      * salen: las en curso de verdad marcan vivo a cada jugador del lote (la primera que se le encuentra); las
      * demás que ya están terminadas se devuelven aparte (para refrescar una fila EN DIRECTO de la tabla). Va a la
      * red.
@@ -74,7 +82,7 @@ public final class BarridoVivos {
         Set<Long> ids = new LinkedHashSet<>(idsLote);
         StringBuilder csv = new StringBuilder();
         for (Long id : idsLote) { if (csv.length() > 0) csv.append(','); csv.append(id); }
-        Iterable<Match> leidas = api.partidas(csv.toString(), 1, 50);
+        Iterable<Match> leidas = api.partidas(csv.toString(), 1, PARTIDAS_POR_LOTE);
         Map<Long, Long> vivos = new HashMap<>();
         Map<Long, String> infos = new HashMap<>();
         List<Match> terminadas = new ArrayList<>();

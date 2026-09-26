@@ -108,8 +108,8 @@ class BarridoVivosTest {
         assertEquals("R:100:1", r.infos().get(1L));
         assertEquals(1, r.terminadas().size());
         assertEquals(101L, r.terminadas().get(0).id);
-        assertTrue(red.urls.get(0).contains("profile_ids=1,2,3,4") && red.urls.get(0).contains("per_page=50"),
-                "una sola llamada, con los 4 ids y per_page=50");
+        assertTrue(red.urls.get(0).contains("profile_ids=1,2,3,4") && red.urls.get(0).contains("per_page=100"),
+                "una sola llamada, con los 4 ids y per_page=100 (vivo F9 1.3: con 50, una partida larga podía quedar fuera)");
     }
 
     @Test void lote_partidaViejaDeMasDeTresHorasNiVivaNiTerminada() throws Exception {

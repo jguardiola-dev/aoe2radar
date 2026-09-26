@@ -367,7 +367,7 @@ final class WatchlistTrabajos {
         List<Player> objetivo = new ArrayList<>(wv.todosJugadores);
         new SwingWorker<Void, BarridoVivos.Lote>() {
             @Override protected Void doInBackground() {
-                final int LOTE = 25;   // 2 llamadas para un top 50, 4 para el top 100
+                final int LOTE = BarridoVivos.LOTE_VIVOS;   // 2 llamadas para un top 50, 4 para el top 100
                 for (int d = 0; d < objetivo.size(); d += LOTE) {
                     List<Player> lote = objetivo.subList(d, Math.min(d + LOTE, objetivo.size()));
                     List<Long> idsLote = new ArrayList<>();
