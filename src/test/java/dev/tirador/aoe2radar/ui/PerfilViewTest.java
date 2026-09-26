@@ -295,6 +295,61 @@ class PerfilViewTest {
         assertEquals("Datos hasta hoy", texto[1]);
     }
 
+    /** F4 (3): se deja A durante «Actualizando…», termina con B abierto y se vuelve a A desde la caché: el botón
+     *  queda como «Al día…», deshabilitado (antes salía habilitado, porque hoyTerminado no llegó a A). */
+    @Test void actualizarHoyQueTerminaConOtroPerfilAbiertoSeConserva() throws Exception {
+        PerfilPresenterTest.TareasAplazadas tareas = new PerfilPresenterTest.TareasAplazadas();
+        Actividad a = fresca(5L, "Fulano"), b = fresca(6L, "Mengano");
+        String[] texto = new String[1]; boolean[] habilitado = new boolean[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista(tareas);
+            v.actPid = 5L; actividadCache.put(5L, a);
+            v.desdeSfr(a, "2026-09-24");
+            v.actHoyBtn.doClick();
+            v.actPid = 6L; actividadCache.put(6L, b);
+            v.baseLista(b, ficha("es", 1400));
+            tareas.pendientesFondo.get(0).run();   // termina con B abierto
+            v.actPid = 5L;
+            v.baseLista(a, ficha("es", 1500));
+            texto[0] = v.actHoyBtn.getText(); habilitado[0] = v.actHoyBtn.isEnabled();
+        });
+        assertEquals("Al día · sin partidas nuevas", texto[0]);
+        assertFalse(habilitado[0]);
+    }
+
+    /** F4 (3): un perfil que venía de sfr-data y se vuelve a cargar por la API deja de tener «Actualizar hoy» al
+     *  reabrirlo desde la caché (antes conservaba la fecha «hasta» vieja). */
+    @Test void recargarPorLaApiOlvidaElOrigenSfr() throws Exception {
+        Actividad a = fresca(5L, "Fulano");
+        boolean[] visible = new boolean[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L; actividadCache.put(5L, a);
+            v.desdeSfr(a, "2026-09-24");
+            v.cargaIniciada();            // se vuelve a cargar A...
+            v.cargaCompletada(a);         // ...y llega por la API
+            v.baseLista(a, ficha("es", 1500));
+            visible[0] = v.actHoyBtn.isVisible();
+        });
+        assertFalse(visible[0]);
+    }
+
+    /** F4 (3): el año de un rival traído de sfr-data por el Cara a cara (recordarOrigenSfr) da «Actualizar hoy» a
+     *  su perfil al abrirlo desde la caché. */
+    @Test void rivalTraidoDeSfrDataPorElCaraACaraTieneActualizarHoy() throws Exception {
+        Actividad r = fresca(9L, "Rival");
+        boolean[] visible = new boolean[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            actividadCache.put(9L, r);
+            v.recordarOrigenSfr(9L, "2026-09-24");
+            v.actPid = 9L;
+            v.baseLista(r, ficha("es", 1500));
+            visible[0] = v.actHoyBtn.isVisible();
+        });
+        assertTrue(visible[0]);
+    }
+
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la
      *  cabecera que ya estaba pintada no se sustituye por «Sin datos de perfil». */
     @Test void actualizarHoySinFichaNoBorraLaCabecera() throws Exception {

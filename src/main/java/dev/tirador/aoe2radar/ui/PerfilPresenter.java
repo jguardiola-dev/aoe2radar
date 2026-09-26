@@ -93,8 +93,11 @@ public final class PerfilPresenter {
      *  vigente apaga cargando(): la respuesta tardía de un perfil que ya se dejó no apaga la del que se está mirando.
      *  Se lee y escribe solo en el EDT (al lanzar y en tareas.enUi), así que no necesita volatile. */
     private long cargaToken;
-    /** F4 (1.3): pid cuyo «Actualizar hoy» está en marcha (0 si ninguno). Se escribe y se lee en el EDT. */
-    private long hoyPid;
+    /** F4 (1.3): pids con «Actualizar hoy» en marcha (puede haber varios: A, luego B antes de que A vuelva). */
+    private final java.util.Set<Long> hoyEnMarcha = new java.util.HashSet<>();
+    /** F4 (3): pid → partidas nuevas del último «Actualizar hoy» terminado bien en esta sesión, aunque al terminar
+     *  ese perfil ya no estuviera abierto. Las dos colecciones se leen y escriben solo en el EDT. */
+    private final Map<Long, Integer> hoyHechos = new HashMap<>();
 
     public PerfilPresenter(ProfileService perfiles, RatingsService ratings, BusquedaPerfiles busqueda, Tareas tareas,
                             Map<Long, Integer> eloWatch, Map<Long, Actividad> actividadCache, Pantalla pantalla) {
@@ -191,24 +194,28 @@ public final class PerfilPresenter {
     /** «Actualizar hoy»: ficha + las 50 partidas más recientes, fundidas con lo que ya había. Hilo "perfil-hoy". */
     public void actualizarHoy(long pid) {
         if (pid <= 0) return;
-        hoyPid = pid;
+        hoyEnMarcha.add(pid); hoyHechos.remove(pid);
         pantalla.hoyIniciado();
         tareas.enFondo("perfil-hoy", () -> {
             try {
                 FichaPerfil ficha = fichaOConocida(pid);
                 pantalla.marcarVinculadasPedidas(pid);
                 int nuevas = perfiles.traerHoy(pid);
-                tareas.enUi(() -> { hoyFin(pid); if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });
+                tareas.enUi(() -> { hoyEnMarcha.remove(pid); hoyHechos.put(pid, nuevas); if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });
             } catch (Exception ex) {
-                tareas.enUi(() -> { hoyFin(pid); if (pantalla.pidAbierto() == pid) pantalla.hoyError(causa(ex)); });
+                tareas.enUi(() -> { hoyEnMarcha.remove(pid); if (pantalla.pidAbierto() == pid) pantalla.hoyError(causa(ex)); });
             }
         });
     }
 
     /** F4: ¿está en marcha el «Actualizar hoy» de este pid? (para pintar su botón al volver a él). Solo en el EDT. */
-    public boolean hoyEnCurso(long pid) { return pid > 0 && hoyPid == pid; }
+    public boolean hoyEnCurso(long pid) { return hoyEnMarcha.contains(pid); }
 
-    private void hoyFin(long pid) { if (hoyPid == pid) hoyPid = 0; }
+    /** F4 (3): las partidas nuevas del «Actualizar hoy» ya terminado de este pid en la sesión; null si no hubo. Solo en el EDT. */
+    public Integer hoyNuevas(long pid) { return hoyHechos.get(pid); }
+
+    /** F4 (3): el perfil volvió a llegar de sfr-data: su «Actualizar hoy» anterior deja de contar. Solo en el EDT. */
+    public void olvidarHoy(long pid) { hoyHechos.remove(pid); }
 
     /** «Cargar más» páginas del historial por la API. Hilo "perfil-mas-" + pid. */
     public void cargarMas(long pid, String nombre, Actividad base, int paginas) {

@@ -111,6 +111,18 @@ class CaraACaraPresenterTest {
         assertEquals(0, perfiles.anioSfrLlamadas);
     }
 
+    /** F4 (3): el año del rival llega de sfr-data: se avisa a la vista con su pid y su fecha «hasta» (para que su
+     *  perfil, abierto luego desde la caché, tenga «Actualizar hoy»), aunque el diálogo ya mire otro cruce. */
+    @Test void pedir_anio_rival_de_sfr_data_avisa_del_origen() {
+        List<String> avisos = new java.util.ArrayList<>();
+        CaraACaraPresenter p = new CaraACaraPresenter(perfiles, busqueda, Tareas.EN_LINEA, actividadCache, (pid, hasta) -> avisos.add(pid + "@" + hasta));
+        perfiles.anioSfr = new AnioSfr(new Actividad(9L, "Rival", List.of(), true, 1, 1L), "2026-09-24", "es");
+        p.pedirAnioRival(9L, "Rival", () -> false, arF -> { });
+        assertEquals(List.of("9@2026-09-24"), avisos);
+        p.pedirAnioRival(9L, "Rival", () -> true, arF -> { });   // ya en caché: no viene de sfr-data en esta llamada
+        assertEquals(1, avisos.size());
+    }
+
     /** B4: si no está en caché, se pide a sfr-data y el resultado se deja en la caché (para la próxima vez). */
     @Test void pedir_anio_rival_sin_cache_pide_a_sfr_data_y_la_rellena() {
         Actividad a = new Actividad(9L, "Rival", List.of(), true, 1, 1L);

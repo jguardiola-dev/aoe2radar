@@ -99,7 +99,7 @@ public final class CaraACaraDialogo {
 
     public CaraACaraDialogo(Window ventana, PerfilView view) {
         this.ventana = ventana; this.view = view;
-        this.presenter = new CaraACaraPresenter(view.perfiles, view.busqueda, view.tareas, view.actividadCache);
+        this.presenter = new CaraACaraPresenter(view.perfiles, view.busqueda, view.tareas, view.actividadCache, view::recordarOrigenSfr);   // F4 (3)
     }
 
     private void registrar() {

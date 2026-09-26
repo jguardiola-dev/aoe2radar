@@ -377,6 +377,25 @@ class PerfilPresenterTest {
         assertSame(perfiles.conocida, pantalla.cabeceraPintada);
     }
 
+    /** F4 (3): dos «Actualizar hoy» en marcha a la vez (A y luego B) se recuerdan los dos; y el que termina con
+     *  otro perfil abierto queda apuntado como hecho, para cuando se vuelva a él. */
+    @Test void actualizar_hoy_recuerda_varios_pids_y_el_resultado_aunque_no_este_abierto() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.traerHoyResultado = 3;
+        p.actualizarHoy(5L);
+        p.actualizarHoy(6L);
+        assertTrue(p.hoyEnCurso(5L) && p.hoyEnCurso(6L));
+        pantalla.pidAbierto = 7L;   // ninguno de los dos está abierto al terminar
+        tareasAplazadas.pendientesFondo.get(0).run();
+        assertFalse(p.hoyEnCurso(5L));
+        assertTrue(p.hoyEnCurso(6L));
+        assertEquals(3, p.hoyNuevas(5L));
+        assertNull(pantalla.hoyFicha, "no se pinta sobre el perfil abierto");
+        p.olvidarHoy(5L);
+        assertNull(p.hoyNuevas(5L));
+    }
+
     @Test void actualizar_hoy_descartado_si_el_pid_abierto_ya_no_es_ese() {
         pantalla.pidAbierto = 6L;   // se navegó a otro perfil antes de que volviera la respuesta
         perfiles.ficha = new FichaPerfil(Map.of(), "es", "", 0);
