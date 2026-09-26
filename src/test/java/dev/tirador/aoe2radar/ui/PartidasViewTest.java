@@ -492,6 +492,25 @@ class PartidasViewTest {
         });
     }
 
+    // ----- textos (revisión 1.3, v13_textos.md): en inglés, nada en español fijo -----
+
+    @Test void textos_enIngles_resultadoColumnaRecYEstadosDeDescarga() throws Exception {
+        Match m = partida(8501, A, Instant.now().minusSeconds(600));
+        m.players.get(0).won = true;
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(m), A, "grupo|General"));
+        asentar();
+        IDIOMA = "en";   // se restaura en cerrar()
+        String res = PartidasTexto.textoResultado(m);
+        assertTrue(res.contains("Team 1  —  WINS"), res);
+        assertFalse(res.contains("Equipo") || res.contains("GANA"), res);
+        enEdt(() -> assertEquals("?", vista.tableModel.getValueAt(vista.view.indexOf(m), 7), "la columna Rec sin POV conocido"));
+        enEdt(() -> vista.download(List.of(m)));
+        esperar(() -> !anfitrion.progreso, "que la descarga termine");
+        asentar();
+        assertEquals("✓ saved", m.estado);
+        assertTrue(anfitrion.estados.contains("1/1 recs saved to " + recs), "sin «./» delante de la carpeta: " + anfitrion.estados);
+    }
+
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
         enlace.jugadores.addAll(List.of(A, B));
         CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);

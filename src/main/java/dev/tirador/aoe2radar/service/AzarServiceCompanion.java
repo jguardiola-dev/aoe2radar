@@ -270,7 +270,7 @@ public final class AzarServiceCompanion implements AzarService {
         for (int s = 0; s < franjas.length; s++) {
             int[] tr = tramos[franjas[s]];
             int pag = tr[0] + rnd.nextInt(Math.max(1, tr[1] - tr[0] + 1));
-            progreso.accept("Muestreando el ladder… (" + (s + 1) + "/" + franjas.length + ")");
+            progreso.accept(t("Muestreando el ladder… (", "Sampling the ladder… (") + (s + 1) + "/" + franjas.length + ")");
             List<long[]> js = new ArrayList<>(lbPagina(ctx, Math.min(pag, ult)).jugadores());
             long cutMs = cutoff.toEpochMilli();
             List<long[]> activos = new ArrayList<>(), resto = new ArrayList<>();
@@ -397,7 +397,7 @@ public final class AzarServiceCompanion implements AzarService {
                 catch (IOException io) { if (String.valueOf(io.getMessage()).contains("429")) throw io; }   // un 429 es «espera», no «prueba otro id» (con reintentos, probar el «3» alargaba ~12 min y subía la pausa al tope)
                 catch (Exception ignored) {}
             }
-            if (ctx.id == null) throw new IOException("el leaderboard no responde (ni rm_1v1 ni 3)");
+            if (ctx.id == null) throw new IOException(t("el leaderboard no responde (ni rm_1v1 ni 3)", "the leaderboard isn't answering (neither rm_1v1 nor 3)"));
         } else {
             root = companion.clasificacion(ctx.id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
             players = root.filas();

@@ -69,7 +69,7 @@ final class DescargasPartidas {
         for (Path f : files) { try { Files.delete(f); ok++; } catch (IOException ignored) {} }
         for (Match m : vista.all) { m.enDisco = false; if (m.estado.startsWith("✓")) m.estado = ""; }
         vista.tableModel.fireTableDataChanged();
-        vista.anfitrion.estado(ok + " recs borradas.");
+        vista.anfitrion.estado(ok + t(" recs borradas.", " recs deleted."));
     }
 
     /** Carpeta savegame activa: la de config si sigue existiendo; si no, la detectada. */
@@ -245,7 +245,7 @@ final class DescargasPartidas {
                 int ok = 0, copiadas = 0;
                 for (Match m : objetivo) {
                     if (vista.anfitrion.detenido()) break;
-                    vista.setEstado(m, "descargando…");
+                    vista.setEstado(m, t("descargando…", "downloading…"));
                     RecService.Resultado r = vista.recService.procesar(m, trackedIds, autoCopiarFinal, sgAuto, vista.anfitrion::detenido);
                     boolean hecho = r.estado() != RecService.Estado.FALLO;
                     if (hecho) {
@@ -256,7 +256,7 @@ final class DescargasPartidas {
                             m.enJuego = true;
                         }
                     }
-                    vista.setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
+                    vista.setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : t("✓ guardada", "✓ saved")) : t("✗ no disponible", "✗ not available"));
                     // La pausa de cortesía es para espaciar peticiones a la API: si la rec se reutilizó del
                     // disco (RecService.Resultado.reutilizada), no hubo ninguna que espaciar.
                     if (!r.reutilizada()) vista.anfitrion.dormir(vista.pausaMs);
@@ -265,7 +265,7 @@ final class DescargasPartidas {
                 final boolean parada = vista.anfitrion.detenido();
                 SwingUtilities.invokeLater(() ->
                         vista.anfitrion.estado((parada ? t("Detenido. ", "Stopped. ") : "")
-                                + n + "/" + tot + t(" recs guardadas en ./", " recs saved to ./") + vista.anfitrion.recsDir()
+                                + n + "/" + tot + t(" recs guardadas en ", " recs saved to ") + vista.anfitrion.recsDir()
                                 + (cop > 0 ? "  ·  " + cop + t(" al juego", " to the game") : "")
                                 + (n < tot ? t("  ·  detalle en descargas.log", "  ·  details in descargas.log") : "")));
                 return null;

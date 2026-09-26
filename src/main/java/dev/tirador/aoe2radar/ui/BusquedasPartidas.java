@@ -281,7 +281,7 @@ final class BusquedasPartidas {
             else {
                 JOptionPane.showMessageDialog(vista.ventana,
                         t("En ★ (Top ladder o Top país), selecciona jugadores concretos (clic o Ctrl+clic en la lista)\no activa el chip «● Jugando» antes de buscar.",
-                          "In ★ (Top ladder or Country top), select specific players (click or Ctrl+click the list)\nor turn on the “● Live” checkbox before searching."),
+                          "In ★ (Top ladder or Country top), select specific players (click or Ctrl+click the list)\nor turn on the “● Playing” chip before searching."),
                         t("Buscar en el top", "Search the top"), JOptionPane.INFORMATION_MESSAGE);
                 return;
             }
