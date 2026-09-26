@@ -114,4 +114,53 @@ class TwitchServiceCompanionTest {
             CANAL_DE.remove(conCanal); CANAL_DE.remove(canalApagado);
         }
     }
+
+    // ----- consultas canal a canal: solo quien juega, y 10 min de memoria de «no emite» (plan API de la 1.3) -----
+
+    @Test void barrer_consultaUnoAUnoSoloAQuienJuegaYRecuerdaDiezMinutosQueNoEmite() {
+        long juega = 7_100_001L, noJuega = 7_100_002L;
+        TransporteTwitch red = new TransporteTwitch();   // a «?channel=» responde [] (no emite)
+        dev.tirador.aoe2radar.util.RelojFalso reloj = new dev.tirador.aoe2radar.util.RelojFalso();
+        java.util.Set<Long> jugando = new java.util.HashSet<>(java.util.Set.of(juega));
+        TwitchServiceCompanion servicio = new TwitchServiceCompanion(new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false)),
+                ms -> { }, jugando::contains, reloj);
+        CANAL_DE.put(juega, "canal_juega"); CANAL_DE.put(noJuega, "canal_nojuega");   // canales conocidos, fuera del top 20
+        List<Player> visibles = List.of(new Player(juega, "Juega", ""), new Player(noJuega, "NoJuega", ""));
+        try {
+            servicio.barrer(visibles);
+            assertEquals(1, red.canalesPedidos.size(), "solo se pregunta por el canal de quien está en partida");
+            assertTrue(red.canalesPedidos.get(0).endsWith("?channel=canal_juega"));
+            reloj.avanzar(TwitchServiceCompanion.SIN_DIRECTO_MS - 1);
+            servicio.barrer(visibles);
+            assertEquals(1, red.canalesPedidos.size(), "comprobado hace menos de 10 min y no emitía: no se repite");
+            reloj.avanzar(1);
+            servicio.barrer(visibles);
+            assertEquals(2, red.canalesPedidos.size(), "pasados 10 min, se vuelve a mirar");
+            jugando.add(noJuega);
+            servicio.barrer(visibles);
+            assertEquals(3, red.canalesPedidos.size(), "en cuanto el otro entra en partida, también se le pregunta");
+            assertTrue(red.canalesPedidos.get(2).endsWith("?channel=canal_nojuega"));
+        } finally {
+            CANAL_DE.remove(juega); CANAL_DE.remove(noJuega);
+        }
+    }
+
+    @Test void barrer_unFalloDeRedAlConsultarElCanalNoCuentaComoNoEmite() {
+        long juega = 7_100_011L;
+        List<String> pedidos = new ArrayList<>();
+        Transporte red = url -> {
+            if (url.contains("?channel=")) { pedidos.add(url); return new Transporte.Respuesta(500, "caído"); }
+            return new Transporte.Respuesta(200, "[]");
+        };
+        TwitchServiceCompanion servicio = new TwitchServiceCompanion(new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false)),
+                ms -> { }, pid -> true, new dev.tirador.aoe2radar.util.RelojFalso());
+        CANAL_DE.put(juega, "canal_caido");
+        try {
+            servicio.barrer(List.of(new Player(juega, "Juega", "")));
+            servicio.barrer(List.of(new Player(juega, "Juega", "")));
+            assertEquals(2, pedidos.size(), "sin respuesta no se sabe si emite: se vuelve a preguntar");
+        } finally {
+            CANAL_DE.remove(juega);
+        }
+    }
 }

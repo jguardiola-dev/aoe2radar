@@ -2,6 +2,7 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.TwitchService;
+import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -66,6 +67,8 @@ class DirectosPresenterTest {
         @Override public void estado(String texto) { orden.add("estado"); estado = texto; }
         @Override public void repintarLista() { orden.add("repintarLista"); repintarVeces++; }
         @Override public boolean seleccionada() { return seleccionada; }
+        boolean minimizada;
+        @Override public boolean minimizada() { return minimizada; }
         @Override public void miniaturaLista(String login, TwitchService.Miniatura miniatura, long enMs) {
             miniaturasListas.put(login, miniatura);
             ordenMiniaturas.add(login);
@@ -218,5 +221,45 @@ class DirectosPresenterTest {
         presenter.cargarMiniaturas(List.of("con-foto", "sin-foto"));
         assertEquals(List.of("con-foto"), pantalla.ordenMiniaturas);
         assertSame(m1, pantalla.miniaturasListas.get("con-foto"));
+    }
+
+    // ----- ritmo del plan API de la 1.3: minimizada, dentro y fuera de Directos ----------------
+
+    final RelojFalso reloj = new RelojFalso();
+    final DirectosPresenter conReloj = new DirectosPresenter(servicio, twitchLive, Tareas.EN_LINEA, pantalla, reloj);
+
+    @Test void minimizada_no_barre_ni_gasta_el_ritmo_y_al_restaurar_barre_en_el_acto() {
+        pantalla.minimizada = true;
+        conReloj.vigilarTwitch(visibles(List.of()));
+        conReloj.reiniciarThrottle();
+        conReloj.vigilarTwitch(visibles(List.of()));   // ni forzado: minimizada nadie lo ve
+        assertEquals(0, servicio.barrerLlamadas);
+        pantalla.minimizada = false;
+        conReloj.vigilarTwitch(visibles(List.of()));   // el primer tick tras restaurar
+        assertEquals(1, servicio.barrerLlamadas);
+    }
+
+    @Test void fuera_de_directos_barre_como_mucho_cada_seis_minutos() {
+        pantalla.seleccionada = false;
+        conReloj.vigilarTwitch(visibles(List.of()));
+        reloj.avanzar(DirectosPresenter.RITMO_EN_DIRECTOS_MS);
+        conReloj.vigilarTwitch(visibles(List.of()));   // 170 s: fuera de Directos, aún no
+        reloj.avanzar(DirectosPresenter.RITMO_FUERA_MS - DirectosPresenter.RITMO_EN_DIRECTOS_MS - 1);
+        conReloj.vigilarTwitch(visibles(List.of()));   // 6 min menos 1 ms: tampoco
+        assertEquals(1, servicio.barrerLlamadas);
+        reloj.avanzar(1);
+        conReloj.vigilarTwitch(visibles(List.of()));
+        assertEquals(2, servicio.barrerLlamadas);
+    }
+
+    @Test void en_directos_sigue_el_ritmo_de_170_segundos() {
+        pantalla.seleccionada = true;
+        conReloj.vigilarTwitch(visibles(List.of()));
+        reloj.avanzar(DirectosPresenter.RITMO_EN_DIRECTOS_MS - 1);
+        conReloj.vigilarTwitch(visibles(List.of()));
+        assertEquals(1, servicio.barrerLlamadas);
+        reloj.avanzar(1);
+        conReloj.vigilarTwitch(visibles(List.of()));
+        assertEquals(2, servicio.barrerLlamadas);
     }
 }

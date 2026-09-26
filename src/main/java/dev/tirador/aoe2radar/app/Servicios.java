@@ -153,7 +153,7 @@ public class Servicios {
      *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
     public static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
     /** El barrido de Twitch y sus miniaturas (ver service.TwitchService); usa dormir() entre las llamadas una a una. */
-    public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms));
+    public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms), pid -> VIVO.jugando(pid), Reloj.SISTEMA);
 
     public static void dormir(long ms) {
         long fin = System.currentTimeMillis() + ms;

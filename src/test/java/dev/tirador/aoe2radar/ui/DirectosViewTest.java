@@ -29,6 +29,7 @@ class DirectosViewTest {
         @Override public void estado(String texto) { }
         @Override public void abrirUrl(String url) { }
         @Override public boolean seleccionada() { return true; }
+        @Override public boolean ventanaMinimizada() { return false; }
     });
 
     static <T extends Component> List<T> buscar(Container c, Class<T> tipo) {

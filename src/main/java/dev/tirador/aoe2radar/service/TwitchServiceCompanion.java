@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.service;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.model.Directo;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.util.Reloj;
 
 import java.awt.Image;
 import java.awt.image.BufferedImage;
@@ -15,8 +16,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongConsumer;
+import java.util.function.LongPredicate;
 
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
@@ -34,12 +38,27 @@ import static dev.tirador.aoe2radar.util.Texto.variantesNick;
  */
 public final class TwitchServiceCompanion implements TwitchService {
 
+    /** Cuánto se recuerda que un canal comprobado uno a uno no estaba en directo (plan API de la 1.3). */
+    static final long SIN_DIRECTO_MS = 10 * 60_000L;
+
     private final CompanionApi api;
     private final LongConsumer pausa;
+    private final LongPredicate jugando;   // ¿pid está en partida ahora? (EstadoVivo, en la app)
+    private final Reloj reloj;
+    /** canal (minúsculas) → hasta cuándo se da por «no emite» sin volver a preguntar. */
+    private final Map<String, Long> sinDirecto = new ConcurrentHashMap<>();
 
+    /** Sin saber quién juega: cualquiera con canal conocido se puede consultar uno a uno (como hasta la 1.3). */
     public TwitchServiceCompanion(CompanionApi api, LongConsumer pausa) {
+        this(api, pausa, pid -> true, Reloj.SISTEMA);
+    }
+
+    /** Con quién está jugando ahora (solo a esos se les consulta el canal uno a uno) y el reloj de la caché «no emite». */
+    public TwitchServiceCompanion(CompanionApi api, LongConsumer pausa, LongPredicate jugando, Reloj reloj) {
         this.api = api;
         this.pausa = pausa;
+        this.jugando = jugando;
+        this.reloj = reloj;
     }
 
     @Override
@@ -84,20 +103,30 @@ public final class TwitchServiceCompanion implements TwitchService {
         }
         // El proxy solo lista los 20 canales más vistos: los canales conocidos de tu lista que no
         // estén ahí se comprueban uno a uno (pocas llamadas, y el TW deja de depender de la audiencia)
+        // Plan API de la 1.3: solo para quien está jugando ahora (quien emite casi siempre está en partida) y sin
+        // repetir durante SIN_DIRECTO_MS un canal que ya se comprobó y no emitía. El tope de 12 cuenta llamadas hechas.
         int consultas = 0;
+        long ahora = reloj.ahoraMs();
+        sinDirecto.values().removeIf(hasta -> hasta <= ahora);
         for (Player p : sinCruce) {
-            if (consultas++ >= 12) break;
+            if (!jugando.test(p.id())) continue;
             String canal = CANAL_DE.get(p.id());
+            String clave = canal.toLowerCase(Locale.ROOT);
+            if (sinDirecto.containsKey(clave)) continue;
+            if (consultas++ >= 12) break;
             try {
                 Directo s = api.twitchCanal(canal);
+                boolean emite = false;
                 if (s != null) {
                     String login = String.valueOf(s.login());
                     if (!"null".equals(login) && !login.isBlank() && "live".equals(String.valueOf(s.tipo()))) {
                         String titulo = String.valueOf(firstNonNull(s.titulo(), ""));
                         long viewers = s.viewers();
                         res.put(p.id(), new String[]{ login, titulo, String.valueOf(Math.max(0, viewers)) });
+                        emite = true;
                     }
                 }
+                if (!emite) sinDirecto.put(clave, ahora + SIN_DIRECTO_MS);   // un fallo de red (catch) no es «no emite»
             } catch (Exception ex) {
                 log("twitch canal " + canal + ": " + causa(ex));
             }
