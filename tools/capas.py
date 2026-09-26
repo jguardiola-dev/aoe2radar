@@ -20,5 +20,11 @@ for pk in sorted(aristas):
         ok = dest in permitido.get(pk, set())
         malas += not ok
         if not ok or '-v' in sys.argv: print(('ok ' if ok else 'MAL') + f' {pk:8} -> {dest}.{clase:14} (en {fich})')
+# Criterio de hecho de la fase 3 (docs/ARQUITECTURA.md): ninguna clase de ui importa java.net (la red va por service/api).
+for f in glob.glob(base + 'ui/*.java'):
+    for n, l in enumerate(io.open(f, encoding='utf-8'), 1):
+        if re.match(r'import (?:static )?java\.net\.', l):
+            malas += 1
+            print(f'MAL ui       -> java.net (en {os.path.basename(f)}:{n})')
 print(malas, 'dependencias fuera de la regla')
 sys.exit(1 if malas else 0)
