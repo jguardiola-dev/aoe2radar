@@ -13,7 +13,6 @@ import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.Familias;
 import dev.tirador.aoe2radar.service.FiltroLista;
 import dev.tirador.aoe2radar.service.FormService;
-import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.service.VistaInicial;
@@ -80,7 +79,7 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * lo que necesita del resto de la ventana (estado global, red que no es de servicio, componentes compartidos),
  * por {@link Anfitrion}.
  */
-public final class WatchlistView {
+public final class WatchlistView implements WatchlistPresenter.Pantalla {
 
     /** Un grupo especial vale para el resto de la app; General es de service.ListaSeguidos. */
     public static final String GRUPO_GENERAL = "General";
@@ -202,8 +201,8 @@ public final class WatchlistView {
      *  de claves (orden, país, clan...) sigue con util.Config directamente, en esta clase y en sus piezas. */
     final BiFunction<String, String, String> leerCfg;
     final BiConsumer<String, String> guardarCfg;
-    /** Persistencia, grupos y altas/bajas/movimientos de la watchlist: ver service.ListaSeguidos. */
-    final ListaSeguidos listaSeguidos;
+    /** La lógica sin Swing (modo de vista, grupos, lista de seguidos...): ver ui.WatchlistPresenter. */
+    final WatchlistPresenter presenter;
     final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
     public final JComboBox<String> grupoCombo = new JComboBox<>();   // visible para RegresionCapturas
     public boolean mostrarEloWatch = Boolean.parseBoolean(leerConfig("elo_watchlist", "true"));   // visible: el ítem «Mostrar ELO en la Watchlist» del menú Configuración (cromo) lo lee/escribe
@@ -244,12 +243,10 @@ public final class WatchlistView {
     /** De instancia por el mismo motivo que TOP_PAIS/TOP_CLAN (comentario de arriba): así sale en el idioma
      *  activo de verdad, y no en el que estuviera fijado (o sin fijar) cuando se cargó la clase. */
     public final PaisItem[] PAISES = catalogoPaises();
-    PaisItem paisActual;
     JComboBox<PaisItem> paisCombo;
     JTextField buscaPais;
     JPanel parPais;
     boolean rearmandoPais;
-    List<PaisItem> catalogoOrdenado = List.of();
 
     String topFirma = "";
     final Map<Long, Integer> rankTop = new HashMap<>();
@@ -361,7 +358,7 @@ public final class WatchlistView {
         this.status = status; this.progreso = progreso; this.all = all;
         this.sujetosPanel = sujetosPanel;
         this.pausaMs = pausaMs; this.perPage = perPage;
-        this.listaSeguidos = new ListaSeguidos(playersFile, GRUPO_GENERAL, leerCfg, guardarCfg);
+        this.presenter = new WatchlistPresenter(this, todosJugadores, playersFile, TOP_PAIS, TOP_CLAN, PAISES, leerCfg, guardarCfg);
         this.topCache = topCache;
         construirPanel();
     }
@@ -391,32 +388,23 @@ public final class WatchlistView {
         left.setPreferredSize(new Dimension(280, 0));
     }
 
-    /** Grupos donde se puede fichar o mover a alguien: «General», los grupos con gente ahora mismo y los guardados
-     *  en config (service.ListaSeguidos.gruposDisponibles). Es el único sitio que los calcula: menú contextual,
-     *  diálogos, esGrupoDeUsuario y, vía la ventana, DialogosJugador y MenusJugadorSwing (DEUDA fila 134). */
-    public Set<String> gruposDisponibles() { return listaSeguidos.gruposDisponibles(todosJugadores); }
+    /** Grupos donde se puede fichar o mover a alguien (ver WatchlistPresenter.gruposDisponibles). */
+    public Set<String> gruposDisponibles() { return presenter.gruposDisponibles(); }
 
     public boolean enZonaForma(Point p) {
         int wL = playersList.getWidth() - 22, elo = anchoCeldaElo(wL);
         return formaVisible && p.x >= wL - elo - 72 && p.x <= wL - elo;
     }
 
-    public String vistaActualId() {
-        Object g = grupoCombo == null ? null : grupoCombo.getSelectedItem();
-        String pais = modoPais() ? paisSel() : "";
-        return g + "|" + pais;
-    }
+    public String vistaActualId() { return presenter.vistaActualId(); }
 
     /** Celda de ELO fija: siempre con sitio para «elo \u21A5altElo». */
     static int anchoCeldaElo(int wPanel) { return 86; }
 
-    public boolean modoTop() {
-        String s = String.valueOf(grupoCombo.getSelectedItem());
-        return TOP_LADDER.equals(s) || TOP_PAIS.equals(s) || TOP_CLAN.equals(s);
-    }
-    public boolean modoClan() { return TOP_CLAN.equals(String.valueOf(grupoCombo.getSelectedItem())); }
-    public boolean modoPais() { return TOP_PAIS.equals(String.valueOf(grupoCombo.getSelectedItem())); }
-    public String paisSel() { return paisActual != null ? paisActual.code() : leerConfig("top_pais", "es"); }
+    public boolean modoTop() { return presenter.modoTop(); }
+    public boolean modoClan() { return presenter.modoClan(); }
+    public boolean modoPais() { return presenter.modoPais(); }
+    public String paisSel() { return presenter.paisSel(); }
 
     /** ¿El top ladder/país/clan está vacío? Lo consulta el temporizador de vigilancia (cromo, arrancar()). */
     public boolean topLadderVacio() { return topLadder.isEmpty(); }
@@ -507,22 +495,6 @@ public final class WatchlistView {
 
     // ===== Campanas: aviso cuando alguien de una vista marcada entra en partida =========================
 
-    String idVistaCampana() {
-        if (modoClan()) return "\u2605clan|" + (clanField == null ? "" : clanField.getText().trim().toLowerCase(Locale.ROOT));
-        if (modoPais()) return "\u2605pais|" + paisSel();
-        if (modoTop()) return "\u2605ladder";
-        return "grupo|" + String.valueOf(grupoCombo.getSelectedItem());
-    }
-
-    /** El nombre de la vista actual tal como lo ve el usuario, para el texto de la campana: «★ Top país · España»,
-     *  «★ Top clan · R1», «★ Top ladder», «Todos» o el nombre del grupo. Antes se enseñaba el id interno de
-     *  idVistaCampana («★pais es», «grupo Amigos»: «grupo» en español también con la app en inglés). */
-    String nombreVistaCampana() {
-        if (modoClan()) return TOP_CLAN + " \u00B7 " + clanBuscado();
-        if (modoPais()) return TOP_PAIS + " \u00B7 " + (paisActual != null ? paisActual.nombre() : paisSel().toUpperCase(Locale.ROOT));
-        return String.valueOf(grupoCombo.getSelectedItem());
-    }
-
     public boolean campanaContiene(long pid) { return campanas.campanaContiene(pid, campanaIds); }
 
     /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, pais y clan. */
@@ -595,14 +567,11 @@ public final class WatchlistView {
 
     // ===== «★ Top clan» =================================================================================
 
-    public List<String> clanesGuardados() { List<String> l = new ArrayList<>(); for (String x : leerCfg.apply("clanes_guardados", "").split(",")) if (!x.isBlank()) l.add(x.trim()); return l; }
+    public List<String> clanesGuardados() { return presenter.clanesGuardados(); }
     /** El tag de clan escrito ahora mismo en el campo (Top clan); "" si no hay campo o está vacío. */
-    public String clanBuscado() { return clanField == null ? "" : clanField.getText().trim(); }
+    public String clanBuscado() { return presenter.clanBuscado(); }
 
-    void cargarTopClan() { trabajos.cargarTopClan(); }
-    /** La firma de la lista cargada cuando es la de un clan: nunca coincide con la de ★ Top ladder («global») ni
-     *  con la de ★ Top país (el código ISO), así que volver a esas vistas recarga (F1 de la revisión 1.3). */
-    static String firmaClan(String tag) { return "clan|" + tag.toLowerCase(Locale.ROOT); }
+    @Override public void cargarTopClan() { trabajos.cargarTopClan(); }
     public void cargarTopLadder(boolean forzar) { trabajos.cargarTopLadder(forzar); }
     public void vigilarTop() { trabajos.vigilarTop(); }
 
@@ -614,27 +583,16 @@ public final class WatchlistView {
 
     // ===== Grupos ========================================================================================
 
-    /** El grupo de usuario elegido; null = «Todos» o una vista ★ (ladder, país o clan: ninguna es un grupo donde
-     *  fichar). Antes de la 1.3 se colaba «★ Top clan»: grupoDestino() lo daba como grupo y el invitado de
-     *  «Ver sus partidas» nacía con ese grupo. */
-    public String grupoActivo() {
-        Object sel = grupoCombo.getSelectedItem();
-        if (sel == null) return null;
-        String s = String.valueOf(sel);
-        return s.equals(t("Todos", "All")) || s.equals(TOP_LADDER) || s.equals(TOP_PAIS) || s.equals(TOP_CLAN)
-                || s.equals(t("+ Nuevo grupo…", "+ New group…"))
-                || s.equals(t("Gestionar grupos…", "Manage groups…")) ? null : s;
-    }
-
-    static String limpiarGrupo(String nombre) { return nombre.trim().replace(";", " ").replace(",", " "); }
+    /** El grupo de usuario elegido; null = «Todos» o una vista ★ (ver WatchlistPresenter.grupoActivo). */
+    public String grupoActivo() { return presenter.grupoActivo(); }
 
     /** Grupos creados por el usuario (existen aunque estén vacíos). */
-    public Set<String> gruposConfig() { return listaSeguidos.gruposConfig(); }
+    public Set<String> gruposConfig() { return presenter.gruposConfig(); }
 
-    void registrarGrupo(String g) { listaSeguidos.registrarGrupo(g); rebuildGrupos(); }
+    void registrarGrupo(String g) { presenter.listaSeguidos.registrarGrupo(g); rebuildGrupos(); }
 
     public void moverJugador(Player p, String grupo) {
-        listaSeguidos.moverJugador(todosJugadores, p, grupo);
+        presenter.listaSeguidos.moverJugador(todosJugadores, p, grupo);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
@@ -643,14 +601,14 @@ public final class WatchlistView {
     }
 
     void renombrarGrupo(String viejo, String nuevo) {
-        listaSeguidos.renombrarGrupo(todosJugadores, viejo, nuevo);
+        presenter.listaSeguidos.renombrarGrupo(todosJugadores, viejo, nuevo);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
     }
 
     void borrarGrupo(String g) {
-        listaSeguidos.borrarGrupo(todosJugadores, g);
+        presenter.listaSeguidos.borrarGrupo(todosJugadores, g);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
@@ -658,14 +616,11 @@ public final class WatchlistView {
 
     void gestionarGrupos() { dialogosLista.gestionarGrupos(); }
 
-    public String grupoDestino() {
-        String g = grupoActivo();
-        return g != null ? g : GRUPO_GENERAL;
-    }
+    public String grupoDestino() { return presenter.grupoDestino(); }
 
     /** Ficha a uno desde un top y, como el buscador, ofrece sus cuentas vinculadas. */
     public void ficharDesdeTop(Player p, String g) {
-        if (!listaSeguidos.ficharDesdeTop(todosJugadores, p, g)) return;
+        if (!presenter.listaSeguidos.ficharDesdeTop(todosJugadores, p, g)) return;
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
@@ -681,10 +636,10 @@ public final class WatchlistView {
      * SpoilerFreeRecs) para no traducir la campana de un grupo que el usuario llamó, por ejemplo, "All": esa
      * campana es la de ESE grupo, no la del pseudogrupo "todos los jugadores".
      */
-    public boolean esGrupoDeUsuario(String nombre) { return gruposDisponibles().contains(nombre); }
+    public boolean esGrupoDeUsuario(String nombre) { return presenter.esGrupoDeUsuario(nombre); }
 
     void moverVarios(List<Player> lista, String g) {
-        int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
+        int n = presenter.listaSeguidos.moverVarios(todosJugadores, lista, g);
         savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
         status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + t("\u00bb.", "\u201D."));
     }
@@ -692,91 +647,28 @@ public final class WatchlistView {
     public String elegirGrupoDialog(String nombreJugador) { return dialogosLista.elegirGrupoDialog(nombreJugador); }
 
     /** Rellena el combo con «Todos», los grupos existentes y «+ Nuevo grupo…»,
-     *  conservando la selección guardada. */
+     *  conservando la selección guardada (qué item es: WatchlistPresenter.indiceGuardado). */
     public void rebuildGrupos() {
         var listener = grupoCombo.getActionListeners();
         for (var l : listener) grupoCombo.removeActionListener(l);
-        String guardado = leerCfg.apply("grupo_activo", t("Todos", "All"));
-        Set<String> grupos = listaSeguidos.calcularGrupos(todosJugadores);   // un grupo ya nunca se esfuma al vaciarse
+        String guardado = presenter.grupoGuardado();
+        Set<String> grupos = presenter.calcularGrupos();   // un grupo ya nunca se esfuma al vaciarse
         grupoCombo.removeAllItems();
-        grupoCombo.addItem(t("Todos", "All"));
-        grupoCombo.addItem(TOP_LADDER);
-        grupoCombo.addItem(TOP_PAIS);
-        grupoCombo.addItem(TOP_CLAN);
+        for (String fijo : presenter.itemsFijos()) grupoCombo.addItem(fijo);
         for (String g : grupos) grupoCombo.addItem(g);
         grupoCombo.setSelectedItem(t("Todos", "All"));
-        // Dos pasadas, EN ESTE ORDEN: 1) coincidencia exacta, como hacía la 1.1 (equalsIgnoreCase a secas). 2)
-        // solo si no hubo, la equivalencia bilingüe (coincideGrupoGuardado). Si se hiciera al revés, un grupo
-        // de usuario que se llame igual que un texto bilingüe del combo (p.ej. un grupo llamado "All") nunca
-        // se podría seleccionar: siempre ganaría la traducción a "Todos" antes de llegar a él en la lista.
-        int idx = -1;
-        for (int i = 0; i < grupoCombo.getItemCount(); i++)
-            if (grupoCombo.getItemAt(i).equalsIgnoreCase(guardado)) { idx = i; break; }
-        if (idx < 0)
-            for (int i = 0; i < grupoCombo.getItemCount(); i++)
-                if (coincideGrupoGuardado(grupoCombo.getItemAt(i), guardado)) { idx = i; break; }
+        int idx = presenter.indiceGuardado(itemsCombo(), guardado);
         if (idx >= 0) grupoCombo.setSelectedIndex(idx);
         for (var l : listener) grupoCombo.addActionListener(l);
     }
 
-    /**
-     * ¿Es "itemActual" (un item del combo, en el idioma activo ahora mismo) la variante bilingüe de "guardado"
-     * (el valor de config grupo_activo, escrito quizá en una sesión con otro idioma)? Solo se llama cuando
-     * rebuildGrupos() ya comprobó que NO hay ninguna coincidencia EXACTA con ningún item (ver el comentario de
-     * la llamada): así, un grupo de usuario con ese mismo nombre por casualidad siempre gana a la traducción,
-     * que es solo una red de seguridad. Los grupos del usuario son texto libre, no bilingüe: aquí solo se
-     * traducen "Todos"/"All", TOP_PAIS y TOP_CLAN, los tres textos fijos del combo que sí cambian con el
-     * idioma. Sin esto, cambiar el idioma de la app "perdía" el grupo activo guardado (bug resuelto en fase 4,
-     * ver docs/DEUDA.md).
-     */
-    private boolean coincideGrupoGuardado(String itemActual, String guardado) {
-        if (itemActual.equals(t("Todos", "All"))) return guardado.equalsIgnoreCase("Todos") || guardado.equalsIgnoreCase("All");
-        if (itemActual.equals(TOP_PAIS)) return guardado.equalsIgnoreCase("\u2605 Top pa\u00eds") || guardado.equalsIgnoreCase("\u2605 Country top");
-        if (itemActual.equals(TOP_CLAN)) return guardado.equalsIgnoreCase("\u2605 Top clan") || guardado.equalsIgnoreCase("\u2605 Clan top");
-        return false;
-    }
-
-    void onGrupoElegido() {
-        String sel = String.valueOf(grupoCombo.getSelectedItem());
-        if (sel.equals(TOP_CLAN)) {
-            guardarCfg.accept("grupo_activo", sel);
-            actualizarBotonesModo();
-            if (clanField != null && clanField.getText().isBlank()) clanField.setText(leerConfig("clan_tag", ""));
-            cargarTopClan();
-            return;
-        }
-        if (sel.equals(TOP_LADDER) || sel.equals(TOP_PAIS)) {
-            guardarCfg.accept("grupo_activo", sel);
-            actualizarBotonesModo();
-            cargarTopLadder(false);
-            return;
-        }
-        guardarCfg.accept("grupo_activo", sel);
-        actualizarBotonesModo();
-        aplicarFiltroGrupo();
-        refrescarWatchlist();
-        actualizarIndicadoresVivos();
-    }
+    /** El listener del combo de vistas (el que rebuildGrupos quita y vuelve a poner): lo decide el presentador. */
+    void onGrupoElegido() { presenter.grupoElegido(); }
 
     // ===== «Abrir en» (Configuración): la vista con la que abre la app =================================
 
-    /** Los grupos de usuario del combo (lo que hay detrás de «Todos» y las tres vistas ★), en su orden. */
-    public List<String> gruposDelCombo() {
-        List<String> gs = new ArrayList<>();
-        for (int i = 0; i < grupoCombo.getItemCount(); i++) {
-            String s = grupoCombo.getItemAt(i);
-            if (!s.equals(t("Todos", "All")) && !s.equals(TOP_LADDER) && !s.equals(TOP_PAIS) && !s.equals(TOP_CLAN)) gs.add(s);
-        }
-        return gs;
-    }
-
-    /** La elección de «Abrir en» guardada, ya comprobada contra lo que existe hoy (service.VistaInicial): si el país,
-     *  el clan (entre los guardados) o el grupo ya no existen, ★ Top ladder. No toca nada. */
-    public VistaInicial.Eleccion eleccionInicial() {
-        List<String> codigos = new ArrayList<>();
-        for (PaisItem pi : PAISES) codigos.add(pi.code());
-        return VistaInicial.resolver(VistaInicial.leer(leerCfg.apply(VistaInicial.CLAVE, "top")), codigos, clanesGuardados(), gruposDelCombo());
-    }
+    public List<String> gruposDelCombo() { return presenter.gruposDelCombo(); }
+    public VistaInicial.Eleccion eleccionInicial() { return presenter.eleccionInicial(); }
 
     /** Al arrancar: abre la Watchlist en la vista de «Abrir en» (por defecto ★ Top ladder, como siempre). Elige el
      *  item del combo CON sus listeners: onGrupoElegido carga el top, el país o el clan, o barre el grupo, y guarda
@@ -786,10 +678,10 @@ public final class WatchlistView {
         VistaInicial.Eleccion e = eleccionInicial();
         switch (e.tipo()) {
             case PAIS -> {
-                for (PaisItem pi : PAISES) if (pi.code().equals(e.valor())) paisActual = pi;
+                for (PaisItem pi : PAISES) if (pi.code().equals(e.valor())) presenter.paisActual = pi;
                 if (paisCombo != null) {   // que el selector enseñe ese país, sin volver a cargar (rearmandoPais)
                     rearmandoPais = true;
-                    try { paisCombo.setSelectedItem(paisActual); } finally { rearmandoPais = false; }
+                    try { paisCombo.setSelectedItem(presenter.paisActual); } finally { rearmandoPais = false; }
                 }
                 grupoCombo.setSelectedItem(TOP_PAIS);
             }
@@ -804,11 +696,23 @@ public final class WatchlistView {
         return e;
     }
 
+    // ===== WatchlistPresenter.Pantalla ===================================================================
+
+    @Override public String grupoSeleccionado() { Object g = grupoCombo.getSelectedItem(); return g == null ? null : String.valueOf(g); }
+    @Override public List<String> itemsCombo() {
+        List<String> items = new ArrayList<>();
+        for (int i = 0; i < grupoCombo.getItemCount(); i++) items.add(grupoCombo.getItemAt(i));
+        return items;
+    }
+    @Override public String clanEscrito() { return clanField == null ? null : clanField.getText(); }
+    @Override public void rellenarClanSiVacio() { if (clanField != null && clanField.getText().isBlank()) clanField.setText(leerConfig("clan_tag", "")); }
+    @Override public void refrescarFiltro() { aplicarFiltroGrupo(); }
+    @Override public void indicadoresVivos() { actualizarIndicadoresVivos(); }
+    @Override public void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
+
     void crearGrupoDialog() { dialogosLista.crearGrupoDialog(); }
 
     void refrescarCabeceraOrden() { listaVista.refrescarCabeceraOrden(); }
-
-    private void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
 
     /** Reconstruye la lista visible con el grupo activo («Todos» = todos). */
     public void aplicarFiltroGrupo() {
@@ -863,15 +767,15 @@ public final class WatchlistView {
     // ===== Ficha / grupos: infraestructura de vigilancia y refresco =====================================
 
     void quitarDeWatchlist(long id) {
-        listaSeguidos.quitar(todosJugadores, id);
+        presenter.listaSeguidos.quitar(todosJugadores, id);
         savePlayers();
         aplicarFiltroGrupo();
         status.setText(t("Quitado de tu watchlist.", "Removed from your watchlist."));
     }
 
-    public String grupoDeJugador(long id) { return listaSeguidos.grupoDeJugador(todosJugadores, id); }
+    public String grupoDeJugador(long id) { return presenter.grupoDeJugador(id); }
 
-    public boolean containsPlayerId(long id) { return listaSeguidos.contiene(todosJugadores, id); }
+    public boolean containsPlayerId(long id) { return presenter.containsPlayerId(id); }
 
     /** Suma a la lista todas las cuentas vinculadas de cada jugador — salvo
      *  las hijas seleccionadas explícitamente, que van solas (control fino). */
@@ -987,14 +891,14 @@ public final class WatchlistView {
     // OJO (deuda ya existente en la 1.1, no se cambia aquí): esta E/S de disco es síncrona y loadPlayers/savePlayers
     // se llaman directamente desde el EDT (arranque, botones, menús): el disco se toca en el EDT.
     public void loadPlayers() {
-        String error = listaSeguidos.cargar(todosJugadores);
+        String error = presenter.listaSeguidos.cargar(todosJugadores);
         if (error != null) status.setText(error);
         rebuildGrupos();       // SIEMPRE: sin esto, el combo quedaba vacío en instalaciones nuevas
         aplicarFiltroGrupo();
     }
 
     public void savePlayers() {
-        String error = listaSeguidos.guardar(todosJugadores);
+        String error = presenter.listaSeguidos.guardar(todosJugadores);
         if (error != null) status.setText(error);
     }
 

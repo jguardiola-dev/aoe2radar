@@ -549,6 +549,40 @@ class WatchlistViewTest {
         assertEquals("Amigos|", watchlist.vistaActualId());
     }
 
+    /** Caracterización (antes de pasar el modo de vista a WatchlistPresenter): el id interno de la campana de cada
+     *  vista, el país elegido y el clan escrito (recortado y en minúsculas). */
+    @Test void idVistaCampana_yPaisSel_porVista() {
+        watchlist.rebuildGrupos();
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(t("Todos", "All")), watchlist.grupoCombo);
+        assertEquals("grupo|Todos", watchlist.presenter.idVistaCampana());
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+        assertEquals("★ladder", watchlist.presenter.idVistaCampana());
+        watchlist.presenter.paisActual = new PaisItem("Francia", "fr");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top país"), watchlist.grupoCombo);
+        assertEquals("★pais|fr", watchlist.presenter.idVistaCampana());
+        assertEquals("fr", watchlist.paisSel());
+        assertEquals("★ Top país|fr", watchlist.vistaActualId());
+        watchlist.clanField.setText("  R1 ");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
+        assertEquals("★clan|r1", watchlist.presenter.idVistaCampana());
+        assertEquals("R1", watchlist.clanBuscado());
+        assertEquals("★ Top clan · R1", watchlist.presenter.nombreVistaCampana());
+    }
+
+    /** Caracterización: elegir un grupo de usuario guarda grupo_activo y filtra la lista a ese grupo; los grupos del
+     *  combo son los de usuario, sin «Todos» ni las tres vistas ★. */
+    @Test void onGrupoElegido_grupoDeUsuarioGuardaYFiltra() {
+        todosJugadores.add(new Player(1L, "Uno", "Amigos"));
+        todosJugadores.add(new Player(2L, "Dos", "Pros"));
+        watchlist.rebuildGrupos();
+        assertEquals(List.of("Amigos", "Pros"), watchlist.gruposDelCombo());
+        watchlist.watchBarridos.add(2L);   // ya barrido: refrescarWatchlist no lanza nada (el test no tiene red)
+        watchlist.grupoCombo.setSelectedItem("Pros");   // con listeners: onGrupoElegido
+        assertEquals("Pros", cfg.get("grupo_activo"));
+        assertEquals(1, playersModel.size());
+        assertEquals(2L, playersModel.get(0).id());
+    }
+
     @Test void containsPlayerId_reflejaTodosJugadores() {
         assertFalse(watchlist.containsPlayerId(7L));
         todosJugadores.add(new Player(7L, "Nick", WatchlistView.GRUPO_GENERAL));
@@ -814,10 +848,10 @@ class WatchlistViewTest {
         w.grupoCombo.addItem("Amigos");
         w.grupoCombo.addItem("★ Country top");
         sinListeners(() -> w.grupoCombo.setSelectedItem("Amigos"), w.grupoCombo);
-        assertEquals("Amigos", w.nombreVistaCampana(), "ni «grupo» ni «|»: el nombre del grupo, tal cual");
-        w.paisActual = new PaisItem("Spain", "es");
+        assertEquals("Amigos", w.presenter.nombreVistaCampana(), "ni «grupo» ni «|»: el nombre del grupo, tal cual");
+        w.presenter.paisActual = new PaisItem("Spain", "es");
         sinListeners(() -> w.grupoCombo.setSelectedItem("★ Country top"), w.grupoCombo);
-        assertEquals("★ Country top · Spain", w.nombreVistaCampana());
+        assertEquals("★ Country top · Spain", w.presenter.nombreVistaCampana());
     }
 
     /** Revisión 1.3 (dudoso confirmado): con «Usar CaptureAge», espectar ya lanza CA; el menú no debe lanzarlo otra vez. */

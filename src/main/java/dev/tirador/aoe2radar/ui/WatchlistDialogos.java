@@ -77,14 +77,14 @@ final class WatchlistDialogos {
         nuevo.addActionListener(a -> {
             String n = JOptionPane.showInputDialog(wv.ventana, t("Nombre del grupo nuevo:", "New group name:"),
                     t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { wv.registrarGrupo(WatchlistView.limpiarGrupo(n)); recargar.run(); }
+            if (n != null && !n.isBlank()) { wv.registrarGrupo(WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
         });
         renombrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
             if (sel == null || sel.equalsIgnoreCase(WatchlistView.GRUPO_GENERAL)) return;
             String n = JOptionPane.showInputDialog(wv.ventana, t("Nuevo nombre para «", "New name for “") + sel + t("»:", "”:"),
                     t("Renombrar grupo", "Rename group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { wv.renombrarGrupo(sel, WatchlistView.limpiarGrupo(n)); recargar.run(); }
+            if (n != null && !n.isBlank()) { wv.renombrarGrupo(sel, WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
         });
         borrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
@@ -122,7 +122,7 @@ final class WatchlistDialogos {
      * estado siguen yendo por publish/process, como antes.
      */
     public void ficharVarios(List<Player> lista, String g) {
-        List<Player> nuevos = wv.listaSeguidos.ficharVarios(wv.todosJugadores, lista, g);
+        List<Player> nuevos = wv.presenter.listaSeguidos.ficharVarios(wv.todosJugadores, lista, g);
         wv.savePlayers();
         wv.rebuildGrupos();
         wv.aplicarFiltroGrupo();
@@ -150,7 +150,7 @@ final class WatchlistDialogos {
                                 Set<Long> familia = new HashSet<>(); familia.add(p.id());
                                 for (Perfil.Vinculada v : vinc) {
                                     long vid = v.pid();
-                                    if (wv.listaSeguidos.ficharSiNuevo(wv.todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
+                                    if (wv.presenter.listaSeguidos.ficharSiNuevo(wv.todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
                                     familia.add(vid);
                                 }
                                 if (familia.size() > 1) wv.marcarVinculo(familia);
@@ -192,7 +192,7 @@ final class WatchlistDialogos {
             if (nombre == null || nombre.trim().isEmpty()) return null;
             // fila 102 de DEUDA: mismo camino que el resto de altas de grupo (limpiarGrupo + registrarGrupo, que
             // llama a listaSeguidos.registrarGrupo y escribe con ","), en vez de repetir aquí esa lógica a mano.
-            String limpio = WatchlistView.limpiarGrupo(nombre);
+            String limpio = WatchlistPresenter.limpiarGrupo(nombre);
             wv.registrarGrupo(limpio);
             return limpio;
         }
@@ -204,7 +204,7 @@ final class WatchlistDialogos {
                 t("Nombre del grupo nuevo:", "New group name:"),
                 t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
         if (nombre == null || nombre.isBlank()) return;
-        String limpio = WatchlistView.limpiarGrupo(nombre);
+        String limpio = WatchlistPresenter.limpiarGrupo(nombre);
         wv.guardarCfg.accept("grupo_activo", limpio);
         wv.registrarGrupo(limpio);
         wv.grupoCombo.setSelectedItem(limpio);

@@ -134,7 +134,7 @@ final class WatchlistTrabajos {
     void aplicarTopClan(String tag, TopLadderService.ResultadoClan res) {
         if (res.error() != null) { wv.status.setText(t("No se pudo cargar la lista de clanes: ", "Couldn't load the clan list: ") + res.error()); return; }
         if (!wv.modoClan()) return;   // el usuario cambió de vista mientras cargaba: no pintar encima
-        wv.topFirma = WatchlistView.firmaClan(tag);
+        wv.topFirma = WatchlistPresenter.firmaClan(tag);
         wv.topLadder.clear();
         wv.ultimoTopMs = 0; wv.anfitrion.reiniciarThrottleDirectos();   // conjunto nuevo: su barrido y su cruce Twitch, en el acto
         wv.lastTop.clear(); wv.rankTop.clear();

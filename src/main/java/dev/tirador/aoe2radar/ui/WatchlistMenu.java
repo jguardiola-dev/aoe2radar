@@ -116,7 +116,7 @@ final class WatchlistMenu {
             JMenuItem nuevoG = new JMenuItem(t("Nuevo grupo…", "New group…"));
             nuevoG.addActionListener(a -> {
                 String nombreG = JOptionPane.showInputDialog(wv.ventana, t("Nombre del grupo nuevo:", "New group name:"), t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-                if (nombreG != null && !nombreG.isBlank()) { String limpio = WatchlistView.limpiarGrupo(nombreG); wv.registrarGrupo(limpio); wv.moverJugador(p, limpio); }
+                if (nombreG != null && !nombreG.isBlank()) { String limpio = WatchlistPresenter.limpiarGrupo(nombreG); wv.registrarGrupo(limpio); wv.moverJugador(p, limpio); }
             });
             if (mover.getItemCount() > 0) mover.addSeparator();
             mover.add(nuevoG);
