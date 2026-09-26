@@ -56,10 +56,12 @@ public final class ImportacionDatos {
         return datosNuevos && !Boolean.parseBoolean(ofrecida);
     }
 
-    /** ¿Hay que pedir confirmación antes de importar? Si ya hay datos del usuario que se sustituirían: players.txt o
-     *  config.properties en la carpeta, o la carpeta ya tenía datos al arrancar. */
+    /** ¿Hay que pedir confirmación antes de importar? Si la carpeta ya tenía datos al arrancar, o si existe
+     *  players.txt ahora (jugadores añadidos en esta sesión). El config.properties que la app escribe en su primera
+     *  sesión son ajustes por defecto (y la copia .antes_de_importar los guarda): no basta para preguntar, así la
+     *  oferta del primer arranque no pide confirmación dos veces. */
     public static boolean pideConfirmacion(boolean datosNuevos, Path datos) {
-        return !datosNuevos || Files.exists(datos.resolve("players.txt")) || Files.exists(datos.resolve("config.properties"));
+        return !datosNuevos || Files.exists(datos.resolve("players.txt"));
     }
 
     /** ¿Vale origen? Tiene config.properties o players.txt y no es la propia carpeta de datos (ni está dentro de
