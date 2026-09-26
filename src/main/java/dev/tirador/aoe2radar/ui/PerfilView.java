@@ -288,7 +288,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     /** La parte de vista de abrir un perfil (pid 0 = página vacía con el buscador); el cromo (botones, CardLayout…) ya lo hizo la ventana. */
     public void alAbrir(long pid, String nombre) {
-        if (pid <= 0) { actTitulo.setText(t("Perfil", "Profile")); actEstado.setText(""); actProgreso.setVisible(false); actMostrarCuerpo(false); perfilBusca.requestFocusInWindow(); refrescarTiraPerfil(); return; }
+        if (pid <= 0) { aperturaGeneracion++; /* la página vacía también invalida una lectura de fondo pendiente (fila 28) */ actTitulo.setText(t("Perfil", "Profile")); actEstado.setText(""); actProgreso.setVisible(false); actMostrarCuerpo(false); perfilBusca.requestFocusInWindow(); refrescarTiraPerfil(); return; }
         perfilContabilizarPestana(pid, nombre);
         anfitrion.registrarDestino(pid, nombre);
         if (actCargando && pid == actPid) return;
