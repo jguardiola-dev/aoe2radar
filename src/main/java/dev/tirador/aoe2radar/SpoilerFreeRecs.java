@@ -94,7 +94,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final List<Player> todosJugadores = new ArrayList<>();          // fuente de verdad (todos los grupos)
     final DefaultListModel<Player> playersModel = new DefaultListModel<>();
     final JList<Player> playersList = CableadoWatchlist.playersList(this);
-    final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
+    // ELO actual por seguido: se lee también fuera del EDT (formaService.porResta desde el doInBackground de
+    // WatchlistView.cargarForma, y Campanas), de ahí el mapa concurrente (fila 96 de DEUDA).
+    final Map<Long, Integer> eloWatch  = new java.util.concurrent.ConcurrentHashMap<>();
     javax.swing.Timer vigilante;      // barrido periódico del «en directo» (nunca del ELO)
     final JSpinner hoursSpinner = new JSpinner(new SpinnerNumberModel(
             Math.min(24, Integer.parseInt(leerConfig("ventana_n", leerConfig("horas", "24")))), 1, 24, 1));
