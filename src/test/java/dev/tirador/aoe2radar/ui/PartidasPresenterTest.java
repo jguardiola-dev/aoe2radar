@@ -133,6 +133,10 @@ class PartidasPresenterTest {
         @Override public Player jugador(int indice) { return jugadores.get(indice); }
         @Override public List<Player> todosJugadores() { pedidasTodos++; return jugadores; }
         @Override public Player invitado() { return invitado; }
+        Player forzado;
+        boolean soloVivos;
+        @Override public Player objetivoForzado() { return forzado; }
+        @Override public boolean soloVivosMarcado() { return soloVivos; }
     }
 
     static MatchPlayer mp(long id, String nombre, int equipo, Integer rating) {
@@ -455,5 +459,83 @@ class PartidasPresenterTest {
         PartidasPresenter.Separadas s = PartidasPresenter.separarVivas(List.of(a, b, c));
         assertEquals(List.of(a, c), s.terminadas());
         assertEquals(List.of(b), s.vivas());
+    }
+
+    // ----- a quién pide las partidas fetchMatches -----
+
+    static Player jugador(long id) { return new Player(id, "j" + id, "G"); }
+
+    @Test void buscaAlDelPerfil_yNadieABuscar() {
+        WatchlistFalsa w = new WatchlistFalsa();
+        EntornoFalso e = new EntornoFalso();
+        e.pid = 5; e.abierto = true;
+        assertTrue(PartidasPresenter.buscaAlDelPerfil(w, e));
+        e.abierto = false;
+        assertFalse(PartidasPresenter.buscaAlDelPerfil(w, e), "perfil cerrado");
+        e.abierto = true; e.pid = 0;
+        assertFalse(PartidasPresenter.buscaAlDelPerfil(w, e), "sin pid");
+        e.pid = 5; w.seleccion.add(jugador(1));
+        assertFalse(PartidasPresenter.buscaAlDelPerfil(w, e), "con selección");
+        w.seleccion.clear(); w.invitado = jugador(2);
+        assertFalse(PartidasPresenter.buscaAlDelPerfil(w, e), "con invitado");
+        w.invitado = null; w.forzado = jugador(3);
+        assertFalse(PartidasPresenter.buscaAlDelPerfil(w, e), "con forzado");
+
+        WatchlistFalsa vacia = new WatchlistFalsa();
+        assertTrue(PartidasPresenter.nadieABuscar(vacia));
+        vacia.invitado = jugador(1);
+        assertFalse(PartidasPresenter.nadieABuscar(vacia));
+        vacia.invitado = null; vacia.forzado = jugador(1);
+        assertFalse(PartidasPresenter.nadieABuscar(vacia));
+        vacia.forzado = null; vacia.jugadores.add(jugador(1));
+        assertFalse(PartidasPresenter.nadieABuscar(vacia));
+    }
+
+    @Test void elegirBuscados_ordenDePrioridad() {
+        WatchlistFalsa w = new WatchlistFalsa();
+        w.jugadores.addAll(List.of(jugador(1), jugador(2)));
+        assertEquals(new PartidasPresenter.Eleccion(List.of(jugador(1), jugador(2)), false, false, false), PartidasPresenter.elegirBuscados(w, null));
+        w.seleccion.add(jugador(2));
+        assertEquals(List.of(jugador(2)), PartidasPresenter.elegirBuscados(w, jugador(9)).buscados(), "con selección, el del botón no cuenta");
+        w.seleccion.clear();
+        assertEquals(List.of(jugador(9)), PartidasPresenter.elegirBuscados(w, jugador(9)).buscados(), "sin selección, el del botón");
+        w.invitado = jugador(8);
+        assertEquals(List.of(jugador(8)), PartidasPresenter.elegirBuscados(w, jugador(9)).buscados(), "el invitado antes");
+        w.forzado = jugador(7);
+        assertEquals(new PartidasPresenter.Eleccion(List.of(jugador(7)), true, false, false), PartidasPresenter.elegirBuscados(w, jugador(9)),
+                "el forzado antes que nadie, y hay que limpiarlo");
+    }
+
+    @Test void elegirBuscados_enTop() {
+        WatchlistFalsa w = new WatchlistFalsa();
+        w.modoTop = true;
+        for (int i = 1; i <= 16; i++) w.jugadores.add(jugador(i));
+        assertEquals(new PartidasPresenter.Eleccion(List.of(), false, false, true), PartidasPresenter.elegirBuscados(w, null),
+                "en ★ sin selección ni «● Jugando»: hay que pedir que seleccione");
+        w.soloVivos = true;
+        assertEquals(16, PartidasPresenter.elegirBuscados(w, null).buscados().size(), "con «● Jugando»: toda la lista, sin tope");
+        w.seleccion.addAll(w.jugadores);
+        PartidasPresenter.Eleccion e = PartidasPresenter.elegirBuscados(w, null);
+        assertTrue(e.recortadaA15());
+        assertEquals(w.jugadores.subList(0, 15), e.buscados());
+        w.seleccion.remove(15);
+        e = PartidasPresenter.elegirBuscados(w, null);
+        assertFalse(e.recortadaA15(), "15 justos: sin aviso");
+        assertEquals(15, e.buscados().size());
+    }
+
+    @Test void alternarFiltroSujeto_clicYCtrlClic() {
+        Set<Long> f = new java.util.HashSet<>();
+        PartidasPresenter.alternarFiltroSujeto(f, 1, false);
+        assertEquals(Set.of(1L), f);
+        PartidasPresenter.alternarFiltroSujeto(f, 2, true);
+        assertEquals(Set.of(1L, 2L), f, "Ctrl suma");
+        PartidasPresenter.alternarFiltroSujeto(f, 1, true);
+        assertEquals(Set.of(2L), f, "Ctrl quita al marcado");
+        PartidasPresenter.alternarFiltroSujeto(f, 2, false);
+        assertEquals(Set.of(), f, "clic en el único marcado: sin filtro");
+        f.addAll(Set.of(1L, 2L));
+        PartidasPresenter.alternarFiltroSujeto(f, 2, false);
+        assertEquals(Set.of(2L), f, "clic con varios marcados: solo ese");
     }
 }

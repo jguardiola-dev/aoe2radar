@@ -219,45 +219,29 @@ final class BusquedasPartidas {
      *  en marcha, la cancela y lanza esta (revisión 1.3, watchlist F8: un doble clic en otro jugador, «Ver sus
      *  partidas» o «Buscar partidas de…» durante una búsqueda antes la cancelaban sin buscar al nuevo). */
     public void fetchMatches(JButton btn) {
-        if (vista.enlaceWatchlist.objetivoForzado() == null && vista.enlaceWatchlist.invitado() == null && vista.anfitrion.perfilAbierto() && vista.anfitrion.perfilAbiertoPid() > 0 && vista.enlaceWatchlist.seleccionSize() == 0) {
+        if (PartidasPresenter.buscaAlDelPerfil(vista.enlaceWatchlist, vista.anfitrion)) {
             vista.enlaceWatchlist.fijarObjetivoForzado(new Player(vista.anfitrion.perfilAbiertoPid(), vista.anfitrion.perfilNombreAbierto(), vista.enlaceWatchlist.grupoDestino()));
             vista.anfitrion.mostrarDirectos(false);
         }
-        if (vista.enlaceWatchlist.totalJugadores() == 0 && vista.enlaceWatchlist.invitado() == null && vista.enlaceWatchlist.objetivoForzado() == null) {
+        if (PartidasPresenter.nadieABuscar(vista.enlaceWatchlist)) {
             JOptionPane.showMessageDialog(vista.ventana, t("Añade antes algún jugador a la lista.",
                     "Add a player to the list first."));
             return;
         }
-        List<Player> sel = new ArrayList<>();
-        if (vista.enlaceWatchlist.objetivoForzado() != null) {
-            sel.add(vista.enlaceWatchlist.objetivoForzado());
-            vista.enlaceWatchlist.limpiarObjetivoForzado();
-        } else if (vista.enlaceWatchlist.invitado() != null) {
-            sel.add(vista.enlaceWatchlist.invitado());
-        } else if (vista.objetivoEtiqueta != null && vista.enlaceWatchlist.seleccionSize() == 0) {
-            sel.add(vista.objetivoEtiqueta);
-        } else if (vista.enlaceWatchlist.modoTop()) {
-            List<Player> selTop = vista.enlaceWatchlist.seleccion();
-            if (selTop.size() > 15) {
-                selTop = selTop.subList(0, 15);
-                vista.anfitrion.estado(t("En ★ el máximo son 15 perfiles por tanda: busco los 15 primeros seleccionados.",
-                        "In ★ the cap is 15 profiles per run: searching the first 15 selected."));
-            }
-            if (!selTop.isEmpty()) sel.addAll(selTop);
-            else if (vista.enlaceWatchlist.soloVivosMarcado())
-                for (int i = 0; i < vista.enlaceWatchlist.totalJugadores(); i++) sel.add(vista.enlaceWatchlist.jugador(i));
-            else {
-                JOptionPane.showMessageDialog(vista.ventana,
-                        t("En ★ (Top ladder o Top país), selecciona jugadores concretos (clic o Ctrl+clic en la lista)\no activa el chip «● Jugando» antes de buscar.",
-                          "In ★ (Top ladder or Country top), select specific players (click or Ctrl+click the list)\nor turn on the “● Playing” chip before searching."),
-                        t("Buscar en el top", "Search the top"), JOptionPane.INFORMATION_MESSAGE);
-                return;
-            }
-        } else {
-            List<Player> selNorm = vista.enlaceWatchlist.seleccion();
-            if (!selNorm.isEmpty()) sel.addAll(selNorm);
-            else for (int i = 0; i < vista.enlaceWatchlist.totalJugadores(); i++) sel.add(vista.enlaceWatchlist.jugador(i));
+        // A quién se busca lo decide PartidasPresenter.elegirBuscados; aquí quedan sus efectos, en el mismo orden.
+        PartidasPresenter.Eleccion eleccion = PartidasPresenter.elegirBuscados(vista.enlaceWatchlist, vista.objetivoEtiqueta);
+        if (eleccion.deForzado()) vista.enlaceWatchlist.limpiarObjetivoForzado();
+        if (eleccion.recortadaA15())
+            vista.anfitrion.estado(t("En ★ el máximo son 15 perfiles por tanda: busco los 15 primeros seleccionados.",
+                    "In ★ the cap is 15 profiles per run: searching the first 15 selected."));
+        if (eleccion.faltaSeleccionTop()) {
+            JOptionPane.showMessageDialog(vista.ventana,
+                    t("En ★ (Top ladder o Top país), selecciona jugadores concretos (clic o Ctrl+clic en la lista)\no activa el chip «● Jugando» antes de buscar.",
+                      "In ★ (Top ladder or Country top), select specific players (click or Ctrl+click the list)\nor turn on the “● Playing” chip before searching."),
+                    t("Buscar en el top", "Search the top"), JOptionPane.INFORMATION_MESSAGE);
+            return;
         }
+        List<Player> sel = eleccion.buscados();
         final List<Player> tracked = (vista.enlaceWatchlist.invitado() == null && !vista.enlaceWatchlist.modoTop()) ? vista.enlaceWatchlist.conFamilias(sel) : sel;
         SwingWorker<?, ?> anterior = vista.fetchWorker;
         if (anterior != null) {   // la nueva sustituye a la que estaba en marcha (su done() ya no toca nada: ver abajo)

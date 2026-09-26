@@ -53,6 +53,8 @@ public final class PartidasPresenter {
         Player jugador(int indice);
         List<Player> todosJugadores();
         Player invitado();
+        Player objetivoForzado();
+        boolean soloVivosMarcado();
     }
 
     /** Lo que las decisiones de Partidas leen del resto de la ventana. {@link PartidasView.Anfitrion} lo amplía (mismos
@@ -389,6 +391,64 @@ public final class PartidasPresenter {
         List<Match> vivas = new ArrayList<>();
         for (Match m : pedidas) (m.finished == null ? vivas : terminadas).add(m);
         return new Separadas(terminadas, vivas);
+    }
+
+    // ======================================================================
+    // A quién pide las partidas fetchMatches, y el filtro de la cabecera
+    // ======================================================================
+
+    /** «Buscar partidas» con el perfil abierto, sin selección ni nadie ya elegido: se busca al del perfil (la vista
+     *  lo fija como objetivo forzado antes de elegir). */
+    public static boolean buscaAlDelPerfil(Watchlist watchlist, Entorno entorno) {
+        return watchlist.objetivoForzado() == null && watchlist.invitado() == null && entorno.perfilAbierto() && entorno.perfilAbiertoPid() > 0 && watchlist.seleccionSize() == 0;
+    }
+
+    /** No hay a quién buscar: lista vacía, sin invitado ni objetivo forzado. */
+    public static boolean nadieABuscar(Watchlist watchlist) {
+        return watchlist.totalJugadores() == 0 && watchlist.invitado() == null && watchlist.objetivoForzado() == null;
+    }
+
+    /** A quién se piden las partidas y qué debe hacer la vista con lo elegido: limpiar el objetivo forzado si se usó,
+     *  avisar si en ★ se recortó a 15, o pedir una selección en ★ (entonces {@code buscados} va vacía y no se busca). */
+    public record Eleccion(List<Player> buscados, boolean deForzado, boolean recortadaA15, boolean faltaSeleccionTop) { }
+
+    /** El orden de siempre: el objetivo forzado (perfil, «Ver sus partidas»…); el invitado; el jugador que nombra el
+     *  botón si no hay selección; en ★, los seleccionados (15 como mucho) o, con «● Jugando», toda la lista; y fuera
+     *  de ★, la selección o toda la lista. */
+    public static Eleccion elegirBuscados(Watchlist watchlist, Player objetivoEtiqueta) {
+        List<Player> sel = new ArrayList<>();
+        boolean deForzado = false, recortada = false;
+        if (watchlist.objetivoForzado() != null) {
+            sel.add(watchlist.objetivoForzado());
+            deForzado = true;
+        } else if (watchlist.invitado() != null) {
+            sel.add(watchlist.invitado());
+        } else if (objetivoEtiqueta != null && watchlist.seleccionSize() == 0) {
+            sel.add(objetivoEtiqueta);
+        } else if (watchlist.modoTop()) {
+            List<Player> selTop = watchlist.seleccion();
+            if (selTop.size() > 15) {
+                selTop = selTop.subList(0, 15);
+                recortada = true;
+            }
+            if (!selTop.isEmpty()) sel.addAll(selTop);
+            else if (watchlist.soloVivosMarcado())
+                for (int i = 0; i < watchlist.totalJugadores(); i++) sel.add(watchlist.jugador(i));
+            else return new Eleccion(sel, false, false, true);
+        } else {
+            List<Player> selNorm = watchlist.seleccion();
+            if (!selNorm.isEmpty()) sel.addAll(selNorm);
+            else for (int i = 0; i < watchlist.totalJugadores(); i++) sel.add(watchlist.jugador(i));
+        }
+        return new Eleccion(sel, deForzado, recortada, false);
+    }
+
+    /** Clic en un sujeto de «Partidas de:»: con Ctrl, lo suma o lo quita; sin Ctrl, deja solo a ese, y si ya era el
+     *  único marcado, quita el filtro. Cambia {@code filtroSujetos} en su sitio (el mismo conjunto de la vista). */
+    public static void alternarFiltroSujeto(Set<Long> filtroSujetos, long pid, boolean ctrl) {
+        if (ctrl) { if (!filtroSujetos.remove(pid)) filtroSujetos.add(pid); }
+        else if (filtroSujetos.size() == 1 && filtroSujetos.contains(pid)) filtroSujetos.clear();
+        else { filtroSujetos.clear(); filtroSujetos.add(pid); }
     }
 
     /** Al acabar «Enviar al juego»: cuántas se copiaron y cuántas ya estaban (se actualizan). */
