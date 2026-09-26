@@ -300,6 +300,18 @@ public final class CaraACaraDialogo {
         view.anfitrion.mostrarEstadoGlobal(cruce.size() + t(" partidas entre ", " games between ") + nombre + t(" y ", " and ") + rivalNombre + t(" · cargadas en la pestaña Partidas (sin resultado hasta que lo pidas).", " · loaded in the Games tab (no result until you ask for it)."));
     }
 
+    /**
+     * Fila 80: el nombre que se pasa a {@link CaraACaraPresenter#pedirAnioRival} para que sfr-data pueda buscar
+     * por nombre si el rival no está ya en {@code actividadCache} (ver {@code nombreSiFalta} en ProfileService).
+     * Antes se pasaba por error el nombre del perfil ABIERTO (nombreAbierto); tiene que ser el del RIVAL. Si por
+     * lo que sea no hay nombre, «#pid» sigue sirviendo de identificador para el log. Método de paquete estático
+     * y sin Swing a propósito: es la parte comprobable sin ventana de un cambio que, por lo demás, vive pegado a
+     * CaraACaraDialogo (ver su javadoc de clase).
+     */
+    static String nombreParaSfr(String rivalNombre, long rivalPid) {
+        return rivalNombre != null && !rivalNombre.isBlank() ? rivalNombre : "#" + rivalPid;
+    }
+
     /** La ficha del cruce con un rival concreto. */
     private void fijar(long rivalPid, String rivalNombre) {
         popup.setVisible(false);
@@ -432,7 +444,7 @@ public final class CaraACaraDialogo {
         JLabel cargando = new JLabel(t("cargando el perfil del rival…", "loading the opponent's profile…")); cargando.setForeground(colorSecundario()); cargando.setAlignmentX(0f); comparacion.add(cargando);
         cuerpo.add(comparacion);
         cuerpo.add(Box.createVerticalStrut(10));
-        presenter.pedirAnioRival(rivalPid, nombreAbierto, () -> pidActual == rivalPid, arF -> {
+        presenter.pedirAnioRival(rivalPid, nombreParaSfr(rivalNombre, rivalPid), () -> pidActual == rivalPid, arF -> {
             comparacion.remove(cargando);
             if (arF == null) { JLabel no = new JLabel(t("El rival no está en sfr-data; abre su perfil para cargarlo por la API.", "The opponent isn't in sfr-data; open their profile to load it from the API.")); no.setForeground(colorSecundario()); no.setAlignmentX(0f); comparacion.add(no); }
             else {
