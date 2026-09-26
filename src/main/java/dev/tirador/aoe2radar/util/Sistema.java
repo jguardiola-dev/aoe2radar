@@ -32,6 +32,14 @@ public final class Sistema {
     /** Un archivo o carpeta de datos de la app, dentro de {@link #carpetaBase()}. */
     public static Path enCarpetaBase(String nombre) { return carpetaBase().resolve(nombre); }
 
+    /** Carpeta de la app (la del exe empaquetada; si no, el directorio de trabajo): solo recursos de lectura que el
+     *  empaquetado deja junto al exe, como las banderas. Hoy coincide con {@link #carpetaBase()}; se separa para que
+     *  la carpeta de datos pueda irse a otro sitio sin arrastrar los recursos. */
+    public static Path carpetaApp() { return carpetaBase(rutaExePropia()); }
+
+    /** Un recurso de la app (solo lectura) dentro de {@link #carpetaApp()}. */
+    public static Path enCarpetaApp(String nombre) { return carpetaApp().resolve(nombre); }
+
     static final String CLAVE_RUN = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
     /** Escribe o borra la entrada de autoarranque en el registro del usuario

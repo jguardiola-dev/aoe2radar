@@ -32,5 +32,7 @@ class SistemaTest {
         assertEquals(Path.of("config.properties"), Config.CONFIG_FILE);
         assertEquals(Path.of("descargas.log"), Log.LOG_FILE);
         assertEquals(Path.of("sfrdata"), Directorios.LADDER_DIR);
+        assertEquals(Path.of("banderas"), dev.tirador.aoe2radar.service.ImagenesJuego.BANDERAS_DIR);
+        assertEquals(Path.of(""), Sistema.carpetaApp());
     }
 }

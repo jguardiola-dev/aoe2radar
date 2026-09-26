@@ -20,7 +20,7 @@ import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.techtree.TechTreeDatos.TT_DIR;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
-import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
+import static dev.tirador.aoe2radar.util.Sistema.enCarpetaApp;
 
 /**
  * Todo lo que, para pintar un icono de bandera, civ o mapa, toca disco o red: rutas fijas y la descarga de
@@ -30,8 +30,9 @@ import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
 public final class ImagenesJuego {
     private ImagenesJuego() { }
 
-    /** Carpeta de banderas (20×15, dominio público, Wikimedia vía hampusborgos/country-flags); el bat las deja junto al exe. */
-    public static final Path BANDERAS_DIR = enCarpetaBase("banderas");
+    /** Carpeta de banderas (20×15, dominio público, Wikimedia vía hampusborgos/country-flags); el bat las deja junto al exe.
+     *  Es un recurso de la app (solo lectura): cuelga de la carpeta del exe, no de la de datos. */
+    public static final Path BANDERAS_DIR = enCarpetaApp("banderas");
 
     /** Mapas cuya miniatura ya se está pidiendo al companion, para no duplicar la descarga. */
     private static final Set<String> MAPAS_PIDIENDO = ConcurrentHashMap.newKeySet();
