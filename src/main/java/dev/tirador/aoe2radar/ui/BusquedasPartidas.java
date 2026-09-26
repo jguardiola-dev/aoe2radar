@@ -329,20 +329,24 @@ final class BusquedasPartidas {
                 vista.anfitrion.estado(msgs.get(msgs.size() - 1));
             }
             @Override protected void done() {
-                if (vista.fetchWorker != this && vista.fetchWorker != null) {
-                    // Otra búsqueda la sustituyó (fetchMatches con una en marcha): esa es la que manda ahora en el
-                    // botón, el progreso y la tabla; esta no toca nada (ni siquiera fetchWorker, que es de la nueva).
+                if (vista.fetchWorker != this) {
+                    // Otra búsqueda la sustituyó (fetchMatches con una en marcha; fetchWorker es de la nueva, o ya
+                    // null si la nueva acabó antes): esa es la que manda en el botón, el progreso y la tabla.
                     log("buscar #" + miSerial + ": sustituida por otra búsqueda; resultado ignorado");
                     return;
                 }
-                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) { log("buscar #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual()); vista.fetchWorker = null; return; }
+                // Otra operación de otro tipo (una descarga, «Ver forma»…) pudo empezar mientras tanto y llevarse el
+                // semáforo: la búsqueda NO se descarta por eso (revisión 1.3, watchlist F7); solo deja el progreso
+                // y el «Detener» de la barra a esa operación, que es la suya ahora.
+                final boolean semaforoPropio = PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual());
+                if (!semaforoPropio) log("buscar #" + miSerial + ": la op #" + vista.anfitrion.operacionActual() + " empezó durante la búsqueda; el resultado se aplica igual");
                 vista.fetchWorker = null;
                 vista.actualizarTextoBuscar();
                 btn.setToolTipText(null);
                 btn.setEnabled(true);
                 vista.azarBtn.setEnabled(true);
                 vista.gteBtn.setEnabled(true);
-                vista.anfitrion.trabajando(false);
+                if (semaforoPropio) vista.anfitrion.trabajando(false);
                 if (isCancelled()) {
                     // Cancelada por la × de «Partidas de:»: el estado final es su «Búsqueda cerrada.», no este.
                     if (cerradaPorLaCruz != this) vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));

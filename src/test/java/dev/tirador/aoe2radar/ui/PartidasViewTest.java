@@ -305,6 +305,30 @@ class PartidasViewTest {
         });
     }
 
+    // ----- watchlist F7: otra operación durante una búsqueda -----
+
+    @Test void otraOperacionDuranteLaBusqueda_noDescartaSusResultados() throws Exception {
+        enlace.jugadores.add(A);
+        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            enA.countDown(); soltarA.await(5, TimeUnit.SECONDS);
+            return List.of(partida(pid, A, fin));
+        };
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+        assertTrue(enA.await(5, TimeUnit.SECONDS));
+        enEdt(() -> anfitrion.trabajando(true));   // empieza otra operación (una descarga, «Ver forma»…): sube el opSerial
+        soltarA.countDown();
+        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+        asentar();
+        enEdt(() -> {
+            assertEquals(1, vista.all.size(), "la búsqueda se aplica aunque otra operación empezara mientras tanto");
+            assertTrue(anfitrion.estado.startsWith("1 de 1 partidas"), "estado: " + anfitrion.estado);
+            assertTrue(anfitrion.progreso, "el progreso es de la otra operación: la búsqueda no lo apaga");
+            assertTrue(vista.fetchBtn.isEnabled() && vista.azarBtn.isEnabled() && vista.gteBtn.isEnabled());
+        });
+    }
+
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
         enlace.jugadores.addAll(List.of(A, B));
         CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
