@@ -2,8 +2,14 @@ package dev.tirador.aoe2radar.ui;
 
 import javax.swing.JFrame;
 import javax.swing.JSplitPane;
+import java.awt.GraphicsConfiguration;
+import java.awt.GraphicsDevice;
 import java.awt.GraphicsEnvironment;
+import java.awt.Insets;
 import java.awt.Rectangle;
+import java.awt.Toolkit;
+import java.util.ArrayList;
+import java.util.List;
 
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -30,14 +36,11 @@ public final class VentanaGuardada {
                 int x = Integer.parseInt(p[0].trim()), y = Integer.parseInt(p[1].trim());
                 int w = Math.max(700, Integer.parseInt(p[2].trim()));
                 int h = Math.max(450, Integer.parseInt(p[3].trim()));
-                Rectangle pant = GraphicsEnvironment.getLocalGraphicsEnvironment().getMaximumWindowBounds();
-                w = Math.min(w, pant.width);
-                h = Math.min(h, pant.height);
-                if (x >= pant.x - 8 && y >= pant.y - 8
-                        && x + 100 < pant.x + pant.width && y + 100 < pant.y + pant.height) {
-                    ventana.setBounds(x, y, w, h);
+                Ubicacion u = ubicar(x, y, w, h, pantallasUtiles());
+                if (!u.centrar()) {
+                    ventana.setBounds(u.x(), u.y(), u.ancho(), u.alto());
                 } else {
-                    ventana.setSize(w, h);
+                    ventana.setSize(u.ancho(), u.alto());
                     ventana.setLocationRelativeTo(null);
                 }
             }
@@ -51,6 +54,39 @@ public final class VentanaGuardada {
      *  normal y al cerrar se guardaba ventana_max=false. */
     public static void minimizar(JFrame ventana) {
         ventana.setExtendedState(ventana.getExtendedState() | JFrame.ICONIFIED);
+    }
+
+    /** Dónde va la ventana guardada: posición, tamaño y si hay que centrarla en la pantalla principal. */
+    record Ubicacion(int x, int y, int ancho, int alto, boolean centrar) { }
+
+    /** Arreglo F9 de la revisión 1.3: la ventana guardada vuelve a la pantalla en la que estaba si ese monitor sigue
+     *  conectado, con el tamaño recortado a esa pantalla. Si no cae en ninguna, se recorta a la principal (la
+     *  primera de la lista) y se centra. Con un solo monitor es la misma cuenta de siempre (mismos 8 px de margen
+     *  arriba/izquierda y 100 px visibles). Antes solo se miraba la principal y una ventana del segundo monitor
+     *  volvía siempre a ella. Paquete: lo prueba VentanaGuardadaTest sin pantallas reales. */
+    static Ubicacion ubicar(int x, int y, int w, int h, List<Rectangle> pantallas) {
+        for (Rectangle p : pantallas)
+            if (x >= p.x - 8 && y >= p.y - 8 && x + 100 < p.x + p.width && y + 100 < p.y + p.height)
+                return new Ubicacion(x, y, Math.min(w, p.width), Math.min(h, p.height), false);
+        Rectangle principal = pantallas.get(0);
+        return new Ubicacion(x, y, Math.min(w, principal.width), Math.min(h, principal.height), true);
+    }
+
+    /** El área útil (sin barra de tareas) de cada monitor conectado; la principal primero, calculada como siempre
+     *  (getMaximumWindowBounds), para que con un solo monitor nada cambie. */
+    static List<Rectangle> pantallasUtiles() {
+        GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+        List<Rectangle> out = new ArrayList<>();
+        out.add(ge.getMaximumWindowBounds());
+        GraphicsDevice principal = ge.getDefaultScreenDevice();
+        for (GraphicsDevice d : ge.getScreenDevices()) {
+            if (d.equals(principal)) continue;
+            GraphicsConfiguration gc = d.getDefaultConfiguration();
+            Rectangle b = gc.getBounds();
+            Insets in = Toolkit.getDefaultToolkit().getScreenInsets(gc);
+            out.add(new Rectangle(b.x + in.left, b.y + in.top, b.width - in.left - in.right, b.height - in.top - in.bottom));
+        }
+        return out;
     }
 
     /** Guarda el divisor (si existe), el estado maximizado y, si no está maximizada, los bounds. */

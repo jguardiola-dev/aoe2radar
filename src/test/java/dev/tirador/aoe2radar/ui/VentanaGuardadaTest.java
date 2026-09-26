@@ -9,12 +9,14 @@ import javax.swing.JSplitPane;
 import javax.swing.SwingUtilities;
 import java.awt.Rectangle;
 import java.nio.file.Files;
+import java.util.List;
 import java.util.Properties;
 
 import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Geometría de la ventana (VentanaGuardada.aplicar/guardar) con una config temporal: el fichero
@@ -95,6 +97,34 @@ class VentanaGuardadaTest {
                 f.dispose();
             }
         });
+    }
+
+    // ----- F9 (revisión 1.3): varios monitores, sin pantallas reales -----
+    private static final Rectangle PRINCIPAL = new Rectangle(0, 0, 1920, 1040);          // sin la barra de tareas
+    private static final Rectangle SEGUNDO = new Rectangle(1920, -200, 2560, 1400);      // a la derecha, más alto
+
+    @Test
+    void ubicarEnElSegundoMonitorLaDejaAhiSiSigueConectado() {
+        VentanaGuardada.Ubicacion u = VentanaGuardada.ubicar(2100, 0, 2400, 1300, List.of(PRINCIPAL, SEGUNDO));
+        assertEquals(new VentanaGuardada.Ubicacion(2100, 0, 2400, 1300, false), u,
+                "misma posición y tamaño: cabe en el segundo monitor");
+    }
+
+    @Test
+    void ubicarEnUnMonitorDesconectadoLaCentraEnLaPrincipal() {
+        VentanaGuardada.Ubicacion u = VentanaGuardada.ubicar(2100, 0, 2400, 1300, List.of(PRINCIPAL));
+        assertTrue(u.centrar(), "el segundo monitor ya no está: a la principal");
+        assertEquals(1920, u.ancho());
+        assertEquals(1040, u.alto());
+    }
+
+    @Test
+    void ubicarConUnSoloMonitorEsLaCuentaDeSiempre() {
+        assertEquals(new VentanaGuardada.Ubicacion(100, 120, 900, 600, false),
+                VentanaGuardada.ubicar(100, 120, 900, 600, List.of(PRINCIPAL)));
+        assertEquals(new VentanaGuardada.Ubicacion(-8, -8, 1920, 1040, false),
+                VentanaGuardada.ubicar(-8, -8, 3000, 2000, List.of(PRINCIPAL)), "margen de 8 px y tamaño recortado");
+        assertTrue(VentanaGuardada.ubicar(1830, 100, 900, 600, List.of(PRINCIPAL)).centrar(), "menos de 100 px visibles");
     }
 
     @Test
