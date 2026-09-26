@@ -65,8 +65,21 @@ public final class Campanas {
         // Pattern.quote: partir por el texto literal SEPARADOR, no por la expresión regular \u0001 (que Pattern
         // interpreta como el carácter real U+0001 y que, como tal, nunca aparece en lo guardado: antes del
         // arreglo esto dejaba pegadas todas las campanas en un único elemento cuando había más de una).
-        for (String x : leerConfig.apply("campanas", "").split(Pattern.quote(SEPARADOR))) if (!x.isBlank()) s.add(x);
+        for (String x : leerConfig.apply("campanas", "").split(Pattern.quote(SEPARADOR))) if (!x.isBlank()) s.add(normalizarVistaTodos(x));
         return s;
+    }
+
+    /**
+     * El id de la campana del grupo especial «Todos»/«All» (WatchlistView.idVistaCampana: "grupo|" + el texto
+     * de ese item del combo) se guardó con el texto del idioma activo en su día; si la app cambió de idioma
+     * desde entonces, tradúcelo al idioma actual para que siga casando con las campanas recién calculadas.
+     * Bug resuelto en fase 4 (ver docs/DEUDA.md): antes, cambiar de idioma apagaba esta campana sin avisar.
+     * Los demás ids (grupo de usuario, ★ladder/★país/★clan) ya son estables: usan nombres propios o el
+     * código ISO/tag del clan, nunca un texto traducido, así que no necesitan este arreglo.
+     */
+    private static String normalizarVistaTodos(String id) {
+        if (id.equalsIgnoreCase("grupo|Todos") || id.equalsIgnoreCase("grupo|All")) return "grupo|" + t("Todos", "All");
+        return id;
     }
 
     public void guardarCampanas(Set<String> s) { guardarConfig.accept("campanas", String.join(SEPARADOR, s)); }

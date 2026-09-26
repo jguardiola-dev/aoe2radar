@@ -156,6 +156,40 @@ class CampanasTest {
         assertEquals(Set.of(101L, 102L), ids.get("grupo|Todos"));
     }
 
+    /**
+     * Arreglo (fase 4, ver docs/DEUDA.md): el id de la campana del grupo especial "Todos"/"All"
+     * (WatchlistView.idVistaCampana) se guardaba con el texto del idioma activo en el momento de encenderla.
+     * Si la app cambiaba de idioma despues, campanas() devolvia el id tal cual (p.ej. "grupo|Todos") y ya no
+     * casaba con el id que vuelve a calcular la vista en el idioma nuevo ("grupo|All"): la campana se
+     * "perdia" sin avisar. Ahora campanas() traduce ese id concreto al idioma activo al leerlo.
+     */
+    @Test void campanaTodosGuardadaEnEspanolSigueCasandoConLaAppEnIngles() {
+        config.put("campanas", "grupo|Todos");
+        IDIOMA = "en";
+        assertEquals(Set.of("grupo|All"), campanas.campanas());
+    }
+
+    @Test void campanaTodosGuardadaEnInglesSigueCasandoConLaAppEnEspanol() {
+        config.put("campanas", "grupo|All");
+        IDIOMA = "es";
+        assertEquals(Set.of("grupo|Todos"), campanas.campanas());
+    }
+
+    /** El arreglo no debe tocar los demas ids: ya son estables (nombre propio o codigo ISO/tag de clan). */
+    @Test void campanaDeGrupoDeUsuarioNoSeToca() {
+        config.put("campanas", "grupo|Amigos" + "\\u0001" + "★ladder");
+        IDIOMA = "en";
+        assertEquals(Set.of("grupo|Amigos", "★ladder"), campanas.campanas());
+    }
+
+    @Test void calcularCampanaIdsDeGrupoTodosFuncionaAunqueSeGuardaraEnElOtroIdioma() {
+        config.put("campanas", "grupo|Todos");
+        IDIOMA = "en";
+        List<Player> todos = List.of(new Player(101, "Ana", "A"), new Player(102, "Bea", "B"));
+        Map<String, Set<Long>> ids = campanas.calcularCampanaIds(campanas.campanas(), todos);
+        assertEquals(Set.of(101L, 102L), ids.get("grupo|All"), "tras normalizar el id, calcularCampanaIds sigue reconociendo \"Todos\"");
+    }
+
     @Test void calcularCampanaIdsDeLadderPideElTopNYCorta() {
         config.put("top_n", "2");
         responder(fila(910001, "A", 2000, 1, "es"), fila(910002, "B", 1900, 2, "fr"), fila(910003, "C", 1800, 3, "de"));
