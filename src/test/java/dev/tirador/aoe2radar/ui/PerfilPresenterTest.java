@@ -17,7 +17,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
 
@@ -26,7 +25,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * PerfilPresenter con Tareas.EN_LINEA (sin hilos) y dobles de ProfileService/RatingsService/BusquedaPerfiles y de
  * la Pantalla: comprueba las dos rutas de abrirPerfil (sfr-data y API con progreso parcial), «Actualizar hoy»,
- * «Cargar más», las sugerencias de los dos buscadores, las vinculadas y el filtro «clan» del cara a cara — todas
+ * «Cargar más», las sugerencias del buscador de nick y las vinculadas — todas
  * con su comprobación de «respuesta caducada» (el pid abierto cambió mientras se esperaba).
  */
 class PerfilPresenterTest {
@@ -118,9 +117,7 @@ class PerfilPresenterTest {
         Actividad masCompletado;
         String masError;
         List<String[]> sugerenciasBuscador; String sugerenciasBuscadorQuery;
-        List<String[]> sugerenciasH2h; String sugerenciasH2hQuery;
         int vinculadasListasVeces;
-        Set<Long> conjuntoIds; String conjuntoNombre;
 
         @Override public long pidAbierto() { return pidAbierto; }
         @Override public long generacion() { return generacion; }
@@ -141,9 +138,7 @@ class PerfilPresenterTest {
         @Override public void masCompletado(Actividad a) { masCompletado = a; }
         @Override public void masError(String mensaje) { masError = mensaje; }
         @Override public void sugerenciasBuscador(List<String[]> resultados, String query) { sugerenciasBuscador = resultados; sugerenciasBuscadorQuery = query; }
-        @Override public void sugerenciasCaraACara(List<String[]> resultados, String query) { sugerenciasH2h = resultados; sugerenciasH2hQuery = query; }
         @Override public void vinculadasListas() { vinculadasListasVeces++; }
-        @Override public void conjuntoClanListo(Set<Long> ids, String nombre) { conjuntoIds = ids; conjuntoNombre = nombre; }
     }
 
     final PerfilesFalso perfiles = new PerfilesFalso();
@@ -389,14 +384,7 @@ class PerfilPresenterTest {
         assertEquals("ful", pantalla.sugerenciasBuscadorQuery);
     }
 
-    @Test void sugerir_cara_a_cara_pasa_los_resultados_y_la_query() {
-        busqueda.resultado = List.<String[]>of(new String[]{ "2", "Zutano", "Zutano" });
-        presenter.sugerirCaraACara("zu");
-        assertEquals(busqueda.resultado, pantalla.sugerenciasH2h);
-        assertEquals("zu", pantalla.sugerenciasH2hQuery);
-    }
-
-    // ----- vinculadas y conjunto clan ------------------------------------------------------------
+    // ----- vinculadas -----------------------------------------------------------------------------
 
     @Test void pedir_vinculadas_avisa_a_la_pantalla_si_el_pid_sigue_abierto() {
         pantalla.pidAbierto = 5L;
@@ -408,19 +396,6 @@ class PerfilPresenterTest {
         pantalla.pidAbierto = 6L;
         presenter.pedirVinculadas(5L);
         assertEquals(0, pantalla.vinculadasListasVeces);
-    }
-
-    @Test void resolver_conjunto_clan_ok_devuelve_los_miembros() {
-        ratings.asegurarError = null;   // asegurar() va bien
-        presenter.resolverConjuntoClan("TSK", "Clan TSK");
-        assertNotNull(pantalla.conjuntoIds);   // vacío o no: lo importante es que se avisó a la pantalla
-        assertEquals("Clan TSK", pantalla.conjuntoNombre);
-    }
-
-    @Test void resolver_conjunto_clan_con_ladder_caido_devuelve_vacio() {
-        ratings.asegurarError = "sin red";   // asegurar() falla: no se listan miembros (ver ConsultasLadder.miembrosClan)
-        presenter.resolverConjuntoClan("TSK", "Clan TSK");
-        assertTrue(pantalla.conjuntoIds.isEmpty());
     }
 
     /** Ficha de cabecera sin llamada (perfilSintetico de la 1.1): usa el ELO de la watchlist si no hay ninguno en las partidas. */

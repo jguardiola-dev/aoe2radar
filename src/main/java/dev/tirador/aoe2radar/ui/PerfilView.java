@@ -60,7 +60,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -128,13 +127,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         String nombreVisible(long pid, String nombre);
         void ficharDesdeTop(long pid, String nombre, String grupo);
         List<String> gruposDeJugadores();
-        /** Los ids de la watchlist que pertenecen a este grupo (para el filtro «grupo» del cara a cara). */
-        Set<Long> idsDeGrupo(String grupo);
         List<String> gruposGuardados();
         String grupoGeneral();
-        List<String> clanesGuardados();
-        boolean hayTop250();
-        Set<Long> idsTop250();
         /** ¿El último clic en una lista de jugadores llevaba Ctrl? (lo marca Listas, campo compartido de la ventana). */
         boolean ultimoClicFueCtrl();
 
@@ -213,14 +207,9 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     public BarrasActividad actMeses;        // visible para RegresionCapturas
     private JPanel actSpark, actPosicion, actUltimos30Civs, actUltimos30Mapas, actDuracionFila;
     private GraficaElo actGrafica;
-    private JComboBox<String> actPeriodoCombo, actH2hSet;
-    private JTextField actH2hBusca;
-    private JPopupMenu actH2hPopup;
-    private javax.swing.Timer actH2hDebounce;
+    private JComboBox<String> actPeriodoCombo;
     private LocalDate actDesde, actHasta;
     private int actPeriodoIdx;
-    private Set<Long> h2hIds;
-    private String h2hNombre;   // null = sin cara a cara
     private JPanel actTarjetas, actCivs, actCivsRival, actMapas, actRivales, actAliados, actTramos;
     private boolean actOrigenSfr;
     private String actHastaSfr;
@@ -437,21 +426,6 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         masBtn.setToolTipText(t("Nota, alias, nicks anteriores, cuentas vinculadas, watchlist…", "Note, alias, previous names, linked accounts, watchlist…"));
         masBtn.addActionListener(e -> actMenuNombre(new MouseEvent(masBtn, MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, 0, masBtn.getHeight(), 1, true), masBtn));
         izq.add(masBtn);
-        actH2hBusca = new JTextField(14);
-        actH2hBusca.putClientProperty("JTextField.placeholderText", t("Cara a cara con… (nick)", "Head-to-head vs… (nick)"));
-        actH2hBusca.putClientProperty("JTextField.showClearButton", true);
-        actH2hBusca.setToolTipText(t("Escribe un nick: el perfil pasa a mostrar solo las partidas contra ese jugador (o elige un grupo, clan o top en el desplegable)", "Type a nick: the profile shows only the games against that player (or pick a group, clan or top in the dropdown)"));
-        actH2hPopup = new JPopupMenu(); actH2hPopup.setFocusable(false);
-        actH2hDebounce = new javax.swing.Timer(450, e -> h2hSugerir()); actH2hDebounce.setRepeats(false);
-        actH2hBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { if (actH2hBusca.getText().trim().isEmpty()) { if (h2hIds != null) { h2hIds = null; h2hNombre = null; actPintar(); } actH2hPopup.setVisible(false); } else actH2hDebounce.restart(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        actH2hSet = new JComboBox<>();
-        actH2hSet.setToolTipText(t("Cara a cara contra un conjunto: tu grupo, un clan guardado o el top 250", "Head-to-head against a set: your group, a saved clan or the top 250"));
-        actH2hSet.addActionListener(e -> { if (actRellenandoModos) return; aplicarH2hConjunto(); });
         perfilBusca = new JTextField(18);
         perfilBusca.putClientProperty("JTextField.placeholderText", t("Buscar jugador… o selecciona en la watchlist", "Search a player… or select in the watchlist"));
         perfilBusca.putClientProperty("JTextField.showClearButton", true);
@@ -616,7 +590,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         return actHasta == null || !d.isAfter(actHasta);
     }
 
-    // ===== filtro «cara a cara con…» de la cabecera (distinto del diálogo Cara a cara) ==============
+    // ===== buscador de nick de la barra del perfil =================================================
 
     /** Sugerencias de nick para el buscador del perfil (búsqueda del companion, con retardo). */
     private void perfilSugerir() {
@@ -624,74 +598,6 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         perfilPopup.setVisible(false); perfilPopup.removeAll();
         if (q.length() < 2) return;
         presenter.sugerirBuscador(q);
-    }
-
-    private void h2hSugerir() {
-        String q = actH2hBusca.getText().trim();
-        actH2hPopup.setVisible(false); actH2hPopup.removeAll();
-        if (q.length() < 2) return;
-        Actividad a = actividadCache.get(actPid);
-        Map<Long, String> locales = new LinkedHashMap<>();
-        if (a != null) for (Match m : a.partidas()) for (MatchPlayer p : m.players) if (p.id != actPid && p.name != null && p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))) locales.putIfAbsent(p.id, p.name);
-        int n = 0;
-        for (Map.Entry<Long, String> en : locales.entrySet()) { long pid = en.getKey(); String nombre = en.getValue(); JMenuItem it = new JMenuItem(nombre + t("  (rival en tu historial)", "  (opponent in the history)")); it.addActionListener(x -> fijarH2h(Set.of(pid), nombre)); actH2hPopup.add(it); if (++n >= 6) break; }
-        if (n > 0 && actH2hBusca.isShowing()) actH2hPopup.show(actH2hBusca, 0, actH2hBusca.getHeight());
-        presenter.sugerirCaraACara(q);
-    }
-
-    @Override public void sugerenciasCaraACara(List<String[]> res, String q) {
-        if (!q.equals(actH2hBusca.getText().trim())) return;
-        Actividad a = actividadCache.get(actPid);
-        Map<Long, String> locales = new LinkedHashMap<>();
-        if (a != null) for (Match m : a.partidas()) for (MatchPlayer p : m.players) if (p.id != actPid && p.name != null && p.name.toLowerCase(Locale.ROOT).contains(q.toLowerCase(Locale.ROOT))) locales.putIfAbsent(p.id, p.name);
-        int k = 0;
-        for (String[] r : res) { long pid = Long.parseLong(r[0]); if (locales.containsKey(pid)) continue; JMenuItem it = new JMenuItem(r[2]); String nombre = r[1]; it.addActionListener(x -> fijarH2h(Set.of(pid), nombre)); actH2hPopup.add(it); if (++k >= 6) break; }
-        if (actH2hPopup.getComponentCount() > 0 && actH2hBusca.isShowing()) actH2hPopup.show(actH2hBusca, 0, actH2hBusca.getHeight());
-    }
-
-    private void fijarH2h(Set<Long> ids, String nombre) {
-        actH2hPopup.setVisible(false);
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(nombre); actH2hSet.setSelectedIndex(0); } finally { actRellenandoModos = false; }
-        actPintar();
-    }
-
-    private void rellenarH2hConjuntos() {
-        if (actH2hSet == null) return;
-        actRellenandoModos = true;
-        try {
-            List<String[]> claves = new ArrayList<>();
-            actH2hSet.removeAllItems(); actH2hSet.addItem(t("Contra un conjunto…", "Against a set…")); claves.add(new String[]{ "", "" });
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.addAll(anfitrion.gruposDeJugadores());
-            for (String g : gs) { actH2hSet.addItem(t("Grupo ", "Group ") + g); claves.add(new String[]{ "grupo", g }); }
-            for (String tag : anfitrion.clanesGuardados()) { actH2hSet.addItem(t("Clan ", "Clan ") + tag); claves.add(new String[]{ "clan", tag }); }
-            if (anfitrion.hayTop250()) { actH2hSet.addItem(t("Top 250 mundial", "World top 250")); claves.add(new String[]{ "top", "" }); }
-            actH2hSet.putClientProperty("claves", claves);
-        } finally { actRellenandoModos = false; }
-    }
-
-    private void aplicarH2hConjunto() {
-        Object cl = actH2hSet.getClientProperty("claves");
-        int i = actH2hSet.getSelectedIndex();
-        if (!(cl instanceof List<?> l) || i <= 0 || i >= l.size()) { if (i == 0 && h2hIds != null && (h2hNombre == null || !h2hNombre.equals(actH2hBusca.getText().trim()))) { h2hIds = null; h2hNombre = null; actPintar(); } return; }
-        String[] f = (String[]) l.get(i);
-        Set<Long> ids = new HashSet<>();
-        String nombre = String.valueOf(actH2hSet.getSelectedItem());
-        switch (f[0]) {
-            case "grupo" -> ids.addAll(anfitrion.idsDeGrupo(f[1]));
-            case "clan" -> { presenter.resolverConjuntoClan(f[1], nombre); return; }
-            case "top" -> ids.addAll(anfitrion.idsTop250());
-            default -> { }
-        }
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(""); } finally { actRellenandoModos = false; }
-        actPintar();
-    }
-
-    @Override public void conjuntoClanListo(Set<Long> ids, String nombre) {
-        h2hIds = ids; h2hNombre = nombre;
-        actRellenandoModos = true; try { actH2hBusca.setText(""); } finally { actRellenandoModos = false; }
-        actPintar();
     }
 
     // ===== PerfilPresenter.Pantalla ==================================================================

@@ -3,10 +3,8 @@ package dev.tirador.aoe2radar.ui;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.AnioSfr;
 import dev.tirador.aoe2radar.model.FichaPerfil;
-import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.service.BusquedaPerfiles;
-import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.RatingsService;
 
@@ -15,10 +13,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.LongFunction;
 
 import static dev.tirador.aoe2radar.service.ProfileService.ACT_MAX_PAGINAS;
@@ -28,10 +24,9 @@ import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * Lo que la pestaña Perfil pide en segundo plano: abrir un perfil (primero sfr-data, si no la API página a
- * página), «Actualizar hoy», «Cargar más», las sugerencias del buscador de nick y del filtro cara a cara de la
- * cabecera, las cuentas vinculadas y el conjunto «clan» del filtro. Sale de SpoilerFreeRecs (abrirPerfil,
- * perfilActualizarHoy, perfilCargarMas, perfilSugerir, h2hSugerir, actPintarVinculadas, aplicarH2hConjunto de la
- * 1.1) tal cual, con los mismos nombres de hilo y las mismas comprobaciones de «respuesta caducada»
+ * página), «Actualizar hoy», «Cargar más», las sugerencias del buscador de nick y las cuentas vinculadas. Sale
+ * de SpoilerFreeRecs (abrirPerfil, perfilActualizarHoy, perfilCargarMas, perfilSugerir, actPintarVinculadas de
+ * la 1.1) tal cual, con los mismos nombres de hilo y las mismas comprobaciones de «respuesta caducada»
  * ({@code pantalla.pidAbierto() != pid}: si mientras tanto se abrió otro perfil, la respuesta tardía no pinta).
  * <p>Sin Swing: la vista (PerfilView) implementa {@link Pantalla} y hace la pintura, que no es red.
  */
@@ -83,12 +78,8 @@ public final class PerfilPresenter {
 
         /** Sugerencias del buscador de nick de la barra del perfil. */
         void sugerenciasBuscador(List<String[]> resultados, String query);
-        /** Sugerencias del filtro «cara a cara con…» de la cabecera. */
-        void sugerenciasCaraACara(List<String[]> resultados, String query);
         /** Las cuentas vinculadas ya están en ProfileService: repinta la línea de la cabecera. */
         void vinculadasListas();
-        /** El conjunto de ids del filtro «clan» del cara a cara ya está listo. */
-        void conjuntoClanListo(Set<Long> ids, String nombre);
     }
 
     private final ProfileService perfiles;
@@ -235,28 +226,11 @@ public final class PerfilPresenter {
         });
     }
 
-    /** Sugerencias del filtro «cara a cara con…» de la cabecera (rivales del historial ya se pintan sin red, aparte). Hilo "h2h-sugerir". */
-    public void sugerirCaraACara(String q) {
-        tareas.enFondo("h2h-sugerir", () -> {
-            List<String[]> res = busqueda.sugerir(q);
-            tareas.enUi(() -> pantalla.sugerenciasCaraACara(res, q));
-        });
-    }
-
     /** Cuentas vinculadas (con su ELO) del pid actual. Hilo "perfil-vinculadas". */
     public void pedirVinculadas(long pid) {
         tareas.enFondo("perfil-vinculadas", () -> {
             perfiles.vinculadasConElo(pid);   // las recuerda para la sesión, con el ELO de cada una
             tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.vinculadasListas(); });
-        });
-    }
-
-    /** El filtro «clan» del cara a cara: asegura el ladder y saca los miembros del tag. Hilo "h2h-clan". */
-    public void resolverConjuntoClan(String tag, String etiqueta) {
-        tareas.enFondo("h2h-clan", () -> {
-            Set<Long> ids = new HashSet<>();
-            if (ratings.asegurar(false) == null) for (LadderRow r : ConsultasLadder.miembrosClan(tag)) ids.add(r.pid());
-            tareas.enUi(() -> pantalla.conjuntoClanListo(ids, etiqueta));
         });
     }
 
