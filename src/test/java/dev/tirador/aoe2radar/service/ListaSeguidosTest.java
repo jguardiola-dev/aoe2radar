@@ -113,6 +113,20 @@ class ListaSeguidosTest {
         assertEquals(new Player(10L, "Pete", "Pros", 0L), destino.get(0));
     }
 
+    /**
+     * DEUDA fila 102 (lectura tolerante, fase 4): elegirGrupoDialog podía haber grabado «grupos» con «;» en vez
+     * de «,» («Pros;Amigos» quedaba como UN solo grupo al leerlo con split(",")). La limpieza del «Pros» vacío
+     * debe reconocer igualmente el grupo «Pros» aunque venga separado por «;», y volver a guardar con «,».
+     */
+    @Test void cargar_limpiaProsVacio_conConfigGrabadaConPuntoYComa() {
+        cfg.put("grupos", "Pros;Amigos");
+        List<Player> destino = new ArrayList<>();
+
+        svc.cargar(destino);
+
+        assertEquals("Amigos", cfg.get("grupos"), "sin miembros en Pros: se quita, y el resto se reescribe con \",\"");
+    }
+
     @Test void guardar_escribeIdNombreGrupoYVinculoSoloSiNoEsCero() throws IOException {
         List<Player> jugadores = List.of(
                 new Player(1L, "Ana", GENERAL, 0L),
@@ -176,6 +190,19 @@ class ListaSeguidosTest {
 
         assertEquals(List.of("Amigos", "General", "torneo", "zeta"), new ArrayList<>(grupos));
         assertEquals("Amigos,torneo,zeta", cfg.get("grupos"));
+    }
+
+    /**
+     * DEUDA fila 102 (lectura tolerante, fase 4): un grupo creado desde «+ Nuevo grupo…» del diálogo de fichaje
+     * grababa «grupos» con «;»; con split(",") a secas, «Amigos;Nuevo» se leía como un único grupo. gruposConfig
+     * debe aceptar también «;» al leer (la escritura sigue siendo con «,», ver calcularGrupos/registrarGrupo).
+     */
+    @Test void gruposConfig_toleraPuntoYComaAdemasDeLaComaAlLeer() {
+        cfg.put("grupos", "Amigos;Nuevo,Otro");
+
+        Set<String> grupos = svc.gruposConfig();
+
+        assertEquals(Set.of("Amigos", "Nuevo", "Otro"), grupos, "\"Amigos;Nuevo\" no debe leerse como un único grupo");
     }
 
     @Test void registrarGrupo_loAnadeALaConfig() {
