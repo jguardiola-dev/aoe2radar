@@ -658,4 +658,20 @@ class PartidasViewTest {
         });
         assertFalse(anfitrion.pedidas.contains(B.id()));
     }
+
+    // ----- Enter sin selección (decisión de Jorge, 1.3): vuelve a avisar -----
+
+    @Test void enter_sinSeleccion_avisaYNoDescarga() throws Exception {
+        Match m = partida(8102, A, Instant.now().minusSeconds(600));
+        enEdt(() -> {
+            vista.cargarPartidasEnTabla(List.of(m), A, "grupo|General");
+            vista.table.clearSelection();
+            anfitrion.estado = "";
+        });
+        long antes = anfitrion.opSerial;
+        enEdt(this::pulsarEnter);
+        assertEquals("No hay partidas seleccionadas.", anfitrion.estado, "Enter sin selección avisa");
+        assertEquals(antes, anfitrion.opSerial, "y no empieza ninguna descarga");
+        assertTrue(rec.procesadas.isEmpty());
+    }
 }

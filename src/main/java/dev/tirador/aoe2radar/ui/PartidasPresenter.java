@@ -463,6 +463,21 @@ public final class PartidasPresenter {
                 (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".";
     }
 
+    /** Qué hace Enter en la tabla de Partidas. */
+    public enum AccionEnter { DESCARGAR, AVISAR_SIN_SELECCION, NADA }
+
+    /** Enter en la tabla (decisión de Jorge, 1.3): con una descarga en curso no hace nada (no lanza otra); sin
+     *  descarga en curso, descarga la selección o, si no hay ninguna, avisa «No hay partidas seleccionadas.». */
+    public static AccionEnter accionEnter(boolean descargaEnCurso, int seleccionadas) {
+        if (descargaEnCurso) return AccionEnter.NADA;
+        return seleccionadas > 0 ? AccionEnter.DESCARGAR : AccionEnter.AVISAR_SIN_SELECCION;
+    }
+
+    /** El aviso de Enter (y de «Descargar seleccionadas») sin nada seleccionado. */
+    public static String mensajeSinSeleccion() {
+        return t("No hay partidas seleccionadas.", "No games selected.");
+    }
+
     // ======================================================================
     // El recorrido de «Buscar partidas» (el doInBackground de fetchMatches, antes en BusquedasPartidas)
     // ======================================================================

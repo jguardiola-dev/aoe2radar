@@ -660,4 +660,20 @@ class PartidasPresenterTest {
         assertEquals(600, r.lista().size(), "3 páginas de 200: justo el tope");
         assertEquals(List.of(1L, 1L, 1L), pedidos, "con 600 del primero ya no se pide al segundo");
     }
+
+    // ----- Enter en la tabla (decisión de Jorge, 1.3): sin selección vuelve a avisar -----
+
+    @Test void accionEnter_sinSeleccionAvisa_conSeleccionDescarga_conDescargaEnCursoNada() {
+        assertEquals(PartidasPresenter.AccionEnter.AVISAR_SIN_SELECCION, PartidasPresenter.accionEnter(false, 0));
+        assertEquals(PartidasPresenter.AccionEnter.DESCARGAR, PartidasPresenter.accionEnter(false, 2));
+        assertEquals(PartidasPresenter.AccionEnter.NADA, PartidasPresenter.accionEnter(true, 2), "no lanza una segunda descarga");
+        assertEquals(PartidasPresenter.AccionEnter.NADA, PartidasPresenter.accionEnter(true, 0));
+    }
+
+    @Test void mensajeSinSeleccion_enLosDosIdiomas() {
+        IDIOMA = "es";
+        assertEquals("No hay partidas seleccionadas.", PartidasPresenter.mensajeSinSeleccion());
+        IDIOMA = "en";
+        assertEquals("No games selected.", PartidasPresenter.mensajeSinSeleccion());
+    }
 }
