@@ -14,6 +14,8 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -114,7 +116,7 @@ final class DescargasPartidas {
     public void enviarInteligente(List<Match> objetivo) {
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
-        for (Match m : objetivo) (RecService.recSana(vista.anfitrion.destino(m)) ? enDisco : faltan).add(m);
+        separarSanas(objetivo, vista.anfitrion::destino, enDisco, faltan);
         if (!enDisco.isEmpty()) enviarASavegame(enDisco);
         if (!faltan.isEmpty()) download(faltan, true);
     }
@@ -126,22 +128,41 @@ final class DescargasPartidas {
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         Path sg = obtenerSavegame(true);
         if (sg == null) { vista.anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
+        Copia c = copiarAlSavegame(objetivo, sg, vista.anfitrion::destino, m -> vista.setEstado(m, t("✓✓ en juego", "✓✓ in game")));
+        vista.anfitrion.estado(c.ok() + t(" recs enviadas al juego", " recs sent to the game") +
+                (c.yaEstaban() > 0 ? " (" + c.yaEstaban() + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
+    }
+
+    // Núcleo sin Swing de «Enviar al juego» (costura para sacarlo del EDT en otra ronda): el prólogo (lista vacía,
+    // obtenerSavegame con sus diálogos) y el epílogo (anfitrion.estado) se quedan arriba, en el EDT; esto solo
+    // lee y copia archivos. Hoy se sigue llamando en el EDT, en el mismo punto y con el mismo orden que antes.
+
+    /** Reparte `objetivo` en lo que ya está sano en disco (RecService.recSana: lee la cabecera) y lo que falta. */
+    static void separarSanas(List<Match> objetivo, Function<Match, Path> destino, List<Match> enDisco, List<Match> faltan) {
+        for (Match m : objetivo) (RecService.recSana(destino.apply(m)) ? enDisco : faltan).add(m);
+    }
+
+    /** Lo que devuelve copiarAlSavegame: cuántas se copiaron y cuántas de esas ya estaban en el savegame. */
+    record Copia(int ok, int yaEstaban) { }
+
+    /** Copia cada partida al savegame `sg` y marca m.enJuego; `alCopiar` se llama justo donde antes iba setEstado
+     *  (que ya es seguro desde cualquier hilo: va por invokeLater). */
+    static Copia copiarAlSavegame(List<Match> objetivo, Path sg, Function<Match, Path> destino, Consumer<Match> alCopiar) {
         int ok = 0, yaEstaban = 0;
         for (Match m : objetivo) {
-            boolean ya = Files.exists(sg.resolve(vista.anfitrion.destino(m).getFileName().toString()));
+            boolean ya = Files.exists(sg.resolve(destino.apply(m).getFileName().toString()));
             if (dev.tirador.aoe2radar.service.Juego.copiarASavegame(m, sg)) {
                 ok++;
                 if (ya) yaEstaban++;
                 try {
-                    Files.setLastModifiedTime(sg.resolve(vista.anfitrion.destino(m).getFileName().toString()),
+                    Files.setLastModifiedTime(sg.resolve(destino.apply(m).getFileName().toString()),
                             java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
                 } catch (Exception ignored) {}
                 m.enJuego = true;
-                vista.setEstado(m, t("✓✓ en juego", "✓✓ in game"));
+                alCopiar.accept(m);
             }
         }
-        vista.anfitrion.estado(ok + t(" recs enviadas al juego", " recs sent to the game") +
-                (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
+        return new Copia(ok, yaEstaban);
     }
 
     String abrirSgTxt() { return t("Abrir carpeta savegame del juego", "Open game savegame folder"); }
