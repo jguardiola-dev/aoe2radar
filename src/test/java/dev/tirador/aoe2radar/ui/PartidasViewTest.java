@@ -77,7 +77,7 @@ class PartidasViewTest {
         volatile long opSerial;
         volatile boolean progreso;
         volatile boolean stop;
-        volatile BusquedasPartidas.Paginador paginador = (pid, pag, pp) -> List.of();
+        volatile PartidasPresenter.Paginador paginador = (pid, pag, pp) -> List.of();
         final List<Long> pedidas = Collections.synchronizedList(new ArrayList<>());
         final Path recs;
         AnfitrionFalso(Path recs) { this.recs = recs; }
@@ -242,45 +242,6 @@ class PartidasViewTest {
         Thread.sleep(400);
         SwingUtilities.invokeAndWait(() -> { });
         SwingUtilities.invokeAndWait(() -> { });
-    }
-
-    // ----- recorrer(): el doInBackground de «Buscar partidas», sin Swing -----
-
-    @Test void recorrer_pararTrasElPrimerJugador_noPideAlSiguienteYVuelveDetenida() {
-        boolean[] parar = { false };
-        List<Long> pedidas = new ArrayList<>();
-        Instant fin = Instant.now().minusSeconds(600);
-        BusquedasPartidas.Recorrido r = BusquedasPartidas.recorrer(List.of(A, B, C), fin.minusSeconds(86_400), 50, 0,
-                (pid, pag, pp) -> { pedidas.add(pid); parar[0] = true; return List.of(partida(pid, pid == A.id() ? A : B, fin)); },
-                m -> false, () -> parar[0], s -> { });
-        assertEquals(List.of(A.id()), pedidas, "Detener pulsado durante la página de A: ni B ni C se consultan");
-        assertTrue(r.detenida());
-    }
-
-    @Test void recorrer_elFrenoCortaLaEspera_noSigueConElSiguienteJugador() {
-        boolean[] parar = { false };
-        List<Long> pedidas = new ArrayList<>();
-        Instant fin = Instant.now().minusSeconds(600);
-        BusquedasPartidas.Recorrido r = BusquedasPartidas.recorrer(List.of(A, B, C), fin.minusSeconds(86_400), 50, 0,
-                (pid, pag, pp) -> {
-                    pedidas.add(pid);
-                    if (pid == B.id()) { parar[0] = true; throw new InterruptedException("detenido"); }   // lo que lanza el freno
-                    return List.of(partida(pid, A, fin));
-                },
-                m -> false, () -> parar[0], s -> { });
-        assertEquals(List.of(A.id(), B.id()), pedidas, "el corte del freno en B no deja pasar a C");
-        assertTrue(r.detenida());
-        assertEquals(0, r.fallos(), "un corte pedido no es un fallo del servicio");
-    }
-
-    @Test void recorrer_sinParar_recorreATodosYNoVuelveDetenida() {
-        Instant fin = Instant.now().minusSeconds(600);
-        BusquedasPartidas.Recorrido r = BusquedasPartidas.recorrer(List.of(A, B), fin.minusSeconds(86_400), 50, 0,
-                (pid, pag, pp) -> List.of(partida(pid, pid == A.id() ? A : B, fin)),
-                m -> false, () -> false, s -> { });
-        assertFalse(r.detenida());
-        assertEquals(2, r.lista().size());
-        assertEquals(java.util.Set.of(A.id(), B.id()), r.exitosos());
     }
 
     // ----- general F4 / watchlist F6: Detener de la barra y la × paran la búsqueda -----

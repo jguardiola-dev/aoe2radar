@@ -9,7 +9,9 @@ import dev.tirador.aoe2radar.service.EstadoVivo;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -23,6 +25,7 @@ import java.util.function.Predicate;
 import static dev.tirador.aoe2radar.service.AzarService.ajustarRefAzar;
 import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
 import static dev.tirador.aoe2radar.util.I18n.t;
+import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
 
 /**
@@ -455,5 +458,68 @@ public final class PartidasPresenter {
     public static String mensajeEnvio(int copiadas, int yaEstaban) {
         return copiadas + t(" recs enviadas al juego", " recs sent to the game") +
                 (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".";
+    }
+
+    // ======================================================================
+    // El recorrido de «Buscar partidas» (el doInBackground de fetchMatches, antes en BusquedasPartidas)
+    // ======================================================================
+
+    /** Una página de partidas de un jugador (en la app, Anfitrion.paginaDePartidas: la red). */
+    interface Paginador { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
+
+    /** Lo que deja el recorrido de fetchMatches: las partidas (la más reciente primero), si se tocó el tope, cuántos
+     *  jugadores fallaron, quiénes respondieron entero y si se detuvo a medias (entonces la lista está incompleta). */
+    record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida) { }
+
+    /** El doInBackground de fetchMatches, sin Swing (para poder probarlo): páginas por jugador hasta la ventana,
+     *  tope 6 páginas / 600 partidas. {@code parar} se mira antes de cada jugador, antes de cada página y al fallar
+     *  una: si dice que sí, el recorrido acaba entero y vuelve con {@code detenida}. */
+    static Recorrido recorrer(List<Player> tracked, Instant cutoff, int perPage, long pausaMs, Paginador paginas,
+                              java.util.function.Predicate<Match> enCursoReal, java.util.function.BooleanSupplier parar,
+                              java.util.function.Consumer<String> progreso) {
+        Map<Long, Match> unicos = new LinkedHashMap<>();
+        Set<Long> exitosos = new HashSet<>();
+        boolean topeAlcanzado = false, detenida = false;
+        int fallos = 0;
+        final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
+        for (Player pl : tracked) {
+            if (parar.getAsBoolean()) { detenida = true; break; }
+            boolean fallo = false;
+            for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
+                if (parar.getAsBoolean()) { detenida = true; break; }
+                progreso.accept(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
+                boolean seguir = false;
+                try {
+                    Iterable<Match> leidas = paginas.pagina(pl.id(), pagina, perPage);
+                    int n = 0; Instant masAntigua = null;
+                    for (Match m : leidas) {
+                        if (m == null) continue;
+                        n++;
+                        Instant ref = m.finished != null ? m.finished : m.started;
+                        if (ref != null && (masAntigua == null || ref.isBefore(masAntigua))) masAntigua = ref;
+                        if (m.finished == null && !enCursoReal.test(m)) continue;
+                        if (m.finished != null && m.finished.isBefore(cutoff)) continue;
+                        unicos.putIfAbsent(m.id, m);
+                    }
+                    seguir = n >= perPage && masAntigua != null && masAntigua.isAfter(cutoff);
+                    if (seguir && pagina == MAX_PAGINAS) topeAlcanzado = true;
+                    if (unicos.size() >= MAX_TOTAL) { topeAlcanzado = true; seguir = false; }
+                    Thread.sleep(pausaMs);
+                } catch (Exception ex) {
+                    fallo = true;
+                    if (parar.getAsBoolean()) { detenida = true; break; }   // el freno cortó la espera: se para todo
+                    if (ex instanceof InterruptedException) break;
+                    fallos++;
+                    progreso.accept(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
+                }
+                if (!seguir) break;
+            }
+            if (detenida) break;
+            if (!fallo) exitosos.add(pl.id());
+            if (unicos.size() >= MAX_TOTAL) break;
+        }
+        List<Match> lista = new ArrayList<>(unicos.values());
+        lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
+        return new Recorrido(lista, topeAlcanzado, fallos, exitosos, detenida);
     }
 }

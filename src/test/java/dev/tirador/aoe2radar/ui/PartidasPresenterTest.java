@@ -13,6 +13,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static dev.tirador.aoe2radar.ui.PartidasViewTest.A;
+import static dev.tirador.aoe2radar.ui.PartidasViewTest.B;
+import static dev.tirador.aoe2radar.ui.PartidasViewTest.C;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -537,5 +540,124 @@ class PartidasPresenterTest {
         f.addAll(Set.of(1L, 2L));
         PartidasPresenter.alternarFiltroSujeto(f, 2, false);
         assertEquals(Set.of(2L), f, "clic con varios marcados: solo ese");
+    }
+
+    // ----- recorrer(): el doInBackground de «Buscar partidas», sin Swing -----
+
+    @Test void recorrer_pararTrasElPrimerJugador_noPideAlSiguienteYVuelveDetenida() {
+        boolean[] parar = { false };
+        List<Long> pedidas = new ArrayList<>();
+        Instant fin = Instant.now().minusSeconds(600);
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(A, B, C), fin.minusSeconds(86_400), 50, 0,
+                (pid, pag, pp) -> { pedidas.add(pid); parar[0] = true; return List.of(PartidasViewTest.partida(pid, pid == A.id() ? A : B, fin)); },
+                m -> false, () -> parar[0], s -> { });
+        assertEquals(List.of(A.id()), pedidas, "Detener pulsado durante la página de A: ni B ni C se consultan");
+        assertTrue(r.detenida());
+    }
+
+    @Test void recorrer_elFrenoCortaLaEspera_noSigueConElSiguienteJugador() {
+        boolean[] parar = { false };
+        List<Long> pedidas = new ArrayList<>();
+        Instant fin = Instant.now().minusSeconds(600);
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(A, B, C), fin.minusSeconds(86_400), 50, 0,
+                (pid, pag, pp) -> {
+                    pedidas.add(pid);
+                    if (pid == B.id()) { parar[0] = true; throw new InterruptedException("detenido"); }   // lo que lanza el freno
+                    return List.of(PartidasViewTest.partida(pid, A, fin));
+                },
+                m -> false, () -> parar[0], s -> { });
+        assertEquals(List.of(A.id(), B.id()), pedidas, "el corte del freno en B no deja pasar a C");
+        assertTrue(r.detenida());
+        assertEquals(0, r.fallos(), "un corte pedido no es un fallo del servicio");
+    }
+
+    @Test void recorrer_sinParar_recorreATodosYNoVuelveDetenida() {
+        Instant fin = Instant.now().minusSeconds(600);
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(A, B), fin.minusSeconds(86_400), 50, 0,
+                (pid, pag, pp) -> List.of(PartidasViewTest.partida(pid, pid == A.id() ? A : B, fin)),
+                m -> false, () -> false, s -> { });
+        assertFalse(r.detenida());
+        assertEquals(2, r.lista().size());
+        assertEquals(java.util.Set.of(A.id(), B.id()), r.exitosos());
+    }
+
+    /** Partida terminada hace {@code minutos} de {@code pid} contra un rival fijo por partida. */
+    static Match terminadaHace(long id, long pid, long minutos, Instant ahora) {
+        Match m = partida(id, mp(pid, "p" + pid, 1, 1500), mp(90_000 + id, "r" + id, 2, 1400));
+        m.finished = ahora.minusSeconds(minutos * 60); m.started = m.finished.minusSeconds(1800);
+        return m;
+    }
+
+    @Test void recorrer_paginaHastaLaVentanaYAvisaDelTopeDeSeisPaginas() {
+        Instant ahora = Instant.now();
+        List<Integer> paginas = new ArrayList<>();
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(jugador(1)), ahora.minusSeconds(86_400), 2, 0,
+                (pid, pag, pp) -> { paginas.add(pag); return List.of(terminadaHace(pag * 10L, pid, pag, ahora), terminadaHace(pag * 10L + 1, pid, pag, ahora)); },
+                m -> false, () -> false, s -> { });
+        assertEquals(List.of(1, 2, 3, 4, 5, 6), paginas, "páginas llenas y dentro de la ventana: hasta 6");
+        assertTrue(r.topeAlcanzado());
+        assertEquals(12, r.lista().size());
+        assertEquals(Set.of(1L), r.exitosos());
+    }
+
+    @Test void recorrer_paraEnLaPaginaQueSaleDeLaVentanaODeLaQueVieneCorta() {
+        Instant ahora = Instant.now();
+        List<Integer> paginas = new ArrayList<>();
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(jugador(1)), ahora.minusSeconds(3600), 2, 0,
+                (pid, pag, pp) -> { paginas.add(pag); return pag == 1
+                        ? List.of(terminadaHace(1, pid, 10, ahora), terminadaHace(2, pid, 20, ahora))
+                        : List.of(terminadaHace(3, pid, 50, ahora), terminadaHace(4, pid, 90, ahora)); },
+                m -> false, () -> false, s -> { });
+        assertEquals(List.of(1, 2), paginas, "la página 2 ya llega a antes de la ventana: no hay 3");
+        assertFalse(r.topeAlcanzado());
+        assertEquals(List.of(1L, 2L, 3L), r.lista().stream().map(m -> m.id).toList(), "la de hace 90 min, fuera; la más reciente primero");
+        paginas.clear();
+        PartidasPresenter.recorrer(List.of(jugador(1)), ahora.minusSeconds(86_400), 2, 0,
+                (pid, pag, pp) -> { paginas.add(pag); return List.of(terminadaHace(pag, pid, pag, ahora)); },
+                m -> false, () -> false, s -> { });
+        assertEquals(List.of(1), paginas, "página con menos de perPage: no hay más");
+    }
+
+    @Test void recorrer_enCursoSoloSiSonReales_sinRepetirYLasVivasPrimero() {
+        Instant ahora = Instant.now();
+        Match viva = terminadaHace(1, 1, 5, ahora); viva.finished = null;
+        Match colgada = terminadaHace(2, 1, 500, ahora); colgada.finished = null;
+        Match comun = terminadaHace(3, 1, 30, ahora);
+        comun.players.add(mp(2, "p2", 2, 1400));
+        Match otra = terminadaHace(4, 2, 10, ahora);
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(jugador(1), jugador(2)), ahora.minusSeconds(86_400), 50, 0,
+                (pid, pag, pp) -> pid == 1 ? java.util.Arrays.asList(viva, colgada, null, comun) : List.of(comun, otra),
+                m -> m.id == 1, () -> false, s -> { });
+        assertEquals(List.of(1L, 4L, 3L), r.lista().stream().map(m -> m.id).toList(), "en directo primero; la colgada fuera; la común una vez");
+    }
+
+    @Test void recorrer_unFalloSeCuentaSigueConElSiguienteYLoDice() {
+        Instant ahora = Instant.now();
+        List<String> progreso = new ArrayList<>();
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(jugador(1), jugador(2)), ahora.minusSeconds(86_400), 50, 0,
+                (pid, pag, pp) -> { if (pid == 1) throw new java.io.IOException("HTTP 429"); return List.of(terminadaHace(5, pid, 10, ahora)); },
+                m -> false, () -> false, progreso::add);
+        assertEquals(1, r.fallos());
+        assertEquals(Set.of(2L), r.exitosos(), "el que falló no cuenta como consultado");
+        assertFalse(r.detenida());
+        assertEquals(1, r.lista().size());
+        assertEquals(List.of("Consultando j1…", "Aviso: fallo con j1 (HTTP 429)", "Consultando j2…"), progreso);
+    }
+
+    @Test void recorrer_topeDe600Partidas() {
+        Instant ahora = Instant.now();
+        List<Long> pedidos = new ArrayList<>();
+        long[] id = { 0 };
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(jugador(1), jugador(2), jugador(3)), ahora.minusSeconds(86_400), 200, 0,
+                (pid, pag, pp) -> {
+                    pedidos.add(pid);
+                    List<Match> l = new ArrayList<>();
+                    for (int i = 0; i < 200; i++) l.add(terminadaHace(++id[0], pid, 1, ahora));
+                    return l;
+                },
+                m -> false, () -> false, s -> { });
+        assertTrue(r.topeAlcanzado());
+        assertEquals(600, r.lista().size(), "3 páginas de 200: justo el tope");
+        assertEquals(List.of(1L, 1L, 1L), pedidos, "con 600 del primero ya no se pide al segundo");
     }
 }
