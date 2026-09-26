@@ -316,6 +316,19 @@ class LiveNowPresenterTest {
         assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9321L), "A, a «Terminadas»");
     }
 
+    /** Revisión 1.3, F1: el socket pregunta quién tiene Live now en una partida (aunque solo la viera su barrido). */
+    @Test void jugadoresEn_daLosQueElBarridoVioEnEsaPartida() {
+        pantalla.fuente = List.<Object[]>of(ficha(631L, "Uno", 1500, 10, "es"), ficha(632L, "Dos", 1400, 20, "es"), ficha(633L, "Tres", 1300, 30, "es"));
+        Match m = matchEnCurso(9331L, 631L);
+        MatchPlayer dos = new MatchPlayer(); dos.id = 632L; dos.team = 2; m.players.add(dos);
+        buscador.resultado = List.of(m, matchEnCurso(9333L, 633L));
+        presenter.refrescar(true);
+        assertEquals(java.util.Set.of(631L, 632L), new java.util.HashSet<>(presenter.jugadoresEn(9331L)));
+        assertTrue(presenter.jugadoresEn(1L).isEmpty());
+        presenter.liveEvento(631L, m, true);   // y cuando se quita, deja de estar
+        assertEquals(List.of(632L), presenter.jugadoresEn(9331L));
+    }
+
     @Test void liveEvento_noRepintaSiLaPantallaNoLoPermite() {
         pantalla.fuente = List.<Object[]>of(ficha(701L, "Uno", 1500, 10, "es"));
         presenter.refrescar(false);

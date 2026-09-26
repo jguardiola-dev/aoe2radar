@@ -239,6 +239,10 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
      *  de llamar desde CUALQUIER hilo, ver la javadoc de {@link LiveNowPresenter#liveEvento}. */
     public void liveEvento(long pid, Match m, boolean terminada) { presenter.liveEvento(pid, m, terminada); }
 
+    /** Quiénes tiene Live now «en partida» en matchId: el socket lo pregunta ante un matchRemoved (revisión 1.3, F1).
+     *  Seguro desde cualquier hilo. */
+    public List<Long> jugadoresEnPartida(long matchId) { return presenter.jugadoresEn(matchId); }
+
     /** El barrido manual (botón «Actualizar», el timer y, tras una caída del socket, la reconexión): lo llama
      *  la ventana desde el bloque del socket. */
     public void refrescar(boolean forzar) { presenter.refrescar(forzar); }

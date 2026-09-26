@@ -119,6 +119,14 @@ public final class LiveNowPresenter {
     /** Copia de la fuente actual (para pintar sin tener el candado cogido mientras se construyen las tarjetas). */
     public List<Object[]> topSnapshot() { synchronized (ahoraTop) { return new ArrayList<>(ahoraTop); } }
 
+    /** Quiénes están «en partida» en matchId según Live now (vacío si nadie). Bajo el candado de ahoraEnCurso: seguro
+     *  desde cualquier hilo (lo llama el socket, revisión 1.3, F1). */
+    public List<Long> jugadoresEn(long matchId) {
+        List<Long> en = new ArrayList<>();
+        synchronized (ahoraEnCurso) { for (Map.Entry<Long, Match> e : ahoraEnCurso.entrySet()) if (e.getValue() != null && e.getValue().id == matchId) en.add(e.getKey()); }
+        return en;
+    }
+
     /** Copia de las partidas en curso ahora mismo. */
     public Map<Long, Match> enCursoSnapshot() { synchronized (ahoraEnCurso) { return new HashMap<>(ahoraEnCurso); } }
 

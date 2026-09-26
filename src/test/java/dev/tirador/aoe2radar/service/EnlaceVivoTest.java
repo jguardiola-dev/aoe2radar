@@ -75,6 +75,8 @@ class EnlaceVivoTest {
         @Override public Set<Long> idsSocketExtra() { return extra; }
         final List<Match> partidasLive = new ArrayList<>();   // la partida que llegó con cada liveEvento (null si ninguna)
         @Override public void liveEvento(long pid, Match m, boolean terminada) { avisos.add("liveEvento:" + pid + ":" + terminada); partidasLive.add(m); }
+        final java.util.Map<Long, List<Long>> liveNow = new java.util.HashMap<>();   // matchId → quiénes tiene Live now en ella
+        @Override public List<Long> jugadoresLiveNow(long matchId) { return liveNow.getOrDefault(matchId, List.of()); }
         @Override public void avisarSiCampana(long pid, Match m) { avisos.add("campana:" + pid); }
         @Override public void avisarMiPartida(long pid, Match m) { avisos.add("miPartida:" + pid); }
         @Override public void avisarTrasCambio() { avisos.add("avisarTrasCambio"); }
@@ -271,6 +273,32 @@ class EnlaceVivoTest {
         assertFalse(vivo.jugando(7));
         assertFalse(vivo.terminada(555));
         assertTrue(vivo.marcarJugando(7, 555), "el barrido puede volver a marcarlo cuando la API vuelva");
+    }
+
+    // revisión 1.3, F1: una partida que solo vio el barrido de Live now (nadie la marcó en EstadoVivo) también se quita
+
+    @Test void quitadaDeUnaPartidaQueSoloTieneLiveNowProgramaLaComprobacion() {
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        assertEquals(List.of(EnlaceVivo.ESPERA_QUITADA_MS), esperasQuitada(), "antes se ignoraba y la tarjeta se quedaba «en partida»");
+    }
+
+    @Test void quitadaConfirmadaSacaDeLiveNowALosQueSoloVioSuBarrido() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.comprobarQuitada(555, 1);
+        assertEquals(1, red.llamadas);
+        assertEquals(List.of("liveEvento:8:true"), vistas.avisos, "a Live now, con la partida de la API; la watchlist no cambia");
+        assertNotNull(vistas.partidasLive.get(0));
+        assertTrue(vivo.terminada(555));
+    }
+
+    @Test void quitadaConMarcadosYDeLiveNowNoAvisaDosVecesAlMismo() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vivo.marcarJugando(7, 555);
+        vistas.liveNow.put(555L, List.of(7L, 8L));
+        enlace.comprobarQuitada(555, 1);
+        assertEquals(List.of("liveEvento:7:true", "liveEvento:8:true", "avisarTrasCambio"), vistas.avisos);
     }
 
     @Test void quitadaSinJugadoresMarcadosNoVaALaRedNiProgramaNada() {
