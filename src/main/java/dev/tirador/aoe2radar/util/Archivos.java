@@ -5,6 +5,8 @@ import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.Duration;
+import java.util.stream.Stream;
 
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
@@ -50,5 +52,33 @@ public final class Archivos {
     /** Como escribirAtomico(Path, IOConsumer) con los bytes ya en memoria. */
     public static void escribirAtomico(Path destino, byte[] datos) throws IOException {
         escribirAtomico(destino, out -> out.write(datos));
+    }
+
+    /**
+     * Limpieza de los ".tmp" huérfanos que puede dejar escribirAtomico (fila 140 de DEUDA): si la app se corta a
+     * media escritura, ese temporal (nombre único, {@code Files.createTempFile}) se queda en disco para siempre,
+     * porque nadie vuelve a mirarlo. Se llama UNA vez al arrancar, en un hilo de fondo, no en cada guardado.
+     * <p>Solo borra, en "dir" (sin bajar a subcarpetas), los archivos cuyo nombre empiece por "prefijo" y acabe
+     * en ".tmp", y solo si su última modificación es más antigua que "antiguedad": un temporal recién creado por
+     * una escritura EN CURSO (otro hilo, ahora mismo) no se toca. Con prefijo "" vale cualquier nombre, para una
+     * carpeta donde solo escribirAtomico escribe archivos sueltos (p. ej. sfrdata/perfiles_shards).
+     */
+    public static void limpiarTemporales(Path dir, String prefijo, Duration antiguedad) {
+        if (dir == null || !Files.isDirectory(dir)) return;
+        long limite = System.currentTimeMillis() - antiguedad.toMillis();
+        try (Stream<Path> listado = Files.list(dir)) {
+            listado.filter(p -> {
+                String nombre = p.getFileName().toString();
+                return nombre.startsWith(prefijo) && nombre.endsWith(".tmp");
+            }).forEach(p -> {
+                try {
+                    if (Files.getLastModifiedTime(p).toMillis() < limite) Files.deleteIfExists(p);
+                } catch (IOException ex) {
+                    log("archivos: limpiar temporales: no se pudo revisar/borrar " + p + ": " + causa(ex));
+                }
+            });
+        } catch (IOException ex) {
+            log("archivos: limpiar temporales: no se pudo listar " + dir + ": " + causa(ex));
+        }
     }
 }

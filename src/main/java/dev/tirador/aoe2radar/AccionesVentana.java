@@ -24,10 +24,13 @@ import java.awt.event.ActionEvent;
 import java.net.URI;
 import java.nio.file.Path;
 
+import java.time.Duration;
+
 import static dev.tirador.aoe2radar.api.Freno.ctrlMult;
 import static dev.tirador.aoe2radar.api.Freno.ctrlOn;
 import static dev.tirador.aoe2radar.app.Servicios.*;
 import static dev.tirador.aoe2radar.cache.Canales.cargarCanales;
+import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
 import static dev.tirador.aoe2radar.cache.Paises.cargarPaises;
 import static dev.tirador.aoe2radar.cache.Paises.guardarPaises;
 import static dev.tirador.aoe2radar.service.EnlaceVivo.tickMs;
@@ -36,6 +39,7 @@ import static dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar;
 import static dev.tirador.aoe2radar.sfrdata.Snapshots.cargarEloAyer;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.ui.TemaApp.flatLafDisponible;
+import static dev.tirador.aoe2radar.util.Archivos.limpiarTemporales;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Identidad.TWITCH;
@@ -55,6 +59,15 @@ final class AccionesVentana {
     // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
     // precarga del tech tree y del ladder. Es lo último que hace el constructor.
     static void arrancar(SpoilerFreeRecs v) {
+        // Fila 140 de DEUDA: un .tmp huérfano de escribirAtomico (la app se cortó a media escritura) se queda en
+        // disco para siempre si nadie lo barre. UNA vez al arrancar, en un hilo de fondo (nunca bloquea el EDT
+        // ni retrasa el resto del arranque), se limpian los de más de un día en las carpetas donde escribirAtomico
+        // escribe: la de trabajo (config.properties) y sfrdata (paises.txt, perfiles_shards).
+        new Thread(() -> {
+            limpiarTemporales(Path.of("."), "config.properties", Duration.ofDays(1));
+            limpiarTemporales(LADDER_DIR, "paises.txt", Duration.ofDays(1));
+            limpiarTemporales(LADDER_DIR.resolve("perfiles_shards"), "", Duration.ofDays(1));
+        }, "limpiar-temporales").start();
         cargarCanales();
         v.watchlist.loadPlayers();
         v.watchlist.sanearVinculosHuerfanos();
