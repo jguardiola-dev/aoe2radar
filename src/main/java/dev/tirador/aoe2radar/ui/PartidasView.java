@@ -60,8 +60,10 @@ import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
  * fetchMatches/download/buscarAleatorias/buscarGte SIGUEN siendo {@code SwingWorker} (ahora en BusquedasPartidas y
  * DescargasPartidas; la tanda lo permite
  * explícitamente: reescribirlos con {@code Tareas} cambiaría cuándo se pinta cada trozo de publish/process).
- * Lo que sí se aisló en {@link PartidasPresenter}, sin Swing, es {@code vigente()} (la comprobación de caducidad
- * por opSerial que cada uno hace al terminar, antes de decidir qué pintar) y los tres filtros de la tabla.
+ * Las DECISIONES sin Swing viven en {@link PartidasPresenter} (fase 5): caducidad por opSerial, filtros y jugador de
+ * referencia, sugerencias de rival, a quién busca el botón y a quién se piden las partidas, la paginación, el
+ * post-proceso de azar/búsqueda/descarga y los mensajes de estado. La fachada y sus piezas leen los controles,
+ * llaman al presentador y pintan lo que devuelve; los SwingWorker se quedan aquí como transporte.
  * <p>
  * La Watchlist (ui.WatchlistView) se pide por {@link EnlaceWatchlist}, que cablea la ventana. El resto de la ventana
  * (navegación, semáforo de operación en curso, perfil abierto, red) llega por {@link Anfitrion}.

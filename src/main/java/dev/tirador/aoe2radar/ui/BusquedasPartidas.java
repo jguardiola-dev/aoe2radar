@@ -33,7 +33,9 @@ import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
  * Las búsquedas de Partidas: «Buscar partidas» (fetchMatches), «Al azar por ELO…» y «Guess the ELO!». Sale tal
  * cual de {@link PartidasView} (1.3): los tres SwingWorker no cambian (mismo doInBackground, publish/process y
  * done con PartidasPresenter.vigente); all, SUJETOS, filtroSujetos, fetchWorker, vistaDeSujetos, objetivoEtiqueta
- * y los botones siguen en la fachada y se usan por {@code vista}.
+ * y los botones siguen en la fachada y se usan por {@code vista}. Desde la fase 5, lo que se decide (a quién se
+ * busca, el recorrido paginado, qué hacer con el resultado, los mensajes) está en {@link PartidasPresenter}; aquí
+ * quedan los diálogos, los botones y los SwingWorker como transporte.
  */
 final class BusquedasPartidas {
 

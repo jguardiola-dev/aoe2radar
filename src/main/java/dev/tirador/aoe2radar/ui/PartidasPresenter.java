@@ -40,7 +40,10 @@ import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
  * fachada, así que se pasa por referencia a cada función en vez de copiarlo a un objeto nuevo.
  * <p>
  * Contiene: {@link #vigente} (¿sigo siendo la operación vigente?), el ojo de revelar, los filtros de la tabla y a
- * quién se atribuye cada partida ({@link #asignarRef}), con las sugerencias de rival.
+ * quién se atribuye cada partida ({@link #asignarRef}), con las sugerencias de rival; a quién busca el botón
+ * ({@link #quienBusca}) y a quién se piden las partidas ({@link #elegirBuscados}); el recorrido paginado de
+ * «Buscar partidas» ({@link #recorrer}, lo que corre en el hilo del SwingWorker); lo que se hace con los resultados
+ * (azar, vivos, estados conservados, vivas al descargar) y los mensajes de estado.
  */
 public final class PartidasPresenter {
 
