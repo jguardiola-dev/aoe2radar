@@ -282,8 +282,6 @@ final class WatchlistDialogos {
         }
     }
 
-    public void addPlayerDialog(boolean soloVer) { addPlayerDialog(soloVer, null); }
-
     public void addPlayerDialog(boolean soloVer, String nickInicial) {
         String q = nickInicial != null && !nickInicial.isBlank() ? nickInicial
                 : JOptionPane.showInputDialog(wv.ventana, t("Nick del jugador:", "Player nick:"),

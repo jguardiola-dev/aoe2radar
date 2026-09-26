@@ -727,7 +727,7 @@ public final class WatchlistView {
 
     void refrescarCabeceraOrden() { listaVista.refrescarCabeceraOrden(); }
 
-    void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
+    private void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
 
     /** Reconstruye la lista visible con el grupo activo («Todos» = todos). */
     public void aplicarFiltroGrupo() {
