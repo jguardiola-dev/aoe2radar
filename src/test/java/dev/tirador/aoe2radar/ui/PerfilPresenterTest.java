@@ -298,6 +298,28 @@ class PerfilPresenterTest {
         assertSame(completa, pantalla.completadaPintada);
     }
 
+    /** F8 (1.3): la carga rápida (sin nada guardado) pide ACT_PAGINAS_RAPIDAS páginas: la barra dice «de 2», no «de 20». */
+    @Test void cargar_por_api_rapida_anuncia_sus_paginas_reales() {
+        pantalla.pidAbierto = 7L;
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        presenter.cargar(7L, "Zutano", null, false);
+        perfiles.ultimoParcial.accept(actividad(7L, "Zutano", List.of()));
+        assertEquals(dev.tirador.aoe2radar.service.ProfileService.ACT_PAGINAS_RAPIDAS, pantalla.parcialMax);
+    }
+
+    /** F8: la actualización de un perfil ya guardado sí va hasta ACT_MAX_PAGINAS. */
+    @Test void cargar_por_api_actualizando_anuncia_el_maximo() {
+        pantalla.pidAbierto = 7L;
+        perfiles.anioSfr = null;
+        Match m = new Match(); m.id = 1;
+        Actividad base = new Actividad(7L, "Zutano", List.of(m), false, 2, 1_700_000_000_000L);
+        perfiles.historialResultado = base;
+        presenter.cargar(7L, "Zutano", base, false);
+        perfiles.ultimoParcial.accept(base);
+        assertEquals(dev.tirador.aoe2radar.service.ProfileService.ACT_MAX_PAGINAS, pantalla.parcialMax);
+    }
+
     @Test void cargar_por_api_progreso_parcial_se_descarta_si_el_pid_cambio() {
         pantalla.pidAbierto = 7L;
         perfiles.anioSfr = null;

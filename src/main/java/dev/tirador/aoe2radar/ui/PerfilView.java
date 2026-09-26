@@ -435,7 +435,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         izq.add(actHastaLabel); izq.add(actHoyBtn);
         JButton histBtn = new JButton(t("Todas las partidas…", "All games…"));
         histBtn.setFocusable(false); histBtn.setMargin(new Insets(1, 8, 1, 8)); histBtn.putClientProperty("JButton.buttonType", "roundRect");
-        histBtn.setToolTipText(t("El histórico del perfil en páginas, con filtro de modo y rec a un clic", "The profile's history in pages, with a mode filter and recs one click away"));
+        histBtn.setToolTipText(t("Lleva todas las partidas cargadas del perfil a la pestaña Partidas: sin resultado hasta que lo pidas y con la rec a un clic", "Takes all the profile's loaded games to the Games tab: no result until you ask for it, and the rec one click away"));
         histBtn.addActionListener(e -> { if (actPid > 0) verHistorialEnTabla(actPid, actNombre); });
         izq.add(histBtn);
         JButton h2hBtn = new JButton(t("Cara a cara…", "Head-to-head…"));
@@ -485,7 +485,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         norte.add(actProgreso, BorderLayout.SOUTH);
         actMasBtn = new JButton(t("Cargar más partidas", "Load more games"));
         actMasBtn.setFocusable(false); actMasBtn.setMargin(new Insets(1, 8, 1, 8)); actMasBtn.putClientProperty("JButton.buttonType", "roundRect");
-        actMasBtn.setToolTipText(t("Este jugador tiene más de 1.000 partidas en el último año: baja las 500 siguientes", "This player has over 1,000 games in the last year: fetch the next 500"));
+        actMasBtn.setToolTipText(t("El historial cargado aún no llega a un año: baja las " + miles(ACT_MAS_PAGINAS * 50) + " partidas anteriores (" + ACT_MAS_PAGINAS + " llamadas)", "The loaded history doesn't cover a year yet: fetch the previous " + miles(ACT_MAS_PAGINAS * 50) + " games (" + ACT_MAS_PAGINAS + " requests)"));
         actMasBtn.setVisible(false);
         actMasBtn.addActionListener(e -> perfilCargarMas());
         izq.add(actMasBtn);
@@ -580,8 +580,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         JScrollPane scroll = new JScrollPane(actCuerpo, ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED, ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setBorder(null);
         actividadPanel.add(scroll, BorderLayout.CENTER);
-        JLabel pie = new JLabel(t("Perfil e historial de aoe2companion.com (hasta 1 año o 1.500 partidas). Solo agregados: cada línea exige al menos 3 partidas; el calendario cuenta partidas, no resultados. Clic en un rival o aliado abre su perfil.",
-                "Profile and history from aoe2companion.com (up to 1 year or 1,500 games). Aggregates only: every line needs at least 3 games; the calendar counts games, not results. Click a rival or ally to open their profile."));
+        JLabel pie = new JLabel(t("Perfil e historial de sfr-data y aoe2companion.com (hasta 1 año; por la API, primero las más recientes y el resto con «Cargar más partidas»). Solo agregados: cada línea exige al menos 3 partidas; el calendario cuenta partidas, no resultados. Clic en un rival o aliado abre su perfil.",
+                "Profile and history from sfr-data and aoe2companion.com (up to 1 year; through the API, the most recent first and the rest with \u201CLoad more games\u201D). Aggregates only: every line needs at least 3 games; the calendar counts games, not results. Click a rival or ally to open their profile."));
         pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
         actividadPanel.add(pie, BorderLayout.SOUTH);
         actMostrarCuerpo(false);

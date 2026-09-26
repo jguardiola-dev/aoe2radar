@@ -160,10 +160,10 @@ public final class PerfilPresenter {
                 }
                 FichaPerfil ficha = fichaOConocida(pid);
                 tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.cabecera(ficha); });
-                int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // primero 250 partidas; el resto solo si te quedas
+                int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // primero 100 partidas (2 páginas); hasta 1.000 al actualizar; el resto, con «Cargar más»
                 Actividad a = (fresco && base.completo()) ? base : perfiles.historial(pid, nombre, base, false, max, parcialA -> tareas.enUi(() -> {
                     if (pantalla.pidAbierto() != pid) return;
-                    pantalla.progresoParcial(parcialA, ACT_MAX_PAGINAS);
+                    pantalla.progresoParcial(parcialA, max);   // F8: «página 1 de 2» en la carga rápida (antes decía «de 20»)
                 }), () -> pantalla.pidAbierto() != pid);
                 tareas.enUi(() -> {
                     terminar(token);
