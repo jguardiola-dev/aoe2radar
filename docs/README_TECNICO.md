@@ -104,17 +104,31 @@ An installed app cannot know where the old zip was, so there is no automatic mig
   The same action is in Settings → **Import data from another version…** (only when packaged, so the
   harness menu capture does not change).
 - The chosen folder must contain `config.properties` or `players.txt` and must not be (or contain, or be
-  inside) the data folder. The copy runs on a background thread: `sfrdata/`, `top_cache.txt`, `players.txt`
-  and `config.properties` go to a `.importando` staging folder inside the data folder; `config.properties` is
-  rewritten (`carpeta_recs` pointing inside the old folder → the new recs folder; `importar_ofrecido=true`);
-  the old recs are copied to the recs folder without overwriting (each through a temporary name); then the
-  staged files are moved into place with `players.txt`, `config.properties` and the `importado_desde.txt`
-  marker last. On any error the staging folder is deleted and the data folder is left as it was. Not
+  inside) the data folder. If the data folder already has user data, the app asks for confirmation first and
+  says where the copy of the current data will go.
+- **Step 1, prepare** (`ImportacionDatos.preparar`, background thread, the app keeps running): `sfrdata/`,
+  `top_cache.txt`, `players.txt` and `config.properties` are copied to a `.importando` staging folder inside
+  the data folder; `config.properties` is rewritten (absolute `carpeta_recs` inside the old folder → the new
+  recs folder; a relative one is dropped; `importar_ofrecido=true`); the old recs are copied to the recs folder
+  without overwriting, each through a `*.importando` temporary name (leftovers are swept at startup by
+  `Archivos.limpiarTemporales`). Copies drop the read-only attribute. If this fails, the staging folder is
+  deleted and the data folder has not changed (recs already copied stay, and the message says so). Not
   imported: `descargas.log`, `techtree/` (rebuilt from the jar; its ETag is forgotten when `data.json` comes
   from the jar), app resources.
-- Afterwards the app relaunches its own exe (`Sistema.relanzar`, from `ProcessHandle`) and exits with
-  `System.exit`, skipping the normal close: the old in-memory player list and countries would otherwise be
-  saved over the imported files.
+- **Step 2, place** (`ImportacionDatos.colocar`), immediately followed by relaunch and exit, with nothing in
+  between: inside `synchronized (Config.class)` (the monitor of `leerConfig`/`guardarConfig`) and with every
+  `Archivos.escribirAtomico` paused (a read/write lock: in-flight writes finish, new ones fail with
+  `IOException`; this covers the countries Timer, the top cache, sfr-data, `players.txt` and the config). Every
+  file that will be replaced is first copied to `.antes_de_importar/<date>/` (always kept), then the staged
+  files are moved in with `players.txt`, `config.properties` and the `importado_desde.txt` marker last. If a
+  move fails, the replaced files are restored from that copy and the new ones removed (states `IMPORTADO`,
+  `SIN_CAMBIOS`, `RESTAURADO`, `A_MEDIAS`; the message tells which).
+- On success the writes stay paused, the result is written to `.aviso_importacion.txt` (shown by the new app at
+  startup, including a warning if the imported config had autostart on), the app relaunches its own exe
+  (`Sistema.relanzar`, from `ProcessHandle`) and exits with `System.exit`, skipping the normal close: the old
+  in-memory player list and countries would otherwise be saved over the imported files.
+- `reg.exe` (Documents lookup) runs with a 5 s limit and its output is read on another thread, so a hung
+  process cannot block startup; an invalid `jpackage.app-path`/`app.dir` counts as "not packaged".
 
 Autostart with Windows (`Sistema.fijarAutoArranque`, `HKCU\...\CurrentVersion\Run`) points at the exe
 (`jpackage.app-path`), never at the data folder. Under Conveyor there is no `jpackage.app-path`, so the menu

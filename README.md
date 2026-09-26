@@ -44,7 +44,8 @@ precomputed profiles, so the app does not depend only on the API when you open i
 5. If you are upgrading from a 1.x zip, the first time the new version starts it asks whether you want to
    import your data: click **Choose folder…** and pick the folder where the old `aoe2radar.exe` was. Your
    groups, settings, caches and recs are copied (the old folder is left untouched). You can also do it later
-   in **Configuración** → **Import data from another version…**.
+   in **Configuración** → **Import data from another version…**; if you already have data in the new version,
+   it asks first and keeps a copy of it in `%APPDATA%\aoe2radar\.antes_de_importar`. The app then restarts.
 
 ### Where your data lives
 
