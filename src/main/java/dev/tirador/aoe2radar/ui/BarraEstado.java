@@ -147,7 +147,7 @@ public final class BarraEstado {
         f.setFont(f.getFont().deriveFont(Font.PLAIN, 11f));
         f.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
         f.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        f.setToolTipText("Abrir https://" + TWITCH);
+        f.setToolTipText(t("Abrir https://", "Open https://") + TWITCH);
         f.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) { anfitrion.abrirTwitch(); }
         });

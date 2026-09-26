@@ -93,7 +93,7 @@ final class CableadoJugador {
                         v.watchlist.rebuildGrupos();
                         v.watchlist.aplicarFiltroGrupo();
                         v.watchlist.refrescarWatchlist();
-                        v.status.setText(nombre + t(" añadido a «", " added to \u201C") + grupo + "\u00bb.");
+                        v.status.setText(nombre + t(" añadido a «", " added to \u201C") + grupo + t("».", "”."));
                         v.watchlist.ofrecerVinculadasTrasAlta(pid, nombre, grupo);   // siempre que alguien entra en un grupo, se revisan sus cuentas vinculadas
                     }
                     @Override public String elegirGrupoDialog(String nombreSugerido) { return v.watchlist.elegirGrupoDialog(nombreSugerido); }

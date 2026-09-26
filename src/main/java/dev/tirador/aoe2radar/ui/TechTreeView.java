@@ -422,7 +422,13 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
             Object v = cost.get(r);
             if (v instanceof Number n && n.intValue() > 0) {
                 String img = ttImgHtml(tt.dir().resolve("img/" + r.toLowerCase(Locale.ROOT) + ".png"), 14);
-                sb.append(sb.length() > 0 ? " &nbsp; " : "").append(n.intValue()).append(' ').append(img.isEmpty() ? r : img);
+                String nombreVisible = switch (r) {
+                    case "Food" -> t("Comida", "Food");
+                    case "Wood" -> t("Madera", "Wood");
+                    case "Gold" -> t("Oro", "Gold");
+                    default -> t("Piedra", "Stone");
+                };
+                sb.append(sb.length() > 0 ? " &nbsp; " : "").append(n.intValue()).append(' ').append(img.isEmpty() ? nombreVisible : img);
             }
         }
         return sb.toString();
