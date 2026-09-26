@@ -287,13 +287,14 @@ class ListaSeguidosTest {
         assertEquals(new Player(2L, "Bob", GENERAL, 0L), jugadores.get(0));
     }
 
-    @Test void moverJugador_cambiaSuGrupoYPierdeElVinculo() {
+    /** Decisión 5 de Jorge (DEUDA fila 103): mover UN jugador conserva su vínculo de familia, igual que
+     *  moverVarios. Antes de la fase 4 se perdía (como en la 1.1); ahora los dos caminos se comportan igual. */
+    @Test void moverJugador_cambiaSuGrupoYConservaElVinculo() {
         List<Player> jugadores = new ArrayList<>(List.of(new Player(1L, "Ana", GENERAL, 99L)));
 
         svc.moverJugador(jugadores, new Player(1L, "Ana", GENERAL, 99L), "Amigos");
 
-        // Igual que en la 1.1: a diferencia de moverVarios, moverJugador no conserva el vínculo (ver DEUDA).
-        assertEquals(new Player(1L, "Ana", "Amigos", 0L), jugadores.get(0));
+        assertEquals(new Player(1L, "Ana", "Amigos", 99L), jugadores.get(0));
     }
 
     @Test void moverVarios_cambiaSuGrupoYConservaElVinculo() {
