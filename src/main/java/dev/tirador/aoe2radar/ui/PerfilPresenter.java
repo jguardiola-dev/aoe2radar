@@ -276,24 +276,40 @@ public final class PerfilPresenter {
         tareas.enFondoDemonioMinima("perfiles-precarga", () -> {
             try {
                 Thread.sleep(90_000);
-                if (!Files.isDirectory(perfilesDir)) return;
-                List<Path> ficheros;
-                try (var st = Files.list(perfilesDir)) { ficheros = st.filter(p -> p.toString().endsWith(".json")).toList(); } catch (IOException ex) { return; }
-                ficheros = new ArrayList<>(ficheros);
-                ficheros.removeIf(p -> { try { return System.currentTimeMillis() - Files.getLastModifiedTime(p).toMillis() > 7L * 24 * 3_600_000L; } catch (IOException ex) { return true; } });
-                ficheros.sort((x, y) -> { try { return Files.getLastModifiedTime(y).compareTo(Files.getLastModifiedTime(x)); } catch (IOException ex) { return 0; } });
-                if (ficheros.size() > 10) ficheros = ficheros.subList(0, 10);
-                for (Path p : ficheros) {
-                    long pid;
-                    try { pid = Long.parseLong(p.getFileName().toString().replace(".json", "")); } catch (NumberFormatException ex) { continue; }
-                    while (pantalla.cargando()) Thread.sleep(5000);   // nunca competir con una carga pedida por el usuario
-                    Actividad base = actividadCache.get(pid);
-                    if (base == null) base = cargarDeDisco.apply(pid);
-                    if (base == null || System.currentTimeMillis() - base.ms() < 6 * 3_600_000L) continue;
-                    try { perfiles.historial(pid, base.nombre(), base, false, 3, a -> { }, () -> false); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
-                    Thread.sleep(4000);
-                }
+                precalentarAhora(perfilesDir, cargarDeDisco);
             } catch (InterruptedException ignored) { }
         });
+    }
+
+    /** Pausa entre perfiles precalentados por la API (4 s, como en la 1.1). El test la baja. */
+    long pausaPrecargaMs = 4000;
+
+    /**
+     * El trabajo de precalentar, sin la espera inicial (el test lo llama directo). «Nocturno primero» (1.3): antes de
+     * ir a la API mira sfr-data; si tiene el año del jugador, abrir su perfil ya no llama a la API (cargar lo saca de
+     * ahí), así que no se gastan hasta 3 páginas en él; de paso el paquete queda bajado. Solo los que sfr-data no
+     * cubre (o si leerlo falla) van a la API, como antes. Fuera del EDT.
+     */
+    void precalentarAhora(Path perfilesDir, LongFunction<Actividad> cargarDeDisco) throws InterruptedException {
+        if (!Files.isDirectory(perfilesDir)) return;
+        List<Path> ficheros;
+        try (var st = Files.list(perfilesDir)) { ficheros = st.filter(p -> p.toString().endsWith(".json")).toList(); } catch (IOException ex) { return; }
+        ficheros = new ArrayList<>(ficheros);
+        ficheros.removeIf(p -> { try { return System.currentTimeMillis() - Files.getLastModifiedTime(p).toMillis() > 7L * 24 * 3_600_000L; } catch (IOException ex) { return true; } });
+        ficheros.sort((x, y) -> { try { return Files.getLastModifiedTime(y).compareTo(Files.getLastModifiedTime(x)); } catch (IOException ex) { return 0; } });
+        if (ficheros.size() > 10) ficheros = ficheros.subList(0, 10);
+        for (Path p : ficheros) {
+            long pid;
+            try { pid = Long.parseLong(p.getFileName().toString().replace(".json", "")); } catch (NumberFormatException ex) { continue; }
+            while (pantalla.cargando()) Thread.sleep(5000);   // nunca competir con una carga pedida por el usuario
+            Actividad base = actividadCache.get(pid);
+            if (base == null) base = cargarDeDisco.apply(pid);
+            if (base == null || System.currentTimeMillis() - base.ms() < 6 * 3_600_000L) continue;
+            try {
+                if (perfiles.anioSfr(pid, base.nombre()) != null) continue;   // en el alcance de sfr-data: sin API
+            } catch (Exception ex) { log("precarga perfil " + pid + " (sfr-data): " + causa(ex)); }
+            try { perfiles.historial(pid, base.nombre(), base, false, 3, a -> { }, () -> false); } catch (Exception ex) { log("precarga perfil " + pid + ": " + causa(ex)); }
+            Thread.sleep(pausaPrecargaMs);
+        }
     }
 }

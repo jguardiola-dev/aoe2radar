@@ -63,6 +63,28 @@ class PerfilPresenterTest {
         @Override public int traerHoy(long pid) throws java.io.IOException { if (traerHoyFalla != null) { if (traerHoyFalla instanceof java.io.IOException io) throw io; throw new RuntimeException(traerHoyFalla); } return traerHoyResultado; }
     }
 
+    /** 3.8 del inventario de la API: precalentar mira sfr-data antes; solo los pid que no cubre van a la API. */
+    @Test void precalentarSoloVaALaApiConLoQueSfrDataNoTiene(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        for (long pid : new long[]{ 1, 2, 3 }) java.nio.file.Files.writeString(dir.resolve(pid + ".json"), "{}");
+        List<Long> alaApi = new ArrayList<>(), aSfr = new ArrayList<>();
+        PerfilesFalso perfilesPre = new PerfilesFalso() {
+            @Override public AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception {
+                aSfr.add(pid);
+                if (pid == 3) throw new java.io.IOException("sin red");   // si sfr-data falla, la API como antes
+                return pid == 1 ? new AnioSfr(PerfilPresenterTest.this.actividad(pid, "Uno", List.of()), "2026-09-25", "es") : null;
+            }
+            @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, BooleanSupplier cancelar) {
+                alaApi.add(pid); return base;
+            }
+        };
+        PerfilPresenter p = new PerfilPresenter(perfilesPre, ratings, busqueda, Tareas.EN_LINEA, eloWatch, new HashMap<>(), pantalla);
+        p.pausaPrecargaMs = 0;
+        p.precalentarAhora(dir, pid -> actividad(pid, "J" + pid, List.of()));   // ms de 2023: más de 6 h, toca refrescar
+        java.util.Collections.sort(aSfr); java.util.Collections.sort(alaApi);
+        assertEquals(List.of(1L, 2L, 3L), aSfr, "se mira sfr-data para todos");
+        assertEquals(List.of(2L, 3L), alaApi, "el 1 lo tiene sfr-data: ninguna llamada a la API por él");
+    }
+
     static class RatingsFalso implements RatingsService {
         int asegurarLlamadas;
         String asegurarError;
