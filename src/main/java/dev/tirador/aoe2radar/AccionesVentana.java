@@ -91,15 +91,15 @@ final class AccionesVentana {
         v.vigilante = new javax.swing.Timer(tickMs(), e -> {
             // Con el socket conectado, quién está en partida llega al instante: los sondeos pasan a ser una resincronización
             // cada 10 min (× el multiplicador del mando a distancia). Si el socket cae, vuelven al ritmo del tick.
-            long ahora = System.currentTimeMillis();
+            long ahoraMs = System.currentTimeMillis();
             long resync = (long) (10 * 60_000L * ctrlMult("tick_mult"));
-            boolean tocaSondear = ctrlOn("sondeo") && (!v.enlaceVivo.conectado() || ahora - v.ultimoResyncMs >= resync);
-            if (tocaSondear) v.ultimoResyncMs = ahora;
+            boolean tocaSondear = ctrlOn("sondeo") && (!v.enlaceVivo.conectado() || ahoraMs - v.ultimoResyncMs >= resync);
+            if (tocaSondear) v.ultimoResyncMs = ahoraMs;
             if (tocaSondear) v.watchlist.vigilarVivos();
             if (!v.watchlist.modoTop()) v.directos.vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
             if (v.watchlist.modoTop() && !v.watchlist.modoClan()) {
                 // recuperación automática: si el top no pudo cargarse (o solo hay caché), reintenta
-                if (v.watchlist.topLadderVacio() || ahora - v.watchlist.topCargadoMs() > 15 * 60_000L)
+                if (v.watchlist.topLadderVacio() || ahoraMs - v.watchlist.topCargadoMs() > 15 * 60_000L)
                     v.watchlist.cargarTopLadder(true);
                 else if (tocaSondear) v.watchlist.vigilarTop();
             } else if (v.watchlist.modoClan() && tocaSondear) v.watchlist.vigilarTop();   // el clan se vigila, pero nunca se sustituye por el top del ladder
