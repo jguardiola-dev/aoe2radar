@@ -27,11 +27,13 @@ class LiveNowPresenterTest {
     static final class BuscadorFalso implements LiveNowPresenter.Buscador {
         List<Match> resultado = new ArrayList<>();
         RuntimeException falla;
+        Runnable alPedir;   // lo que pasa «mientras» se consulta un lote (un evento del socket, un cambio de fuente…)
         int llamadas;
         final List<String> csvsPedidos = new ArrayList<>();
         @Override public Iterable<Match> partidas(String pidsCsv, int pagina, int porPagina) {
             llamadas++;
             csvsPedidos.add(pidsCsv);
+            if (alPedir != null) alPedir.run();
             if (falla != null) throw falla;
             return resultado;
         }
@@ -292,6 +294,45 @@ class LiveNowPresenterTest {
         p.pedirClanes();
         assertEquals("clanes", tareas.ultimoNombreDemonio);
         assertNotNull(tareas.trabajoDemonioPendiente);
+    }
+
+    // ----- el barrido fusiona con lo que llegó del socket entretanto (revisión 1.3, F2) --------
+
+    @Test void refrescar_conservaLaPartidaQueElSocketConfirmoDuranteElBarrido() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(801L, "Y", 1500, 10, "es"), ficha(802L, "Z", 1400, 20, "es"));
+        Match nueva = matchEnCurso(9801L, 801L);
+        buscador.resultado = List.of();   // la foto del lote: nadie en partida todavía
+        buscador.alPedir = () -> {        // mientras tanto, el socket confirma la partida de Y (como hace EnlaceVivo)
+            vivo.marcarJugando(801L, 9801L);
+            p.liveEvento(801L, nueva, false);
+        };
+        p.refrescar(true);
+        assertEquals(nueva, p.enCursoSnapshot().get(801L), "la partida confirmada por el socket no la borra la foto vieja del barrido");
+    }
+
+    @Test void refrescar_quitaLoQueSoloVioUnBarridoAnteriorSiElNuevoNoLoVe() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(811L, "Y", 1500, 10, "es"));
+        buscador.resultado = List.of(matchEnCurso(9811L, 811L));
+        p.refrescar(true);
+        assertTrue(p.enCursoSnapshot().containsKey(811L));
+        buscador.resultado = List.of();   // el barrido siguiente ya no la ve, y el socket no la tiene: fuera, como antes
+        p.refrescar(true);
+        assertFalse(p.enCursoSnapshot().containsKey(811L));
+    }
+
+    @Test void refrescar_noConservaUnaPartidaDelSocketQueYaSeSabeTerminada() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(821L, "Y", 1500, 10, "es"));
+        Match m = matchEnCurso(9821L, 821L);
+        buscador.resultado = List.of();
+        buscador.alPedir = () -> { vivo.marcarJugando(821L, 9821L); p.liveEvento(821L, m, false); vivo.apuntarTerminada(9821L); };
+        p.refrescar(true);
+        assertFalse(p.enCursoSnapshot().containsKey(821L));
     }
 
     // ----- puesto de la ficha: la fuente «Grupo» no tiene puesto (revisión 1.3, F3) ----------

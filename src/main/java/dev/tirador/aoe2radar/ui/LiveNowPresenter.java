@@ -196,7 +196,12 @@ public final class LiveNowPresenter {
                 synchronized (liveTerminadas) {
                     synchronized (ahoraEnCurso) {
                         vivos.values().removeIf(m -> liveTerminadas.containsKey(m.id) || estadoVivo.terminada(m.id));
-                        ahoraEnCurso.clear(); ahoraEnCurso.putAll(vivos);
+                        // se fusiona, no se sustituye (revisión 1.3, F2): la foto del barrido es de antes; una partida
+                        // que el socket confirmó entretanto (EstadoVivo la tiene como la de ese jugador y no terminó)
+                        // se queda, aunque su lote ya se hubiera consultado. El socket no la volvería a mandar.
+                        ahoraEnCurso.entrySet().removeIf(en -> !sigueSegunSocket(en.getKey(), en.getValue()));
+                        vivos.keySet().removeAll(ahoraEnCurso.keySet());   // para esos jugadores, el socket es más reciente que la foto
+                        ahoraEnCurso.putAll(vivos);
                     }
                 }
                 for (Map.Entry<Long, Match> en : vivos.entrySet()) estadoVivo.guardarPartida(en.getKey(), en.getValue());
@@ -206,6 +211,13 @@ public final class LiveNowPresenter {
                 tareas.enUi(() -> pantalla.estado(t("No se pudo consultar: ", "Couldn't check: ") + causa(ex)));
             } finally { ahoraCargando = false; }
         });
+    }
+
+    /** ¿La partida m de pid (de ahoraEnCurso) sigue en curso según el socket? Sí si EstadoVivo tiene a pid en esa misma
+     *  partida y nadie la dio por terminada. Se llama con liveTerminadas y ahoraEnCurso cogidos (EstadoVivo es hoja). */
+    private boolean sigueSegunSocket(long pid, Match m) {
+        return m != null && Long.valueOf(m.id).equals(estadoVivo.matchDe(pid))
+                && !liveTerminadas.containsKey(m.id) && !estadoVivo.terminada(m.id);
     }
 
     /**
