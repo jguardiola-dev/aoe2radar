@@ -93,6 +93,8 @@ public final class PerfilPresenter {
      *  vigente apaga cargando(): la respuesta tardía de un perfil que ya se dejó no apaga la del que se está mirando.
      *  Se lee y escribe solo en el EDT (al lanzar y en tareas.enUi), así que no necesita volatile. */
     private long cargaToken;
+    /** F4 (1.3): pid cuyo «Actualizar hoy» está en marcha (0 si ninguno). Se escribe y se lee en el EDT. */
+    private long hoyPid;
 
     public PerfilPresenter(ProfileService perfiles, RatingsService ratings, BusquedaPerfiles busqueda, Tareas tareas,
                             Map<Long, Integer> eloWatch, Map<Long, Actividad> actividadCache, Pantalla pantalla) {
@@ -189,18 +191,24 @@ public final class PerfilPresenter {
     /** «Actualizar hoy»: ficha + las 50 partidas más recientes, fundidas con lo que ya había. Hilo "perfil-hoy". */
     public void actualizarHoy(long pid) {
         if (pid <= 0) return;
+        hoyPid = pid;
         pantalla.hoyIniciado();
         tareas.enFondo("perfil-hoy", () -> {
             try {
                 FichaPerfil ficha = fichaOConocida(pid);
                 pantalla.marcarVinculadasPedidas(pid);
                 int nuevas = perfiles.traerHoy(pid);
-                tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });
+                tareas.enUi(() -> { hoyFin(pid); if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });
             } catch (Exception ex) {
-                tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.hoyError(causa(ex)); });
+                tareas.enUi(() -> { hoyFin(pid); if (pantalla.pidAbierto() == pid) pantalla.hoyError(causa(ex)); });
             }
         });
     }
+
+    /** F4: ¿está en marcha el «Actualizar hoy» de este pid? (para pintar su botón al volver a él). Solo en el EDT. */
+    public boolean hoyEnCurso(long pid) { return pid > 0 && hoyPid == pid; }
+
+    private void hoyFin(long pid) { if (hoyPid == pid) hoyPid = 0; }
 
     /** «Cargar más» páginas del historial por la API. Hilo "perfil-mas-" + pid. */
     public void cargarMas(long pid, String nombre, Actividad base, int paginas) {

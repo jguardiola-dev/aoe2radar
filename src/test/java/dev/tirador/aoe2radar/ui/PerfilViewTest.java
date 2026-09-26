@@ -23,6 +23,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * PerfilView con componentes Swing reales dentro de invokeAndWait, nunca visibles (como RatingsViewTest y
@@ -73,10 +75,12 @@ class PerfilViewTest {
     void limpiarConfig() throws Exception { Files.deleteIfExists(CONFIG_FILE); }
 
     /** Construye la vista en el EDT (hay que llamarlo dentro de invokeAndWait). */
-    PerfilView vista() {
+    PerfilView vista() { return vista(Tareas.EN_LINEA); }
+
+    PerfilView vista(Tareas tareas) {
         return new PerfilView(perfiles, new RatingsViewTest.RatingsServiceFalso(), new RatingsViewTest.BusquedaFalsa(), new CivStatsViewTest.StatsFalso(),
                 new EstadoVivo(Reloj.SISTEMA), null, new CivStatsViewTest.NavegacionFalsa(), null, new Listas(null, b -> { }),
-                Tareas.EN_LINEA, anfitrion, actividadCache, new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
+                tareas, anfitrion, actividadCache, new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
                 new HashMap<>(), pid -> null, Path.of("perfiles-test-inexistente"), pid -> null, 365);
     }
 
@@ -129,6 +133,73 @@ class PerfilViewTest {
             estado[0] = v.actEstado.getText();
         });
         assertEquals("2 partidas · último año · de sfr-data", estado[0], "el pintado llegó al final");
+    }
+
+    static Actividad fresca(long pid, String nombre) { return new Actividad(pid, nombre, List.of(), true, 1, System.currentTimeMillis()); }
+
+    /** F4 (1.3): A se abre desde sfr-data (con «Actualizar hoy» y «Datos hasta…»), luego B por la API, y se vuelve a
+     *  A, que está fresco en la caché: la salida temprana de baseLista debe enseñar el estado de A, no el de B. */
+    @Test void reabrirDesdeLaCacheEnsenaElEstadoDeEsePerfil() throws Exception {
+        Actividad a = fresca(5L, "Fulano"), b = fresca(6L, "Mengano");
+        boolean[] visible = new boolean[3]; String[] hasta = new String[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L; v.actNombre = "Fulano";
+            actividadCache.put(5L, a);
+            v.desdeSfr(a, "2026-09-24");
+            visible[0] = v.actHoyBtn.isVisible();
+            v.actPid = 6L; v.actNombre = "Mengano";   // B, por la API
+            actividadCache.put(6L, b);
+            v.cargaIniciada();
+            visible[1] = v.actHoyBtn.isVisible();
+            v.actPid = 5L; v.actNombre = "Fulano";   // vuelta a A, fresco y completo en la caché
+            v.baseLista(a, ficha("es", 1500));
+            visible[2] = v.actHoyBtn.isVisible();
+            hasta[0] = v.actHastaLabel.getText();
+        });
+        assertTrue(visible[0]);
+        assertFalse(visible[1], "B viene de la API: sin «Actualizar hoy»");
+        assertTrue(visible[2], "de vuelta en A, su «Actualizar hoy» vuelve a estar");
+        assertTrue(hasta[0].startsWith("Datos hasta el 2026-09-24"), hasta[0]);
+    }
+
+    /** F4: al revés, un perfil de la API reabierto desde la caché no hereda el botón del perfil de sfr-data anterior. */
+    @Test void reabrirDesdeLaCacheUnPerfilDeLaApiNoHeredaElBoton() throws Exception {
+        Actividad a = fresca(5L, "Fulano"), b = fresca(6L, "Mengano");
+        boolean[] visible = new boolean[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L; actividadCache.put(5L, a);
+            v.desdeSfr(a, "2026-09-24");
+            v.actPid = 6L; actividadCache.put(6L, b);   // B ya estaba en la caché (p. ej. se cargó antes por la API)
+            v.baseLista(b, ficha("es", 1400));
+            visible[0] = v.actHoyBtn.isVisible();
+        });
+        assertFalse(visible[0]);
+    }
+
+    /** F4: se deja A con su «Actualizar hoy» en marcha y se vuelve a él (desde la caché) antes de que termine: el
+     *  botón sigue en «Actualizando…», deshabilitado, y no se puede lanzar otro. */
+    @Test void volverAUnPerfilConActualizarHoyEnMarcha() throws Exception {
+        PerfilPresenterTest.TareasAplazadas tareas = new PerfilPresenterTest.TareasAplazadas();
+        Actividad a = fresca(5L, "Fulano"), b = fresca(6L, "Mengano");
+        String[] texto = new String[2]; boolean[] habilitado = new boolean[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista(tareas);
+            v.actPid = 5L; actividadCache.put(5L, a);
+            v.desdeSfr(a, "2026-09-24");
+            v.actHoyBtn.doClick();   // en marcha (el hilo perfil-hoy queda aplazado)
+            v.actPid = 6L; actividadCache.put(6L, b);
+            v.baseLista(b, ficha("es", 1400));
+            v.actPid = 5L;
+            v.baseLista(a, ficha("es", 1500));
+            texto[0] = v.actHoyBtn.getText(); habilitado[0] = v.actHoyBtn.isEnabled();
+            tareas.pendientesFondo.get(0).run();   // termina
+            texto[1] = v.actHoyBtn.getText();
+        });
+        assertEquals("Actualizando…", texto[0]);
+        assertFalse(habilitado[0]);
+        assertEquals("Al día · sin partidas nuevas", texto[1]);
     }
 
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la

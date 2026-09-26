@@ -217,8 +217,12 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     private JPanel actTarjetas, actCivs, actCivsRival, actMapas, actRivales, actAliados, actTramos;
     private boolean actOrigenSfr;
     private String actHastaSfr;
-    private JButton actHoyBtn;
-    private JLabel actHastaLabel;
+    JButton actHoyBtn;       // de paquete: lo mira PerfilViewTest
+    JLabel actHastaLabel;    // ídem
+    /** F4 (1.3): pid → fecha «hasta» de los perfiles que se pintaron desde sfr-data en esta sesión (valor null si el
+     *  paquete no la traía). Al reabrir uno desde la caché, su «Actualizar hoy» y su «Datos hasta…» salen de aquí,
+     *  no del perfil que estuviera abierto antes. Solo en el EDT. */
+    private final Map<Long, String> hastaSfrDe = new HashMap<>();
     private JPanel actVinculadasPanel;
     private JLabel actNotaLinea;
     private String actNombreReal = "";
@@ -629,7 +633,14 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         boolean fresco = base != null && System.currentTimeMillis() - base.ms() < 30 * 60_000L;
         if (base != null) { actMostrarCuerpo(true); actRellenarModos(base); actPintar(); }
         if (perfilCache != null && base != null) actPintarCabecera(perfilCache);
-        if (fresco && base.completo() && perfilCache != null) { actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false); return; }
+        if (fresco && base.completo() && perfilCache != null) {
+            actEstado.setText(miles(base.partidas().size()) + t(" partidas", " games")); actProgreso.setVisible(false);
+            // F4: esta salida temprana no pasa por cargaIniciada/desdeSfr: el origen y el botón «Actualizar hoy» son los
+            // de ESTE perfil (antes quedaban los del anterior)
+            actOrigenSfr = hastaSfrDe.containsKey(actPid); actHastaSfr = hastaSfrDe.get(actPid);
+            perfilEstadoHoy();
+            return;
+        }
         presenter.cargar(actPid, actNombre, base, fresco);
     }
 
@@ -643,6 +654,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
 
     @Override public void desdeSfr(Actividad a, String hastaSfr) {
         actOrigenSfr = true; actHastaSfr = hastaSfr;
+        hastaSfrDe.put(actPid, hastaSfr);   // F4
         actProgreso.setVisible(false); actMostrarCuerpo(true); actRellenarModos(a); actPintar();
         actEstado.setText(miles(a.partidas().size()) + t(" partidas · último año · de sfr-data", " games · last year · from sfr-data"));
         actMasBtn.setVisible(false);
@@ -731,6 +743,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         actHoyBtn.setToolTipText(hayNuevas ? t("Le hemos visto en partida después del volcado: hay partidas de hoy que traer (2 llamadas)", "Seen in a game after the dump: there are today's games to fetch (2 requests)")
                 : t("No consta ninguna partida nueva desde el volcado; actualizar solo si crees que ha jugado hoy (2 llamadas)", "No new game is known since the dump; update only if you think they played today (2 requests)"));
         if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta el ", "Data up to ") + (actHastaSfr == null ? "?" : actHastaSfr) + (hayNuevas ? "" : t(" · sin partidas nuevas conocidas", " · no new games known")));
+        if (presenter.hoyEnCurso(actPid)) hoyIniciado();   // F4: se volvió a este perfil con su «Actualizar hoy» aún en marcha
     }
 
     private void perfilCargarMas() { perfilCargarMas(ACT_MAS_PAGINAS); }
