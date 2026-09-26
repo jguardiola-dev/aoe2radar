@@ -64,8 +64,9 @@ Steps to publish X.Y:
 2. On GitHub: **Releases → Draft a new release**, tag `vX.Y` (e.g. `v1.4`) on `main`, write the notes,
    **Publish**. The `release` workflow starts on its own and, a few minutes later, the zip appears in the release.
 3. To rebuild the zip of an existing tag (or if the automatic run failed): **Actions → release → Run workflow**,
-   with the tag. It replaces the zip (`--clobber`); if the release does not exist yet it creates it as a
-   draft, to be completed and published by hand.
+   with the tag. It replaces the zip (`--clobber`): a zip with the same name uploaded by hand to that release
+   is overwritten without asking. If the release does not exist yet, the workflow creates it as a draft, to be
+   completed and published by hand.
 
 Safety check: the workflow fails before uploading anything if the tag does not match the pom version
 (`v` + `version.app`, e.g. `v1.4` for `1.4.0`). While the zip is being built (a few minutes) the published
@@ -102,10 +103,14 @@ and nothing else. From it:
   (`src/main/resources` is not filtered: flags and tech-tree data must go byte for byte). Maven writes
   `version.pom` and `version.app` into it, and `util.Identidad` reads it when the class loads:
   `VERSION_POM` (`1.3.0`) and `VERSION` (`1.3`, via `Identidad.versionCorta`, the same rule as the pom).
-- If the class was compiled outside Maven (no filtered resource), `VERSION` is `0.0`: harmless, the update
-  checker just sees any tag as newer.
-- `util/IdentidadTest` checks, on every `mvn test`, that the resource arrived filtered, that it matches the
-  `<version>` in `pom.xml`, and that the Java rule and the pom rule give the same result.
+- Outside Maven (e.g. an IDE that compiles on its own without processing resources, or plain `javac`), the
+  filtered resource does not exist and the version comes out as `0.0` (title `aoe2radar 0.0 — …`, and the
+  update checker sees any tag as newer). Build through Maven (`mvn compile`/`test`/`package`, or the IDE
+  delegating to Maven) to get the real version.
+- `util/IdentidadTest` checks, on every `mvn test`, that the resource arrived filtered and matches the
+  `<version>` in `pom.xml`, and that the `<regex>` and `<replacement>` in the pom are literally
+  `Identidad.REGLA_CORTA` and `Identidad.REEMPLAZO_CORTA`, applying both to several versions (`1.3.0`,
+  `1.3.1`, `1.4.0-SNAPSHOT`, `2.0`…). If you change the rule, change both places or the test goes red.
 
 ## Layered architecture
 Summary table; the details of what each layer knows and the key contracts are in

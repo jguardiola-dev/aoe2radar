@@ -66,6 +66,25 @@ class IdentidadTest {
         if (versionDelPom().equals("1.3.0")) assertEquals("1.3", Identidad.VERSION);
     }
 
+    /** El &lt;regex&gt; y el &lt;replacement&gt; de la ejecución «version-app» de build-helper en pom.xml. */
+    static String[] reglaDelPom() throws Exception {
+        Path pom = Path.of(System.getProperty("basedir", "."), "pom.xml");
+        Matcher m = Pattern.compile("<id>version-app</id>.*?<regex>([^<]*)</regex>\\s*<replacement>([^<]*)</replacement>",
+                Pattern.DOTALL).matcher(Files.readString(pom, StandardCharsets.UTF_8));
+        if (!m.find()) throw new AssertionError("no encuentro la regex-property «version-app» en " + pom);
+        return new String[] { m.group(1), m.group(2) };
+    }
+
+    /** La regla del pom y la de Java son LA MISMA (texto de la expresión y del reemplazo), no solo el mismo
+     *  resultado con la versión de hoy. */
+    @Test void laReglaDelPomEsLaDeJava() throws Exception {
+        String[] pom = reglaDelPom();
+        assertEquals(Identidad.REGLA_CORTA, pom[0], "<regex> del pom");
+        assertEquals(Identidad.REEMPLAZO_CORTA, pom[1], "<replacement> del pom");
+        for (String v : new String[] { "1.3.0", "1.3.1", "1.4.0-SNAPSHOT", "2.0", "1.30.0", "1.3.10" })
+            assertEquals(v.replaceAll(pom[0], pom[1]), Identidad.versionCorta(v), "versión " + v);
+    }
+
     @Test void reglaDeConversion() {
         assertEquals("1.3", Identidad.versionCorta("1.3.0"));
         assertEquals("1.3.1", Identidad.versionCorta("1.3.1"), "un parche no se pierde (si no, v1.3.1 sería siempre «nueva»)");

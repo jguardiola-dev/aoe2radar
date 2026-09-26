@@ -17,6 +17,8 @@ public final class Identidad {
     /** Misma expresión que la regex-property «version-app» del pom (la que usa jpackage): cambiar las dos a la vez;
      *  IdentidadTest comprueba que dan lo mismo con la versión real del pom. */
     static final String REGLA_CORTA = "^(?:(\\d+\\.\\d+)\\.0|([^-]+))(?:-.*)?$";
+    /** Y el mismo reemplazo que su &lt;replacement&gt;. */
+    static final String REEMPLAZO_CORTA = "$1$2";
 
     /** Versión del pom tal cual (p. ej. «1.3.0»), o null si el recurso no está filtrado. */
     public static final String VERSION_POM = leerVersionPom();
@@ -26,7 +28,7 @@ public final class Identidad {
     /** Versión del pom -> versión de la app: sin sufijo «-algo» y sin un tercer tramo «.0».
      *  1.3.0 -> 1.3 · 1.3.1 -> 1.3.1 · 1.4.0-SNAPSHOT -> 1.4 · 2.0 -> 2.0. */
     public static String versionCorta(String versionPom) {
-        return versionPom.trim().replaceAll(REGLA_CORTA, "$1$2");
+        return versionPom.trim().replaceAll(REGLA_CORTA, REEMPLAZO_CORTA);
     }
 
     /** Lee version.pom del recurso filtrado. Nunca lanza: un fallo en el inicializador estático tumbaría el arranque. */

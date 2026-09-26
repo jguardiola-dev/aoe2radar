@@ -61,23 +61,27 @@ jobs:
           $props = Get-Content target/classes/dev/tirador/aoe2radar/util/version.properties
           $app = ($props | Where-Object { $_ -like 'version.app=*' }) -replace '^version\.app=', ''
           if (-not $app) { throw "no encuentro version.app en version.properties" }
-          if ("v$app" -ne $env:TAG) { throw "el tag $env:TAG no coincide con la versión del pom (v$app): cambia <version> en pom.xml o el tag" }
+          if ("v$app" -cne $env:TAG) { throw "el tag $env:TAG no coincide con la versión del pom (v$app): cambia <version> en pom.xml o el tag" }
           if (-not (Test-Path target/dist/aoe2radar/aoe2radar.exe)) { throw "jpackage no dejó target/dist/aoe2radar/aoe2radar.exe" }
           Get-Content target/dist/aoe2radar/app/aoe2radar.cfg
           "app=$app" >> $env:GITHUB_OUTPUT
 
       - name: Comprimir
+        env:
+          APP: ${{ steps.version.outputs.app }}   # por env, no interpolado en el script
         run: |
-          $zip = "aoe2radar-${{ steps.version.outputs.app }}-windows.zip"
+          $zip = "aoe2radar-$env:APP-windows.zip"
           Compress-Archive -Path target/dist/aoe2radar -DestinationPath $zip
           Get-Item $zip | Format-List Name, Length
 
       - name: Adjuntar a la release del tag
+        env:
+          APP: ${{ steps.version.outputs.app }}
         run: |
-          $zip = "aoe2radar-${{ steps.version.outputs.app }}-windows.zip"
+          $zip = "aoe2radar-$env:APP-windows.zip"
           gh release view $env:TAG *> $null
           if ($LASTEXITCODE -ne 0) {
-            gh release create $env:TAG --draft --verify-tag --title "aoe2radar ${{ steps.version.outputs.app }}" --notes "Borrador creado por el workflow release: escribe las notas y publícala."
+            gh release create $env:TAG --draft --verify-tag --title "aoe2radar $env:APP" --notes "Borrador creado por el workflow release: escribe las notas y publícala."
             if ($LASTEXITCODE -ne 0) { throw "no se pudo crear la release $env:TAG" }
           }
           gh release upload $env:TAG $zip --clobber
