@@ -53,6 +53,24 @@ processes, only to make the error message clearer; it never decides on its own t
 - The result is on the repo's **Actions** tab and next to each commit/PR. A green CI does not replace the full
   harness before closing a group of commits: that one still runs on the development PC.
 
+### Publishing a version (`release.yml`)
+`.github/workflows/release.yml` builds the Windows package on GitHub, so a release does not depend on the
+development PC. It runs `mvn -B -Pempaquetar -DskipTests package` on `windows-latest`, zips
+`target/dist/aoe2radar` as `aoe2radar-X.Y-windows.zip` (same name and layout as the 1.2 and 1.3 zips: an
+`aoe2radar/` folder inside) and attaches it to the tag's release.
+
+Steps to publish X.Y:
+1. Change `<version>` in `pom.xml` (e.g. `1.4.0`), merge to `main`, and wait for the `build` workflow to be green.
+2. On GitHub: **Releases → Draft a new release**, tag `vX.Y` (e.g. `v1.4`) on `main`, write the notes,
+   **Publish**. The `release` workflow starts on its own and, a few minutes later, the zip appears in the release.
+3. To rebuild the zip of an existing tag (or if the automatic run failed): **Actions → release → Run workflow**,
+   with the tag. It replaces the zip (`--clobber`); if the release does not exist yet it creates it as a
+   draft, to be completed and published by hand.
+
+Safety check: the workflow fails before uploading anything if the tag does not match the pom version
+(`v` + `version.app`, e.g. `v1.4` for `1.4.0`). While the zip is being built (a few minutes) the published
+release has no zip yet; the app's update checker may already show it.
+
 ## Packaging (Maven profile `empaquetar`)
 The normal build (`mvn test`, `mvn package`) does not produce the `.exe`: that lives in a separate profile
 that is **not activated automatically**, so it does not affect or slow down day-to-day work.
