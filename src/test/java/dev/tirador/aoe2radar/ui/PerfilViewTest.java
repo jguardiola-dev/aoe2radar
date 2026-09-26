@@ -67,7 +67,13 @@ class PerfilViewTest {
     }
 
     /** ProfileService de mentira: el de PerfilPresenterTest (ficha y ficha conocida configurables). */
-    final PerfilPresenterTest.PerfilesFalso perfiles = new PerfilPresenterTest.PerfilesFalso();
+    final PerfilPresenterTest.PerfilesFalso perfiles = new PerfilPresenterTest.PerfilesFalso() {
+        // como el servicio real: tras vinculadasConElo, las vinculadas ya se conocen (el doble base devuelve null
+        // siempre y, con Tareas.EN_LINEA, la cabecera volvería a pedirlas sin fin)
+        boolean pedidas;
+        @Override public List<dev.tirador.aoe2radar.model.Perfil.Vinculada> vinculadasConElo(long pid) { pedidas = true; return List.of(); }
+        @Override public List<dev.tirador.aoe2radar.model.Perfil.Vinculada> vinculadasConocidas(long pid) { return pedidas ? List.of() : null; }
+    };
     final AnfitrionFalso anfitrion = new AnfitrionFalso();
     final Map<Long, Actividad> actividadCache = new ConcurrentHashMap<>();
 
@@ -268,6 +274,25 @@ class PerfilViewTest {
             for (Object[] p : v.perfilPestanas) tras.add((String) p[1]);
         });
         assertEquals(List.of("B", "A", "activa=1", "B", "A"), tras);
+    }
+
+    /** F4 (2): tras «Actualizar hoy», reabrir el mismo perfil desde la caché (p. ej. pulsar otra vez la pestaña
+     *  Perfil) no vuelve a ofrecer «Actualizar hoy» ni a decir «Datos hasta el <volcado>»: los datos ya son de hoy. */
+    @Test void reabrirTrasActualizarHoyConservaElEstado() throws Exception {
+        Actividad a = fresca(5L, "Fulano");
+        perfiles.traerHoyResultado = 0;
+        String[] texto = new String[2]; boolean[] habilitado = new boolean[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L; actividadCache.put(5L, a);
+            v.desdeSfr(a, "2026-09-24");
+            v.actHoyBtn.doClick();   // EN_LINEA: termina en el acto
+            v.baseLista(a, ficha("es", 1500));   // reabrir desde la caché
+            texto[0] = v.actHoyBtn.getText(); habilitado[0] = v.actHoyBtn.isEnabled(); texto[1] = v.actHastaLabel.getText();
+        });
+        assertEquals("Al día · sin partidas nuevas", texto[0]);
+        assertFalse(habilitado[0]);
+        assertEquals("Datos hasta hoy", texto[1]);
     }
 
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la

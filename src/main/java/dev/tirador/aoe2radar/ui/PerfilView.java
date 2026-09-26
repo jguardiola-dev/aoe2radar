@@ -223,6 +223,9 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
      *  paquete no la traía). Al reabrir uno desde la caché, su «Actualizar hoy» y su «Datos hasta…» salen de aquí,
      *  no del perfil que estuviera abierto antes. Solo en el EDT. */
     private final Map<Long, String> hastaSfrDe = new HashMap<>();
+    /** F4 (2): pid → texto del botón tras un «Actualizar hoy» terminado en esta sesión («Al día…», «Actualizado · +n»):
+     *  al reabrir ese perfil desde la caché, el botón sigue así y los datos siguen siendo «hasta hoy». Solo en el EDT. */
+    private final Map<Long, String> hoyHecho = new HashMap<>();
     private JPanel actVinculadasPanel;
     private JLabel actNotaLinea;
     private String actNombreReal = "";
@@ -669,6 +672,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     @Override public void desdeSfr(Actividad a, String hastaSfr) {
         actOrigenSfr = true; actHastaSfr = hastaSfr;
         hastaSfrDe.put(actPid, hastaSfr);   // F4
+        hoyHecho.remove(actPid);            // F4 (2): datos recién traídos de sfr-data: «Actualizar hoy» vuelve a tener sentido
         actProgreso.setVisible(false); actMostrarCuerpo(true); actRellenarModos(a); actPintar();
         actEstado.setText(miles(a.partidas().size()) + t(" partidas · último año · de sfr-data", " games · last year · from sfr-data"));
         actMasBtn.setVisible(false);
@@ -703,6 +707,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         Actividad a = actividadCache.get(actPid);
         if (a != null) { actRellenarModos(a); actPintar(); }
         actHoyBtn.setText(nuevas == 0 ? t("Al día · sin partidas nuevas", "Up to date · no new games") : t("Actualizado · +", "Updated · +") + nuevas + t(" partidas", " games"));
+        hoyHecho.put(actPid, actHoyBtn.getText());   // F4 (2)
         actHoyBtn.setForeground(UIManager.getColor("Button.foreground"));
         actHoyBtn.setEnabled(false);
         if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta hoy", "Data up to today"));
@@ -758,6 +763,10 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
                 : t("No consta ninguna partida nueva desde el volcado; actualizar solo si crees que ha jugado hoy (2 llamadas)", "No new game is known since the dump; update only if you think they played today (2 requests)"));
         if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta el ", "Data up to ") + (actHastaSfr == null ? "?" : actHastaSfr) + (hayNuevas ? "" : t(" · sin partidas nuevas conocidas", " · no new games known")));
         if (presenter.hoyEnCurso(actPid)) hoyIniciado();   // F4: se volvió a este perfil con su «Actualizar hoy» aún en marcha
+        else if (hoyHecho.containsKey(actPid)) {   // F4 (2): ya se actualizó hoy en esta sesión: como lo dejó hoyTerminado
+            actHoyBtn.setText(hoyHecho.get(actPid)); actHoyBtn.setForeground(UIManager.getColor("Button.foreground")); actHoyBtn.setEnabled(false);
+            if (actHastaLabel != null) actHastaLabel.setText(t("Datos hasta hoy", "Data up to today"));
+        }
     }
 
     private void perfilCargarMas() { perfilCargarMas(ACT_MAS_PAGINAS); }
