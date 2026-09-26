@@ -644,6 +644,29 @@ class WatchlistViewTest {
         assertFalse(WatchlistView.sugerenciaCaducada("tirador", "tirador "));   // el trim es parte del criterio
     }
 
+    /**
+     * Hallazgo del revisor sobre la decisión 8 (fila 112): dos jugadores distintos pueden tener el mismo texto
+     * de fila (nombre + país + ELO iguales; el índice local, a diferencia de la API, no lleva el id pegado al
+     * texto). Elegir por texto (r[2].equals(sel)) se quedaba con el primero que empatara, y en «Añadir al
+     * grupo» los añadía a los dos. jugadorDeFila elige por ÍNDICE del combo, que sí es unívoco.
+     */
+    @Test void jugadorDeFila_eligePorIndiceAunqueDosFilasCompartanElMismoTexto() {
+        List<String[]> res = List.of(
+                new String[]{ "10", "Ana", "Ana · es · 1500" },
+                new String[]{ "20", "Ana", "Ana · es · 1500" });   // mismo texto, id distinto (como en el índice local)
+
+        assertEquals(10L, WatchlistView.jugadorDeFila(res, 0, "G").id());
+        assertEquals(20L, WatchlistView.jugadorDeFila(res, 1, "G").id());
+        assertEquals("G", WatchlistView.jugadorDeFila(res, 0, "G").grupo());
+    }
+
+    @Test void jugadorDeFila_indiceFueraDeRangoEsNull() {
+        List<String[]> res = List.<String[]>of(new String[]{ "1", "Ana", "Ana · es" });
+        assertNull(WatchlistView.jugadorDeFila(res, -1, "G"));   // nada seleccionado (combo vacío, JComboBox.getSelectedIndex() == -1)
+        assertNull(WatchlistView.jugadorDeFila(res, 1, "G"));
+        assertNull(WatchlistView.jugadorDeFila(List.of(), 0, "G"));
+    }
+
     // agregarLocalesSinRepetir (y su test) se borraron con la decisión 8 (DEUDA fila 112): addPlayerDialog ya no
     // fusiona API+local a mano, delega en busqueda.buscar (BusquedaPerfilesCompanionTest cubre esa fusión).
 

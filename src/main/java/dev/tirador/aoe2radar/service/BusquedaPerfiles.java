@@ -14,7 +14,8 @@ public interface BusquedaPerfiles {
     /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. */
     List<String[]> buscar(String q);
 
-    /** Búsqueda solo en el índice local, sin red. La usan sugerir/buscar y, hoy, también addPlayerDialog (que
-     *  combina API + local con su propio orden, fuera de sugerir/buscar). */
+    /** Búsqueda solo en el índice local, sin red. La usan sugerir/buscar; addPlayerDialog (WatchlistView) ya no
+     *  la llama aparte: desde la decisión 8 (DEUDA fila 112) usa buscar(q) como el resto de buscadores, en vez
+     *  de combinar API + local con su propio orden. */
     List<String[]> local(String q);
 }
