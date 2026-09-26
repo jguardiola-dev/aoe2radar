@@ -184,6 +184,7 @@ final class CableadoCromo {
                 }
             });
         v.splitPrincipal = split;
+        VentanaGuardada.guardarAlCambiar(v, split);   // F11 (1.3): la geometría se guarda al cambiar, no solo al cerrar
         // Como el Explorador, en toda la ventana: clic en cualquier fondo que no sea un control = sin selección.
         // Excepciones: la cabecera de columnas (ordena) y la cabecera «Partidas de:» (sus nombres son clicables).
         // Ver ui.ClicEnFondo: mezcla excepciones de varias vistas, así que se las pedimos por interfaz.

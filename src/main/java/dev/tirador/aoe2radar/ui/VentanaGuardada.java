@@ -1,5 +1,7 @@
 package dev.tirador.aoe2radar.ui;
 
+import dev.tirador.aoe2radar.util.Config;
+
 import javax.swing.JFrame;
 import javax.swing.JSplitPane;
 import java.awt.GraphicsConfiguration;
@@ -8,10 +10,13 @@ import java.awt.GraphicsEnvironment;
 import java.awt.Insets;
 import java.awt.Rectangle;
 import java.awt.Toolkit;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
-import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 
 /**
@@ -91,13 +96,48 @@ public final class VentanaGuardada {
 
     /** Guarda el divisor (si existe), el estado maximizado y, si no está maximizada, los bounds. */
     public static void guardar(JFrame ventana, JSplitPane splitPrincipal) {
+        geometria(ventana, splitPrincipal).forEach(Config::guardarConfig);
+    }
+
+    /** Las claves que escribe {@link #guardar}, en el mismo orden: divisor (si hay split), ventana_max y, si no está
+     *  maximizada, ventana. Se leen del JFrame, así que hay que llamarla en el EDT. */
+    static Map<String, String> geometria(JFrame ventana, JSplitPane splitPrincipal) {
+        Map<String, String> out = new LinkedHashMap<>();
         if (splitPrincipal != null)
-            guardarConfig("divisor", String.valueOf(splitPrincipal.getDividerLocation()));
+            out.put("divisor", String.valueOf(splitPrincipal.getDividerLocation()));
         boolean max = (ventana.getExtendedState() & JFrame.MAXIMIZED_BOTH) == JFrame.MAXIMIZED_BOTH;
-        guardarConfig("ventana_max", String.valueOf(max));
+        out.put("ventana_max", String.valueOf(max));
         if (!max) {
             Rectangle b = ventana.getBounds();
-            guardarConfig("ventana", b.x + "," + b.y + "," + b.width + "," + b.height);
+            out.put("ventana", b.x + "," + b.y + "," + b.width + "," + b.height);
         }
+        return out;
+    }
+
+    /** Arreglo F11 de la revisión 1.3: al apagar Windows o cerrar sesión con la app abierta, Swing no recibe
+     *  windowClosing y la geometría no se guardaba. En vez de fiarlo al cierre, se guarda 1,5 s después del último
+     *  movimiento, cambio de tamaño, maximizado o arrastre del divisor. El cierre normal sigue guardando como
+     *  siempre. Devuelve el Timer (paquete: VentanaGuardadaTest lo dispara sin esperar). */
+    public static javax.swing.Timer guardarAlCambiar(JFrame ventana, JSplitPane splitPrincipal) {
+        javax.swing.Timer t = new javax.swing.Timer(1500, e -> guardarEnSegundoPlano(ventana, splitPrincipal));
+        t.setRepeats(false);
+        ventana.addComponentListener(new ComponentAdapter() {
+            @Override public void componentMoved(ComponentEvent e) { t.restart(); }
+            @Override public void componentResized(ComponentEvent e) { t.restart(); }
+        });
+        ventana.addWindowStateListener(e -> t.restart());
+        if (splitPrincipal != null)
+            splitPrincipal.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> t.restart());
+        return t;
+    }
+
+    /** Lee la geometría en el EDT y la escribe en un hilo aparte (disco fuera del EDT). Minimizada no guarda nada:
+     *  Windows la lleva a -32000,-32000 y se perdería la posición buena. */
+    static void guardarEnSegundoPlano(JFrame ventana, JSplitPane splitPrincipal) {
+        if ((ventana.getExtendedState() & JFrame.ICONIFIED) != 0) return;
+        Map<String, String> valores = geometria(ventana, splitPrincipal);
+        Thread h = new Thread(() -> valores.forEach(Config::guardarConfig), "ventana-guarda");
+        h.setDaemon(true);
+        h.start();
     }
 }

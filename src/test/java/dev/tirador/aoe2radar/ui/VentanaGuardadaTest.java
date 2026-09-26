@@ -14,6 +14,7 @@ import java.util.Properties;
 
 import static dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -97,6 +98,78 @@ class VentanaGuardadaTest {
                 f.dispose();
             }
         });
+    }
+
+    // ----- F11 (revisión 1.3): guardar al cambiar, no solo al cerrar -----
+
+    /** Espera (como mucho 3 s) a que el hilo «ventana-guarda» deje la clave en disco. */
+    private Properties esperarClave(String clave) throws Exception {
+        for (int i = 0; i < 60; i++) {
+            if (Files.exists(CONFIG_FILE)) {
+                Properties p = leerConfigDeDisco();
+                if (p.getProperty(clave) != null) return p;
+            }
+            Thread.sleep(50);
+        }
+        return Files.exists(CONFIG_FILE) ? leerConfigDeDisco() : new Properties();
+    }
+
+    @Test
+    void moverLaVentanaProgramaElGuardadoYSeGuardaSinCerrarla() throws Exception {
+        javax.swing.Timer[] t = new javax.swing.Timer[1];
+        JFrame[] f = new JFrame[1];
+        SwingUtilities.invokeAndWait(() -> {
+            f[0] = new JFrame();
+            JSplitPane split = new JSplitPane();
+            split.setDividerLocation(300);
+            t[0] = VentanaGuardada.guardarAlCambiar(f[0], split);
+            f[0].setBounds(30, 40, 800, 500);
+            for (java.awt.event.ComponentListener l : f[0].getComponentListeners())
+                l.componentMoved(new java.awt.event.ComponentEvent(f[0], java.awt.event.ComponentEvent.COMPONENT_MOVED));
+            assertTrue(t[0].isRunning(), "mover la ventana programa el guardado");
+            t[0].stop();
+            for (java.awt.event.ActionListener al : t[0].getActionListeners()) al.actionPerformed(null);   // «pasa» 1,5 s
+        });
+        Properties p = esperarClave("ventana");
+        // Los eventos que el setBounds dejó en la cola ya se han procesado al llegar aquí: parar el Timer ahora
+        // evita que dispare dentro de otro test y le escriba la config.
+        SwingUtilities.invokeAndWait(() -> { t[0].stop(); f[0].dispose(); });
+        assertEquals("30,40,800,500", p.getProperty("ventana"), "guardada sin pasar por windowClosing");
+        assertEquals("false", p.getProperty("ventana_max"));
+        assertEquals("300", p.getProperty("divisor"));
+    }
+
+    @Test
+    void moverElDivisorTambienProgramaElGuardado() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JFrame f = new JFrame();
+            JSplitPane split = new JSplitPane();
+            try {
+                javax.swing.Timer t = VentanaGuardada.guardarAlCambiar(f, split);
+                split.setDividerLocation(250);
+                assertTrue(t.isRunning());
+                t.stop();
+            } finally {
+                f.dispose();
+            }
+        });
+    }
+
+    @Test
+    void minimizadaNoSeGuardaLaPosicion() throws Exception {
+        SwingUtilities.invokeAndWait(() -> {
+            JFrame f = new JFrame();
+            try {
+                f.setBounds(-32000, -32000, 160, 28);   // lo que Windows da a una ventana minimizada
+                f.setExtendedState(JFrame.ICONIFIED);
+                VentanaGuardada.guardarEnSegundoPlano(f, null);
+            } finally {
+                f.dispose();
+            }
+        });
+        Thread.sleep(400);   // si hubiera arrancado el hilo de guardado, ya habría escrito
+        assertFalse(Files.exists(CONFIG_FILE) && leerConfigDeDisco().getProperty("ventana") != null,
+                "minimizada no se pisa la posición buena");
     }
 
     // ----- F9 (revisión 1.3): varios monitores, sin pantallas reales -----
