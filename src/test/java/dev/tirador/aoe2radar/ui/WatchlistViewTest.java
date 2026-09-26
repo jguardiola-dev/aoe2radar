@@ -266,7 +266,10 @@ class WatchlistViewTest {
      */
     private WatchlistView nuevaInstancia() { return nuevaInstancia(new ArrayList<>()); }
 
-    private WatchlistView nuevaInstancia(List<Player> jugadores) {
+    private WatchlistView nuevaInstancia(List<Player> jugadores) { return nuevaInstancia(jugadores, java.nio.file.Path.of("players_test2.txt")); }
+
+    /** Con el players.txt en una carpeta temporal: para los tests que guardan la lista (savePlayers). */
+    private WatchlistView nuevaInstancia(List<Player> jugadores, java.nio.file.Path playersFile) {
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
         TopLadderService topLadderService = new TopLadderService(companion, companion, new RelojFalso(), ms -> { }, 300);
@@ -306,7 +309,7 @@ class WatchlistViewTest {
                 jugadores, new DefaultListModel<>(), new JList<>(new DefaultListModel<>()),
                 new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
-                java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50,
+                playersFile, java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50,
                 (k, def) -> cfg.getOrDefault(k, def), cfg::put);
     }
 
@@ -581,6 +584,61 @@ class WatchlistViewTest {
         assertEquals("Pros", cfg.get("grupo_activo"));
         assertEquals(1, playersModel.size());
         assertEquals(2L, playersModel.get(0).id());
+    }
+
+    // ===== operaciones de la lista (caracterización antes de pasarlas a WatchlistPresenter) ==========================
+
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp;
+
+    /** Una Watchlist con Uno y Dos en «Amigos» y Tres en «Pros», ya barridos (sin red), en «Todos», guardando en tmp. */
+    private WatchlistView conTresJugadores() {
+        List<Player> js = new ArrayList<>(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos"), new Player(3L, "Tres", "Pros")));
+        WatchlistView w = nuevaInstancia(js, tmp.resolve("players.txt"));
+        w.watchBarridos.addAll(List.of(1L, 2L, 3L));
+        w.rebuildGrupos();
+        sinListeners(() -> w.grupoCombo.setSelectedItem("Todos"), w.grupoCombo);
+        w.aplicarFiltroGrupo();
+        return w;
+    }
+
+    @Test void moverJugador_mueveGuardaYAvisa() throws Exception {
+        WatchlistView w = conTresJugadores();
+        w.moverJugador(new Player(1L, "Uno", "Amigos"), "Nuevo");
+        assertEquals("Nuevo", w.grupoDeJugador(1L));
+        assertTrue(w.gruposDelCombo().contains("Nuevo"), "el combo se reconstruye");
+        assertTrue(Files.readString(tmp.resolve("players.txt")).contains("Nuevo"), "se guarda en players.txt");
+        assertEquals("Uno movido al grupo «Nuevo».", w.status.getText());
+    }
+
+    @Test void renombrarYBorrarGrupo() {
+        WatchlistView w = conTresJugadores();
+        w.presenter.renombrarGrupo("Amigos", "Colegas");
+        assertEquals("Colegas", w.grupoDeJugador(2L));
+        assertEquals(List.of("Colegas", "Pros"), w.gruposDelCombo());
+        w.presenter.borrarGrupo("Pros");
+        assertEquals(WatchlistView.GRUPO_GENERAL, w.grupoDeJugador(3L));
+        assertFalse(w.gruposDelCombo().contains("Pros"));
+    }
+
+    @Test void moverVarios_yQuitar() {
+        WatchlistView w = conTresJugadores();
+        w.presenter.moverVarios(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos"), new Player(1L, "Uno", "Amigos")), "Pros");
+        assertEquals("Pros", w.grupoDeJugador(2L));
+        assertEquals("2 jugadores movidos a «Pros».", w.status.getText(), "cuenta ids distintos");
+        w.presenter.quitarDeWatchlist(3L);
+        assertFalse(w.containsPlayerId(3L));
+        assertEquals(2, w.playersModel.size(), "la lista visible se rehace");
+        assertEquals("Quitado de tu watchlist.", w.status.getText());
+    }
+
+    @Test void ficharDesdeTop_soloSiNoEstaba() {
+        WatchlistView w = conTresJugadores();
+        w.status.setText("antes");
+        w.ficharDesdeTop(new Player(1L, "Uno", "Amigos"), "Pros");
+        assertEquals("antes", w.status.getText(), "ya seguido: no hace nada");
+        w.ficharDesdeTop(new Player(9L, "Nueve", WatchlistView.TOP_LADDER), "Pros");
+        assertEquals("Pros", w.grupoDeJugador(9L));
+        assertEquals("Nueve añadido a «Pros» de tu watchlist.", w.status.getText());
     }
 
     @Test void containsPlayerId_reflejaTodosJugadores() {

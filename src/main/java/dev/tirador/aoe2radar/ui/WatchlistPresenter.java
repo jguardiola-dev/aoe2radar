@@ -8,6 +8,7 @@ import dev.tirador.aoe2radar.service.VistaInicial;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -47,6 +48,12 @@ public final class WatchlistPresenter {
         void refrescarWatchlist();
         /** Conteos, título y chip «Jugando» (actualizarIndicadoresVivos). */
         void indicadoresVivos();
+        /** Mensaje en la barra de estado. */
+        void estado(String texto);
+        /** Rehace el combo de vistas con los grupos de ahora (rebuildGrupos). */
+        void reconstruirGrupos();
+        /** Tras fichar a alguien: ofrece añadir sus cuentas vinculadas (consulta y diálogo, en la vista). */
+        void ofrecerVinculadasTrasAlta(long pid, String nombre, String grupo);
     }
 
     private final Pantalla pantalla;
@@ -204,6 +211,79 @@ public final class WatchlistPresenter {
     public boolean containsPlayerId(long id) { return listaSeguidos.contiene(todosJugadores, id); }
 
     static String limpiarGrupo(String nombre) { return nombre.trim().replace(";", " ").replace(",", " "); }
+
+    // ===== Operaciones de la lista (mismo orden que la vista: guardar, combo, filtro, indicadores, estado) =====
+
+    // Delegado a service.ListaSeguidos (cargar/guardar players.txt); la vista muestra el error, si lo hay, en el status.
+    // OJO (deuda ya existente en la 1.1, no se cambia aquí): esta E/S de disco es síncrona y se llama desde el EDT
+    // (arranque, botones, menús): el disco se toca en el EDT.
+    void cargarJugadores() {
+        String error = listaSeguidos.cargar(todosJugadores);
+        if (error != null) pantalla.estado(error);
+        pantalla.reconstruirGrupos();       // SIEMPRE: sin esto, el combo quedaba vacío en instalaciones nuevas
+        pantalla.refrescarFiltro();
+    }
+
+    void guardarJugadores() {
+        String error = listaSeguidos.guardar(todosJugadores);
+        if (error != null) pantalla.estado(error);
+    }
+
+    void registrarGrupo(String g) { listaSeguidos.registrarGrupo(g); pantalla.reconstruirGrupos(); }
+
+    void moverJugador(Player p, String grupo) {
+        listaSeguidos.moverJugador(todosJugadores, p, grupo);
+        guardarJugadores();
+        pantalla.reconstruirGrupos();
+        pantalla.refrescarFiltro();
+        pantalla.indicadoresVivos();
+        pantalla.estado(p.name() + t(" movido al grupo «", " moved to group “") + grupo + t("».", "”."));
+    }
+
+    void renombrarGrupo(String viejo, String nuevo) {
+        listaSeguidos.renombrarGrupo(todosJugadores, viejo, nuevo);
+        guardarJugadores();
+        pantalla.reconstruirGrupos();
+        pantalla.refrescarFiltro();
+    }
+
+    void borrarGrupo(String g) {
+        listaSeguidos.borrarGrupo(todosJugadores, g);
+        guardarJugadores();
+        pantalla.reconstruirGrupos();
+        pantalla.refrescarFiltro();
+    }
+
+    /** Ficha a uno desde un top y, como el buscador, ofrece sus cuentas vinculadas. */
+    void ficharDesdeTop(Player p, String g) {
+        if (!listaSeguidos.ficharDesdeTop(todosJugadores, p, g)) return;
+        guardarJugadores();
+        pantalla.reconstruirGrupos();
+        pantalla.refrescarFiltro();
+        pantalla.estado(p.name() + t(" añadido a «", " added to \u201C") + g + t("» de tu watchlist.", "\u201D in your watchlist."));
+        pantalla.ofrecerVinculadasTrasAlta(p.id(), p.name(), g);
+    }
+
+    void moverVarios(List<Player> lista, String g) {
+        int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
+        guardarJugadores(); pantalla.reconstruirGrupos(); pantalla.refrescarFiltro(); pantalla.refrescarWatchlist();
+        pantalla.estado(n + t(" jugadores movidos a «", " players moved to \u201C") + g + t("\u00bb.", "\u201D."));
+    }
+
+    void quitarDeWatchlist(long id) {
+        listaSeguidos.quitar(todosJugadores, id);
+        guardarJugadores();
+        pantalla.refrescarFiltro();
+        pantalla.estado(t("Quitado de tu watchlist.", "Removed from your watchlist."));
+    }
+
+    /** «Quitar los N seleccionados de la Watchlist» (menú contextual con varios elegidos). */
+    void quitarVarios(List<Player> sel) {
+        Set<Long> ids = new HashSet<>(); for (Player x : sel) ids.add(x.id());
+        todosJugadores.removeIf(x -> ids.contains(x.id()));
+        guardarJugadores(); pantalla.reconstruirGrupos(); pantalla.refrescarFiltro();
+        pantalla.estado(ids.size() + t(" jugadores quitados.", " players removed."));
+    }
 
     /** Los items fijos del combo, delante de los grupos: «Todos» y las tres vistas ★. */
     List<String> itemsFijos() { return List.of(t("Todos", "All"), WatchlistView.TOP_LADDER, topPais, topClan); }

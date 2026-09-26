@@ -7,6 +7,7 @@ import dev.tirador.aoe2radar.util.Config;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,6 +44,9 @@ class WatchlistPresenterTest {
         @Override public void refrescarFiltro() { llamadas.add("filtro"); }
         @Override public void refrescarWatchlist() { llamadas.add("barrido"); }
         @Override public void indicadoresVivos() { llamadas.add("indicadores"); }
+        @Override public void estado(String texto) { llamadas.add("estado:" + texto); }
+        @Override public void reconstruirGrupos() { llamadas.add("grupos"); }
+        @Override public void ofrecerVinculadasTrasAlta(long pid, String nombre, String grupo) { llamadas.add("vinculadas:" + pid + ":" + nombre + ":" + grupo); }
     }
 
     PantallaFalsa pantalla;
@@ -52,19 +56,29 @@ class WatchlistPresenterTest {
     String idiomaPrevio;
     final PaisItem[] paises = { new PaisItem("Alemania", "de"), new PaisItem("España", "es"), new PaisItem("Francia", "fr"), new PaisItem("Bélgica", "be") };
 
-    @BeforeEach void crear() {
+    @TempDir Path tmp;
+
+    /** config.properties de util.Config (fijarPais guarda top_pais ahí): se deja como estaba, sin borrar lo de otros. */
+    byte[] configPrevia;
+
+    @BeforeEach void crear() throws Exception {
+        configPrevia = Files.exists(Config.CONFIG_FILE) ? Files.readAllBytes(Config.CONFIG_FILE) : null;
         idiomaPrevio = IDIOMA;
         IDIOMA = "es";
         pantalla = new PantallaFalsa();
         jugadores = new ArrayList<>();
         cfg = new HashMap<>();
-        p = new WatchlistPresenter(pantalla, jugadores, Path.of("players_presenter_test.txt"), TOP_PAIS, TOP_CLAN, paises,
+        p = nuevo(tmp.resolve("players.txt"));
+    }
+
+    private WatchlistPresenter nuevo(Path playersFile) {
+        return new WatchlistPresenter(pantalla, jugadores, playersFile, TOP_PAIS, TOP_CLAN, paises,
                 (k, def) -> cfg.getOrDefault(k, def), cfg::put);
     }
 
-    @AfterEach void restaurar() {
+    @AfterEach void restaurar() throws Exception {
         IDIOMA = idiomaPrevio;
-        try { Files.deleteIfExists(Config.CONFIG_FILE); } catch (Exception ignored) { }   // fijarPais guarda top_pais con util.Config
+        if (configPrevia != null) Files.write(Config.CONFIG_FILE, configPrevia); else Files.deleteIfExists(Config.CONFIG_FILE);
     }
 
     // ===== modo de vista: se lee SIEMPRE de la Pantalla ===============================================================
@@ -231,6 +245,74 @@ class WatchlistPresenterTest {
         assertTrue(p.esGrupoDeUsuario("Torneo"));
         assertFalse(p.esGrupoDeUsuario("Todos"));
         assertEquals(List.of("Amigos", "Torneo"), new ArrayList<>(p.calcularGrupos()));
+    }
+
+    // ===== operaciones de la lista: guardar, combo, filtro, indicadores y estado, en el orden de la vista ==============
+
+    private void tresJugadores() {
+        jugadores.addAll(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos"), new Player(3L, "Tres", "Pros")));
+    }
+
+    @Test void moverJugador_ordenYTexto() throws Exception {
+        tresJugadores();
+        p.moverJugador(new Player(1L, "Uno", "Amigos"), "Pros");
+        assertEquals("Pros", p.grupoDeJugador(1L));
+        assertTrue(Files.readString(tmp.resolve("players.txt")).contains("1;Uno;Pros"), "guardado antes de repintar");
+        assertEquals(List.of("grupos", "filtro", "indicadores", "estado:Uno movido al grupo «Pros»."), pantalla.llamadas);
+    }
+
+    @Test void renombrarYBorrar_orden() {
+        tresJugadores();
+        p.renombrarGrupo("Amigos", "Colegas");
+        assertEquals("Colegas", p.grupoDeJugador(2L));
+        p.borrarGrupo("Pros");
+        assertEquals(WatchlistView.GRUPO_GENERAL, p.grupoDeJugador(3L));
+        assertEquals(List.of("grupos", "filtro", "grupos", "filtro"), pantalla.llamadas);
+    }
+
+    @Test void registrarGrupo_reconstruyeElCombo() {
+        p.registrarGrupo("Torneo");
+        assertTrue(p.gruposConfig().contains("Torneo"));
+        assertEquals(List.of("grupos"), pantalla.llamadas);
+    }
+
+    @Test void ficharDesdeTop_soloSiNoEstabaYOfreceVinculadas() {
+        tresJugadores();
+        p.ficharDesdeTop(new Player(1L, "Uno", "Amigos"), "Pros");
+        assertEquals(List.of(), pantalla.llamadas, "ya seguido: nada");
+        p.ficharDesdeTop(new Player(9L, "Nueve", WatchlistView.TOP_LADDER), "Pros");
+        assertEquals("Pros", p.grupoDeJugador(9L));
+        assertEquals(List.of("grupos", "filtro", "estado:Nueve añadido a «Pros» de tu watchlist.", "vinculadas:9:Nueve:Pros"), pantalla.llamadas);
+    }
+
+    @Test void moverVarios_cuentaIdsDistintosYBarre() {
+        tresJugadores();
+        p.moverVarios(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos"), new Player(2L, "Dos", "Amigos")), "Pros");
+        assertEquals(List.of("grupos", "filtro", "barrido", "estado:2 jugadores movidos a «Pros»."), pantalla.llamadas);
+    }
+
+    @Test void quitarUnoYVarios() {
+        tresJugadores();
+        p.quitarDeWatchlist(3L);
+        assertFalse(p.containsPlayerId(3L));
+        assertEquals(List.of("filtro", "estado:Quitado de tu watchlist."), pantalla.llamadas);
+        pantalla.llamadas.clear();
+        p.quitarVarios(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos")));
+        assertTrue(jugadores.isEmpty());
+        assertEquals(List.of("grupos", "filtro", "estado:2 jugadores quitados."), pantalla.llamadas);
+    }
+
+    @Test void cargarYGuardar_elErrorVaAlEstado() {
+        WatchlistPresenter conCarpeta = nuevo(tmp);   // una carpeta no se puede leer ni escribir como players.txt
+        conCarpeta.cargarJugadores();
+        assertTrue(pantalla.llamadas.get(0).startsWith("estado:No se pudo leer players.txt"), pantalla.llamadas.toString());
+        assertEquals(List.of("grupos", "filtro"), pantalla.llamadas.subList(1, 3), "combo y filtro SIEMPRE, aunque falle");
+        pantalla.llamadas.clear();
+        conCarpeta.guardarJugadores();
+        assertTrue(pantalla.llamadas.get(0).startsWith("estado:No se pudo guardar players.txt"), pantalla.llamadas.toString());
+        pantalla.llamadas.clear();
+        p.guardarJugadores();
+        assertEquals(List.of(), pantalla.llamadas, "guardado bien: sin mensaje");
     }
 
     @Test void eleccionInicial_compruebaLoQueExiste() {

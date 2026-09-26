@@ -589,44 +589,14 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     /** Grupos creados por el usuario (existen aunque estén vacíos). */
     public Set<String> gruposConfig() { return presenter.gruposConfig(); }
 
-    void registrarGrupo(String g) { presenter.listaSeguidos.registrarGrupo(g); rebuildGrupos(); }
-
-    public void moverJugador(Player p, String grupo) {
-        presenter.listaSeguidos.moverJugador(todosJugadores, p, grupo);
-        savePlayers();
-        rebuildGrupos();
-        aplicarFiltroGrupo();
-        actualizarIndicadoresVivos();
-        status.setText(p.name() + t(" movido al grupo «", " moved to group “") + grupo + t("».", "”."));
-    }
-
-    void renombrarGrupo(String viejo, String nuevo) {
-        presenter.listaSeguidos.renombrarGrupo(todosJugadores, viejo, nuevo);
-        savePlayers();
-        rebuildGrupos();
-        aplicarFiltroGrupo();
-    }
-
-    void borrarGrupo(String g) {
-        presenter.listaSeguidos.borrarGrupo(todosJugadores, g);
-        savePlayers();
-        rebuildGrupos();
-        aplicarFiltroGrupo();
-    }
+    public void moverJugador(Player p, String grupo) { presenter.moverJugador(p, grupo); }
 
     void gestionarGrupos() { dialogosLista.gestionarGrupos(); }
 
     public String grupoDestino() { return presenter.grupoDestino(); }
 
     /** Ficha a uno desde un top y, como el buscador, ofrece sus cuentas vinculadas. */
-    public void ficharDesdeTop(Player p, String g) {
-        if (!presenter.listaSeguidos.ficharDesdeTop(todosJugadores, p, g)) return;
-        savePlayers();
-        rebuildGrupos();
-        aplicarFiltroGrupo();
-        status.setText(p.name() + t(" añadido a «", " added to \u201C") + g + t("» de tu watchlist.", "\u201D in your watchlist."));
-        ofrecerVinculadasTrasAlta(p.id(), p.name(), g);
-    }
+    public void ficharDesdeTop(Player p, String g) { presenter.ficharDesdeTop(p, g); }
 
     public void ficharVarios(List<Player> lista, String g) { dialogosLista.ficharVarios(lista, g); }
 
@@ -638,11 +608,6 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
      */
     public boolean esGrupoDeUsuario(String nombre) { return presenter.esGrupoDeUsuario(nombre); }
 
-    void moverVarios(List<Player> lista, String g) {
-        int n = presenter.listaSeguidos.moverVarios(todosJugadores, lista, g);
-        savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
-        status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + t("\u00bb.", "\u201D."));
-    }
 
     public String elegirGrupoDialog(String nombreJugador) { return dialogosLista.elegirGrupoDialog(nombreJugador); }
 
@@ -709,6 +674,8 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     @Override public void refrescarFiltro() { aplicarFiltroGrupo(); }
     @Override public void indicadoresVivos() { actualizarIndicadoresVivos(); }
     @Override public void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
+    @Override public void estado(String texto) { status.setText(texto); }
+    @Override public void reconstruirGrupos() { rebuildGrupos(); }
 
     void crearGrupoDialog() { dialogosLista.crearGrupoDialog(); }
 
@@ -766,12 +733,6 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
 
     // ===== Ficha / grupos: infraestructura de vigilancia y refresco =====================================
 
-    void quitarDeWatchlist(long id) {
-        presenter.listaSeguidos.quitar(todosJugadores, id);
-        savePlayers();
-        aplicarFiltroGrupo();
-        status.setText(t("Quitado de tu watchlist.", "Removed from your watchlist."));
-    }
 
     public String grupoDeJugador(long id) { return presenter.grupoDeJugador(id); }
 
@@ -860,7 +821,7 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
 
     // ===== Alta de jugadores =============================================================================
 
-    public void ofrecerVinculadasTrasAlta(long profileId, String nombre, String grupo) { dialogosLista.ofrecerVinculadasTrasAlta(profileId, nombre, grupo); }
+    @Override public void ofrecerVinculadasTrasAlta(long profileId, String nombre, String grupo) { dialogosLista.ofrecerVinculadasTrasAlta(profileId, nombre, grupo); }
     public void jugadorElegido(long pid, String nombre) { dialogosLista.jugadorElegido(pid, nombre); }
 
     /** ¿La respuesta a la búsqueda «q» ya no sirve porque el usuario siguió escribiendo? (el texto actual del
@@ -886,21 +847,10 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
 
     // ===== Persistencia ===================================================================================
 
-    // Delegado a service.ListaSeguidos (cargar/guardar players.txt); la ventana conserva el disparo de
-    // rebuildGrupos()/aplicarFiltroGrupo() (Swing) y muestra el error, si lo hay, en el status.
-    // OJO (deuda ya existente en la 1.1, no se cambia aquí): esta E/S de disco es síncrona y loadPlayers/savePlayers
-    // se llaman directamente desde el EDT (arranque, botones, menús): el disco se toca en el EDT.
-    public void loadPlayers() {
-        String error = presenter.listaSeguidos.cargar(todosJugadores);
-        if (error != null) status.setText(error);
-        rebuildGrupos();       // SIEMPRE: sin esto, el combo quedaba vacío en instalaciones nuevas
-        aplicarFiltroGrupo();
-    }
+    // players.txt: WatchlistPresenter.cargarJugadores/guardarJugadores (E/S de disco en el EDT, deuda de la 1.1).
+    public void loadPlayers() { presenter.cargarJugadores(); }
 
-    public void savePlayers() {
-        String error = presenter.listaSeguidos.guardar(todosJugadores);
-        if (error != null) status.setText(error);
-    }
+    public void savePlayers() { presenter.guardarJugadores(); }
 
     // ===== Menú contextual =================================================================================
 

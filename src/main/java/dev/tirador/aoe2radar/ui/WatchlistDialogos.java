@@ -77,14 +77,14 @@ final class WatchlistDialogos {
         nuevo.addActionListener(a -> {
             String n = JOptionPane.showInputDialog(wv.ventana, t("Nombre del grupo nuevo:", "New group name:"),
                     t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { wv.registrarGrupo(WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
+            if (n != null && !n.isBlank()) { wv.presenter.registrarGrupo(WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
         });
         renombrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
             if (sel == null || sel.equalsIgnoreCase(WatchlistView.GRUPO_GENERAL)) return;
             String n = JOptionPane.showInputDialog(wv.ventana, t("Nuevo nombre para «", "New name for “") + sel + t("»:", "”:"),
                     t("Renombrar grupo", "Rename group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { wv.renombrarGrupo(sel, WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
+            if (n != null && !n.isBlank()) { wv.presenter.renombrarGrupo(sel, WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
         });
         borrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
@@ -94,7 +94,7 @@ final class WatchlistDialogos {
                             + t("». Sus jugadores pasarán a General. ¿Continuar?",
                                 "” will be deleted. Its players move to General. Continue?"),
                     t("Borrar grupo", "Delete group"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (r == JOptionPane.YES_OPTION) { wv.borrarGrupo(sel); recargar.run(); }
+            if (r == JOptionPane.YES_OPTION) { wv.presenter.borrarGrupo(sel); recargar.run(); }
         });
         lista.addListSelectionListener(a -> {
             String sel = lista.getSelectedValue();
@@ -193,7 +193,7 @@ final class WatchlistDialogos {
             // fila 102 de DEUDA: mismo camino que el resto de altas de grupo (limpiarGrupo + registrarGrupo, que
             // llama a listaSeguidos.registrarGrupo y escribe con ","), en vez de repetir aquí esa lógica a mano.
             String limpio = WatchlistPresenter.limpiarGrupo(nombre);
-            wv.registrarGrupo(limpio);
+            wv.presenter.registrarGrupo(limpio);
             return limpio;
         }
         return sel;
@@ -206,7 +206,7 @@ final class WatchlistDialogos {
         if (nombre == null || nombre.isBlank()) return;
         String limpio = WatchlistPresenter.limpiarGrupo(nombre);
         wv.guardarCfg.accept("grupo_activo", limpio);
-        wv.registrarGrupo(limpio);
+        wv.presenter.registrarGrupo(limpio);
         wv.grupoCombo.setSelectedItem(limpio);
         wv.aplicarFiltroGrupo();
         wv.actualizarIndicadoresVivos();
