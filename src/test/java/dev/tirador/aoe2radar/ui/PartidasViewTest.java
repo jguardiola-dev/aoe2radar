@@ -81,7 +81,8 @@ class PartidasViewTest {
         final Path recs;
         AnfitrionFalso(Path recs) { this.recs = recs; }
         @Override public void estado(String texto) { estado = texto; estados.add(texto); }
-        @Override public void mostrarDirectos(boolean mostrar) { }
+        final List<Boolean> mostrarDirectos = Collections.synchronizedList(new ArrayList<>());
+        @Override public void mostrarDirectos(boolean mostrar) { mostrarDirectos.add(mostrar); }
         @Override public void refrescarDirectos() { }
         @Override public void enfocarBuscador() { }
         @Override public boolean confirmarEspectar(String nombre) { return false; }
@@ -122,8 +123,11 @@ class PartidasViewTest {
     /** RecService sin red: cuenta las partidas que le piden y las da por descargadas. */
     static final class RecFalso implements dev.tirador.aoe2radar.service.RecService {
         final List<Long> procesadas = Collections.synchronizedList(new ArrayList<>());
+        volatile CountDownLatch dentro, soltar;   // si están puestos, procesar avisa y espera (una descarga «en curso»)
         @Override public Resultado procesar(Match m, java.util.Set<Long> trackedIds, boolean enviarAlJuego, Path savegame, BooleanSupplier cancelado) {
             procesadas.add(m.id);
+            if (dentro != null) dentro.countDown();
+            if (soltar != null) try { soltar.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
             return new Resultado(Estado.DESCARGADA, false, null, true);
         }
     }
@@ -374,6 +378,45 @@ class PartidasViewTest {
         assertEquals(antes + 1, anfitrion.opSerial, "sin descarga en curso, Enter descarga la selección");
         esperar(() -> !anfitrion.progreso, "que la descarga termine");
         assertEquals(List.of(8101L), rec.procesadas);
+    }
+
+    // ----- DEUDA de la partición: los encargos de descargarSinCambiarVista siempre se desarman -----
+
+    static Match enDirecto(long id) {
+        Match m = partida(id, A, Instant.now());
+        m.finished = null;   // en curso: download no la descarga (propone espectarla) y sale pronto
+        return m;
+    }
+
+    @Test void descargarSinCambiarVista_queSalePronto_noDejaArmadaLaSiguiente() throws Exception {
+        int[] avisos = { 0 };
+        enEdt(() -> vista.descargarSinCambiarVista(List.of(enDirecto(8201)), false, () -> avisos[0]++));
+        enEdt(() -> {
+            assertFalse(vista.descargas.descargaSinCambiarVista, "desarmado aunque download saliera pronto");
+            assertNull(vista.descargas.alTerminarDescarga, "desarmado aunque download saliera pronto");
+        });
+        anfitrion.mostrarDirectos.clear();
+        enEdt(() -> vista.download(List.of(partida(8202, A, Instant.now().minusSeconds(600)))));   // una descarga normal
+        esperar(() -> !anfitrion.progreso, "que la descarga termine");
+        asentar();
+        assertEquals(List.of(false), anfitrion.mostrarDirectos, "la descarga normal vuelve a la tabla, como siempre");
+        assertEquals(0, avisos[0], "el aviso de la llamada anterior no lo dispara otra descarga");
+    }
+
+    @Test void descargarSinCambiarVista_superadaPorOtraOperacion_avisaIgualAlAcabar() throws Exception {
+        rec.dentro = new CountDownLatch(1);
+        rec.soltar = new CountDownLatch(1);
+        int[] avisos = { 0 };
+        enEdt(() -> vista.descargarSinCambiarVista(List.of(partida(8203, A, Instant.now().minusSeconds(600))), false, () -> avisos[0]++));
+        assertTrue(rec.dentro.await(5, TimeUnit.SECONDS));
+        enEdt(() -> anfitrion.trabajando(true));   // otra operación se lleva el semáforo
+        rec.soltar.countDown();
+        asentar();
+        enEdt(() -> {
+            assertEquals(1, avisos[0], "quien pidió la descarga se entera de que acabó (repinta su tabla)");
+            assertNull(vista.descargas.alTerminarDescarga);
+        });
+        assertTrue(anfitrion.mostrarDirectos.isEmpty(), "sin cambiar de vista");
     }
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {

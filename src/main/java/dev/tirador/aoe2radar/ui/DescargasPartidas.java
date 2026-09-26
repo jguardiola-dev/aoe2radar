@@ -30,8 +30,8 @@ import static dev.tirador.aoe2radar.util.Log.log;
  */
 final class DescargasPartidas {
 
-    /** Perfil/Live now descargan sin cambiar de pestaña; alTerminarDescarga se consume al acabar una descarga
-     *  vigente. Solo los usa esta clase (antes eran campos públicos de la fachada que nadie leía fuera). */
+    /** Perfil/Live now descargan sin cambiar de pestaña: descargarSinCambiarVista los arma y download() los toma y
+     *  los desarma al empezar (siempre). Solo los usa esta clase (antes eran campos públicos de la fachada). */
     boolean descargaSinCambiarVista;
     Runnable alTerminarDescarga;
 
@@ -177,6 +177,13 @@ final class DescargasPartidas {
     public void download(List<Match> objetivoIn) { download(objetivoIn, false); }
 
     public void download(List<Match> objetivoIn, boolean enviarSiempre) {
+        // Los dos encargos de descargarSinCambiarVista son de ESTA llamada: se toman y se desarman ya, salga por
+        // donde salga (antes, una salida temprana los dejaba armados para la descarga siguiente, y alTerminar solo
+        // se consumía si la descarga seguía vigente al acabar).
+        final boolean sinCambiarVista = descargaSinCambiarVista;
+        final Runnable alTerminar = alTerminarDescarga;
+        descargaSinCambiarVista = false;
+        alTerminarDescarga = null;
         List<Match> objetivo = new ArrayList<>();
         List<Match> vivas = new ArrayList<>();
         for (Match m : objetivoIn) (m.finished == null ? vivas : objetivo).add(m);
@@ -190,8 +197,7 @@ final class DescargasPartidas {
             vista.anfitrion.estado(t("Las partidas EN DIRECTO no se descargan; se saltan.",
                     "LIVE games can't be downloaded; skipping them."));
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        if (!descargaSinCambiarVista) vista.anfitrion.mostrarDirectos(false);
-        descargaSinCambiarVista = false;
+        if (!sinCambiarVista) vista.anfitrion.mostrarDirectos(false);
         vista.dlSel.setEnabled(false); vista.dlAll.setEnabled(false);
         vista.anfitrion.trabajando(true);
         final long miSerial = vista.anfitrion.operacionActual();
@@ -236,11 +242,16 @@ final class DescargasPartidas {
                 return null;
             }
             @Override protected void done() {
-                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) { log("descargas #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual()); return; }
-                vista.dlSel.setEnabled(true);
-                vista.dlAll.setEnabled(true);
-                vista.anfitrion.trabajando(false);
-                if (alTerminarDescarga != null) { Runnable r = alTerminarDescarga; alTerminarDescarga = null; r.run(); }
+                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) {
+                    log("descargas #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual());
+                } else {
+                    vista.dlSel.setEnabled(true);
+                    vista.dlAll.setEnabled(true);
+                    vista.anfitrion.trabajando(false);
+                }
+                // El aviso de quien la pidió (Perfil/Live now: repintar su tabla con lo ya en disco) corre siempre al
+                // acabar ESTA descarga, aunque otra operación se llevara el semáforo mientras tanto.
+                if (alTerminar != null) alTerminar.run();
             }
         }.execute();
     }
