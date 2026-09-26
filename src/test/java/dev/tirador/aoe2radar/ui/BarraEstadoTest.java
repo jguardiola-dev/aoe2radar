@@ -227,6 +227,38 @@ class BarraEstadoTest {
         cerrar(b, ventana);
     }
 
+    /** Hallazgo del revisor: en un tick INTERMEDIO (no el que llega a 0), si otro mensaje ya tapó la cuenta
+     *  atrás, no hay que repintar encima — se deja de tocar `status` hasta el siguiente aviso. */
+    @Test void tickPausaIntermedioNoRepintaSiOtroMensajeYaTapoLaCuenta() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(5);
+            b.status.setText("otro");   // una vista pinta encima antes del siguiente tick
+            b.tickPausa();   // 5 -> 4, intermedio
+            assertEquals("otro", b.status.getText(), "un tick intermedio no repinta sobre un mensaje ajeno");
+        });
+        cerrar(b, ventana);
+    }
+
+    /** Mismo hallazgo: si lo que tapa la cuenta es un «Consultando…»/«Checking…» (PartidasView, LiveNow), el
+     *  tick SÍ debe reclamar `status`: es justo el mensaje al que la cuenta atrás tiene que ganar. */
+    @Test void tickPausaIntermedioSiRepintaSobreUnConsultando() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            b.mostrarPausaApi(5);
+            // El prefijo exacto según el idioma activo (I18n.IDIOMA): "Consultando"/"Checking", igual que
+            // PartidasView.download y LiveNowPresenter.
+            b.status.setText(dev.tirador.aoe2radar.util.I18n.t("Consultando", "Checking") + " a Fulanito…");
+            b.tickPausa();   // 5 -> 4, intermedio
+            assertTrue(b.status.getText().contains("4"), "un \"Consultando...\" sí se tapa con la cuenta atrás");
+        });
+        cerrar(b, ventana);
+    }
+
     @Test void unSegundoAvisoMientrasCorreReiniciaLaCuentaConElMismoTimer() throws Exception {
         AnfitrionFalso anf = new AnfitrionFalso();
         JFrame ventana = new JFrame();

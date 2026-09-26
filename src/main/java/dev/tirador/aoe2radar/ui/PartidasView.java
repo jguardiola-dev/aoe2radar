@@ -973,13 +973,15 @@ public final class PartidasView {
         if (!faltan.isEmpty()) download(faltan, true);
     }
 
+    /** Copia al savegame lo que le llegue en `objetivo`: NO vuelve a comprobar RecService.recSana (su único
+     *  llamador, enviarInteligente, ya leyó la cabecera de cada archivo para armar esta lista); así es una sola
+     *  lectura de cabecera por partida, no dos. */
     public void enviarASavegame(List<Match> objetivo) {
         if (objetivo.isEmpty()) { anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         Path sg = obtenerSavegame(true);
         if (sg == null) { anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        int ok = 0, sinRec = 0, yaEstaban = 0;
+        int ok = 0, yaEstaban = 0;
         for (Match m : objetivo) {
-            if (!RecService.recSana(anfitrion.destino(m))) { sinRec++; continue; }
             boolean ya = Files.exists(sg.resolve(anfitrion.destino(m).getFileName().toString()));
             if (dev.tirador.aoe2radar.service.Juego.copiarASavegame(m, sg)) {
                 ok++;
@@ -993,8 +995,7 @@ public final class PartidasView {
             }
         }
         anfitrion.estado(ok + t(" recs enviadas al juego", " recs sent to the game") +
-                (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") +
-                (sinRec > 0 ? " · " + sinRec + t(" sin descargar aún", " not downloaded yet") : "") + ".");
+                (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
     }
 
     String abrirSgTxt() { return t("Abrir carpeta savegame del juego", "Open game savegame folder"); }
@@ -1567,7 +1568,9 @@ public final class PartidasView {
                         }
                     }
                     setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
-                    anfitrion.dormir(pausaMs);
+                    // La pausa de cortesía es para espaciar peticiones a la API: si la rec se reutilizó del
+                    // disco (RecService.Resultado.reutilizada), no hubo ninguna que espaciar.
+                    if (!r.reutilizada()) anfitrion.dormir(pausaMs);
                 }
                 final int n = ok, tot = objetivo.size(), cop = copiadas;
                 final boolean parada = anfitrion.detenido();

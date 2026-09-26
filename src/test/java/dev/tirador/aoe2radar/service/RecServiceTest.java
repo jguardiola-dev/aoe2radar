@@ -64,6 +64,7 @@ class RecServiceTest {
         assertEquals(RecService.Estado.DESCARGADA, r.estado());
         assertFalse(r.enJuego());
         assertNull(r.causa());
+        assertFalse(r.reutilizada(), "hizo falta la red: no venía de un archivo ya sano");
         Path archivo = tempDir.resolve("rec-1.aoe2record");
         assertTrue(Files.exists(archivo));
         assertArrayEquals(descarga.datos, Files.readAllBytes(archivo));
@@ -81,6 +82,7 @@ class RecServiceTest {
         assertEquals(RecService.Estado.DESCARGADA, r.estado());
         assertFalse(descarga.pids.isEmpty(), "no parece sano: se vuelve a llamar a la descarga");
         assertArrayEquals(descarga.datos, Files.readAllBytes(archivo), "el archivo se sobrescribe");
+        assertFalse(r.reutilizada(), "no parecía sano: hizo falta la red");
     }
 
     /** Decisión de Jorge (DEUDA 94/95): si la rec que ya había en disco SÍ parece sana (≥5000 B, no empieza por
@@ -95,6 +97,7 @@ class RecServiceTest {
         assertNull(r.causa());
         assertTrue(descarga.pids.isEmpty(), "parece sana: no hace falta descargar");
         assertArrayEquals(recSana, Files.readAllBytes(archivo), "el archivo no se toca");
+        assertTrue(r.reutilizada(), "vino de un archivo ya sano en disco, no de la red");
     }
 
     /** Con la rec ya sana en disco, enviarAlJuego sigue copiándola al savegame (decisión 94/95: reutilizar del
@@ -107,6 +110,7 @@ class RecServiceTest {
         assertTrue(r.enJuego());
         assertEquals(List.of(m), juego.recibidas);
         assertTrue(descarga.pids.isEmpty());
+        assertTrue(r.reutilizada());
     }
 
     /** RecService.recSana: la regla que decide si el disco «sirve» (misma cabecera que api.Recs.esRecValida:
@@ -141,6 +145,7 @@ class RecServiceTest {
         assertEquals(RecService.Estado.FALLO, r.estado());
         assertNotNull(r.causa());
         assertFalse(r.enJuego());
+        assertFalse(r.reutilizada(), "el fallo vino de intentar la red, no de reutilizar el disco");
         assertFalse(Files.exists(tempDir.resolve("rec-3.aoe2record")), "sin escritura parcial");
         assertEquals(List.of(100L, 101L), descarga.pids, "los dos candidatos de la partida, en orden");
         assertEquals(List.of(5L, 5L), pausas, "una pausa (el valor inyectado) por cada candidato fallido");

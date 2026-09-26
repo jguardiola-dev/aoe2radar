@@ -22,9 +22,11 @@ public interface RecService {
 
     /**
      * estado: ver Estado. enJuego: si en ESTA llamada la rec quedó copiada al savegame (solo puede darse si
-     * estado no es FALLO). causa: el motivo del fallo (null salvo en FALLO).
+     * estado no es FALLO). causa: el motivo del fallo (null salvo en FALLO). reutilizada: true si la rec ya
+     * estaba sana en disco y no hizo falta tocar la red (ver {@link #recSana}); el llamador puede usarlo para
+     * saltarse la pausa de cortesía entre descargas, ya que no hubo ninguna petición que espaciar.
      */
-    record Resultado(Estado estado, boolean enJuego, String causa) {}
+    record Resultado(Estado estado, boolean enJuego, String causa, boolean reutilizada) {}
 
     /**
      * Procesa una partida: si en {@code destino.apply(m)} ya hay una rec sana (ver {@link #recSana}), la

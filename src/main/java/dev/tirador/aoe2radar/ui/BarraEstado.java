@@ -247,8 +247,12 @@ public final class BarraEstado {
     }
 
     /** Un segundo de la cuenta atrás: al llegar a 0 para el Timer y, SOLO si `status` sigue mostrando su
-     *  propio texto de cuenta atrás (nadie ha pintado otra cosa encima), lo limpia. Paquete, no privado: lo
-     *  dispara BarraEstadoTest a mano, sin esperar el segundo real. */
+     *  propio texto de cuenta atrás (nadie ha pintado otra cosa encima), lo limpia (misma regla de siempre, sin
+     *  cambios). En los ticks intermedios, solo repinta si `status` sigue siendo su propio texto o un
+     *  «Consultando…»/«Checking…» (ver {@link #puedeRepintarPausa}): si otro mensaje lo tapó, se respeta y se
+     *  deja de repintar (el Timer sigue contando solo; si más adelante vuelve a verse un «Consultando…», el
+     *  siguiente tick lo tapa de nuevo). Paquete, no privado: lo dispara BarraEstadoTest a mano, sin esperar el
+     *  segundo real. */
     void tickPausa() {
         segRestantesPausaApi--;
         if (segRestantesPausaApi <= 0) {
@@ -256,9 +260,22 @@ public final class BarraEstado {
             if (ultimoTextoPausaApi.equals(status.getText())) status.setText("");
             return;
         }
-        ultimoTextoPausaApi = textoPausaApi(segRestantesPausaApi);
-        status.setText(ultimoTextoPausaApi);
+        if (puedeRepintarPausa()) {
+            ultimoTextoPausaApi = textoPausaApi(segRestantesPausaApi);
+            status.setText(ultimoTextoPausaApi);
+        }
     }
+
+    /** ¿Puede este tick reescribir `status`? Solo si sigue mostrando el texto que pintamos la última vez
+     *  (nadie ha tocado nada) o un «Consultando…»/«Checking…» (PartidasView.download/fetchMatches,
+     *  LiveNowPresenter): esos son justo los mensajes que la cuenta atrás debe tapar. Cualquier otro mensaje
+     *  (una vista contando lo que hizo, un aviso distinto) se respeta sin tocarlo. */
+    private boolean puedeRepintarPausa() {
+        String actual = status.getText();
+        return actual != null && (actual.equals(ultimoTextoPausaApi) || actual.startsWith(prefijoConsultando()));
+    }
+
+    private static String prefijoConsultando() { return t("Consultando", "Checking"); }
 
     private static String textoPausaApi(long seg) {
         return t("Esperando a la API (", "Waiting for the API (") + seg

@@ -43,7 +43,8 @@ public final class DescargaRecs implements RecService {
         Path archivo = destino.apply(m);
         boolean guardada;
         String ultimaCausa;
-        if (RecService.recSana(archivo)) {
+        boolean reutilizada = RecService.recSana(archivo);
+        if (reutilizada) {
             // Decisión de Jorge (DEUDA 94/95): ya hay una rec sana en disco, no se vuelve a descargar.
             guardada = true;
             ultimaCausa = null;
@@ -71,7 +72,7 @@ public final class DescargaRecs implements RecService {
         Estado estado = guardada ? Estado.DESCARGADA : Estado.FALLO;
         String causaFallo = guardada ? null : ultimaCausa;
         boolean enJuego = estado != Estado.FALLO && enviarAlJuego && savegame != null && copiarAlJuego.test(m, savegame);
-        return new Resultado(estado, enJuego, causaFallo);
+        return new Resultado(estado, enJuego, causaFallo, reutilizada);
     }
 
     /** POVs a intentar, por orden: el de referencia, con rec confirmada
