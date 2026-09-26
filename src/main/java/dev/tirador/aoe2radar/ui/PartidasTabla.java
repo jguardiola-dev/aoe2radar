@@ -135,7 +135,10 @@ final class PartidasTabla {
                 }
             }
         });
-        vista.table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT)
+        // El ÚNICO atajo de Enter en la tabla (revisión 1.3, general F6 / watchlist F10): en WHEN_FOCUSED, que es el
+        // que gana con la tabla enfocada (antes había otro sin guarda en AccionesVentana que lanzaba una segunda
+        // descarga con otra en curso, y este, en WHEN_ANCESTOR, nunca llegaba a ejecutarse).
+        vista.table.getInputMap(JComponent.WHEN_FOCUSED)
                 .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sfrDescargar");
         vista.table.getActionMap().put("sfrDescargar", new AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {

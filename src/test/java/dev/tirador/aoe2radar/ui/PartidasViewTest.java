@@ -119,6 +119,15 @@ class PartidasViewTest {
         @Override public void actualizarControlesTabla() { }
     }
 
+    /** RecService sin red: cuenta las partidas que le piden y las da por descargadas. */
+    static final class RecFalso implements dev.tirador.aoe2radar.service.RecService {
+        final List<Long> procesadas = Collections.synchronizedList(new ArrayList<>());
+        @Override public Resultado procesar(Match m, java.util.Set<Long> trackedIds, boolean enviarAlJuego, Path savegame, BooleanSupplier cancelado) {
+            procesadas.add(m.id);
+            return new Resultado(Estado.DESCARGADA, false, null, true);
+        }
+    }
+
     static final Player A = new Player(7001L, "Ana", "General", 0L);
     static final Player B = new Player(7002L, "Beto", "General", 0L);
     static final Player C = new Player(7003L, "Cris", "General", 0L);
@@ -128,6 +137,7 @@ class PartidasViewTest {
     JFrame ventana;
     EnlaceFalso enlace;
     AnfitrionFalso anfitrion;
+    RecFalso rec;
     PartidasView vista;
 
     @BeforeEach void crear() throws Exception {
@@ -135,13 +145,14 @@ class PartidasViewTest {
         IDIOMA = "es";
         enlace = new EnlaceFalso();
         anfitrion = new AnfitrionFalso(recs);
+        rec = new RecFalso();
         CompanionApi companion = new CompanionApi(new ApiClient(new WatchlistViewTest.ThrottleSinFreno(),
                 new WatchlistViewTest.TransporteNuncaLlamado(), s -> { }, () -> false));
         BarridoVivos barrido = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 0, 50);
         SwingUtilities.invokeAndWait(() -> {
             ventana = new JFrame();
             vista = new PartidasView(ventana, new WatchlistViewTest.MenusFalso(), null, new WatchlistViewTest.NavegacionFalsa(),
-                    null, null, barrido, 50, 0, enlace, anfitrion);
+                    null, rec, barrido, 50, 0, enlace, anfitrion);
             vista.agregarFilaConsulta(new JPanel());
             vista.construirFilaNota();
             vista.construirTabla();
@@ -327,6 +338,42 @@ class PartidasViewTest {
             assertTrue(anfitrion.progreso, "el progreso es de la otra operación: la búsqueda no lo apaga");
             assertTrue(vista.fetchBtn.isEnabled() && vista.azarBtn.isEnabled() && vista.gteBtn.isEnabled());
         });
+    }
+
+    // ----- general F6 / watchlist F10: Enter en la tabla -----
+
+    /** Lo que hace Swing con Enter y la tabla enfocada: primero su mapa WHEN_FOCUSED; si no hay nada, el de
+     *  WHEN_ANCESTOR_OF_FOCUSED_COMPONENT. */
+    Object accionDeEnter() {
+        javax.swing.KeyStroke enter = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0);
+        Object k = vista.table.getInputMap(javax.swing.JComponent.WHEN_FOCUSED).get(enter);
+        return k != null ? k : vista.table.getInputMap(javax.swing.JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).get(enter);
+    }
+
+    void pulsarEnter() {
+        vista.table.getActionMap().get(accionDeEnter()).actionPerformed(new java.awt.event.ActionEvent(vista.table, 0, "enter"));
+    }
+
+    @Test void enter_vaAlAtajoConGuardaYConLaTablaEnfocadaGana() throws Exception {
+        enEdt(() -> assertEquals("sfrDescargar", vista.table.getInputMap(javax.swing.JComponent.WHEN_FOCUSED)
+                .get(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ENTER, 0)),
+                "el atajo con guarda está en WHEN_FOCUSED (el mapa que gana con la tabla enfocada)"));
+    }
+
+    @Test void enter_conUnaDescargaEnCurso_noLanzaOtra() throws Exception {
+        Match m = partida(8101, A, Instant.now().minusSeconds(600));
+        enEdt(() -> {
+            vista.cargarPartidasEnTabla(List.of(m), A, "grupo|General");
+            vista.table.setRowSelectionInterval(0, 0);
+            vista.dlSel.setEnabled(false);   // lo que deja download() mientras descarga
+        });
+        long antes = anfitrion.opSerial;
+        enEdt(this::pulsarEnter);
+        assertEquals(antes, anfitrion.opSerial, "con una descarga en curso, Enter no empieza otra");
+        enEdt(() -> { vista.dlSel.setEnabled(true); pulsarEnter(); });
+        assertEquals(antes + 1, anfitrion.opSerial, "sin descarga en curso, Enter descarga la selección");
+        esperar(() -> !anfitrion.progreso, "que la descarga termine");
+        assertEquals(List.of(8101L), rec.procesadas);
     }
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {

@@ -20,7 +20,6 @@ import dev.tirador.aoe2radar.ui.WatchlistView;
 
 import javax.swing.*;
 import java.awt.Desktop;
-import java.awt.event.ActionEvent;
 import java.net.URI;
 import java.nio.file.Path;
 
@@ -77,11 +76,8 @@ final class AccionesVentana {
         TemaApp.ajustarGrises(v, flatLafDisponible && temaOscuroActivo);
         TemaApp.ajustarBotonesEspeciales(v, flatLafDisponible && temaOscuroActivo);
         TemaApp.ajustarFuentesSecundarias(v);
-        v.partidas.table.getInputMap(JComponent.WHEN_FOCUSED)
-             .put(KeyStroke.getKeyStroke("ENTER"), "descargarSeleccion");
-        v.partidas.table.getActionMap().put("descargarSeleccion", new AbstractAction() {
-            @Override public void actionPerformed(ActionEvent e) { v.partidas.download(v.partidas.selectedRows()); }
-        });
+        // Enter en la tabla de Partidas: un solo atajo, con la guarda de «descarga en curso», en ui.PartidasTabla
+        // (revisión 1.3, general F6 / watchlist F10).
         v.watchlist.refrescarWatchlist();
         SwingUtilities.invokeLater(() -> {
             v.watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER);   // la app abre en ★
