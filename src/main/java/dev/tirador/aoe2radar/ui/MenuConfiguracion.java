@@ -148,6 +148,7 @@ public final class MenuConfiguracion {
                     "Adds the app to your Windows user startup (no special permissions)"));
             autoWinItem.addActionListener(e -> {
                 boolean deseado = autoWinItem.isSelected();   // leído en el EDT antes de salir de él (fila 37)
+                autoWinItem.setEnabled(false);   // hallazgo del revisor: sin esto, dos clics rápidos lanzan dos hilos
                 new Thread(() -> {
                     boolean ok = fijarAutoArranque(deseado);
                     SwingUtilities.invokeLater(() -> {
@@ -157,6 +158,7 @@ public final class MenuConfiguracion {
                                     "Could not change startup entry (antivirus?)."));
                         }
                         guardarConfig("autoarranque", String.valueOf(autoWinItem.isSelected()));
+                        autoWinItem.setEnabled(true);
                     });
                 }, "autoarranque").start();
             });

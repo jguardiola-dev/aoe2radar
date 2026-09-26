@@ -5,8 +5,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static dev.tirador.aoe2radar.cache.Directorios.LADDER_DIR;
+import static dev.tirador.aoe2radar.util.Archivos.escribirAtomico;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
@@ -17,6 +19,10 @@ public final class Paises {
     public static final Map<Long, String> PAIS_DE = new java.util.concurrent.ConcurrentHashMap<>();
     public static final Path PAISES_FILE = LADDER_DIR.resolve("paises.txt");
     public static volatile boolean paisesSucios;
+    /** Un solo guardado a la vez (hallazgo del revisor sobre la fila 25): con cargarPaises/guardarPaises corriendo
+     *  en hilos aparte, dos disparos del Timer no deben escribir el archivo al mismo tiempo. Paquete, no privado:
+     *  PaisesTest lo usa para forzar el camino de «ya hay uno en marcha». */
+    static final AtomicBoolean GUARDANDO = new AtomicBoolean(false);
 
     public static void aprenderPais(long pid, Object pais) {
         if (pid <= 0 || pais == null) return;
@@ -38,15 +44,20 @@ public final class Paises {
     }
     public static void guardarPaises() {
         if (!paisesSucios) return;
-        paisesSucios = false;
+        if (!GUARDANDO.compareAndSet(false, true)) return;   // ya hay un guardado en marcha: este disparo se salta
         try {
-            Files.createDirectories(LADDER_DIR);
+            paisesSucios = false;
             StringBuilder b = new StringBuilder();
             for (Map.Entry<Long, String> en : PAIS_DE.entrySet()) b.append(en.getKey()).append('=').append(en.getValue()).append('\n');
-            Files.writeString(PAISES_FILE, b.toString(), StandardCharsets.UTF_8);
+            // escribirAtomico (temporal + move ATOMIC_MOVE, con respaldo si el move falla): con guardarPaises en
+            // un hilo demonio, un EXIT_ON_CLOSE puede cortar el proceso a mitad de escritura; Files.writeString
+            // (trunca y escribe) dejaría paises.txt a medias. Ver hallazgo del revisor sobre la fila 25.
+            escribirAtomico(PAISES_FILE, b.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ex) {
             paisesSucios = true;   // no se guardó: que el siguiente barrido lo vuelva a intentar (fila 26 de DEUDA)
             log("paises: no se pudo guardar: " + causa(ex));
+        } finally {
+            GUARDANDO.set(false);
         }
     }
 }

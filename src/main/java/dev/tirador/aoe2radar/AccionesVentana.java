@@ -79,14 +79,22 @@ final class AccionesVentana {
         v.enlaceVivo.iniciarPing();
         javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
             v.menuConfiguracion.comprobarActualizacion(false); v.techTree.precargar();
-            // Fila 25 de DEUDA: PAIS_DE ya es ConcurrentHashMap, así que leerlo/escribirlo desde un hilo aparte
-            // (nunca el EDT) es seguro. El Timer de guardado sigue siendo de Swing (dispara cada 60 s en el EDT);
-            // lo único que se manda a un hilo demonio es la escritura a disco de cada disparo.
-            Thread cargaPaises = new Thread(() -> cargarPaises(), "paises-carga"); cargaPaises.setDaemon(true); cargaPaises.start();
+            // Fila 25 de DEUDA (con los hallazgos del revisor): PAIS_DE ya es ConcurrentHashMap, así que
+            // leerlo/escribirlo desde un hilo aparte (nunca el EDT) es seguro. El repintado de las banderas y el
+            // Timer de guardado (60 s, sigue siendo de Swing) esperan a que cargarPaises() termine: así ni se
+            // pinta la watchlist con banderas a medias ni se guarda un mapa que aún no terminó de leerse del
+            // disco. Cada disparo del Timer manda la escritura a un hilo demonio, nunca al EDT.
+            Thread cargaPaises = new Thread(() -> {
+                cargarPaises();
+                SwingUtilities.invokeLater(() -> {
+                    v.playersList.repaint();   // las banderas recién cargadas, en cuanto están listas
+                    new javax.swing.Timer(60_000, ev -> {
+                        Thread guardaPaises = new Thread(() -> guardarPaises(), "paises-guarda"); guardaPaises.setDaemon(true); guardaPaises.start();
+                    }).start();
+                });
+            }, "paises-carga");
+            cargaPaises.setDaemon(true); cargaPaises.start();
             v.autoScroll.instalar();
-            new javax.swing.Timer(60_000, ev -> {
-                Thread guardaPaises = new Thread(() -> guardarPaises(), "paises-guarda"); guardaPaises.setDaemon(true); guardaPaises.start();
-            }).start();
             v.watchlist.refrescarCampanas();
             v.campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> v.watchlist.refrescarCampanas()); v.campanasTimer.start();
             new javax.swing.Timer(1000, ev -> { if (!VIVO.nadieJugando() && v.playersList.isShowing()) v.playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
