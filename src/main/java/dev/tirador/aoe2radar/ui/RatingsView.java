@@ -190,6 +190,9 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         int alto = Math.max(60, Integer.parseInt(leerConfig("ratings_tabla_alto", "230")));
         if (ladderDivisor.getHeight() > alto + 100) {
             ladderDivisor.setDividerLocation(ladderDivisor.getHeight() - alto - ladderDivisor.getDividerSize());
+            altoAplicado = true;
+        } else if (ladderDivisor.getHeight() > 0) {
+            altoAplicado = true;   // no cabe el alto guardado: se deja como está, pero lo que mueva el usuario ya se guarda
         } else if (ladderDivisor.getHeight() == 0) {
             ladderDivisor.addComponentListener(new java.awt.event.ComponentAdapter() {
                 @Override public void componentResized(java.awt.event.ComponentEvent e) {
@@ -198,6 +201,17 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
                 }
             });
         }
+    }
+
+    /** true cuando ya se aplicó el alto guardado. Antes, el primer reparto de Swing al mostrar Ratings (la tabla
+     *  aplastada a su mínimo) se guardaba ANTES de aplicar el del usuario y lo pisaba: la barra volvía siempre a
+     *  ~60 px (fallo de la 1.1, visto por Jorge al probar la 1.2). Solo el EDT lo lee y escribe. */
+    private boolean altoAplicado;
+
+    /** El divisor se movió: guarda el alto de la tabla de comparados, pero solo si se ve y ya se aplicó el guardado. */
+    void alMoverDivisor(boolean visible) {
+        if (altoAplicado && visible && ladderDivisor.getHeight() > 0)
+            guardarConfig("ratings_tabla_alto", String.valueOf(Math.max(60, ladderDivisor.getHeight() - ladderDivisor.getDividerLocation() - ladderDivisor.getDividerSize())));
     }
 
     /** La parte de vista de abrirLadder que va DESPUÉS del cromo: arranca la carga si hace falta. */
@@ -310,9 +324,7 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         ladderDivisor = new JSplitPane(JSplitPane.VERTICAL_SPLIT, scroll, abajo);   // arrastra el borde: la tabla de comparados crece
         ladderDivisor.setResizeWeight(1.0); ladderDivisor.setContinuousLayout(true); ladderDivisor.setBorder(null); ladderDivisor.setDividerSize(7);
         ladderDivisor.setOneTouchExpandable(true);
-        ladderDivisor.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, ev -> {
-            if (ladderDivisor.isShowing() && ladderDivisor.getHeight() > 0) guardarConfig("ratings_tabla_alto", String.valueOf(Math.max(60, ladderDivisor.getHeight() - ladderDivisor.getDividerLocation() - ladderDivisor.getDividerSize())));
-        });
+        ladderDivisor.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, ev -> alMoverDivisor(ladderDivisor.isShowing()));
         centro.add(ladderDivisor, BorderLayout.CENTER);
         ladderPanel.add(centro, BorderLayout.CENTER);
         JLabel pie = new JLabel(t("Distribución de ELO por ladder (resumen diario de sfr-data sobre los volcados de aoe2companion). «Solo activos»: jugadores con partidas recientes; el Top % se calcula sobre la campana elegida. Pasa el ratón por una barra para ver cuántos jugadores hay en ese tramo. Los seleccionados en la watchlist se dibujan mientras Ratings esté abierto.",

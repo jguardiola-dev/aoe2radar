@@ -118,4 +118,26 @@ class RatingsViewTest {
         SwingUtilities.invokeAndWait(() ->
                 assertEquals(600 - 250 - v.ladderDivisor.getDividerSize(), v.ladderDivisor.getDividerLocation()));
     }
+
+    /** Lo que vio Jorge: al mostrarse Ratings, Swing reparte primero con la tabla aplastada y ese movimiento
+     *  del divisor se guardaba antes de aplicar el alto del usuario, pisándolo. Ahora no se guarda nada hasta
+     *  haber aplicado el guardado; después, lo que mueva el usuario sí. */
+    @Test void elPrimerRepartoDeSwingNoPisaElAltoGuardado() throws Exception {
+        Files.writeString(CONFIG_FILE, "ratings_tabla_alto=250\n");
+        RatingsView v = nueva();
+        SwingUtilities.invokeAndWait(() -> {
+            v.ladderDivisor.setSize(400, 600);
+            v.ladderDivisor.setDividerLocation(600 - 62 - v.ladderDivisor.getDividerSize());   // Swing: tabla aplastada
+            v.alMoverDivisor(true);                                                          // antes: guardaba 62
+        });
+        assertEquals("250", dev.tirador.aoe2radar.util.Config.leerConfig("ratings_tabla_alto", ""), "el alto del usuario sigue intacto");
+        SwingUtilities.invokeAndWait(v::alAbrirAntes);
+        pumpEdt();
+        SwingUtilities.invokeAndWait(() -> assertEquals(600 - 250 - v.ladderDivisor.getDividerSize(), v.ladderDivisor.getDividerLocation()));
+        SwingUtilities.invokeAndWait(() -> {
+            v.ladderDivisor.setDividerLocation(600 - 300 - v.ladderDivisor.getDividerSize());   // el usuario arrastra
+            v.alMoverDivisor(true);
+        });
+        assertEquals("300", dev.tirador.aoe2radar.util.Config.leerConfig("ratings_tabla_alto", ""), "ya aplicado: lo que mueve el usuario se guarda");
+    }
 }
