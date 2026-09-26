@@ -295,7 +295,7 @@ class EloNocturnoTest {
             elo.cargar();                    // el refresco corre en este hilo mientras «lector» espía elo.ayer
         } finally {
             sigueLeyendo.set(false);
-            lector.join();
+            lector.join(5000);
         }
 
         assertFalse(vistoVacio.get(), "quien lee ayer mientras se refresca (mismos jugadores) nunca lo ve vacío");
