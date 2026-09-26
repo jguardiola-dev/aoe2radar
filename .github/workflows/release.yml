@@ -1,0 +1,88 @@
+# Empaquetado de una versión en GitHub, para no depender del PC de Jorge:
+# construye el app-image con jpackage (perfil «empaquetar» del pom), lo comprime como
+# aoe2radar-X.Y-windows.zip (mismo nombre y misma estructura, carpeta «aoe2radar/» dentro, que los zips de
+# la 1.2 y la 1.3) y lo adjunta a la release del tag.
+#
+# Dos formas de lanzarlo:
+# - Al publicar una release en GitHub (Releases > Draft a new release > tag vX.Y > Publish): se construye
+#   el commit del tag y el zip se adjunta a esa release.
+# - A mano (Actions > release > Run workflow, con el tag vX.Y): reconstruye y sustituye el zip (--clobber).
+#   Si la release aún no existe, la crea como borrador para que Jorge escriba las notas y la publique.
+#
+# Comprobación de seguridad: el tag tiene que coincidir con la versión del pom (version.app, la misma que
+# enseña la app). Si alguien etiqueta v1.4 con el pom aún en 1.3.0, falla antes de subir nada.
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag de la versión (p. ej. v1.4)'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # para subir el zip a la release (y crearla en borrador si falta)
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  empaquetar:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+
+      - name: Java 21 (Temurin, trae jpackage) con caché de Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Empaquetar (jpackage, app-image)
+        run: mvn -B -Pempaquetar -DskipTests package
+
+      - name: El tag coincide con la versión del pom
+        id: version
+        run: |
+          $props = Get-Content target/classes/dev/tirador/aoe2radar/util/version.properties
+          $app = ($props | Where-Object { $_ -like 'version.app=*' }) -replace '^version\.app=', ''
+          if (-not $app) { throw "no encuentro version.app en version.properties" }
+          if ("v$app" -cne $env:TAG) { throw "el tag $env:TAG no coincide con la versión del pom (v$app): cambia <version> en pom.xml o el tag" }
+          if (-not (Test-Path target/dist/aoe2radar/aoe2radar.exe)) { throw "jpackage no dejó target/dist/aoe2radar/aoe2radar.exe" }
+          Get-Content target/dist/aoe2radar/app/aoe2radar.cfg
+          "app=$app" >> $env:GITHUB_OUTPUT
+
+      - name: Comprimir
+        env:
+          APP: ${{ steps.version.outputs.app }}   # por env, no interpolado en el script
+        run: |
+          $zip = "aoe2radar-$env:APP-windows.zip"
+          Compress-Archive -Path target/dist/aoe2radar -DestinationPath $zip
+          Get-Item $zip | Format-List Name, Length
+
+      - name: Adjuntar a la release del tag
+        env:
+          APP: ${{ steps.version.outputs.app }}
+        run: |
+          $zip = "aoe2radar-$env:APP-windows.zip"
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG --draft --verify-tag --title "aoe2radar $env:APP" --notes "Borrador creado por el workflow release: escribe las notas y publícala."
+            if ($LASTEXITCODE -ne 0) { throw "no se pudo crear la release $env:TAG" }
+          }
+          gh release upload $env:TAG $zip --clobber
+          if ($LASTEXITCODE -ne 0) { throw "no se pudo subir $zip a la release $env:TAG" }

@@ -40,6 +40,38 @@ resizes and retries once before really failing. If the first screenshot comes ou
 `AvisoHarness.logonUiActivo` checks whether the Windows lock screen (`LogonUI.exe`) is among the running
 processes, only to make the error message clearer; it never decides on its own that the session is locked.
 
+## Continuous integration (GitHub Actions)
+`.github/workflows/build.yml` runs on every push and pull request to `main` and to the `fase-*` branches, on a
+`windows-latest` runner: Java 21 (Temurin) with the Maven cache, `python tools/capas.py`, and
+`mvn -B test "-Dtest=!RegresionCapturas"`. It is the same check as `.\verificar.ps1 -Rapido`.
+- The screenshot harness never runs in CI: it takes the screen, and its reference images depend on the
+  resolution, scaling and fonts of the development PC. It only runs with `-Dharness=si` (what the full
+  `verificar.ps1` passes), and CI excludes it by name as well.
+- Windows runner on purpose: several tests assume Windows paths (`SistemaTest`, `EspectarTest`,
+  `AvisoHarnessTest`, the invalid-path case of "Enviar al juego").
+- If a run fails, the Surefire reports are attached to it as the `surefire-reports` artifact.
+- The result is on the repo's **Actions** tab and next to each commit/PR. A green CI does not replace the full
+  harness before closing a group of commits: that one still runs on the development PC.
+
+### Publishing a version (`release.yml`)
+`.github/workflows/release.yml` builds the Windows package on GitHub, so a release does not depend on the
+development PC. It runs `mvn -B -Pempaquetar -DskipTests package` on `windows-latest`, zips
+`target/dist/aoe2radar` as `aoe2radar-X.Y-windows.zip` (same name and layout as the 1.2 and 1.3 zips: an
+`aoe2radar/` folder inside) and attaches it to the tag's release.
+
+Steps to publish X.Y:
+1. Change `<version>` in `pom.xml` (e.g. `1.4.0`), merge to `main`, and wait for the `build` workflow to be green.
+2. On GitHub: **Releases → Draft a new release**, tag `vX.Y` (e.g. `v1.4`) on `main`, write the notes,
+   **Publish**. The `release` workflow starts on its own and, a few minutes later, the zip appears in the release.
+3. To rebuild the zip of an existing tag (or if the automatic run failed): **Actions → release → Run workflow**,
+   with the tag. It replaces the zip (`--clobber`): a zip with the same name uploaded by hand to that release
+   is overwritten without asking. If the release does not exist yet, the workflow creates it as a draft, to be
+   completed and published by hand.
+
+Safety check: the workflow fails before uploading anything if the tag does not match the pom version
+(`v` + `version.app`, e.g. `v1.4` for `1.4.0`). While the zip is being built (a few minutes) the published
+release has no zip yet; the app's update checker may already show it.
+
 ## Packaging (Maven profile `empaquetar`)
 The normal build (`mvn test`, `mvn package`) does not produce the `.exe`: that lives in a separate profile
 that is **not activated automatically**, so it does not affect or slow down day-to-day work.
@@ -54,14 +86,31 @@ cleans the packaging):
 2. Copies the app jar there, already built by `maven-jar-plugin`.
 3. Generates `target/logo.ico` (multi-size) by calling `dev.tirador.aoe2radar.SpoilerFreeRecs --make-ico`,
    the same mechanism `crear_exe.bat` used in 1.1 (see the note in `pom.xml` itself: that script is not in
-   the repo or in the Git history; its parameters are deduced from the code — name and version from
-   `util.Identidad`, main class from the manifest, `--make-ico` documented in `AcercaDe.generarIco()`).
+   the repo or in the Git history; its parameters are deduced from the code — name from `util.Identidad`,
+   main class from the manifest, `--make-ico` documented in `AcercaDe.generarIco()`).
 4. Calls the JDK's `jpackage` with `--type app-image`: a `target/dist/aoe2radar/` folder with
    `aoe2radar.exe`, its own runtime (implicit jlink, nothing to install separately) and the jars in `app/`.
    WiX Toolset is not needed because no installer is generated, only the app folder.
 
-The version is set by hand in two places: `util.Identidad.VERSION` (what the app shows) and
-`jpackage.appVersion` in the profile (the `.exe` version). Change both together.
+## Version: one single place
+The version lives only in `<version>` in `pom.xml` (today `1.3.0`). To release a new one, change that line
+and nothing else. From it:
+- `build-helper-maven-plugin` (`regex-property`, phase `initialize`) computes the property `version.app`:
+  the `-qualifier` suffix and a third `.0` part are dropped (`1.3.0` → `1.3`, `1.3.1` → `1.3.1`,
+  `1.4.0-SNAPSHOT` → `1.4`). That is the version the app shows (window title, About) and compares with the
+  GitHub tags `vX.Y` when checking for updates, and also jpackage's `--app-version`.
+- `src/main/resources-filtradas/dev/tirador/aoe2radar/util/version.properties` is the only filtered resource
+  (`src/main/resources` is not filtered: flags and tech-tree data must go byte for byte). Maven writes
+  `version.pom` and `version.app` into it, and `util.Identidad` reads it when the class loads:
+  `VERSION_POM` (`1.3.0`) and `VERSION` (`1.3`, via `Identidad.versionCorta`, the same rule as the pom).
+- Outside Maven (e.g. an IDE that compiles on its own without processing resources, or plain `javac`), the
+  filtered resource does not exist and the version comes out as `0.0` (title `aoe2radar 0.0 — …`, and the
+  update checker sees any tag as newer). Build through Maven (`mvn compile`/`test`/`package`, or the IDE
+  delegating to Maven) to get the real version.
+- `util/IdentidadTest` checks, on every `mvn test`, that the resource arrived filtered and matches the
+  `<version>` in `pom.xml`, and that the `<regex>` and `<replacement>` in the pom are literally
+  `Identidad.REGLA_CORTA` and `Identidad.REEMPLAZO_CORTA`, applying both to several versions (`1.3.0`,
+  `1.3.1`, `1.4.0-SNAPSHOT`, `2.0`…). If you change the rule, change both places or the test goes red.
 
 ## Layered architecture
 Summary table; the details of what each layer knows and the key contracts are in
