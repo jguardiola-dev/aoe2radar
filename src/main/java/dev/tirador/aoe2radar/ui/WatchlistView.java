@@ -31,7 +31,6 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
 import javax.swing.JList;
-import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
@@ -44,7 +43,6 @@ import javax.swing.JSplitPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.JToggleButton;
-import javax.swing.JToolTip;
 import javax.swing.JViewport;
 import javax.swing.JWindow;
 import javax.swing.SwingUtilities;
@@ -55,7 +53,6 @@ import java.awt.Color;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.FontMetrics;
 import java.awt.GridLayout;
@@ -63,14 +60,10 @@ import java.awt.Insets;
 import java.awt.Point;
 import java.awt.Rectangle;
 import java.awt.Window;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -80,7 +73,6 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import static dev.tirador.aoe2radar.ui.Componentes.colorVivoHex;
-import static dev.tirador.aoe2radar.ui.Iconos.iconoBandera;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -330,6 +322,7 @@ public final class WatchlistView {
     final WatchlistMenu menuLista = new WatchlistMenu(this);
     final WatchlistTrabajos trabajos = new WatchlistTrabajos(this);
     final WatchlistDialogos dialogosLista = new WatchlistDialogos(this);
+    final WatchlistControles controles = new WatchlistControles(this);
 
     /** Ver ui.WatchlistView.EnlacePartidas y ui.WatchlistView.Anfitrion para el contrato completo. */
     public WatchlistView(Window ventana, ProfileService perfiles,
@@ -560,295 +553,7 @@ public final class WatchlistView {
         tituloWatch = BorderFactory.createTitledBorder("Watchlist");
         tituloWatch.setTitleFont(tituloWatch.getTitleFont().deriveFont(Font.BOLD, 13f));
         left.setBorder(tituloWatch);
-        watchPista1 = new JLabel(t("Amigos, pros o gente del clan.", "Friends, pros or clan mates."));
-        watchPista2 = new JLabel(t("Selecciona para filtrar; sin selección, todos.", "Select to filter; none selected = everyone."));
-        watchPista3 = new JLabel("\u21A5 " + t("= cuenta vinculada con más ELO", "= linked account with higher ELO"));
-        watchPista1.setFont(watchPista1.getFont().deriveFont(Font.PLAIN, 11f));
-        watchPista2.setFont(watchPista2.getFont().deriveFont(Font.PLAIN, 11f));
-        watchPista3.setFont(watchPista3.getFont().deriveFont(Font.PLAIN, 11f));
-        JPanel watchPistas = new JPanel();
-        watchPistas.setLayout(new BoxLayout(watchPistas, BoxLayout.Y_AXIS));
-        watchPistas.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
-        watchPista1.setVisible(false);   // la explicación larga vive en el «?»
-        watchPista3.setVisible(false);
-        watchPista2.setText(t("Selecciona para filtrar \u00B7 \u21A5 = cuenta más fuerte", "Select to filter \u00B7 \u21A5 = stronger account"));
-        JButton ayudaBtn = new JButton("?");
-        ayudaBtn.setFocusable(false);
-        ayudaBtn.setMargin(new Insets(0, 5, 0, 5));
-        ayudaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        ayudaBtn.setToolTipText("<html>" + t("<b>Tu watchlist</b>: amigos, pros o gente del clan.<br>Selecciona jugadores para buscar solo sus partidas; sin selección, todo el grupo.<br>\u25CF rojo = jugando ahora (clic derecho \u2192 Espectar) \u00B7 TW = en Twitch (clic = su canal)<br>\u21A5 = cuenta vinculada con más ELO (clic = su perfil) \u00B7 \u270E = tiene nota (clic = editar)<br>Escribe un nick arriba y pulsa Enter para ver las partidas de cualquiera.<br>Clic en un jugador = seleccionarlo; clic en el hueco de la lista = quitar la selección; Ctrl+clic = varios.",
-                "<b>Your watchlist</b>: friends, pros or clan mates.<br>Select players to search only their games; with none selected, the whole group.<br>Red \u25CF = playing now (right-click \u2192 Spectate) \u00B7 TW = on Twitch (click = channel)<br>\u21A5 = linked account with higher ELO (click = profile) \u00B7 \u270E = has a note (click = edit)<br>Type a nick above and press Enter to see anyone's games.<br>Click a player to select; click the empty space to deselect; Ctrl+click for several.") + "</html>");
-        ayudaBtn.addActionListener(e -> {
-            JToolTip tt = ayudaBtn.createToolTip();
-            tt.setTipText(ayudaBtn.getToolTipText());
-            JPopupMenu pm = new JPopupMenu();
-            pm.add(tt);
-            pm.show(ayudaBtn, 0, ayudaBtn.getHeight());
-        });
-        resumenWatch = new JLabel();   // se crea aquí: la línea del «?» lo necesita ya
-        resumenWatch.setFont(resumenWatch.getFont().deriveFont(Font.PLAIN, 11f));
-        JPanel pistaFila = new JPanel(new BorderLayout(6, 0));
-        pistaFila.setOpaque(false);
-        watchPista2.setVisible(false);   // su texto vive en el tooltip del «?»
-        pistaFila.add(resumenWatch, BorderLayout.CENTER);   // «50 jugadores · 4 en directo»
-        pistaFila.add(ayudaBtn, BorderLayout.EAST);
-        pistaFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        watchPistas.add(pistaFila);
-        JPanel grupoFila = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));
-        grupoFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        grupoCombo.setToolTipText(t("Agrupa tu Watchlist (Amigos, Pros, Clan…). Se busca y se muestra el grupo activo.",
-                "Group your Watchlist (Friends, Pros, Clan…). The active group is what gets searched and shown."));
-        grupoCombo.setRenderer(new DefaultListCellRenderer() {
-            @Override public Component getListCellRendererComponent(JList<?> list, Object value, int index,
-                                                                    boolean isSelected, boolean cellHasFocus) {
-                JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                String s = String.valueOf(value);
-                boolean esNuevo = s.equals(t("+ Nuevo grupo…", "+ New group…"));
-                boolean esTodos = s.equals(t("Todos", "All"));
-                boolean esGestion = s.equals(t("Gestionar grupos…", "Manage groups…"));
-                if (!esNuevo && !esGestion && grupoTieneVivo(esTodos ? null : s)) {
-                    l.setText("<html><font color='#" + colorVivoHex() + "'>\u25CF</font> "
-                            + escapeHtml(s) + "</html>");
-                }
-                return l;
-            }
-        });
-        grupoCombo.addActionListener(e -> onGrupoElegido());
-        grupoCombo.setFont(grupoCombo.getFont().deriveFont(Font.BOLD));
-        grupoFila.add(grupoCombo);
-        soloVivosBtn = new JToggleButton("\u25CF " + t("Jugando", "Playing"));
-        soloVivosBtn.setToolTipText(t(
-                "Detecta partidas EN CURSO de cualquier modo (1v1, TG, lo que sea). Límites: partidas de más de 3 h se consideran colgadas, y las salas personalizadas a veces no aparecen hasta terminar.",
-                "Detects games IN PROGRESS of any mode (1v1, TG, anything). Limits: games over 3 h are treated as hung, and custom lobbies sometimes only show up once finished."));
-        soloVivosBtn.setToolTipText(t("Muestra solo a los que están jugando ahora, dentro del grupo elegido (con «Todos», de toda la lista)",
-                "Show only who is playing right now, within the selected group (with “All”, across your whole list)"));
-        soloVivosBtn.setFocusable(false);
-        soloVivosBtn.addActionListener(e -> {
-            playersList.setFixedCellHeight(0);
-            playersList.setFixedCellHeight(-1);   // invalida el caché de ALTURAS (las sublíneas de vivos)
-            aplicarFiltroGrupo();
-        });
-        String paisGuardado = leerConfig("top_pais", "es");
-        List<PaisItem> ordenPais = new ArrayList<>();
-        for (PaisItem pi : PAISES) if (pi.code().equals(paisGuardado)) ordenPais.add(pi);
-        List<PaisItem> resto = new ArrayList<>();
-        for (PaisItem pi : PAISES) if (!pi.code().equals(paisGuardado)) resto.add(pi);
-        resto.sort(Comparator.comparing(PaisItem::nombre, String.CASE_INSENSITIVE_ORDER));
-        ordenPais.addAll(resto);
-        catalogoOrdenado = ordenPais;
-        paisActual = ordenPais.get(0);   // el favorito guardado
-        buscaPais = new JTextField(6);
-        buscaPais.putClientProperty("JTextField.placeholderText", t("Buscar\u2026", "Search\u2026"));
-        buscaPais.setToolTipText(t("Filtra países al teclear: «bul» → Bulgaria; Enter elige el primero",
-                "Filters countries as you type: \u201Cbul\u201D \u2192 Bulgaria; Enter picks the first"));
-        paisCombo = new JComboBox<>(ordenPais.toArray(PaisItem[]::new));
-        paisCombo.setRenderer(new DefaultListCellRenderer() {   // con su bandera
-            @Override public Component getListCellRendererComponent(JList<?> l, Object value, int index, boolean sel, boolean foc) {
-                JLabel lab = (JLabel) super.getListCellRendererComponent(l, value, index, sel, foc);
-                if (value instanceof PaisItem pi) { lab.setIcon(iconoBandera(pi.code())); lab.setIconTextGap(6); }
-                return lab;
-            }
-        });
-        paisCombo.setSelectedIndex(0);
-        paisCombo.setMaximumRowCount(14);
-        paisCombo.setToolTipText(t("País del top a mostrar (se recuerda como predeterminado)",
-                "Country whose top to show (remembered as default)"));
-        paisCombo.addActionListener(e -> {
-            if (!rearmandoPais && paisCombo.getSelectedItem() instanceof PaisItem p) fijarPais(p);
-        });
-        instalarFiltroPais();
-        paisCombo.setPrototypeDisplayValue(null);
-        paisCombo.setPreferredSize(new Dimension(150, paisCombo.getPreferredSize().height));   // más compacto: el nombre se ve, no manda
-        buscaPais.setColumns(8);
-        parPais = new JPanel(new BorderLayout(6, 0));
-        parPais.setOpaque(false);
-        parPais.add(new JLabel(t("País:", "Country:")), BorderLayout.WEST);
-        parPais.add(buscaPais, BorderLayout.CENTER);
-        parPais.add(paisCombo, BorderLayout.EAST);
-        parPais.setAlignmentX(Component.LEFT_ALIGNMENT);
-        parPais.setVisible(false);
-        JButton nuevoGrupoBtn = new JButton(t("Crear Grupo", "Create Group"));
-        nuevoGrupoBtn.setToolTipText(t("Crear un grupo nuevo", "Create a new group"));
-        nuevoGrupoBtn.addActionListener(e -> crearGrupoDialog());
-        JButton gestGruposBtn = new JButton(t("Gestionar…", "Manage…"));
-        gestGruposBtn.setToolTipText(t("Renombrar o borrar grupos", "Rename or delete groups"));
-        gestGruposBtn.addActionListener(e -> gestionarGrupos());
-        JButton gruposBtn = new JButton("\u2699");
-        gruposBtn.setFocusable(false);
-        gruposBtn.setMargin(new Insets(1, 7, 1, 7));
-        gruposBtn.putClientProperty("JButton.buttonType", "roundRect");
-        gruposBtn.setToolTipText(t("Grupos: crear, renombrar o borrar", "Groups: create, rename or delete"));
-        gruposBtn.addActionListener(e -> {
-            JPopupMenu pm = new JPopupMenu();
-            JMenuItem crear = new JMenuItem(t("Crear grupo\u2026", "Create group\u2026"));
-            crear.addActionListener(a -> crearGrupoDialog());
-            JMenuItem gest = new JMenuItem(t("Gestionar grupos\u2026", "Manage groups\u2026"));
-            gest.addActionListener(a -> gestionarGrupos());
-            pm.add(crear); pm.add(gest);
-            pm.show(gruposBtn, 0, gruposBtn.getHeight());
-        });
-        grupoFila.add(gruposBtn);
-        campanaBtn = new JToggleButton(anfitrion.iconoVista("campana"));
-        campanaBtn.setFocusable(false); campanaBtn.setMargin(new Insets(2, 5, 2, 5)); campanaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        campanaBtn.addActionListener(e -> alternarCampana());
-        grupoFila.add(campanaBtn);
-        topNCombo = new JComboBox<>(new String[]{ "Top 25", "Top 50", "Top 100" });
-        topNCombo.setToolTipText(t("Cuántos jugadores enseñan Top ladder y Top país", "How many players Top ladder and Top country show"));
-        topNCombo.setSelectedIndex(Math.max(0, Arrays.asList("25", "50", "100").indexOf(leerConfig("top_n", "50"))));
-        topNCombo.addActionListener(e -> { if (rellenandoTopN) return; String n = new String[]{ "25", "50", "100" }[Math.max(0, topNCombo.getSelectedIndex())]; if (n.equals(leerConfig("top_n", "50"))) return; guardarConfig("top_n", n); if (modoTop() && !modoClan()) { topCargado = 0; cargarTopLadder(true); } });
-        topNCombo.setVisible(false);
-        grupoFila.add(topNCombo);
-        addJugBtn = new JButton(t("+ Añadir jugador", "+ Add player"));
-        addJugBtn.setFocusable(false);
-        addJugBtn.setMargin(new Insets(1, 7, 1, 7));
-        addJugBtn.putClientProperty("JButton.buttonType", "roundRect");
-        addJugBtn.setToolTipText(t("Busca un jugador por nick y añádelo a este grupo", "Find a player by nick and add them to this group"));
-        addJugBtn.addActionListener(e -> addPlayerDialog(false, buscaNick != null ? buscaNick.getText().trim() : null));
-        grupoFila.add(addJugBtn);
-        // Fila 3: el chip «● En directo» y el resumen en gris
-        soloVivosBtn.putClientProperty("JButton.buttonType", "roundRect");
-        soloVivosBtn.setFocusable(false);
-        JPanel filtroFila = new JPanel(new BorderLayout(8, 0));
-        filtroFila.setOpaque(false);
-        filtroFila.setBorder(BorderFactory.createEmptyBorder(2, 0, 0, 0));
-        formaBtn = new JButton(t("Ver forma", "Recent form"));
-        formaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        formaBtn.setFocusable(false);
-        formaBtn.setToolTipText(tipVerForma());
-        formaBtn.addActionListener(e -> cargarForma(objetivoForma(), ventanaForma, () -> {   // siempre consulta (y suma a lo ya consultado)
-            formaVisible = true; actualizarTextoForma();
-            if (ocultarFormaBtn != null) ocultarFormaBtn.setVisible(true);
-            refrescarCabeceraOrden(); aplicarFiltroGrupo(); playersList.repaint();
-        }));
-        ocultarFormaBtn = new JButton(t("Ocultar forma", "Hide recent form"));
-        ocultarFormaBtn.setFocusable(false);
-        ocultarFormaBtn.setMargin(new Insets(1, 6, 1, 6));
-        ocultarFormaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        ocultarFormaBtn.setToolTipText(tipOcultarForma());
-        ocultarFormaBtn.setVisible(false);
-        ocultarFormaBtn.addActionListener(e -> apagarForma());
-        JComboBox<String> ventanaCb = new JComboBox<>(new String[]{ t("últimas 24 h", "last 24 h"), t("últimos 7 días", "last 7 days") });
-        ventanaCb.setFocusable(false);
-        ventanaCb.setToolTipText(t("Ventana de la forma que consulta «Ver forma»", "Window used by \u201CRecent form\u201D"));
-        ventanaCb.addActionListener(e -> {
-            ventanaForma = ventanaCb.getSelectedIndex() == 1 ? 24 * 7 : 24;
-            if (formaVisible) { refrescarCabeceraOrden(); aplicarFiltroGrupo(); playersList.repaint(); }   // la columna cambia de ventana al instante
-        });
-        JPanel chips = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));   // envuelve a otra línea, nunca se trunca
-        chips.setOpaque(false);
-        chips.add(soloVivosBtn); chips.add(formaBtn); chips.add(ventanaCb); chips.add(ocultarFormaBtn);
-        filtroFila.add(chips, BorderLayout.CENTER);
-        filtroFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        buscaNick = new JTextField();
-        buscaNick.putClientProperty("JTextField.placeholderText",
-                t("\uD83D\uDD0D Buscar jugador por nick  (Enter = ver sus partidas)", "\uD83D\uDD0D Find a player by nick  (Enter = see their games)"));
-        buscaNick.setToolTipText(t("Escribe un nick y pulsa Enter: verás sus partidas sin añadirlo; desde su nombre podrás ficharlo a un grupo.",
-                "Type a nick and press Enter: you'll see their games without adding them; from their name you can add them to a group."));
-        JPopupMenu nickPopup = new JPopupMenu(); nickPopup.setFocusable(false);
-        javax.swing.Timer nickDebounce = new javax.swing.Timer(450, ev -> {
-            String q = buscaNick.getText().trim();
-            nickPopup.setVisible(false); nickPopup.removeAll();
-            if (q.length() < 2) return;
-            new Thread(() -> {
-                List<String[]> res = busqueda.sugerir(q);
-                SwingUtilities.invokeLater(() -> {
-                    if (sugerenciaCaducada(q, buscaNick.getText())) return;
-                    nickPopup.removeAll();
-                    int n = 0;
-                    for (String[] r : res) {
-                        JMenuItem it = new JMenuItem(r[2]);
-                        String nombre = r[1];
-                        long pidSug = Long.parseLong(r[0]);
-                        it.addActionListener(a -> { nickPopup.setVisible(false); buscaNick.setText(nombre); jugadorElegido(pidSug, nombre); });   // el elegido es ESTE jugador (por id): nada de volver a buscar por nombre
-                        nickPopup.add(it);
-                        if (++n >= 8) break;
-                    }
-                    if (n > 0 && buscaNick.isShowing() && buscaNick.hasFocus()) nickPopup.show(buscaNick, 0, buscaNick.getHeight());
-                });
-            }, "nick-sugerir").start();
-        });
-        nickDebounce.setRepeats(false);
-        buscaNick.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { nickDebounce.restart(); }
-        });
-        buscaNick.addKeyListener(new KeyAdapter() { @Override public void keyPressed(KeyEvent e) { if (e.getKeyCode() == KeyEvent.VK_ESCAPE) nickPopup.setVisible(false); } });
-        buscaNick.addActionListener(e -> {
-            nickPopup.setVisible(false);
-            String q = buscaNick.getText().trim();
-            if (!q.isEmpty()) { addPlayerDialog(true, q); buscaNick.setText(""); }
-        });
-        JPanel buscaFila = new JPanel(new BorderLayout());
-        buscaFila.setBorder(BorderFactory.createEmptyBorder(2, 0, 4, 0));
-        buscaFila.add(buscaNick, BorderLayout.CENTER);
-        JPanel norteWatch = new JPanel();
-        norteWatchRef = norteWatch;
-        norteWatch.setLayout(new BoxLayout(norteWatch, BoxLayout.Y_AXIS));
-        norteWatch.setBorder(BorderFactory.createEmptyBorder(0, 4, 2, 4));
-        buscaFila.setAlignmentX(Component.LEFT_ALIGNMENT);
-        norteWatch.add(buscaFila);   // 1. el buscador
-        norteWatch.add(grupoFila);   // 2. la vista (grupo · ⚙ · + Añadir jugador)
-        norteWatch.add(parPais);   //    el país, en su propia línea, solo en Top país
-        clanField = new JTextField(10);
-        clanField.putClientProperty("JTextField.placeholderText", t("Tag del clan (R1, DK, TdB…)", "Clan tag (R1, DK, TdB…)"));
-        clanField.setText(leerConfig("clan_tag", ""));
-        clanPopup = new JPopupMenu(); clanPopup.setFocusable(false);
-        clanField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() {
-                clanPopup.setVisible(false); clanPopup.removeAll();
-                if (clanField.getText().trim().length() < 1) return;
-                if (anfitrion.clanesVacios()) { Thread th = new Thread(anfitrion::asegurarLadderEnFondo, "clanes"); th.setDaemon(true); th.start(); return; }
-                for (Map.Entry<String, Integer> en : anfitrion.sugerirClanes(clanField.getText())) {
-                    JMenuItem it = new JMenuItem(en.getKey() + "  (" + en.getValue() + ")");
-                    it.addActionListener(a -> { clanField.setText(en.getKey()); clanPopup.setVisible(false); cargarTopClan(); });
-                    clanPopup.add(it);
-                }
-                if (clanPopup.getComponentCount() > 0) clanPopup.show(clanField, 0, clanField.getHeight());
-            }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        clanField.addActionListener(e -> { clanPopup.setVisible(false); cargarTopClan(); });
-        parClan = new JPanel(new BorderLayout(6, 0));
-        parClan.setOpaque(false);
-        parClan.add(new JLabel(t("Clan:", "Clan:")), BorderLayout.WEST);
-        parClan.add(clanField, BorderLayout.CENTER);
-        clanesGuardadosCombo = new JComboBox<>();
-        clanesGuardadosCombo.setToolTipText(t("Tus clanes guardados: elige uno para cargar su top", "Your saved clans: pick one to load its top"));
-        clanesGuardadosCombo.addActionListener(e -> { if (rellenandoClanes) return; Object v = clanesGuardadosCombo.getSelectedItem(); if (v instanceof String tag && !tag.isBlank() && !tag.startsWith("(")) { clanField.setText(tag); clanPopup.setVisible(false); cargarTopClan(); } });
-        clanEstrella = new JButton(t("Guardar clan", "Save clan"));
-        clanEstrella.setFocusable(false); clanEstrella.setMargin(new Insets(1, 8, 1, 8));
-        clanEstrella.addActionListener(e -> {
-            String tag = clanField.getText().trim();
-            if (tag.isEmpty()) return;
-            List<String> l = clanesGuardados();
-            if (l.removeIf(x -> x.equalsIgnoreCase(tag))) status.setText(t("Clan quitado de guardados: ", "Clan removed from saved: ") + tag); else { l.add(tag); status.setText(t("Clan guardado: ", "Clan saved: ") + tag); }
-            guardarConfig("clanes_guardados", String.join(",", l));
-            refrescarClanesGuardados();
-        });
-        parClan.add(clanEstrella, BorderLayout.EAST);
-        parClanGuardados = new JPanel(new BorderLayout(6, 0));
-        parClanGuardados.setOpaque(false);
-        parClanGuardados.add(new JLabel(t("Clanes guardados:", "Saved clans:")), BorderLayout.WEST);
-        parClanGuardados.add(clanesGuardadosCombo, BorderLayout.CENTER);
-        parClanGuardados.setAlignmentX(Component.LEFT_ALIGNMENT);
-        parClanGuardados.setVisible(false);
-        clanField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void cambio() { refrescarClanesGuardados(); }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
-        });
-        refrescarClanesGuardados();
-        parClan.setAlignmentX(Component.LEFT_ALIGNMENT);
-        parClan.setVisible(false);
-        norteWatch.add(parClan);   //    el clan, en su propia línea, solo en Top clan
-        norteWatch.add(parClanGuardados);   //    y debajo, los guardados
-        norteWatch.add(filtroFila);   // 3. chip En directo + resumen
-        norteWatch.add(watchPistas);   //    una línea de pista + «?»
-        left.add(norteWatch, BorderLayout.NORTH);
+        controles.construir(left);
         JLabel cabLabelLocal = new JLabel();
         cabLabelLocal.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0,
                 UIManager.getColor("Component.borderColor") != null
@@ -987,39 +692,6 @@ public final class WatchlistView {
     public boolean enZonaForma(Point p) {
         int wL = playersList.getWidth() - 22, elo = anchoCeldaElo(wL);
         return formaVisible && p.x >= wL - elo - 72 && p.x <= wL - elo;
-    }
-
-    /** El campo filtra el combo de al lado; nadie más escribe en él, así que
-     *  no puede realimentarse (la lección del cuelgue de la 4.41). */
-    private void instalarFiltroPais() {
-        buscaPais.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            void filtrar() {
-                String q = dev.tirador.aoe2radar.util.Texto.sinTildes(buscaPais.getText().trim());
-                PaisItem prev = paisActual;
-                rearmandoPais = true;
-                try {
-                    paisCombo.removeAllItems();
-                    for (PaisItem pi : catalogoOrdenado)
-                        if (q.isEmpty() || dev.tirador.aoe2radar.util.Texto.sinTildes(pi.nombre()).contains(q) || pi.code().startsWith(q))
-                            paisCombo.addItem(pi);
-                    if (prev != null)
-                        for (int i = 0; i < paisCombo.getItemCount(); i++)
-                            if (paisCombo.getItemAt(i).code().equals(prev.code())) { paisCombo.setSelectedIndex(i); break; }
-                } finally { rearmandoPais = false; }
-            }
-            @Override public void insertUpdate(javax.swing.event.DocumentEvent e)  { filtrar(); }
-            @Override public void removeUpdate(javax.swing.event.DocumentEvent e)  { filtrar(); }
-            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { }
-        });
-        buscaPais.addActionListener(e -> {   // Enter: el primero filtrado (y carga)
-            if (paisCombo.getItemCount() > 0) paisCombo.setSelectedIndex(0);
-        });
-    }
-
-    private void fijarPais(PaisItem pi) {
-        paisActual = pi;
-        guardarConfig("top_pais", pi.code());
-        if (modoPais()) cargarTopLadder(true);
     }
 
     public String vistaActualId() {
@@ -1162,23 +834,6 @@ public final class WatchlistView {
 
     public boolean campanaContiene(long pid) { return campanas.campanaContiene(pid, campanaIds); }
 
-    private void refrescarCampanaBtn() {
-        if (campanaBtn == null) return;
-        boolean on = campanas.campanas().contains(idVistaCampana());
-        campanaBtn.setSelected(on);
-        campanaBtn.setForeground(on ? (temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)) : UIManager.getColor("Button.foreground"));
-        campanaBtn.setToolTipText(on ? t("Avisos activados para esta lista: te avisa cuando alguien de aquí entre en partida (clic para apagar)", "Alerts on for this list: you get a notice when someone here starts a game (click to turn off)")
-                : t("Activar para recibir un aviso cuando alguien de esta lista entre en partida", "Turn on to get a notice when someone in this list starts a game"));
-    }
-
-    private void alternarCampana() {
-        String id = idVistaCampana();
-        boolean activo = campanas.alternar(id);
-        refrescarCampanaBtn();
-        refrescarCampanas();
-        status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + id.replace("\u2605", "\u2605 ").replace("|", " ") + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
-    }
-
     /** Recalcula (en segundo plano, service.Campanas) los jugadores de cada vista con campana y los mete en el socket. Cada 15 min para tops, pais y clan. */
     public void refrescarCampanas() {
         Set<String> s = campanas.campanas();
@@ -1244,22 +899,6 @@ public final class WatchlistView {
     public List<String> clanesGuardados() { List<String> l = new ArrayList<>(); for (String x : leerConfig("clanes_guardados", "").split(",")) if (!x.isBlank()) l.add(x.trim()); return l; }
     /** El tag de clan escrito ahora mismo en el campo (Top clan); "" si no hay campo o está vacío. */
     public String clanBuscado() { return clanField == null ? "" : clanField.getText().trim(); }
-
-    private void refrescarClanesGuardados() {
-        if (clanesGuardadosCombo == null) return;
-        rellenandoClanes = true;
-        try {
-            List<String> l = clanesGuardados();
-            clanesGuardadosCombo.removeAllItems();
-            clanesGuardadosCombo.addItem(l.isEmpty() ? t("(sin clanes guardados)", "(no saved clans)") : t("Guardados…", "Saved…"));
-            for (String x : l) clanesGuardadosCombo.addItem(x);
-            String actual = clanField == null ? "" : clanField.getText().trim();
-            boolean guardado = l.stream().anyMatch(x -> x.equalsIgnoreCase(actual));
-            clanEstrella.setText(guardado ? t("Quitar de guardados", "Remove from saved") : t("Guardar clan", "Save clan"));
-            clanEstrella.setEnabled(!actual.isEmpty());
-            if (parClanGuardados != null) parClanGuardados.setVisible(parClan != null && parClan.isVisible() && !l.isEmpty());
-        } finally { rellenandoClanes = false; }
-    }
 
     void cargarTopClan() { trabajos.cargarTopClan(); }
     public void cargarTopLadder(boolean forzar) { trabajos.cargarTopLadder(forzar); }
@@ -1444,21 +1083,7 @@ public final class WatchlistView {
                 + "</tr></table></html>");
     }
 
-    /** En los modos ★ la lista es de solo lectura; el país solo se ve en ★ país. */
-    void actualizarBotonesModo() {
-        boolean editable = !modoTop();
-        if (delBtn != null) delBtn.setEnabled(editable);
-        if (parPais != null) parPais.setVisible(modoPais());
-        if (parClan != null) parClan.setVisible(modoClan());
-        if (parClanGuardados != null) parClanGuardados.setVisible(modoClan() && !clanesGuardados().isEmpty());
-        if (topNCombo != null) { topNCombo.setVisible(modoTop() && !modoClan()); rellenandoTopN = true; try { topNCombo.setSelectedIndex(Math.max(0, Arrays.asList("25", "50", "100").indexOf(leerConfig("top_n", "50")))); } finally { rellenandoTopN = false; } }
-        refrescarCampanaBtn();
-        if (addJugBtn != null) addJugBtn.setVisible(!modoTop());   // en los tops se ficha desde la fila
-        if (delBtn != null) delBtn.setVisible(!modoTop() && grupoActivo() != null);   // solo en grupos personalizados
-        if (buscaNick != null) buscaNick.putClientProperty("JTextField.placeholderText", modoTop()
-                ? t("\uD83D\uDD0D Buscar jugador por nick  (Enter = ver sus partidas)", "\uD83D\uDD0D Find a player by nick  (Enter = view their games)")
-                : t("\uD83D\uDD0D Buscar o añadir jugador por nick  (Enter = ver sus partidas)", "\uD83D\uDD0D Find or add a player by nick  (Enter = view their games)"));
-    }
+    void actualizarBotonesModo() { controles.actualizarBotonesModo(); }
 
     /** Reconstruye la lista visible con el grupo activo («Todos» = todos). */
     public void aplicarFiltroGrupo() {
