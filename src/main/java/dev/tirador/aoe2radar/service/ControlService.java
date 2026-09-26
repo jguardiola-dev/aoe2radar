@@ -34,11 +34,11 @@ public final class ControlService {
 
     /**
      * Baja control.json y lo aplica a Freno.CONTROL (multiplicadores e interruptores; los valores nulos se
-     * ignoran). Devuelve el mensaje nuevo a mostrar en la barra de estado, o null si no hay nada que enseñar
-     * (sin mensaje, ya visto, estado distinto de 200 o cuerpo que no es un objeto) o si falló la red.
-     * visto: el texto ya mostrado la última vez (config «control_msg_visto»). No lo marca como visto: eso lo
-     * hace la ventana cuando lo ha enseñado de verdad (arreglo F10 de la revisión 1.3; antes se marcaba al
-     * descargarlo y otros estados lo pisaban antes de verse). No lanza.
+     * ignoran). Devuelve el mensaje nuevo a mostrar en la franja de avisos de arriba (ui.FranjaAviso), o null si
+     * no hay nada que enseñar (sin mensaje, ya visto, estado distinto de 200 o cuerpo que no es un objeto) o si
+     * falló la red. visto: el último texto que el usuario cerró (config «control_msg_visto»). No lo marca como
+     * visto: eso ocurre solo cuando el usuario pulsa la × de la franja (decisión de Jorge, 1.3; antes se marcaba
+     * al descargarlo y otros estados lo pisaban antes de verse). No lanza.
      */
     public String cargarControl(String visto) {
         avisarSiUi("ControlService.cargarControl");

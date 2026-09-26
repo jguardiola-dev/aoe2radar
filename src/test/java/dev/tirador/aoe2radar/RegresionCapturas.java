@@ -181,6 +181,19 @@ class RegresionCapturas {
         if (!v.isEmpty()) zonas.add(SwingUtilities.convertRectangle(c, v, raiz));
     }
 
+    /**
+     * El mensaje del mando a distancia (control.json, campo «mensaje») llega de la red real y la franja de arriba
+     * (ui.FranjaAviso) se queda hasta que alguien pulsa su ×: si sfr-data publicara uno, saldría en todas las fotos.
+     * Se inyecta un aviso nulo por el mismo camino que usa la app (Servicios.avisoControl), sin tocar producción.
+     * Orden: main() ya ha encolado la construcción de la ventana (que fija avisoControl a la franja y lanza la
+     * primera lectura de control.json en un hilo); este invokeLater se encola detrás y corre justo al terminar esa
+     * construcción, antes de que la lectura, que tarda lo que la red, pueda encolar su aviso. Las recargas de cada
+     * hora caen fuera del minuto y medio del harness, y también pasarían por aquí.
+     */
+    static void silenciarMensajeControl() {
+        SwingUtilities.invokeLater(() -> Servicios.avisoControl = (texto, alCerrar) -> { });
+    }
+
     static SpoilerFreeRecs app() {
         for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs s) return s;
         return null;
@@ -337,6 +350,7 @@ class RegresionCapturas {
 
     static void correr() throws Exception {
         SpoilerFreeRecs.main(new String[0]);
+        silenciarMensajeControl();
         for (int i = 0; i < 60 && app() == null; i++) Thread.sleep(250);
         Thread.sleep(3000);
         SpoilerFreeRecs app = app();
