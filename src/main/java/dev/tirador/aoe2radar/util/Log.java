@@ -1,0 +1,35 @@
+package dev.tirador.aoe2radar.util;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
+
+public final class Log {
+    private Log() {}
+
+    public static final Path LOG_FILE = Path.of("descargas.log");
+
+    public static final DateTimeFormatter LOG_F =
+            DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());
+
+    /** Escribe en consola y en descargas.log (junto a players.txt). */
+    public static synchronized void log(String linea) {
+        String l = LOG_F.format(Instant.now()) + "  " + linea;
+        System.out.println(l);
+        try {
+            Files.writeString(LOG_FILE, l + System.lineSeparator(), StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+        } catch (IOException ignored) {}
+    }
+
+    public static String causa(Throwable t) {
+        while (t.getCause() != null) t = t.getCause();
+        String m = t.getMessage();
+        return m == null || m.isBlank() ? t.getClass().getSimpleName() : m;
+    }
+}

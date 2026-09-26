@@ -1,10 +1,17 @@
 target/
-app/
+/app/
 *.zip
-config.properties
-descargas.log
-sfrdata/
-recs/
+# ficheros de ejecución de la app: solo en la raíz (anclados con «/» para no ignorar el paquete java sfrdata ni la fixture del harness)
+/config.properties
+/descargas.log
+/sfrdata/
+/recs/
+/players.txt
+/banderas/
+/techtree/
+/arranque_error.log
 *.class
 .idea/
 .vscode/
+# copias de trabajo de los subagentes (git worktree)
+/.claude/worktrees/

@@ -37,7 +37,20 @@
         <version>3.2.5</version>
         <configuration>
           <!-- el harness de capturas necesita pantalla: en Windows la hay; en CI se usa -Djava.awt.headless=false con un escritorio virtual -->
-          <argLine>-Duser.language=es -Dfile.encoding=UTF-8</argLine>
+          <argLine>-Duser.language=es -Dfile.encoding=UTF-8 -Djava.awt.headless=false</argLine>
+          <!-- la app lee y escribe con rutas relativas (config.properties, sfrdata/, banderas/, techtree/):
+               en el test trabaja en target/harness para no ensuciar la raíz del repo -->
+          <workingDirectory>${project.build.directory}/harness</workingDirectory>
+          <!-- una JVM limpia por clase de test: si otro test inicializa Java2D antes que la app, el escalado de iconos cambia píxeles -->
+          <reuseForks>false</reuseForks>
+          <!-- surefire solo recoge *Test/Test*/*Tests/*TestCase: RegresionCapturas hay que nombrarlo -->
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/RegresionCapturas.java</include>
+          </includes>
+          <systemPropertyVariables>
+            <basedir>${project.basedir}</basedir>
+          </systemPropertyVariables>
         </configuration>
       </plugin>
       <plugin>
@@ -47,12 +60,155 @@
         <configuration>
           <archive>
             <manifest>
-              <mainClass>SpoilerFreeRecs</mainClass>
+              <mainClass>dev.tirador.aoe2radar.SpoilerFreeRecs</mainClass>
             </manifest>
           </archive>
         </configuration>
       </plugin>
-      <!-- Fase 4: plugin de jpackage (por ejemplo org.panteleyev:jpackage-maven-plugin) para generar el exe con runtime, como hacía crear_exe.bat -->
     </plugins>
   </build>
+
+  <!--
+    Perfil de empaquetado (fase 4). NO se activa solo: hace falta `-Pempaquetar`, así que `mvn test` y
+    `verificar.ps1` no lo ven y el build normal no cambia ni se ralentiza.
+
+    crear_exe.bat (el script de la 1.1 que hacía este empaquetado) no está en el repo ni en el histórico de
+    Git; no ha aparecido en C:\proyectos, el Escritorio ni Documentos. Sus parámetros están deducidos del
+    propio código:
+      - Nombre/versión/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE="aoe2radar", VERSION="1.1").
+      - Clase principal: dev.tirador.aoe2radar.SpoilerFreeRecs (la misma del manifest del jar).
+      - Icono: AcercaDe.generarIco() documenta literalmente que
+        "crear_exe.bat" generaba logo.ico así: java -cp build SpoilerFreeRecs, opción make-ico
+        (hoy ese modo make-ico lo atiende app.Main, al que SpoilerFreeRecs.main sigue delegando).
+      - jpackage con runtime propio (jlink implícito) y tipo app-image: el .gitignore de la 1.1 ya ignoraba
+        una carpeta `/app` en la raíz, que es el nombre típico de destino de un app-image.
+    Aquí el destino vive en target/ (ya ignorado por completo), no en la raíz, para que `mvn clean` también
+    limpie el empaquetado.
+  -->
+  <profiles>
+    <profile>
+      <id>empaquetar</id>
+      <properties>
+        <!-- Sincronizar a mano con Identidad.VERSION hasta que la fase 4 automatice el release. -->
+        <jpackage.appVersion>1.2</jpackage.appVersion>
+        <jpackage.vendor>12Tirador</jpackage.vendor>
+        <jpackage.entrada>${project.build.directory}/jpackage-input</jpackage.entrada>
+      </properties>
+      <build>
+        <plugins>
+          <!-- 1) Copia las dependencias de runtime (FlatLaf) a una carpeta propia: jpackage necesita un
+               único directorio de entrada con el jar principal y todos los jars de su classpath. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-dependency-plugin</artifactId>
+            <version>3.9.0</version>
+            <executions>
+              <execution>
+                <id>copiar-dependencias-runtime</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>copy-dependencies</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${jpackage.entrada}</outputDirectory>
+                  <includeScope>runtime</includeScope>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- 2) Copia el jar de la app (ya construido por maven-jar-plugin, arriba, en esta misma fase
+               «package») a esa misma carpeta de entrada. -->
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-resources-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>copiar-jar-a-entrada-jpackage</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>copy-resources</goal>
+                </goals>
+                <configuration>
+                  <outputDirectory>${jpackage.entrada}</outputDirectory>
+                  <resources>
+                    <resource>
+                      <directory>${project.build.directory}</directory>
+                      <includes>
+                        <include>${project.build.finalName}.jar</include>
+                      </includes>
+                    </resource>
+                  </resources>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- 3) Genera logo.ico y 4) llama a jpackage del JDK, en ese orden, con exec-maven-plugin:
+               mismo procedimiento que crear_exe.bat, descrito ahora en el pom en vez de en un .bat suelto. -->
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <!-- Equivale a "java -cp build SpoilerFreeRecs" con la opción make-ico de crear_exe.bat:
+                     genera target/logo.ico multi-tamaño a partir del logo del clan (o el Base64 embebido). -->
+                <id>generar-logo-ico</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${java.home}/bin/java.exe</executable>
+                  <workingDirectory>${project.build.directory}</workingDirectory>
+                  <arguments>
+                    <argument>-cp</argument>
+                    <argument>${project.build.directory}/classes</argument>
+                    <argument>dev.tirador.aoe2radar.SpoilerFreeRecs</argument>
+                    <argument>--make-ico</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <!-- app-image: carpeta con aoe2radar.exe + runtime propio, sin instalador (no hace falta
+                     WiX). Si algún día hace falta instalador, aquí se cambia el tipo a exe o msi. -->
+                <id>empaquetar-jpackage</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${java.home}/bin/jpackage.exe</executable>
+                  <arguments>
+                    <argument>--type</argument>
+                    <argument>app-image</argument>
+                    <argument>--name</argument>
+                    <argument>aoe2radar</argument>
+                    <argument>--app-version</argument>
+                    <argument>${jpackage.appVersion}</argument>
+                    <argument>--vendor</argument>
+                    <argument>${jpackage.vendor}</argument>
+                    <argument>--input</argument>
+                    <argument>${jpackage.entrada}</argument>
+                    <argument>--main-jar</argument>
+                    <argument>${project.build.finalName}.jar</argument>
+                    <argument>--main-class</argument>
+                    <argument>dev.tirador.aoe2radar.SpoilerFreeRecs</argument>
+                    <argument>--icon</argument>
+                    <argument>${project.build.directory}/logo.ico</argument>
+                    <argument>--dest</argument>
+                    <argument>${project.build.directory}/dist</argument>
+                    <argument>--java-options</argument>
+                    <argument>-Dfile.encoding=UTF-8</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
