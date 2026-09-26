@@ -2,6 +2,8 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.util.Reloj;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -244,5 +246,26 @@ class LiveNowPresenterTest {
         parar.set(true);
         escritor.join(1000);
         assertNull(error.get(), () -> "ficha() debe leer bajo el mismo candado que topSnapshot/conTop: " + error.get());
+    }
+
+    // ----- EstadoVivo inyectado, no el singleton global (DEUDA, fila 125) -----------------
+
+    @Test void usaElEstadoVivoInyectadoNoElSingletonGlobal() {
+        EstadoVivo propio = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, propio);
+        pantalla.fuente = List.<Object[]>of(ficha(9901L, "Uno", 1500, 10, "es"));
+        buscador.resultado = List.of(matchEnCurso(99001L, 9901L));
+        p.refrescar(false);
+        assertNotNull(propio.partida(9901L), "se guardó en el EstadoVivo inyectado");
+        assertNull(EstadoVivo.SISTEMA.partida(9901L), "y no en el singleton global de la app");
+    }
+
+    @Test void constructorDeCuatroArgumentosSigueUsandoElSistemaGlobal() {
+        long pid = 9902L;
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla);
+        pantalla.fuente = List.<Object[]>of(ficha(pid, "Uno", 1500, 10, "es"));
+        buscador.resultado = List.of(matchEnCurso(99002L, pid));
+        p.refrescar(false);
+        assertNotNull(EstadoVivo.SISTEMA.partida(pid), "el constructor de siempre (el que usa LiveNowView) sigue pasando SISTEMA");
     }
 }

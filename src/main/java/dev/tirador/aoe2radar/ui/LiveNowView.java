@@ -7,6 +7,7 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.Campanas;
 import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.ControlService;
+import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.LiveService;
 
 import javax.swing.BorderFactory;
@@ -185,7 +186,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         this.menus = menus;
         this.ventana = ventana;
         this.anfitrion = anfitrion;
-        this.presenter = new LiveNowPresenter(liveService::partidas, socketExtra, tareas, this);
+        this.presenter = new LiveNowPresenter(liveService::partidas, socketExtra, tareas, this, EstadoVivo.SISTEMA);
         construirPanelAhora();
     }
 

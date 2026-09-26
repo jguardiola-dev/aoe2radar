@@ -60,6 +60,9 @@ public final class LiveNowPresenter {
     private final Buscador buscador;
     private final Tareas tareas;
     private final Pantalla pantalla;
+    /** Quién está en partida ahora: antes se leía siempre del singleton EstadoVivo.SISTEMA (DEUDA, fila 125);
+     *  se inyecta para poder probar el presentador con un EstadoVivo propio, sin tocar el de toda la app. */
+    private final EstadoVivo estadoVivo;
 
     /** {pid, nombre, rating, rango, país} de la fuente elegida (ver Campanas.cargarFuenteLive). */
     private final List<Object[]> ahoraTop = new ArrayList<>();
@@ -73,11 +76,19 @@ public final class LiveNowPresenter {
     private long ahoraTopMs, ahoraUltimaMs;
     private boolean ahoraCargando;
 
+    /** La de la app: quien construye el presentador (LiveNowView) pasa EstadoVivo.SISTEMA explícitamente. */
     public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla) {
+        this(buscador, socketExtra, tareas, pantalla, EstadoVivo.SISTEMA);
+    }
+
+    /** Con el EstadoVivo inyectado (DEUDA, fila 125): la usan los tests para no compartir el singleton de toda
+     *  la app entre pruebas. */
+    public LiveNowPresenter(Buscador buscador, Set<Long> socketExtra, Tareas tareas, Pantalla pantalla, EstadoVivo estadoVivo) {
         this.buscador = buscador;
         this.socketExtra = socketExtra;
         this.tareas = tareas;
         this.pantalla = pantalla;
+        this.estadoVivo = estadoVivo;
     }
 
     /** La ficha {pid, nombre, rating, rango, país} de pid en la fuente actual, o null. Bajo el mismo candado que
@@ -180,11 +191,11 @@ public final class LiveNowPresenter {
                 // anidados en este orden (liveTerminadas → ahoraEnCurso → EstadoVivo, que es hoja): nadie los coge al revés
                 synchronized (liveTerminadas) {
                     synchronized (ahoraEnCurso) {
-                        vivos.values().removeIf(m -> liveTerminadas.containsKey(m.id) || EstadoVivo.SISTEMA.terminada(m.id));
+                        vivos.values().removeIf(m -> liveTerminadas.containsKey(m.id) || estadoVivo.terminada(m.id));
                         ahoraEnCurso.clear(); ahoraEnCurso.putAll(vivos);
                     }
                 }
-                for (Map.Entry<Long, Match> en : vivos.entrySet()) EstadoVivo.SISTEMA.guardarPartida(en.getKey(), en.getValue());
+                for (Map.Entry<Long, Match> en : vivos.entrySet()) estadoVivo.guardarPartida(en.getKey(), en.getValue());
                 ahoraUltimaMs = System.currentTimeMillis();
                 tareas.enUi(pantalla::pintar);
             } catch (Exception ex) {
@@ -202,12 +213,12 @@ public final class LiveNowPresenter {
     public void liveEvento(long pid, Match m, boolean terminada) {
         if (ficha(pid) == null) return;
         if (terminada) {
-            Match viva = EstadoVivo.SISTEMA.soltarPartida(pid);
+            Match viva = estadoVivo.soltarPartida(pid);
             Match fin = m != null ? m : viva;
             if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, System.currentTimeMillis() }); }
             synchronized (ahoraEnCurso) { ahoraEnCurso.remove(pid); }
         } else if (m != null) {
-            EstadoVivo.SISTEMA.guardarPartida(pid, m);
+            estadoVivo.guardarPartida(pid, m);
             synchronized (ahoraEnCurso) { ahoraEnCurso.put(pid, m); }
         }
         if (pantalla.puedeRepintar()) tareas.enUi(pantalla::pintar);
