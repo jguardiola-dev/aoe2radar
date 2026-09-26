@@ -70,8 +70,12 @@ public final class CivStats {
      */
     public static String statsAsegurar(SfrDataClient sfr, String ventana, boolean conTendencias) {
         try {
-            if (!VENTANAS_STATS.containsKey(ventana))
-                VENTANAS_STATS.put(ventana, parsearVentana(obj(Json.parse(new String(sfr.datos("civstats/ventanas/v" + ventana + ".json.gz"), StandardCharsets.UTF_8)))));
+            if (!VENTANAS_STATS.containsKey(ventana)) {
+                // se parsea fuera del mapa y se entra con putIfAbsent: si dos hilos ven el mismo hueco vacío a la
+                // vez, el segundo en llegar no pisa el valor que el primero ya dejó puesto (fila 38 de DEUDA)
+                VentanaStats v = parsearVentana(obj(Json.parse(new String(sfr.datos("civstats/ventanas/v" + ventana + ".json.gz"), StandardCharsets.UTF_8))));
+                VENTANAS_STATS.putIfAbsent(ventana, v);
+            }
             if (conTendencias && tendenciasStats == null) {
                 Map<String, Object> j = obj(Json.parse(new String(sfr.datos("civstats/tendencias.json.gz"), StandardCharsets.UTF_8)));
                 List<String> meses = new ArrayList<>();
