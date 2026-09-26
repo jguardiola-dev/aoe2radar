@@ -422,6 +422,70 @@ class WatchlistViewTest {
         assertEquals(List.of("Amigos", "General", "PROS", "Torneo"), new ArrayList<>(watchlist.gruposDisponibles()));
     }
 
+    // ===== «Abrir en» (Configuración, 1.3): qué vista se elige al arrancar =====================================
+
+    /** Aplica «Abrir en» con los listeners del combo quitados (así no se lanza ninguna carga con red). */
+    private dev.tirador.aoe2radar.service.VistaInicial.Eleccion abrirSinCargas(WatchlistView w) {
+        w.rebuildGrupos();
+        var res = new Object() { dev.tirador.aoe2radar.service.VistaInicial.Eleccion e; };
+        sinListeners(() -> res.e = w.abrirVistaInicial(), w.grupoCombo);
+        return res.e;
+    }
+
+    @Test void abrirEn_sinConfigAbreEnTopLadder() {
+        var e = abrirSinCargas(watchlist);
+        assertEquals(WatchlistView.TOP_LADDER, watchlist.grupoCombo.getSelectedItem());
+        assertFalse(e.buscaAlAbrir());
+    }
+
+    @Test void abrirEn_grupoAbreEnEseGrupoYBuscaAlAbrir() {
+        todosJugadores.add(new Player(1L, "Uno", "Amigos"));
+        cfg.put("abrir_en", "grupo:amigos");
+        var e = abrirSinCargas(watchlist);
+        assertEquals("Amigos", watchlist.grupoActivo());
+        assertTrue(e.buscaAlAbrir(), "en un grupo, «Buscar al abrir» sí aplica");
+    }
+
+    @Test void abrirEn_paisYClan() {
+        cfg.put("abrir_en", "pais:fr");
+        abrirSinCargas(watchlist);
+        assertTrue(watchlist.modoPais());
+        assertEquals("fr", watchlist.paisSel());
+
+        cfg.put("clanes_guardados", "R1,TdB");
+        cfg.put("abrir_en", "clan:tdb");
+        abrirSinCargas(watchlist);
+        assertTrue(watchlist.modoClan());
+        assertEquals("TdB", watchlist.clanBuscado(), "el clan guardado, con sus mayúsculas");
+    }
+
+    @Test void abrirEn_todos() {
+        cfg.put("abrir_en", "todos");
+        var e = abrirSinCargas(watchlist);
+        assertEquals("Todos", watchlist.grupoCombo.getSelectedItem());
+        assertTrue(e.buscaAlAbrir());
+    }
+
+    @Test void abrirEn_loGuardadoYaNoExiste_caeATopLadder() {
+        cfg.put("abrir_en", "grupo:Borrado");
+        abrirSinCargas(watchlist);
+        assertEquals(WatchlistView.TOP_LADDER, watchlist.grupoCombo.getSelectedItem());
+        cfg.put("abrir_en", "clan:DK");   // no está entre los guardados
+        abrirSinCargas(watchlist);
+        assertEquals(WatchlistView.TOP_LADDER, watchlist.grupoCombo.getSelectedItem());
+    }
+
+    /** F3 de la revisión 1.3: el arranque ya no pisa grupo_activo con ★ salvo que «Abrir en» sea ★. Con los listeners
+     *  puestos (como en la app): elegir el grupo pasa por onGrupoElegido, que guarda ESE grupo. Grupo vacío: sin barrido. */
+    @Test void abrirEn_grupoGuardaEseGrupoComoActivo() {
+        cfg.put("grupos", "Vacio");
+        cfg.put("grupo_activo", "Otro");
+        cfg.put("abrir_en", "grupo:Vacio");
+        watchlist.rebuildGrupos();
+        watchlist.abrirVistaInicial();
+        assertEquals("Vacio", cfg.get("grupo_activo"));
+    }
+
     // ===== grupos / filtro =====================================================================================
 
     @Test void grupoActivo_todosEsNull() {

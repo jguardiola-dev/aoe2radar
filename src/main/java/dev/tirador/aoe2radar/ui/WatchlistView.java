@@ -16,6 +16,7 @@ import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.ListaSeguidos;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.TopLadderService;
+import dev.tirador.aoe2radar.service.VistaInicial;
 
 import javax.swing.AbstractButton;
 import javax.swing.BorderFactory;
@@ -721,6 +722,52 @@ public final class WatchlistView {
         aplicarFiltroGrupo();
         refrescarWatchlist();
         actualizarIndicadoresVivos();
+    }
+
+    // ===== «Abrir en» (Configuración): la vista con la que abre la app =================================
+
+    /** Los grupos de usuario del combo (lo que hay detrás de «Todos» y las tres vistas ★), en su orden. */
+    public List<String> gruposDelCombo() {
+        List<String> gs = new ArrayList<>();
+        for (int i = 0; i < grupoCombo.getItemCount(); i++) {
+            String s = grupoCombo.getItemAt(i);
+            if (!s.equals(t("Todos", "All")) && !s.equals(TOP_LADDER) && !s.equals(TOP_PAIS) && !s.equals(TOP_CLAN)) gs.add(s);
+        }
+        return gs;
+    }
+
+    /** La elección de «Abrir en» guardada, ya comprobada contra lo que existe hoy (service.VistaInicial): si el país,
+     *  el clan (entre los guardados) o el grupo ya no existen, ★ Top ladder. No toca nada. */
+    public VistaInicial.Eleccion eleccionInicial() {
+        List<String> codigos = new ArrayList<>();
+        for (PaisItem pi : PAISES) codigos.add(pi.code());
+        return VistaInicial.resolver(VistaInicial.leer(leerCfg.apply(VistaInicial.CLAVE, "top")), codigos, clanesGuardados(), gruposDelCombo());
+    }
+
+    /** Al arrancar: abre la Watchlist en la vista de «Abrir en» (por defecto ★ Top ladder, como siempre). Elige el
+     *  item del combo CON sus listeners: onGrupoElegido carga el top, el país o el clan, o barre el grupo, y guarda
+     *  grupo_activo. Antes el arranque ponía siempre ★ Top ladder y pisaba grupo_activo (F3 de la revisión 1.3).
+     *  Devuelve la elección aplicada: el arranque decide con ella si toca «Buscar al abrir». En el EDT. */
+    public VistaInicial.Eleccion abrirVistaInicial() {
+        VistaInicial.Eleccion e = eleccionInicial();
+        switch (e.tipo()) {
+            case PAIS -> {
+                for (PaisItem pi : PAISES) if (pi.code().equals(e.valor())) paisActual = pi;
+                if (paisCombo != null) {   // que el selector enseñe ese país, sin volver a cargar (rearmandoPais)
+                    rearmandoPais = true;
+                    try { paisCombo.setSelectedItem(paisActual); } finally { rearmandoPais = false; }
+                }
+                grupoCombo.setSelectedItem(TOP_PAIS);
+            }
+            case CLAN -> {
+                if (clanField != null) { clanField.setText(e.valor()); clanPopup.setVisible(false); }
+                grupoCombo.setSelectedItem(TOP_CLAN);
+            }
+            case GRUPO -> grupoCombo.setSelectedItem(e.valor());
+            case TODOS -> grupoCombo.setSelectedItem(t("Todos", "All"));
+            default -> grupoCombo.setSelectedItem(TOP_LADDER);
+        }
+        return e;
     }
 
     void crearGrupoDialog() { dialogosLista.crearGrupoDialog(); }

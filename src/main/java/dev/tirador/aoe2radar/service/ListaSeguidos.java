@@ -133,6 +133,10 @@ public final class ListaSeguidos {
         gs.add(nuevo);
         guardarConfig.accept("grupos", String.join(",", gs));
         if (leerConfig.apply("grupo_activo", "").equalsIgnoreCase(viejo)) guardarConfig.accept("grupo_activo", nuevo);
+        // «Abrir en» ese grupo sigue al grupo renombrado (borrado, en cambio, cae a ★ Top ladder al arrancar)
+        VistaInicial.Eleccion abrir = VistaInicial.leer(leerConfig.apply(VistaInicial.CLAVE, ""));
+        if (abrir.tipo() == VistaInicial.Tipo.GRUPO && abrir.valor().equalsIgnoreCase(viejo))
+            guardarConfig.accept(VistaInicial.CLAVE, new VistaInicial.Eleccion(VistaInicial.Tipo.GRUPO, nuevo).aConfig());
     }
 
     /** Pasa los jugadores del grupo borrado a General. No toca disco (players.txt): eso lo hace quien llama. */

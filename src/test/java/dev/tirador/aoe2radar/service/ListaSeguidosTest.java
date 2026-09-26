@@ -272,6 +272,17 @@ class ListaSeguidosTest {
         assertEquals(new Player(2L, "Ana2", "Colegas", 7L), jugadores.get(1));
     }
 
+    /** «Abrir en» un grupo (1.3) sigue al grupo si se renombra; si es otro grupo, no se toca. */
+    @Test void renombrarGrupo_abrirEnSigueAlGrupo() {
+        cfg.put("abrir_en", "grupo:amigos");
+        svc.renombrarGrupo(new ArrayList<>(), "Amigos", "Colegas");
+        assertEquals("grupo:Colegas", cfg.get("abrir_en"));
+
+        cfg.put("abrir_en", "grupo:Pros");
+        svc.renombrarGrupo(new ArrayList<>(), "Colegas", "Otros");
+        assertEquals("grupo:Pros", cfg.get("abrir_en"));
+    }
+
     @Test void borrarGrupo_conservaElVinculoDeFamilia() {
         List<Player> jugadores = new ArrayList<>(List.of(
                 new Player(1L, "Ana", "Amigos", 7L),

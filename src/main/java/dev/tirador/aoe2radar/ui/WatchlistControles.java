@@ -301,7 +301,7 @@ final class WatchlistControles {
                     it.addActionListener(a -> { wv.clanField.setText(en.getKey()); wv.clanPopup.setVisible(false); wv.cargarTopClan(); });
                     wv.clanPopup.add(it);
                 }
-                if (wv.clanPopup.getComponentCount() > 0) wv.clanPopup.show(wv.clanField, 0, wv.clanField.getHeight());
+                if (wv.clanPopup.getComponentCount() > 0 && wv.clanField.isShowing()) wv.clanPopup.show(wv.clanField, 0, wv.clanField.getHeight());   // oculto (p. ej. «Abrir en» un clan, antes de pasar a ★ Top clan): show() lanzaría IllegalComponentStateException
             }
             @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
             @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { cambio(); }
