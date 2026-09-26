@@ -208,7 +208,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
 
     /** La parte de vista de "abrir Tech tree" (el cromo se queda en la ventana): carga el catálogo si hace falta. */
     public void alAbrir(String civ) {
-        if (ttCargando) return;
+        if (ttCargando) { presenter.actualizarCivPedida(civ); return; }   // F11: la civ pedida durante la primera carga no se pierde
         ttCargando = true;
         ttEstado.setText(t("Cargando datos…", "Loading data…"));
         presenter.cargarDatos(civ);
