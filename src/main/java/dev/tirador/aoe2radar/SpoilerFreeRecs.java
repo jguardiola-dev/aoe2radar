@@ -276,6 +276,8 @@ import static dev.tirador.aoe2radar.service.NombresStats.posicionNombre;
 import dev.tirador.aoe2radar.service.AzarService;
 import dev.tirador.aoe2radar.service.AzarServiceCompanion;
 import static dev.tirador.aoe2radar.service.AzarService.ajustarRefAzar;
+// Barra de estado y semáforo de operación en curso (T4-Z3): ver ui.BarraEstado.
+import dev.tirador.aoe2radar.ui.BarraEstado;
 
 public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.Navegacion, dev.tirador.aoe2radar.ui.ComponentesTema {
 
@@ -404,14 +406,15 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         int u = unidadCombo.getSelectedIndex();
         return Math.min(24 * 7, n * (u == 1 ? 24 : u == 2 ? 24 * 7 : 1));   // techo: una semana; el histórico completo vive en el perfil («Todas las partidas del perfil»)
     }
-    final JLabel status = new JLabel(t("Listo.", "Ready.")) {
-        @Override public void setText(String texto) {   // si no cabe, el tooltip lo enseña entero
-            super.setText(texto);
-            setToolTipText(texto == null || texto.isBlank() ? null : texto);
-        }
-    };
-    final JButton cafeBtn  = new JButton("\u2615 " + t("Invítame a un café", "Buy me a coffee"));
-    final JProgressBar progreso = new JProgressBar();
+    /** Barra de estado, semáforo de la operación en curso y toast: ver ui.BarraEstado. Se crea en el mismo
+     *  punto donde antes se creaban status/progreso/cafeBtn (eran campos inicializados, antes del constructor). */
+    final BarraEstado barraEstado = new BarraEstado(this, barraEstadoAnfitrion(), DONAR_URL);
+    // status/progreso/cafeBtn: alias al mismo objeto de ui.BarraEstado. Decenas de sitios de otras zonas de
+    // esta ventana los usan por su nombre de campo (status.setText(...) sobre todo): mover el campo sin
+    // tener que tocar cada uno de esos sitios.
+    final JLabel status = barraEstado.status;
+    final JButton cafeBtn = barraEstado.cafeBtn;
+    final JProgressBar progreso = barraEstado.progreso;
     final Image logo = cargarLogo();
     final JCheckBoxMenuItem autoSgItem = new JCheckBoxMenuItem(t("Enviar al juego al descargar", "Send to game after download"),
             Boolean.parseBoolean(leerConfig("autosavegame", "false")));
@@ -622,27 +625,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // Swing (boton, toast) y el estado compartido (campanaIds, socketExtra). Cableado junto al
     // propio Campanas, no al lado de COMPANION/LIVE/SERVICIO_PERFIL.
     final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig);
-    javax.swing.Timer campanasTimer; JPanel toast; javax.swing.Timer toastTimer;
+    javax.swing.Timer campanasTimer;   // barrido de campanas (Watchlist): el toast que dispara se sacó a ui.BarraEstado (T4-Z3)
 
-    void mostrarToast(String texto, long matchId) {
-        JLayeredPane capa = getLayeredPane();
-        if (toast != null) capa.remove(toast);
-        toast = new JPanel(new BorderLayout(8, 0));
-        toast.setBorder(BorderFactory.createCompoundBorder(BorderFactory.createLineBorder(temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00), 1, true), BorderFactory.createEmptyBorder(8, 12, 8, 12)));
-        JLabel l = new JLabel(texto);
-        toast.add(l, BorderLayout.CENTER);
-        JPanel botones = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0)); botones.setOpaque(false);
-        if (matchId > 0) { JButton esp = new JButton(t("Espectar", "Spectate")); esp.setFocusable(false); esp.setMargin(new Insets(1, 8, 1, 8)); esp.addActionListener(e -> { espectarPartida(matchId); ocultarToast(); }); botones.add(esp); }
-        JButton x = new JButton("\u00D7"); x.setFocusable(false); x.setMargin(new Insets(1, 6, 1, 6)); x.addActionListener(e -> ocultarToast()); botones.add(x);
-        toast.add(botones, BorderLayout.EAST);
-        Dimension d = toast.getPreferredSize();
-        toast.setBounds(getRootPane().getWidth() - d.width - 24, getRootPane().getHeight() - d.height - 56, d.width, d.height);
-        capa.add(toast, JLayeredPane.POPUP_LAYER);
-        capa.repaint();
-        if (toastTimer != null) toastTimer.stop();
-        toastTimer = new javax.swing.Timer(10_000, e -> ocultarToast()); toastTimer.setRepeats(false); toastTimer.start();
-    }
-    void ocultarToast() { if (toast != null) { getLayeredPane().remove(toast); getLayeredPane().repaint(); toast = null; } }
+    /** El aviso flotante («X ha empezado una partida»): ver ui.BarraEstado. */
+    void mostrarToast(String texto, long matchId) { barraEstado.mostrarToast(texto, matchId); }
+    void ocultarToast() { barraEstado.ocultarToast(); }
 
     // Banderas, icono de civ e icono de mapa: ver ui.Iconos (cachés y escalado) y service.ImagenesJuego
     // (rutas fijas y descarga de miniaturas de mapa).
@@ -962,6 +949,28 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         };
     }
 
+    /** Lo que ui.BarraEstado necesita del resto de la ventana: el freno de cancelación real (api.Cancelacion)
+     *  y la red (api.Http, java.net) viven aquí porque ui no puede importarlos; «operacionTerminada» reactiva
+     *  los botones de ui.PartidasView, que tampoco son suyos. */
+    private BarraEstado.Anfitrion barraEstadoAnfitrion() {
+        return new BarraEstado.Anfitrion() {
+            @Override public void iniciarOperacion() { stopOperacion = false; hiloOperacion = null; }
+            @Override public void marcarOperacionEnCurso(boolean on) { opEnCurso = on; }
+            @Override public void operacionTerminada() {
+                partidas.fetchBtn.setEnabled(true); partidas.azarBtn.setEnabled(true); partidas.gteBtn.setEnabled(true);
+                if (partidas.dlSel != null) partidas.dlSel.setEnabled(true);
+                if (partidas.dlAll != null) partidas.dlAll.setEnabled(true);
+            }
+            @Override public void pararOperacion() { stopOperacion = true; }
+            @Override public void renovarHttp() { HTTP = nuevoHttp(); }
+            @Override public void continuarBuscando() { partidas.buscarAleatorias(true); }
+            @Override public void abrirTwitch() { SpoilerFreeRecs.this.abrirTwitch(); }
+            @Override public void abrirDonacion() { SpoilerFreeRecs.this.abrirDonacion(); }
+            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
+            @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
+        };
+    }
+
     /** Lo que la Watchlist pide al resto de la ventana (cromo, red que no es de servicio): ver
      *  ui.WatchlistView.Anfitrion. */
     private WatchlistView.Anfitrion watchlistAnfitrion() {
@@ -975,7 +984,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public void asegurarLadderEnFondo() { dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar(false); }
             @Override public List<Map.Entry<String, Integer>> sugerirClanes(String texto) { return dev.tirador.aoe2radar.service.ConsultasLadder.sugerirClanes(texto); }
             @Override public void trabajando(boolean on) { SpoilerFreeRecs.this.trabajando(on); }
-            @Override public long opSerial() { return opSerial; }
+            @Override public long opSerial() { return barraEstado.opSerial(); }
             @Override public void marcarHiloOperacionActual() { hiloOperacion = Thread.currentThread(); }
             @Override public boolean detenerOperacion() { return stopOperacion; }
             @Override public void dormir(long ms) { SpoilerFreeRecs.dormir(ms); }
@@ -985,11 +994,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public void lanzarCaptureAge(java.nio.file.Path rec) { SpoilerFreeRecs.this.lanzarCaptureAge(rec); }
             @Override public void mostrarToast(String texto, long matchId) { SpoilerFreeRecs.this.mostrarToast(texto, matchId); }
             @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) {
-                if (toast == null) return;
+                JPanel toastActual = barraEstado.toast();
+                if (toastActual == null) return;
                 JButton perf = new JButton(t("Su perfil", "Their profile")); perf.setFocusable(false); perf.setMargin(new Insets(0, 6, 0, 6)); perf.addActionListener(a -> accionPerfil.run());
                 JButton cara = new JButton(t("Cara a cara", "Head-to-head")); cara.setFocusable(false); cara.setMargin(new Insets(0, 6, 0, 6)); cara.addActionListener(a -> accionCaraACara.run());
                 JPanel acc = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0)); acc.setOpaque(false); acc.add(perf); acc.add(cara);
-                toast.add(acc, BorderLayout.SOUTH); toast.revalidate();
+                toastActual.add(acc, BorderLayout.SOUTH); toastActual.revalidate();
             }
             @Override public void abrirPerfilYCaraACara(long pid, String miNombre, long rivalId, String rivalNombre) {
                 abrirPerfil(pid, miNombre);
@@ -1347,61 +1357,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // continuar buscando). Devuelve el panel para el centro de la ventana.
     private JPanel construirBarraInferior() {
         JPanel filasBtns = partidas.construirBotonesInferiores();   // dlSel/dlAll/carpetas/enviarSg/todasPerfilBtn: ver ui.PartidasView
-        firma = new JLabel("<html>" + AUTOR + " · <u>" + TWITCH + "</u></html>");
-        firma.setFont(firma.getFont().deriveFont(Font.PLAIN, 11f));
-        firma.setBorder(BorderFactory.createEmptyBorder(0, 0, 0, 8));
-        firma.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        firma.setToolTipText("Abrir https://" + TWITCH);
-        firma.addMouseListener(new MouseAdapter() {
-            @Override public void mouseClicked(MouseEvent e) { abrirTwitch(); }
-        });
-        cafeBtn.setToolTipText(DONAR_URL);
-        cafeBtn.addActionListener(e -> abrirDonacion());
-        JPanel este = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        actualizarBtn = new JButton();
-        actualizarBtn.setVisible(false);
-        actualizarBtn.setFocusable(false);
-        actualizarBtn.setToolTipText(t("Abre la página de descarga de la versión nueva", "Opens the new version's download page"));
-        actualizarBtn.addActionListener(e -> abrirUrl(RELEASES_URL));
-        este.add(actualizarBtn); este.add(cafeBtn); este.add(firma);
-
-        progreso.setIndeterminate(true);
-        progreso.setVisible(false);
-        progreso.setPreferredSize(new Dimension(120, 14));
-        JPanel oeste = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
-        oeste.add(progreso);
-        detenerDescBtn = new JButton(t("Detener", "Stop"));
-        detenerDescBtn.setVisible(false);
-        detenerDescBtn.setToolTipText(t("Detiene la operación en curso: descargas, azar o Guess the ELO (cada petición muere sola a los 25 s).",
-                "Stops the running operation: downloads, random or Guess the ELO (each request self-terminates at 25 s)."));
-        detenerDescBtn.addActionListener(e -> {
-            log("detener pulsado (op #" + opSerial + ")");
-            stopOperacion = true;
-            detenerDescBtn.setEnabled(false);
-            status.setText(t("Deteniendo… (como mucho 15 s si había una petición en vuelo)",
-                    "Stopping… (at most 15 s if a request was in flight)"));
-            HTTP = nuevoHttp();   // las peticiones en vuelo caducan solas (≤15 s); las siguientes salen limpias
-            final long serialDetenido = opSerial;
-            javax.swing.Timer vig = new javax.swing.Timer(5000, ev -> {
-                if (progreso.isVisible() && opSerial == serialDetenido) {   // solo si es LA MISMA operación
-                    trabajando(false);
-                    status.setText(t("Detenido.", "Stopped."));
-                }
-            });
-            vig.setRepeats(false);
-            vig.start();
-        });
-        oeste.add(detenerDescBtn);
-        continuarBtn = new JButton(t("Continuar buscando", "Keep searching"));
-        continuarBtn.setVisible(false);
-        continuarBtn.setToolTipText(t("Reanuda el azar con los mismos filtros, sin re-diálogo: el muestreo recuerda lo ya leído.",
-                "Resumes the random search with the same filters, no dialog: sampling remembers what it already read."));
-        continuarBtn.addActionListener(e -> partidas.buscarAleatorias(true));
-        oeste.add(continuarBtn);
-        JPanel filaEstado = new JPanel(new BorderLayout());
-        filaEstado.add(oeste, BorderLayout.WEST);
-        filaEstado.add(status, BorderLayout.CENTER);
-        filaEstado.add(este, BorderLayout.EAST);
+        JPanel filaEstado = barraEstado.construirFila();   // progreso/detener/continuar, status, firma/café/actualizar: ver ui.BarraEstado
+        firma = barraEstado.firma;
+        actualizarBtn = barraEstado.actualizarBtn;
+        detenerDescBtn = barraEstado.detenerDescBtn;
+        continuarBtn = barraEstado.continuarBtn;
 
         JPanel bottom = new JPanel(new BorderLayout());
         bottom.add(filasBtns, BorderLayout.NORTH);
@@ -1790,27 +1750,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     void guardarVentana() { VentanaGuardada.guardar(this, splitPrincipal); }
 
-    /** Muestra u oculta la barra de progreso de la fila de estado. */
-    long opSerial;   // cada operación tiene su número: el watchdog del Detener solo cierra la suya
-
-    void trabajando(boolean on) {
-        progreso.setVisible(on);
-        if (on) { stopOperacion = false; hiloOperacion = null; }   // antes que opEnCurso: operación nueva = freno suelto (la anterior, si aún muere, ya no frena a esta), y hasta que anote su hilo Detener no alcanza a nadie
-        opEnCurso = on;
-        if (on) opSerial++;
-        if (!on) {   // cualquier fin de operación deja la UI usable, pase por donde pase
-            partidas.fetchBtn.setEnabled(true); partidas.azarBtn.setEnabled(true); partidas.gteBtn.setEnabled(true);
-            if (partidas.dlSel != null) partidas.dlSel.setEnabled(true);
-            if (partidas.dlAll != null) partidas.dlAll.setEnabled(true);
-        }
-        if (on) {
-            if (continuarBtn != null) continuarBtn.setVisible(false);
-        }
-        if (detenerDescBtn != null) {
-            detenerDescBtn.setVisible(on);
-            if (!on) detenerDescBtn.setEnabled(true);
-        }
-    }
+    /** Muestra u oculta la barra de progreso de la fila de estado y el semáforo de la operación en curso:
+     *  ver ui.BarraEstado. */
+    void trabajando(boolean on) { barraEstado.trabajando(on); }
 
     // ----- Filtros -----------------------------------------------------------
 
@@ -1916,7 +1858,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 @Override public Path destino(Match m) { return RecsDisco.destino(m); }
                 @Override public Path recsDir() { return RECS_DIR; }
                 @Override public void trabajando(boolean on) { SpoilerFreeRecs.this.trabajando(on); }
-                @Override public long operacionActual() { return opSerial; }
+                @Override public long operacionActual() { return barraEstado.opSerial(); }
                 @Override public boolean detenido() { return stopOperacion; }
                 @Override public void pararOperacion() { stopOperacion = true; }
                 @Override public void anotarHiloOperacion() { hiloOperacion = Thread.currentThread(); }

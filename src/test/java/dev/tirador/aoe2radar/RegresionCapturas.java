@@ -409,7 +409,7 @@ class RegresionCapturas {
         foto("shot_ahora.png");
         // el aviso existe para shot_ahora; su temporizador (10 s) lo cerraría en mitad de las capturas siguientes y cuáles
         // lo muestran dependería del tiempo transcurrido. Se cierra ya, con el método que usa el propio temporizador.
-        SwingUtilities.invokeAndWait(() -> { if (app.toastTimer != null) app.toastTimer.stop(); app.ocultarToast(); });
+        SwingUtilities.invokeAndWait(() -> { if (app.barraEstado.toastTimer != null) app.barraEstado.toastTimer.stop(); app.ocultarToast(); });
         System.out.println("live tarjetas: " + app.liveNow.ahoraCuerpoPanel().getComponentCount() + " | estado: " + app.liveNow.ahoraEstadoLabel().getText());
         SwingUtilities.invokeAndWait(app.liveNow::mostrarLista250);
         Thread.sleep(800);
