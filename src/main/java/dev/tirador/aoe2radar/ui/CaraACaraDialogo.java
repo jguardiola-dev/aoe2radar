@@ -96,6 +96,10 @@ public final class CaraACaraDialogo {
     private final List<Object[]> historialNav = new ArrayList<>();   // {pid Long, nombre String, mapa String, modoIdx Integer}
     private boolean navegando;
     private JButton atrasBtn;
+    /** B2 (revisión de F7): cómo repintar cada lista del cruce que está a la vista. Reordenar una lista repinta solo
+     *  estas (con el orden nuevo de view.ordenListas), sin volver a pedir el año del rival ni fichas: nada de red ni
+     *  disco por un clic de orden. Se vacía en cada fijar(). Solo en el EDT. */
+    private final List<Runnable> listasCruce = new ArrayList<>();
 
     public CaraACaraDialogo(Window ventana, PerfilView view) {
         this.ventana = ventana; this.view = view;
@@ -143,8 +147,16 @@ public final class CaraACaraDialogo {
 
     /** Abre (o reabre) el diálogo para el perfil actualmente abierto en Perfil. Sin historial cargado, avisa en el estado del perfil (F1) y no abre nada. */
     public void mostrar() {
+        if (!construir()) return;
+        dialogo.setVisible(true);
+        SwingUtilities.invokeLater(busca::requestFocusInWindow);
+    }
+
+    /** Monta el diálogo sin enseñarlo (lo usa mostrar(); de paquete para los tests, que no abren ventanas).
+     *  false si no hay historial cargado (avisa en el estado del perfil y no monta nada). */
+    boolean construir() {
         long pid = view.actPid;
-        if (pid <= 0 || view.actividadCache.get(pid) == null) { view.avisar(t("Abre primero un perfil con historial cargado.", "Open a profile with its history loaded first.")); return; }
+        if (pid <= 0 || view.actividadCache.get(pid) == null) { view.avisar(t("Abre primero un perfil con historial cargado.", "Open a profile with its history loaded first.")); return false; }
         if (dialogo != null) { dialogo.dispose(); dialogo = null; }
         dialogo = new JDialog(ventana, t("Cara a cara · ", "Head-to-head · ") + view.actNombre, Dialog.ModalityType.MODELESS);
         JPanel norte = new JPanel(new BorderLayout(8, 4));
@@ -183,9 +195,21 @@ public final class CaraACaraDialogo {
         pintarSugerenciasIniciales();
         registrar();
         dialogo.getRootPane().registerKeyboardAction(e -> dialogo.dispose(), KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
-        dialogo.setSize(1040, 760); dialogo.setLocationRelativeTo(ventana); dialogo.setVisible(true);
-        SwingUtilities.invokeLater(busca::requestFocusInWindow);
+        dialogo.setSize(1040, 760); dialogo.setLocationRelativeTo(ventana);
+        return true;
     }
+
+    /** De paquete para los tests: fija el cruce con este rival como si se eligiera en el buscador. */
+    void fijarParaTest(long rivalPid, String rivalNombre) { fijar(rivalPid, rivalNombre); }
+
+    /** El cuerpo del diálogo (para los tests). */
+    JPanel cuerpoParaTest() { return cuerpo; }
+
+    /** Pinta una lista del cruce y la apunta para repintarla al reordenar (B2). */
+    private void lista(Runnable pintar) { listasCruce.add(pintar); pintar.run(); }
+
+    /** B2: reordenar repinta solo las listas del cruce a la vista. */
+    private void repintarListas() { for (Runnable r : new ArrayList<>(listasCruce)) r.run(); }
 
     private boolean modoOk(Match m) {
         String sel = H2H_MODOS[Math.max(0, modo == null ? 0 : modo.getSelectedIndex())];
@@ -306,6 +330,7 @@ public final class CaraACaraDialogo {
         pidActual = rivalPid; nombreActual = rivalNombre;
         if (!rivalNombre.equals(busca.getText().trim())) busca.setText(rivalNombre);
         registrar();
+        listasCruce.clear();   // B2: las listas del cruce anterior ya no se repintan
         long pidAbierto = view.actPid; String nombreAbierto = view.actNombre;
         Actividad a = view.actividadCache.get(pidAbierto);
         cuerpo.removeAll();
@@ -413,18 +438,18 @@ public final class CaraACaraDialogo {
         JPanel columnas = new JPanel(new GridLayout(1, 2, 16, 0)); columnas.setOpaque(false); columnas.setAlignmentX(0f);
         JPanel c1 = new JPanel(); c1.setLayout(new BoxLayout(c1, BoxLayout.Y_AXIS)); c1.setOpaque(false);
         JPanel c2 = new JPanel(); c2.setLayout(new BoxLayout(c2, BoxLayout.Y_AXIS)); c2.setOpaque(false);
-        Runnable reordenar = () -> fijar(rivalPid, rivalNombre);   // F7: cambiar el orden de una lista repinta el diálogo (mismo cruce, mismo mapa y modo: registrar() no duplica el historial)
+        Runnable reordenar = this::repintarListas;   // F7 + B2: cambiar el orden repinta solo las listas del diálogo, sin red ni disco
         Map<String, Runnable> clicMapa = new HashMap<>(); for (String k : porMapa.keySet()) clicMapa.put(k, () -> { mapaFiltro = k; fijar(rivalPid, rivalNombre); });
-        view.pintarListaAgg(c1, t("Winrate por mapa · ", "Win rate by map · ") + nombreAbierto + t(" · clic: filtrar", " · click: filter"), porMapa, 10, k -> k, mapaFiltro == null ? clicMapa : null, k -> iconoMapa(k, 18), reordenar);
-        view.pintarListaAgg(c2, t("Civ contra civ", "Civ vs civ"), porCivs, 10, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k.substring(0, k.indexOf(" vs "))), 18), reordenar);
+        lista(() -> view.pintarListaAgg(c1, t("Winrate por mapa · ", "Win rate by map · ") + nombreAbierto + t(" · clic: filtrar", " · click: filter"), porMapa, 10, k -> k, mapaFiltro == null ? clicMapa : null, k -> iconoMapa(k, 18), reordenar));
+        lista(() -> view.pintarListaAgg(c2, t("Civ contra civ", "Civ vs civ"), porCivs, 10, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k.substring(0, k.indexOf(" vs "))), 18), reordenar));
         columnas.add(c1); columnas.add(c2);
         cuerpo.add(columnas);
         cuerpo.add(Box.createVerticalStrut(8));
         JPanel columnas2 = new JPanel(new GridLayout(1, 2, 16, 0)); columnas2.setOpaque(false); columnas2.setAlignmentX(0f);
         JPanel c3 = new JPanel(); c3.setLayout(new BoxLayout(c3, BoxLayout.Y_AXIS)); c3.setOpaque(false);
         JPanel c4 = new JPanel(); c4.setLayout(new BoxLayout(c4, BoxLayout.Y_AXIS)); c4.setOpaque(false);
-        view.pintarListaAgg(c3, t("Mejores civs · ", "Best civs · ") + nombreAbierto, civYo, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18), reordenar);
-        view.pintarListaAgg(c4, t("Mejores civs · ", "Best civs · ") + rivalNombre, civEl, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18), reordenar);
+        lista(() -> view.pintarListaAgg(c3, t("Mejores civs · ", "Best civs · ") + nombreAbierto, civYo, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18), reordenar));
+        lista(() -> view.pintarListaAgg(c4, t("Mejores civs · ", "Best civs · ") + rivalNombre, civEl, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18), reordenar));
         columnas2.add(c3); columnas2.add(c4);
         cuerpo.add(columnas2);
         cuerpo.add(Box.createVerticalStrut(10));
@@ -445,8 +470,8 @@ public final class CaraACaraDialogo {
                     JPanel l1 = new JPanel(); l1.setLayout(new BoxLayout(l1, BoxLayout.Y_AXIS)); l1.setOpaque(false);
                     JPanel l2 = new JPanel(); l2.setLayout(new BoxLayout(l2, BoxLayout.Y_AXIS)); l2.setOpaque(false);
                     java.util.function.Function<String, Icon> ic = "mapas".equals(sec[0]) ? k -> iconoMapa(k, 18) : "civs".equals(sec[0]) ? k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18) : null;
-                    view.pintarListaAgg(l1, sec[1] + " \u00B7 " + nombreAbierto, mio.get(sec[0]), 5, k -> k, null, ic, reordenar);
-                    view.pintarListaAgg(l2, sec[1] + " \u00B7 " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic, reordenar);
+                    lista(() -> view.pintarListaAgg(l1, sec[1] + " \u00B7 " + nombreAbierto, mio.get(sec[0]), 5, k -> k, null, ic, reordenar));
+                    lista(() -> view.pintarListaAgg(l2, sec[1] + " \u00B7 " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic, reordenar));
                     par.add(l1); par.add(l2);
                     comparacion.add(par); comparacion.add(Box.createVerticalStrut(6));
                 }

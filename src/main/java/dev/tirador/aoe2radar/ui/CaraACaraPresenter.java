@@ -8,8 +8,6 @@ import dev.tirador.aoe2radar.service.ProfileService;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -31,11 +29,6 @@ public final class CaraACaraPresenter {
 
     /** F4 (3): se avisa (en el EDT) cuando el año de un rival llega de sfr-data: pid y fecha «hasta» del paquete. */
     private final BiConsumer<Long, String> alLlegarDeSfr;
-    /** F7 (2): rivales que sfr-data no trae y fichas que no se pudieron pedir, recordados para la sesión: repintar
-     *  el cruce (p. ej. al reordenar una lista) no vuelve a leer ni a llamar por ellos. Se escriben en los hilos de
-     *  fondo h2h-comparar y h2h-ficha: conjuntos seguros entre hilos. */
-    private final Set<Long> fueraDeSfr = ConcurrentHashMap.newKeySet();
-    private final Set<Long> fichaSinRespuesta = ConcurrentHashMap.newKeySet();
 
     public CaraACaraPresenter(ProfileService perfiles, BusquedaPerfiles busqueda, Tareas tareas, Map<Long, Actividad> actividadCache) {
         this(perfiles, busqueda, tareas, actividadCache, (pid, hasta) -> { });
@@ -68,11 +61,10 @@ public final class CaraACaraPresenter {
         tareas.enFondo("h2h-comparar", () -> {
             Actividad ar = actividadCache.get(rivalPid);
             String hastaSfr = null; boolean deSfr = false;
-            if (ar == null && !fueraDeSfr.contains(rivalPid)) {
+            if (ar == null) {
                 try {
                     AnioSfr an = perfiles.anioSfr(rivalPid, nombreSiFalta);
                     if (an != null) { ar = an.actividad(); actividadCache.put(rivalPid, ar); hastaSfr = an.hasta(); deSfr = true; }
-                    else fueraDeSfr.add(rivalPid);   // F7 (2): no está en el paquete; un fallo de lectura (excepción) sí se reintenta
                 } catch (Exception ex) { log("h2h rival: " + causa(ex)); }
             }
             final Actividad arF = ar; final String hastaF = hastaSfr; final boolean deSfrF = deSfr;
@@ -87,8 +79,7 @@ public final class CaraACaraPresenter {
      *  (pinta directamente en la etiqueta que se le pasó, aunque el diálogo haya seguido adelante). Hilo "h2h-ficha". */
     public void pedirFicha(long pid, Consumer<FichaPerfil> pintar) {
         tareas.enFondo("h2h-ficha", () -> {
-            FichaPerfil p = fichaSinRespuesta.contains(pid) ? null : perfiles.ficha(pid);
-            if (p == null) fichaSinRespuesta.add(pid);   // F7 (2): no se vuelve a pedir en la sesión
+            FichaPerfil p = perfiles.ficha(pid);
             tareas.enUi(() -> pintar.accept(p));
         });
     }

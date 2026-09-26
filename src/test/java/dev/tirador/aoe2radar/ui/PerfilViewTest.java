@@ -67,13 +67,18 @@ class PerfilViewTest {
     }
 
     /** ProfileService de mentira: el de PerfilPresenterTest (ficha y ficha conocida configurables). */
-    final PerfilPresenterTest.PerfilesFalso perfiles = new PerfilPresenterTest.PerfilesFalso() {
+    final PerfilesContados perfiles = new PerfilesContados();
+
+    static class PerfilesContados extends PerfilPresenterTest.PerfilesFalso {
         // como el servicio real: tras vinculadasConElo, las vinculadas ya se conocen (el doble base devuelve null
         // siempre y, con Tareas.EN_LINEA, la cabecera volvería a pedirlas sin fin)
         boolean pedidas;
+        int anioSfrLlamadas, fichaLlamadas;
+        @Override public dev.tirador.aoe2radar.model.AnioSfr anioSfr(long pid, String nombreSiFalta) throws Exception { anioSfrLlamadas++; return super.anioSfr(pid, nombreSiFalta); }
+        @Override public FichaPerfil ficha(long pid) { fichaLlamadas++; return super.ficha(pid); }
         @Override public List<dev.tirador.aoe2radar.model.Perfil.Vinculada> vinculadasConElo(long pid) { pedidas = true; return List.of(); }
         @Override public List<dev.tirador.aoe2radar.model.Perfil.Vinculada> vinculadasConocidas(long pid) { return pedidas ? List.of() : null; }
-    };
+    }
     final AnfitrionFalso anfitrion = new AnfitrionFalso();
     final Map<Long, Actividad> actividadCache = new ConcurrentHashMap<>();
 
@@ -348,6 +353,46 @@ class PerfilViewTest {
             visible[0] = v.actHoyBtn.isVisible();
         });
         assertTrue(visible[0]);
+    }
+
+    /** Busca en el árbol de componentes una etiqueta cuyo texto empiece así. */
+    static javax.swing.JLabel etiqueta(java.awt.Container c, String prefijo) {
+        for (java.awt.Component x : c.getComponents()) {
+            if (x instanceof javax.swing.JLabel l && l.getText() != null && l.getText().startsWith(prefijo)) return l;
+            if (x instanceof java.awt.Container k) { javax.swing.JLabel r = etiqueta(k, prefijo); if (r != null) return r; }
+        }
+        return null;
+    }
+
+    /** B2 (revisión de F7): en el diálogo Cara a cara, pulsar el título de una lista para cambiar el orden repinta
+     *  las listas sin volver a pedir el año del rival a sfr-data ni su ficha a la API. */
+    @Test void reordenarEnCaraACaraNoHaceLecturasNiLlamadas() throws Exception {
+        Match m = new Match();
+        m.id = 1; m.mode = "1v1 Random Map"; m.map = "Arabia"; m.started = java.time.Instant.now().minusSeconds(7200); m.finished = m.started.plusSeconds(1800);
+        dev.tirador.aoe2radar.model.MatchPlayer yo = new dev.tirador.aoe2radar.model.MatchPlayer(); yo.id = 5L; yo.name = "Fulano"; yo.team = 1; yo.won = true; yo.civ = "Francos";
+        dev.tirador.aoe2radar.model.MatchPlayer el = new dev.tirador.aoe2radar.model.MatchPlayer(); el.id = 9L; el.name = "Rival"; el.team = 2; el.won = false; el.civ = "Mayas";
+        m.players.add(yo); m.players.add(el);
+        actividadCache.put(5L, new Actividad(5L, "Fulano", List.of(m), true, 1, System.currentTimeMillis()));
+        perfiles.anioSfr = null;   // el rival no está en sfr-data
+        perfiles.ficha = null;     // y su ficha no se conoce
+        int[] antes = new int[2], despues = new int[2]; String[] titulo = new String[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L; v.actNombre = "Fulano";
+            CaraACaraDialogo d = new CaraACaraDialogo(null, v);
+            d.construir();
+            d.fijarParaTest(9L, "Rival");
+            antes[0] = perfiles.anioSfrLlamadas; antes[1] = perfiles.fichaLlamadas;
+            javax.swing.JLabel cab = etiqueta(d.cuerpoParaTest(), "Winrate por mapa · Fulano");
+            java.awt.event.MouseEvent clic = new java.awt.event.MouseEvent(cab, java.awt.event.MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, 5, 5, 1, false);
+            for (java.awt.event.MouseListener ml : cab.getMouseListeners()) ml.mouseClicked(clic);
+            despues[0] = perfiles.anioSfrLlamadas; despues[1] = perfiles.fichaLlamadas;
+            titulo[0] = etiqueta(d.cuerpoParaTest(), "Winrate por mapa · Fulano").getText();
+        });
+        assertTrue(antes[0] >= 1 && antes[1] >= 1, "al fijar el cruce sí se pidieron");
+        assertEquals(antes[0], despues[0], "reordenar no vuelve a pedir el año del rival");
+        assertEquals(antes[1], despues[1], "reordenar no vuelve a pedir la ficha");
+        assertTrue(titulo[0].contains("por winrate"), "la lista sí se repintó con el orden nuevo: " + titulo[0]);
     }
 
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la

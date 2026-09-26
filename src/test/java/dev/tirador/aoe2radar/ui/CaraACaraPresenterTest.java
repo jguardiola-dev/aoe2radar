@@ -32,8 +32,7 @@ class CaraACaraPresenterTest {
          *  de verdad (línea ~110: {@code nombre.isBlank() ? nombreSiFalta : nombre}) — la Actividad se guarda con
          *  el nombreSiFalta que llegó. false (por defecto): se devuelve el anioSfr ya preparado, tal cual. */
         boolean paqueteSinNombre;
-        int fichaLlamadas;
-        @Override public FichaPerfil ficha(long pid) { fichaLlamadas++; return ficha; }
+        @Override public FichaPerfil ficha(long pid) { return ficha; }
         @Override public FichaPerfil fichaConocida(long pid) { return ficha; }
         @Override public Integer elo1v1(long pid) { return null; }
         @Override public List<Perfil.Vinculada> vinculadas(long pid) { return List.of(); }
@@ -161,23 +160,29 @@ class CaraACaraPresenterTest {
         assertEquals("#9", actividadCache.get(9L).nombre());
     }
 
-    /** F7 (2): reordenar una lista del diálogo repinta el cruce entero; un rival que no está en sfr-data no se
-     *  vuelve a buscar en cada repintado de la sesión. */
-    @Test void rival_fuera_de_sfr_data_no_se_vuelve_a_leer() {
+    /** B2: un primer anioSfr null (p. ej. PerfilesSfr.indice() con la red caída) no marca al rival para la sesión:
+     *  al volver a fijar el cruce, se reintenta y, si ya va bien, se pinta. */
+    @Test void anio_rival_null_se_reintenta_al_volver_a_fijar() {
         perfiles.anioSfr = null;
-        Actividad[] pintado = { new Actividad(0, "", List.of(), false, 0, 0) };
-        presenter.pedirAnioRival(9L, "Yo", () -> true, arF -> pintado[0] = arF);
-        presenter.pedirAnioRival(9L, "Yo", () -> true, arF -> pintado[0] = arF);
-        assertEquals(1, perfiles.anioSfrLlamadas);
-        assertNull(pintado[0], "sigue pintando «no está en sfr-data»");
+        Actividad[] pintado = new Actividad[1];
+        presenter.pedirAnioRival(9L, "Rival", () -> true, arF -> pintado[0] = arF);
+        assertNull(pintado[0]);
+        Actividad a = new Actividad(9L, "Rival", List.of(), true, 1, 1L);
+        perfiles.anioSfr = new AnioSfr(a, "2026-09-24", "es");
+        presenter.pedirAnioRival(9L, "Rival", () -> true, arF -> pintado[0] = arF);
+        assertEquals(2, perfiles.anioSfrLlamadas);
+        assertSame(a, pintado[0]);
     }
 
-    /** F7 (2): una ficha que no se pudo pedir no se vuelve a pedir en cada repintado. */
-    @Test void ficha_fallida_no_se_vuelve_a_pedir() {
+    /** B2: una ficha que volvió null (429 o corte) se vuelve a pedir la próxima vez. */
+    @Test void ficha_null_se_reintenta() {
         perfiles.ficha = null;
-        presenter.pedirFicha(3L, p -> { });
-        presenter.pedirFicha(3L, p -> { });
-        assertEquals(1, perfiles.fichaLlamadas);
+        FichaPerfil[] pintado = new FichaPerfil[1];
+        presenter.pedirFicha(3L, p -> pintado[0] = p);
+        FichaPerfil f = new FichaPerfil(Map.of("rm_1v1", new int[]{ 1500, 10 }), "es", "", 5);
+        perfiles.ficha = f;
+        presenter.pedirFicha(3L, p -> pintado[0] = p);
+        assertSame(f, pintado[0]);
     }
 
     @Test void pedir_ficha_pinta_siempre_sin_comprobar_caducidad() {
