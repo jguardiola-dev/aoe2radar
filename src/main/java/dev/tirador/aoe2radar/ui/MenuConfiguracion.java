@@ -375,8 +375,8 @@ public final class MenuConfiguracion {
 
     /** Listas null: aún no se conocen (al construir el menú, antes que la Watchlist): no se deshabilita nada. */
     private void pintarAbrirEn(VistaInicial.Eleccion e, List<PaisItem> paises, List<String> clanes, List<String> grupos) {
-        String topPais = t("\u2605 Top pa\u00eds", "\u2605 Country top"), topClan = t("\u2605 Top clan", "\u2605 Clan top");
-        abrirTop.setText("\u2605 Top ladder");
+        String topPais = WatchlistView.textoTopPais(), topClan = WatchlistView.textoTopClan();
+        abrirTop.setText(WatchlistView.TOP_LADDER);
         abrirPais.setText(topPais + (e.tipo() == VistaInicial.Tipo.PAIS ? ": " + nombrePais(paises, e.valor()) : "") + "…");
         abrirClan.setText(topClan + (e.tipo() == VistaInicial.Tipo.CLAN ? ": " + e.valor() : "") + "…");
         abrirGrupo.setText(t("Grupo", "Group") + (e.tipo() == VistaInicial.Tipo.GRUPO ? ": " + e.valor() : "") + "…");

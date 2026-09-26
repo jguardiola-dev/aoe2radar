@@ -154,7 +154,8 @@ public final class WatchlistView {
         void reiniciarThrottleDirectos();
         void vigilarTwitchDirectos();
         void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms);
-        /** liveNow.socketExtra: además de las campanas, Live now (si está abierto) vigila su propio top 250. */
+        /** liveNow.socketExtra: además de las campanas, Live now (si está abierto) vigila su propio top 250.
+         *  ids tiene que ser MUTABLE: la ventana le añade el top de Live now antes de usarlo (nunca Set.of()). */
         void actualizarSocketExtra(Set<Long> ids);
         /** liveNow.ahoraNombre(pid): el nombre que Live now ya conoce de un jugador en curso, o el propio pid si no
          *  lo conoce (sin guarda de null, como la base: liveNow siempre existe cuando se llama). */
@@ -219,8 +220,12 @@ public final class WatchlistView {
      *  que puede pasar ANTES de que main() fije I18n.IDIOMA, y saldrían siempre en español aunque la app esté
      *  en inglés. Al ser de instancia, se calculan al construir la Watchlist (new WatchlistView(...) en
      *  SpoilerFreeRecs), que ya ocurre con el idioma fijado. Bug resuelto en fase 4: ver docs/DEUDA.md. */
-    private final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
-    final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
+    private final String TOP_PAIS = textoTopPais();
+    final String TOP_CLAN = textoTopClan();
+    /** Los textos de ★ Top país / ★ Top clan en el idioma activo AHORA (se evalúan al llamar, no al cargar la clase):
+     *  los comparten el combo y el menú «Abrir en» (MenuConfiguracion), para no repetirlos. */
+    public static String textoTopPais() { return t("\u2605 Top pa\u00eds", "\u2605 Country top"); }
+    public static String textoTopClan() { return t("\u2605 Top clan", "\u2605 Clan top"); }
 
     /** TODOS los países ISO con su nombre en el idioma de la app — Bulgaria
      *  incluida y sin listas que mantener a mano. */
