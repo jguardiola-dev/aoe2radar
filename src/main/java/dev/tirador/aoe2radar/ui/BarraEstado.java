@@ -108,10 +108,9 @@ public final class BarraEstado {
         this.anfitrion = anfitrion;
         this.donarUrl = donarUrl;
         cafeBtn = new JButton("\u2615 " + t("Invítame a un café", "Buy me a coffee"));
-        // app.Servicios.avisarPausa429 solo conoce `status` (es público, ver SpoilerFreeRecs.status):
-        // esta marca deja que, con ESE mismo JLabel, encuentre esta BarraEstado sin que Servicios guarde
-        // una referencia nueva ni SpoilerFreeRecs exponga el campo barraEstado.
-        status.putClientProperty(BarraEstado.class, this);
+        // El aviso de pausa por 429 (app.Servicios.avisarPausa429) llega por Servicios.avisoPausa429, fijado en
+        // el EDT al construir la ventana (CableadoCromo.configurarVentana): ya no hace falta que esta barra se
+        // "encuentre a sí misma" con un putClientProperty en `status` (limpieza 1, fase 4).
     }
 
     public long opSerial() { return opSerial; }

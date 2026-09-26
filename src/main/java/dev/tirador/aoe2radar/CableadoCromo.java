@@ -61,6 +61,9 @@ final class CableadoCromo {
             @Override public void alCerrar() { VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar(); }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
         });
+        // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
+        // barraEstado ya construido (es un inicializador de campo, corre antes que el cuerpo del constructor).
+        Servicios.avisoPausa429 = v.barraEstado::mostrarPausaApi;
     }
 
     // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,

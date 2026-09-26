@@ -22,7 +22,6 @@ import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.service.TwitchService;
 import dev.tirador.aoe2radar.service.TwitchServiceCompanion;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
-import dev.tirador.aoe2radar.ui.BarraEstado;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import javax.swing.SwingUtilities;
@@ -102,16 +101,14 @@ public class Servicios {
     public static final AnotacionesService ANOTACIONES = new AnotacionesService(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
 
     // ----- HTTP --------------------------------------------------------------
-    /** La pausa por 429 del companion, contada con cuenta atrás en la barra de estado (decisión de Jorge,
-     *  DEUDA 45: ApiClient avisa una vez por episodio; la red ya no toca Swing). Servicios no guarda una
-     *  referencia a ui.BarraEstado (solo a `status`, público «desde fuera del paquete»): BarraEstado se
-     *  encuentra a sí misma a través de ese mismo JLabel (ver el putClientProperty de su constructor). */
+    /** Camino explícito hacia la barra de estado para el aviso de pausa por 429 (decisión de Jorge, DEUDA 45:
+     *  ApiClient avisa una vez por episodio; la red ya no toca Swing). La ventana lo fija en el EDT, al construir
+     *  BarraEstado (ver CableadoCromo.configurarVentana): Servicios ya no conoce ui.BarraEstado ni el JLabel
+     *  `status` para este aviso (limpieza 1, fase 4: antes llegaba por un putClientProperty en `status`). */
+    public static volatile java.util.function.LongConsumer avisoPausa429 = seg -> {};
+
     static void avisarPausa429(long seg) {
-        SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
-        final SpoilerFreeRecs appF = app;
-        if (appF != null) SwingUtilities.invokeLater(() -> {
-            if (appF.status.getClientProperty(BarraEstado.class) instanceof BarraEstado b) b.mostrarPausaApi(seg);
-        });
+        SwingUtilities.invokeLater(() -> avisoPausa429.accept(seg));
     }
     /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
      *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pintar en Swing. */
