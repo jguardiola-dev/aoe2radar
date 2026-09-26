@@ -1,7 +1,6 @@
 package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Match;
-import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.Player;
@@ -38,7 +37,6 @@ import javax.swing.JTextField;
 import javax.swing.JToggleButton;
 import javax.swing.JViewport;
 import javax.swing.JWindow;
-import javax.swing.SwingUtilities;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
@@ -49,7 +47,6 @@ import java.awt.Window;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -62,7 +59,6 @@ import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
-import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * La Watchlist (panel izquierdo): jugadores seguidos, grupos, tops (ladder/país/clan), forma reciente,
