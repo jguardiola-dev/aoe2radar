@@ -408,4 +408,19 @@ class TopLadderServiceTest {
         assertTrue(av.rio.isEmpty());
         assertTrue(av.confirmados.isEmpty(), "sin verificar, la confirmación individual tampoco se intenta");
     }
+
+    // ===================== cargarTop con la caché por URL: forzar va a la red (plan API de la 1.3) =====================
+
+    @Test void cargarTop_forzado_seSaltaLaCachePorUrl() {
+        CompanionApi conCache = CompanionApi.conCache(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false), reloj);
+        TopLadderService s = new TopLadderService(conCache, conCache, reloj, pausa, PAUSA_MS);
+        java.util.function.LongSupplier alLadder = () -> red.pedidas.stream().filter(u -> u.contains("/leaderboards/")).count();
+        s.cargarTop(null, 50);            // sin filas: prueba rm_1v1 y luego «3», las dos a la red
+        long primera = alLadder.getAsLong();
+        assertEquals(2, primera);
+        s.cargarTop(null, 50, false);     // sin forzar (entrar en ★ con el top viejo): vale lo guardado
+        assertEquals(primera, alLadder.getAsLong());
+        s.cargarTop(null, 50, true);      // botón, top N, país o la recarga de 15 min: de ahora
+        assertEquals(primera + 2, alLadder.getAsLong());
+    }
 }

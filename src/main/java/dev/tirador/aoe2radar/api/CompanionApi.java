@@ -244,7 +244,7 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
     }
 
     /** Como leaderboardFresca(…), ya convertida: para la recarga del top que pide el usuario. */
-    public Clasificacion clasificacionFresca(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
+    @Override public Clasificacion clasificacionFresca(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {
         return aClasificacion(leaderboardFresca(id, pagina, porPagina, pais));
     }
 

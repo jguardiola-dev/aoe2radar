@@ -463,4 +463,22 @@ class PerfilesCompanionTest {
 
         assertNull(conAnio.anioSfr(44L, "n"), "44 cae en el mismo shard (44 % 256 = 44) pero no está en «jugadores»: null");
     }
+
+    // ----- con la caché por URL (plan API de la 1.3): el ELO 1v1 nunca sale de ella -----
+
+    @Test void elo1v1_conCachePorUrl_siempreVaALaRed() {
+        CompanionApi conCache = CompanionApi.conCache(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false), reloj);
+        PerfilesCompanion s = new PerfilesCompanion(conCache, fichas, (pid, v) -> { }, (pid, v) -> { }, null, null,
+                new EloSesion(estadoVivo, reloj, EloSesion.ESPERA));
+        red.cuerpo = "{\"leaderboards\":[{\"leaderboard_id\":\"rm_1v1\",\"rating\":1500}]}";
+        s.vinculadas(9_001L);   // vinculadas pasa por la caché: deja /profiles/9001 guardado
+        assertEquals(1, peticiones(9_001L));
+        s.vinculadas(9_001L);
+        assertEquals(1, peticiones(9_001L), "vinculadas sí aprovecha lo guardado");
+        red.cuerpo = "{\"leaderboards\":[{\"leaderboard_id\":\"rm_1v1\",\"rating\":1532}]}";   // terminó una partida: ELO nuevo
+        assertEquals(1532, s.elo1v1(9_001L), "el ELO es el de ahora, no el guardado hace un momento");
+        assertEquals(2, peticiones(9_001L));
+        s.elo1v1Leido(9_001L);
+        assertEquals(3, peticiones(9_001L), "cada petición de ELO sale a la red, como siempre");
+    }
 }
