@@ -89,6 +89,10 @@ public final class PerfilPresenter {
     private final Map<Long, Integer> eloWatch;
     private final Map<Long, Actividad> actividadCache;
     private final Pantalla pantalla;
+    /** F5 (1.3): testigo de la última carga lanzada (cargar o cargarMas). Solo la carga cuyo testigo sigue siendo el
+     *  vigente apaga cargando(): la respuesta tardía de un perfil que ya se dejó no apaga la del que se está mirando.
+     *  Se lee y escribe solo en el EDT (al lanzar y en tareas.enUi), así que no necesita volatile. */
+    private long cargaToken;
 
     public PerfilPresenter(ProfileService perfiles, RatingsService ratings, BusquedaPerfiles busqueda, Tareas tareas,
                             Map<Long, Integer> eloWatch, Map<Long, Actividad> actividadCache, Pantalla pantalla) {
@@ -128,6 +132,7 @@ public final class PerfilPresenter {
     /** Abre pid: primero sfr-data (el año completo sin tocar la API); si no está en su alcance, la API página a página. Hilo "perfil-" + pid. */
     public void cargar(long pid, String nombre, Actividad base, boolean fresco) {
         boolean actualizar = base != null && !base.partidas().isEmpty();
+        long token = ++cargaToken;
         pantalla.cargando(true);
         pantalla.cargaIniciada();
         tareas.enFondo("perfil-" + pid, () -> {
@@ -144,7 +149,7 @@ public final class PerfilPresenter {
                     FichaPerfil perfilConocido = perfiles.fichaConocida(pid);
                     FichaPerfil ficha = perfilConocido != null ? perfilConocido : sintetico(pid, a, paisF);
                     tareas.enUi(() -> {
-                        pantalla.cargando(false);
+                        terminar(token);
                         if (pantalla.pidAbierto() != pid) return;
                         pantalla.cabecera(ficha);
                         pantalla.desdeSfr(a, hastaF);
@@ -159,14 +164,19 @@ public final class PerfilPresenter {
                     pantalla.progresoParcial(parcialA, ACT_MAX_PAGINAS);
                 }), () -> pantalla.pidAbierto() != pid);
                 tareas.enUi(() -> {
-                    pantalla.cargando(false);
+                    terminar(token);
                     if (pantalla.pidAbierto() != pid) return;
                     pantalla.cargaCompletada(a);
                 });
             } catch (Exception ex) {
-                tareas.enUi(() -> { pantalla.cargando(false); if (pantalla.pidAbierto() == pid) pantalla.errorCarga(causa(ex)); });
+                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.errorCarga(causa(ex)); });
             }
         });
+    }
+
+    /** F5: fin de una carga (en el EDT). Solo apaga cargando() si ninguna carga posterior la ha relevado. */
+    private void terminar(long token) {
+        if (token == cargaToken) pantalla.cargando(false);
     }
 
     /** «Actualizar hoy»: ficha + las 50 partidas más recientes, fundidas con lo que ya había. Hilo "perfil-hoy". */
@@ -187,6 +197,7 @@ public final class PerfilPresenter {
 
     /** «Cargar más» páginas del historial por la API. Hilo "perfil-mas-" + pid. */
     public void cargarMas(long pid, String nombre, Actividad base, int paginas) {
+        long token = ++cargaToken;
         pantalla.cargando(true);
         int maxTotal = base.paginas() + paginas;
         tareas.enFondo("perfil-mas-" + pid, () -> {
@@ -195,9 +206,9 @@ public final class PerfilPresenter {
                     if (pantalla.pidAbierto() != pid) return;
                     pantalla.masProgreso(parcialA, maxTotal);
                 }), () -> pantalla.pidAbierto() != pid);
-                tareas.enUi(() -> { pantalla.cargando(false); if (pantalla.pidAbierto() == pid) pantalla.masCompletado(a); });
+                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.masCompletado(a); });
             } catch (Exception ex) {
-                tareas.enUi(() -> { pantalla.cargando(false); if (pantalla.pidAbierto() == pid) pantalla.masError(causa(ex)); });
+                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.masError(causa(ex)); });
             }
         });
     }

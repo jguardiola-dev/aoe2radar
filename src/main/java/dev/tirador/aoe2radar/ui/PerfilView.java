@@ -197,7 +197,10 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     private javax.swing.Timer perfilDebounce;
     private JProgressBar actProgreso;
     private JButton actMasBtn;
-    boolean actividadAbierta, actCargando, actRellenandoModos;
+    boolean actividadAbierta, actRellenandoModos;
+    /** F5 (1.3): volatile porque PerfilPresenter.precalentar lo lee desde su hilo de fondo ("perfiles-precarga")
+     *  para no competir con una carga pedida por el usuario; se escribe en el EDT. */
+    volatile boolean actCargando;
     long actPid; String actNombre = "", actModo = "*";
     /** Fila 28 (C1+C2): sube en cada apertura de verdad (alAbrir); ver generacion() y PerfilPresenter.abrirBase. */
     private long aperturaGeneracion;

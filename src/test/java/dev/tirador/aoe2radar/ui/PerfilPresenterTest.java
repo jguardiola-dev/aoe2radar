@@ -233,6 +233,53 @@ class PerfilPresenterTest {
         assertNull(pantalla.cabeceraPintada);   // ni la cabecera se pinta: la comprobación es antes de cabecera()
     }
 
+    // ----- F5 (1.3): testigo por carga ----------------------------------------------------------
+
+    /** F5: se abre A (lento, por la API) y enseguida B. La respuesta tardía de A no debe apagar «cargando» mientras
+     *  B sigue bajando (antes lo hacía: salía «Cargar más partidas» a mitad de carga y se podían lanzar dos). */
+    @Test void respuesta_tardia_de_otro_perfil_no_apaga_la_carga_en_curso() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        pantalla.pidAbierto = 7L;
+        p.cargar(7L, "Zutano", null, false);   // A
+        pantalla.pidAbierto = 8L;
+        p.cargar(8L, "Mengano", null, false);  // B, mientras A sigue en vuelo
+        tareasAplazadas.pendientesFondo.get(0).run();   // vuelve A, tarde
+        assertTrue(pantalla.cargando, "B sigue cargando: A no puede apagarlo");
+        assertNull(pantalla.completadaPintada, "A no pinta sobre B");
+        tareasAplazadas.pendientesFondo.get(1).run();   // vuelve B
+        assertFalse(pantalla.cargando);
+    }
+
+    /** F5: si se deja el perfil sin abrir otro que cargue (p. ej. la página vacía), la carga que vuelve sí apaga. */
+    @Test void la_ultima_carga_apaga_cargando_aunque_ya_no_sea_el_perfil_abierto() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        pantalla.pidAbierto = 7L;
+        p.cargar(7L, "Zutano", null, false);
+        pantalla.pidAbierto = 0L;
+        tareasAplazadas.pendientesFondo.get(0).run();
+        assertFalse(pantalla.cargando);
+    }
+
+    /** F5: «Cargar más» de A en vuelo y se abre B por la API: la vuelta de A tampoco apaga la carga de B. */
+    @Test void cargar_mas_tardio_no_apaga_la_carga_de_otro_perfil() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.anioSfr = null;
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        pantalla.pidAbierto = 7L;
+        p.cargarMas(7L, "Zutano", actividad(7L, "Zutano", List.of()), 4);
+        pantalla.pidAbierto = 8L;
+        p.cargar(8L, "Mengano", null, false);
+        tareasAplazadas.pendientesFondo.get(0).run();
+        assertTrue(pantalla.cargando);
+    }
+
     // ----- cargar: API con progreso parcial -------------------------------------------------
 
     @Test void cargar_por_api_pinta_progreso_parcial_y_termina() {
