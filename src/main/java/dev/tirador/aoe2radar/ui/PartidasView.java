@@ -500,7 +500,9 @@ public final class PartidasView {
                 } else {
                     if (m.enDisco) {
                         JMenuItem env = new JMenuItem(t("Enviar al juego", "Send to game"));
-                        env.addActionListener(a -> enviarASavegame(List.of(m)));
+                        // enviarInteligente (no enviarASavegame a secas): decisión 94/95, "si no [parece sana],
+                        // descarga como hoy" — con un archivo sano se comporta igual que antes (enviarASavegame).
+                        env.addActionListener(a -> enviarInteligente(List.of(m)));
                         menu.add(env);
                     } else {
                         JMenuItem dl = new JMenuItem(t("Descargar", "Download"));
@@ -961,11 +963,12 @@ public final class PartidasView {
         return p;
     }
 
-    /** Enviar al juego: copia lo descargado y descarga+envía lo que falte. */
+    /** Enviar al juego: copia lo que ya está sano en disco y descarga+envía lo que falte (decisión de Jorge,
+     *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
     public void enviarInteligente(List<Match> objetivo) {
         if (objetivo.isEmpty()) { anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
-        for (Match m : objetivo) (Files.exists(anfitrion.destino(m)) ? enDisco : faltan).add(m);
+        for (Match m : objetivo) (RecService.recSana(anfitrion.destino(m)) ? enDisco : faltan).add(m);
         if (!enDisco.isEmpty()) enviarASavegame(enDisco);
         if (!faltan.isEmpty()) download(faltan, true);
     }
@@ -976,7 +979,7 @@ public final class PartidasView {
         if (sg == null) { anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
         int ok = 0, sinRec = 0, yaEstaban = 0;
         for (Match m : objetivo) {
-            if (!Files.exists(anfitrion.destino(m))) { sinRec++; continue; }
+            if (!RecService.recSana(anfitrion.destino(m))) { sinRec++; continue; }
             boolean ya = Files.exists(sg.resolve(anfitrion.destino(m).getFileName().toString()));
             if (dev.tirador.aoe2radar.service.Juego.copiarASavegame(m, sg)) {
                 ok++;

@@ -41,26 +41,32 @@ public final class DescargaRecs implements RecService {
     @Override public Resultado procesar(Match m, Set<Long> trackedIds, boolean enviarAlJuego, Path savegame, BooleanSupplier cancelado) {
         avisarSiUi("RecService.procesar");
         Path archivo = destino.apply(m);
-        // Igual que la 1.1 (download(), ~12036): sin comprobar si `archivo` ya existe. Cada llamada vuelve a
-        // probar los candidatos y sobrescribe. Ver DEUDA (RecService: no reintentar si ya está en disco).
-        String ultimaCausa = "sin candidatos con rec";
-        boolean guardada = false;
-        for (long pid : candidatos(m, trackedIds)) {
-            if (cancelado.getAsBoolean()) { ultimaCausa = "cancelada"; break; }
-            byte[] datos = descargador.apply(m.id, pid);
-            if (datos != null) {
-                try {
-                    Files.write(archivo, datos);
-                    guardada = true;
-                    break;
-                } catch (IOException ex) {
-                    ultimaCausa = causa(ex);
-                    log("no se pudo escribir " + archivo + ": " + ultimaCausa);
+        boolean guardada;
+        String ultimaCausa;
+        if (RecService.recSana(archivo)) {
+            // Decisión de Jorge (DEUDA 94/95): ya hay una rec sana en disco, no se vuelve a descargar.
+            guardada = true;
+            ultimaCausa = null;
+        } else {
+            ultimaCausa = "sin candidatos con rec";
+            guardada = false;
+            for (long pid : candidatos(m, trackedIds)) {
+                if (cancelado.getAsBoolean()) { ultimaCausa = "cancelada"; break; }
+                byte[] datos = descargador.apply(m.id, pid);
+                if (datos != null) {
+                    try {
+                        Files.write(archivo, datos);
+                        guardada = true;
+                        break;
+                    } catch (IOException ex) {
+                        ultimaCausa = causa(ex);
+                        log("no se pudo escribir " + archivo + ": " + ultimaCausa);
+                    }
+                } else {
+                    ultimaCausa = "sin rec válida";
                 }
-            } else {
-                ultimaCausa = "sin rec válida";
+                pausa.accept(pausaMs);
             }
-            pausa.accept(pausaMs);
         }
         Estado estado = guardada ? Estado.DESCARGADA : Estado.FALLO;
         String causaFallo = guardada ? null : ultimaCausa;
