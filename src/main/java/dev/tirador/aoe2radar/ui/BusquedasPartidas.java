@@ -19,14 +19,9 @@ import java.awt.GridLayout;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
-import static dev.tirador.aoe2radar.service.AzarService.ajustarRefAzar;
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -38,7 +33,9 @@ import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
  * Las búsquedas de Partidas: «Buscar partidas» (fetchMatches), «Al azar por ELO…» y «Guess the ELO!». Sale tal
  * cual de {@link PartidasView} (1.3): los tres SwingWorker no cambian (mismo doInBackground, publish/process y
  * done con PartidasPresenter.vigente); all, SUJETOS, filtroSujetos, fetchWorker, vistaDeSujetos, objetivoEtiqueta
- * y los botones siguen en la fachada y se usan por {@code vista}.
+ * y los botones siguen en la fachada y se usan por {@code vista}. Desde la fase 5, lo que se decide (a quién se
+ * busca, el recorrido paginado, qué hacer con el resultado, los mensajes) está en {@link PartidasPresenter}; aquí
+ * quedan los diálogos, los botones y los SwingWorker como transporte.
  */
 final class BusquedasPartidas {
 
@@ -49,13 +46,6 @@ final class BusquedasPartidas {
     private final PartidasView vista;
 
     BusquedasPartidas(PartidasView vista) { this.vista = vista; }
-
-    /** «36 h», «3 días», «2 semanas»: la ventana en la unidad que se lee mejor. */
-    static String textoVentana(int horas) {
-        if (horas % (24 * 7) == 0 && horas >= 24 * 7) { int w = horas / (24 * 7); return w + (w == 1 ? t(" semana", " week") : t(" semanas", " weeks")); }
-        if (horas % 24 == 0 && horas >= 48) return (horas / 24) + t(" días", " days");
-        return horas + " h";
-    }
 
     public void buscarAleatorias() { buscarAleatorias(false); }
 
@@ -143,44 +133,23 @@ final class BusquedasPartidas {
                     log("azar #" + miSerial + ": done, " + res.size() + " partidas, stop=" + vista.anfitrion.detenido());
                     vista.anfitrion.aprenderCatalogos(res);
                     if (vista.anfitrion.detenido()) {
-                        vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped.")
-                                + (res.isEmpty() ? "" : "  " + res.size()
-                                   + t(" encontradas hasta el corte, aplicadas.", " found before the cut, applied.")));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeAzarDetenido(res.size()));
                         if (res.isEmpty()) return;
                     } else if (res.isEmpty()) {
-                        vista.anfitrion.estado(t("Nada en ", "Nothing in ") + lo + "–" + hi
-                                + t(" en las últimas ", " in the last ") + hours
-                                + t(" h. Detalle del muestreo en descargas.log.", " h. Sampling details in descargas.log."));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeAzarNada(lo, hi, hours));
                         return;
                     }
-                    List<Player> refs = new ArrayList<>();
-                    Set<Long> refIds = new HashSet<>();
-                    for (Match m : res) {
-                        m.azar = true;
-                        ajustarRefAzar(m, civSel);
-                        if (refIds.add(m.refId)) {
-                            String nom = vista.texto.refNombre(m);
-                            refs.add(new Player(m.refId, nom, "", 0));
-                        }
-                    }
+                    PartidasPresenter.SujetosAzar sujetos = PartidasPresenter.sujetosAzar(res, civSel, vista.texto::refNombre);
                     PartidasView.SUJETOS.clear();
-                    PartidasView.SUJETOS.addAll(refIds);
+                    PartidasView.SUJETOS.addAll(sujetos.refIds());
                     vista.vistaDeSujetos = vista.enlaceWatchlist.vistaActualId();
-                    vista.refrescarSujetos(refs, false);
+                    vista.refrescarSujetos(sujetos.refs(), false);
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.enlaceWatchlist.limpiarSeleccion();
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    String extra = "";
-                    if (res.size() < 10 && vista.azarService.tramoAgotado())
-                        extra = t(" No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
-                                  " Nothing else with those filters: whole bracket checked (widen hours or range).");
-                    else if (res.size() < 10)
-                        extra = t(" Repite la búsqueda: continúa donde lo dejó.",
-                                  " Run it again: it picks up where it left off.");
-                    vista.anfitrion.estado(res.size() + t(" partidas 1v1 al azar, ELO ", " random 1v1s, ELO ") + lo + "–" + hi
-                            + t(", últimas ", ", last ") + hours + " h." + extra);
+                    vista.anfitrion.estado(PartidasPresenter.mensajeAzar(res.size(), lo, hi, hours, vista.azarService::tramoAgotado));
                 } catch (Exception ex) {
                     vista.anfitrion.estado(vista.anfitrion.detenido() ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("al azar por ELO: ERROR " + causa(ex));
@@ -217,8 +186,7 @@ final class BusquedasPartidas {
                     List<Match> res = get();
                     vista.anfitrion.aprenderCatalogos(res);
                     if (res.isEmpty()) {
-                        vista.anfitrion.estado(t("Sin partidas para Guess the ELO en las últimas ", "No games for Guess the ELO in the last ") + hours
-                                + t(" h. Detalle en descargas.log.", " h. Details in descargas.log."));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeGteNada(hours));
                         return;
                     }
                     vista.all.clear();
@@ -226,9 +194,7 @@ final class BusquedasPartidas {
                     vista.enlaceWatchlist.limpiarSeleccion();
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(res.size() + t(" partidas Guess the ELO (archivos: «Guess the ELO ", " Guess the ELO games (files: “Guess the ELO ")
-                            + res.get(0).gte + t("»–«", "”–“") + res.get(res.size() - 1).gte
-                            + t("»). Adivina y comprueba con «Revelar resultado…».", "”). Guess, then check with “Reveal result…”."));
+                    vista.anfitrion.estado(PartidasPresenter.mensajeGte(res));
                 } catch (Exception ex) {
                     vista.anfitrion.estado(vista.anfitrion.detenido() ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("Guess the ELO: ERROR " + causa(ex));
@@ -251,45 +217,29 @@ final class BusquedasPartidas {
      *  en marcha, la cancela y lanza esta (revisión 1.3, watchlist F8: un doble clic en otro jugador, «Ver sus
      *  partidas» o «Buscar partidas de…» durante una búsqueda antes la cancelaban sin buscar al nuevo). */
     public void fetchMatches(JButton btn) {
-        if (vista.enlaceWatchlist.objetivoForzado() == null && vista.enlaceWatchlist.invitado() == null && vista.anfitrion.perfilAbierto() && vista.anfitrion.perfilAbiertoPid() > 0 && vista.enlaceWatchlist.seleccionSize() == 0) {
+        if (PartidasPresenter.buscaAlDelPerfil(vista.enlaceWatchlist, vista.anfitrion)) {
             vista.enlaceWatchlist.fijarObjetivoForzado(new Player(vista.anfitrion.perfilAbiertoPid(), vista.anfitrion.perfilNombreAbierto(), vista.enlaceWatchlist.grupoDestino()));
             vista.anfitrion.mostrarDirectos(false);
         }
-        if (vista.enlaceWatchlist.totalJugadores() == 0 && vista.enlaceWatchlist.invitado() == null && vista.enlaceWatchlist.objetivoForzado() == null) {
+        if (PartidasPresenter.nadieABuscar(vista.enlaceWatchlist)) {
             JOptionPane.showMessageDialog(vista.ventana, t("Añade antes algún jugador a la lista.",
                     "Add a player to the list first."));
             return;
         }
-        List<Player> sel = new ArrayList<>();
-        if (vista.enlaceWatchlist.objetivoForzado() != null) {
-            sel.add(vista.enlaceWatchlist.objetivoForzado());
-            vista.enlaceWatchlist.limpiarObjetivoForzado();
-        } else if (vista.enlaceWatchlist.invitado() != null) {
-            sel.add(vista.enlaceWatchlist.invitado());
-        } else if (vista.objetivoEtiqueta != null && vista.enlaceWatchlist.seleccionSize() == 0) {
-            sel.add(vista.objetivoEtiqueta);
-        } else if (vista.enlaceWatchlist.modoTop()) {
-            List<Player> selTop = vista.enlaceWatchlist.seleccion();
-            if (selTop.size() > 15) {
-                selTop = selTop.subList(0, 15);
-                vista.anfitrion.estado(t("En ★ el máximo son 15 perfiles por tanda: busco los 15 primeros seleccionados.",
-                        "In ★ the cap is 15 profiles per run: searching the first 15 selected."));
-            }
-            if (!selTop.isEmpty()) sel.addAll(selTop);
-            else if (vista.enlaceWatchlist.soloVivosMarcado())
-                for (int i = 0; i < vista.enlaceWatchlist.totalJugadores(); i++) sel.add(vista.enlaceWatchlist.jugador(i));
-            else {
-                JOptionPane.showMessageDialog(vista.ventana,
-                        t("En ★ (Top ladder o Top país), selecciona jugadores concretos (clic o Ctrl+clic en la lista)\no activa el chip «● Jugando» antes de buscar.",
-                          "In ★ (Top ladder or Country top), select specific players (click or Ctrl+click the list)\nor turn on the “● Playing” chip before searching."),
-                        t("Buscar en el top", "Search the top"), JOptionPane.INFORMATION_MESSAGE);
-                return;
-            }
-        } else {
-            List<Player> selNorm = vista.enlaceWatchlist.seleccion();
-            if (!selNorm.isEmpty()) sel.addAll(selNorm);
-            else for (int i = 0; i < vista.enlaceWatchlist.totalJugadores(); i++) sel.add(vista.enlaceWatchlist.jugador(i));
+        // A quién se busca lo decide PartidasPresenter.elegirBuscados; aquí quedan sus efectos, en el mismo orden.
+        PartidasPresenter.Eleccion eleccion = PartidasPresenter.elegirBuscados(vista.enlaceWatchlist, vista.objetivoEtiqueta);
+        if (eleccion.deForzado()) vista.enlaceWatchlist.limpiarObjetivoForzado();
+        if (eleccion.recortadaA15())
+            vista.anfitrion.estado(t("En ★ el máximo son 15 perfiles por tanda: busco los 15 primeros seleccionados.",
+                    "In ★ the cap is 15 profiles per run: searching the first 15 selected."));
+        if (eleccion.faltaSeleccionTop()) {
+            JOptionPane.showMessageDialog(vista.ventana,
+                    t("En ★ (Top ladder o Top país), selecciona jugadores concretos (clic o Ctrl+clic en la lista)\no activa el chip «● Jugando» antes de buscar.",
+                      "In ★ (Top ladder or Country top), select specific players (click or Ctrl+click the list)\nor turn on the “● Playing” chip before searching."),
+                    t("Buscar en el top", "Search the top"), JOptionPane.INFORMATION_MESSAGE);
+            return;
         }
+        List<Player> sel = eleccion.buscados();
         final List<Player> tracked = (vista.enlaceWatchlist.invitado() == null && !vista.enlaceWatchlist.modoTop()) ? vista.enlaceWatchlist.conFamilias(sel) : sel;
         SwingWorker<?, ?> anterior = vista.fetchWorker;
         if (anterior != null) {   // la nueva sustituye a la que estaba en marcha (su done() ya no toca nada: ver abajo)
@@ -317,12 +267,12 @@ final class BusquedasPartidas {
         serialBusqueda = miSerial;
         int hours = vista.enlaceWatchlist.horasVentana();
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
-        SwingWorker<Recorrido, String> fw = new SwingWorker<>() {
-            @Override protected Recorrido doInBackground() {
+        SwingWorker<PartidasPresenter.Recorrido, String> fw = new SwingWorker<>() {
+            @Override protected PartidasPresenter.Recorrido doInBackground() {
                 vista.anfitrion.anotarHiloOperacion();
                 // Detener (el del botón, el de la barra de estado o la × de «Partidas de:») corta el recorrido
                 // ENTERO, no solo la página en curso (revisión 1.3, general F4 / watchlist F6).
-                return recorrer(tracked, cutoff, vista.perPage, vista.pausaMs, vista.anfitrion::paginaDePartidas,
+                return PartidasPresenter.recorrer(tracked, cutoff, vista.perPage, vista.pausaMs, vista.anfitrion::paginaDePartidas,
                         vista.anfitrion::enCursoReal, () -> isCancelled() || vista.anfitrion.detenido(), this::publish);
             }
             @Override protected void process(List<String> msgs) {
@@ -355,7 +305,7 @@ final class BusquedasPartidas {
                     return;
                 }
                 try {
-                    Recorrido r = get();
+                    PartidasPresenter.Recorrido r = get();
                     if (r.detenida()) {
                         // Lo leído hasta el corte está incompleto: no se presenta como si fuera la búsqueda entera
                         // (misma salida que el botón «Detener»: la tabla anterior se queda como estaba).
@@ -368,34 +318,18 @@ final class BusquedasPartidas {
                     final int fallosFetch = r.fallos();
                     final Set<Long> exitosos = r.exitosos();
                     vista.anfitrion.aprenderCatalogos(res);
-                    List<Long> idsTracked = new ArrayList<>();
-                    for (Player pl : tracked) idsTracked.add(pl.id());
-                    BarridoVivos.DecisionBuscar dec = vista.barridoVivos.decidirVivos(res, idsTracked, exitosos);
-                    for (Player pl : tracked) {
-                        Long v = dec.vivos().get(pl.id());
-                        if (v != null) { EstadoVivo.SISTEMA.marcarJugando(pl.id(), v, dec.infos().get(pl.id())); }
-                        else if (dec.fuera().contains(pl.id())) { EstadoVivo.SISTEMA.marcarFuera(pl.id()); }
-                    }
+                    BarridoVivos.DecisionBuscar dec = vista.barridoVivos.decidirVivos(res, PartidasPresenter.ids(tracked), exitosos);
+                    PartidasPresenter.aplicarVivos(dec, tracked, EstadoVivo.SISTEMA);
                     vista.enlaceWatchlist.actualizarIndicadoresVivos();
                     // Una descarga pudo seguir mientras se buscaba (F7): la misma partida vuelve como OTRO Match, y
                     // su estado («descargando…», «✓ guardada»…) se conserva por id de partida. enDisco/enJuego los
                     // vuelve a mirar applyFilters (y otra vez la descarga al acabar).
-                    java.util.Map<Long, String> estados = new java.util.HashMap<>();
-                    for (Match viejo : vista.all) if (!viejo.estado.isBlank()) estados.put(viejo.id, viejo.estado);
-                    for (Match nuevo : res) { String e = estados.get(nuevo.id); if (e != null && nuevo.estado.isBlank()) nuevo.estado = e; }
+                    PartidasPresenter.conservarEstados(vista.all, res);
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(vista.view.size() + t(" de ", " of ") + vista.all.size() + t(" partidas en las últimas ", " games in the last ") + textoVentana(hours) + "."
-                            + (topeAlcanzado
-                                ? "  \u26A0 " + t("Tope de la búsqueda alcanzado: puede faltar historial antiguo — acorta la ventana o filtra por modo.",
-                                                  "Search cap reached: older history may be missing — shorten the window or filter by mode.")
-                                : "")
-                            + (fallosFetch > 0
-                                ? "  \u26A0 " + fallosFetch + t(" jugador(es) SIN RESPUESTA del servicio (¿429/caído?): sus partidas faltan — reintenta en un minuto.",
-                                                              " player(s) got NO RESPONSE from the service (429/down?): their games are missing — retry in a minute.")
-                                : ""));
+                    vista.anfitrion.estado(PartidasPresenter.mensajeBusqueda(vista.view.size(), vista.all.size(), hours, topeAlcanzado, fallosFetch));
                 } catch (Exception ex) {
                     vista.anfitrion.estado("Error: " + causa(ex));
                 }
@@ -423,64 +357,5 @@ final class BusquedasPartidas {
         vista.gteBtn.setEnabled(true);
         if (semaforoPropio) vista.anfitrion.trabajando(false);
         log("buscar #" + serialBusqueda + ": cerrada con la ×");
-    }
-
-    /** Una página de partidas de un jugador (en la app, Anfitrion.paginaDePartidas: la red). */
-    interface Paginador { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
-
-    /** Lo que deja el recorrido de fetchMatches: las partidas (la más reciente primero), si se tocó el tope, cuántos
-     *  jugadores fallaron, quiénes respondieron entero y si se detuvo a medias (entonces la lista está incompleta). */
-    record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida) { }
-
-    /** El doInBackground de fetchMatches, sin Swing (para poder probarlo): páginas por jugador hasta la ventana,
-     *  tope 6 páginas / 600 partidas. {@code parar} se mira antes de cada jugador, antes de cada página y al fallar
-     *  una: si dice que sí, el recorrido acaba entero y vuelve con {@code detenida}. */
-    static Recorrido recorrer(List<Player> tracked, Instant cutoff, int perPage, long pausaMs, Paginador paginas,
-                              java.util.function.Predicate<Match> enCursoReal, java.util.function.BooleanSupplier parar,
-                              java.util.function.Consumer<String> progreso) {
-        Map<Long, Match> unicos = new LinkedHashMap<>();
-        Set<Long> exitosos = new HashSet<>();
-        boolean topeAlcanzado = false, detenida = false;
-        int fallos = 0;
-        final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
-        for (Player pl : tracked) {
-            if (parar.getAsBoolean()) { detenida = true; break; }
-            boolean fallo = false;
-            for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
-                if (parar.getAsBoolean()) { detenida = true; break; }
-                progreso.accept(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
-                boolean seguir = false;
-                try {
-                    Iterable<Match> leidas = paginas.pagina(pl.id(), pagina, perPage);
-                    int n = 0; Instant masAntigua = null;
-                    for (Match m : leidas) {
-                        if (m == null) continue;
-                        n++;
-                        Instant ref = m.finished != null ? m.finished : m.started;
-                        if (ref != null && (masAntigua == null || ref.isBefore(masAntigua))) masAntigua = ref;
-                        if (m.finished == null && !enCursoReal.test(m)) continue;
-                        if (m.finished != null && m.finished.isBefore(cutoff)) continue;
-                        unicos.putIfAbsent(m.id, m);
-                    }
-                    seguir = n >= perPage && masAntigua != null && masAntigua.isAfter(cutoff);
-                    if (seguir && pagina == MAX_PAGINAS) topeAlcanzado = true;
-                    if (unicos.size() >= MAX_TOTAL) { topeAlcanzado = true; seguir = false; }
-                    Thread.sleep(pausaMs);
-                } catch (Exception ex) {
-                    fallo = true;
-                    if (parar.getAsBoolean()) { detenida = true; break; }   // el freno cortó la espera: se para todo
-                    if (ex instanceof InterruptedException) break;
-                    fallos++;
-                    progreso.accept(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
-                }
-                if (!seguir) break;
-            }
-            if (detenida) break;
-            if (!fallo) exitosos.add(pl.id());
-            if (unicos.size() >= MAX_TOTAL) break;
-        }
-        List<Match> lista = new ArrayList<>(unicos.values());
-        lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
-        return new Recorrido(lista, topeAlcanzado, fallos, exitosos, detenida);
     }
 }

@@ -44,7 +44,8 @@ class PartidasViewTest {
         @Override public List<Player> seleccion() { return new ArrayList<>(seleccion); }
         @Override public int seleccionSize() { return seleccion.size(); }
         @Override public boolean soloVivosMarcado() { return false; }
-        @Override public boolean modoTop() { return false; }
+        volatile boolean modoTop;
+        @Override public boolean modoTop() { return modoTop; }
         @Override public String grupoDestino() { return "General"; }
         @Override public List<Player> conFamilias(List<Player> base) { return base; }
         @Override public void limpiarSeleccion() { seleccion.clear(); }
@@ -76,7 +77,7 @@ class PartidasViewTest {
         volatile long opSerial;
         volatile boolean progreso;
         volatile boolean stop;
-        volatile BusquedasPartidas.Paginador paginador = (pid, pag, pp) -> List.of();
+        volatile PartidasPresenter.Paginador paginador = (pid, pag, pp) -> List.of();
         final List<Long> pedidas = Collections.synchronizedList(new ArrayList<>());
         final Path recs;
         AnfitrionFalso(Path recs) { this.recs = recs; }
@@ -94,7 +95,8 @@ class PartidasViewTest {
         @Override public void abrirUrl(String url) { }
         @Override public String nombreVisible(long pid, String nombre) { return nombre; }
         @Override public String paisDe(long pid) { return null; }
-        @Override public boolean enCursoReal(Match m) { return false; }
+        volatile java.util.function.Predicate<Match> enCurso = m -> false;
+        @Override public boolean enCursoReal(Match m) { return enCurso.test(m); }
         /** En qué hilo se pidió cada ruta de rec (true = EDT): quien la pide va a mirar el disco justo después. */
         final List<Boolean> destinoEnEdt = Collections.synchronizedList(new ArrayList<>());
         /** Si están puestos, destino (fuera del EDT) espera / falla: un «Enviar al juego» que sigue mirando recs, o que se rompe. */
@@ -117,9 +119,12 @@ class PartidasViewTest {
         @Override public List<String> mapasConocidos() { return List.of(); }
         @Override public List<String> civsConocidas() { return List.of(); }
         @Override public void dormir(long ms) { }
-        @Override public long perfilAbiertoPid() { return 0; }
-        @Override public boolean perfilAbierto() { return false; }
-        @Override public String perfilNombreAbierto() { return ""; }
+        volatile long perfilPid;
+        volatile boolean perfilAbierto;
+        volatile String perfilNombre = "";
+        @Override public long perfilAbiertoPid() { return perfilPid; }
+        @Override public boolean perfilAbierto() { return perfilAbierto; }
+        @Override public String perfilNombreAbierto() { return perfilNombre; }
         @Override public void mostrarHistorialSiSigueAbierto(long pid, String nombre) { }
         @Override public Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws java.io.IOException, InterruptedException {
             pedidas.add(pid);
@@ -159,7 +164,28 @@ class PartidasViewTest {
     RecFalso rec;
     PartidasView vista;
 
+    /** config.properties de antes del test (null si no había): lo restaura cerrar(). */
+    byte[] configPrevio;
+
+    /** Cada test corre con la carpeta savegame de config apuntando a una carpeta temporal suya: así
+     *  obtenerSavegame(true) nunca depende del config.properties de la máquina ni cae en detectarSavegames, que con
+     *  varios perfiles del juego abre el diálogo real «Elige tu carpeta savegame» en la pantalla. Devuelve el config
+     *  de antes (null si no había) para {@link #restaurarConfig}. */
+    static byte[] savegameDePrueba(Path carpetaTest) throws java.io.IOException {
+        Path cfg = dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
+        byte[] previo = java.nio.file.Files.exists(cfg) ? java.nio.file.Files.readAllBytes(cfg) : null;
+        Path sg = java.nio.file.Files.createDirectories(carpetaTest.resolve("savegame-del-test"));
+        dev.tirador.aoe2radar.util.Config.guardarConfig("savegame", sg.toString());
+        return previo;
+    }
+
+    static void restaurarConfig(byte[] previo) throws java.io.IOException {
+        Path cfg = dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
+        if (previo != null) java.nio.file.Files.write(cfg, previo); else java.nio.file.Files.deleteIfExists(cfg);
+    }
+
     @BeforeEach void crear() throws Exception {
+        configPrevio = savegameDePrueba(recs);
         idiomaPrevio = IDIOMA;
         IDIOMA = "es";
         enlace = new EnlaceFalso();
@@ -181,8 +207,12 @@ class PartidasViewTest {
     }
 
     @AfterEach void cerrar() throws Exception {
-        SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
-        IDIOMA = idiomaPrevio;
+        try {
+            SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
+            IDIOMA = idiomaPrevio;
+        } finally {
+            restaurarConfig(configPrevio);   // aunque la ventana sea null o dispose lance
+        }
     }
 
     // ----- utilidades -----
@@ -215,45 +245,6 @@ class PartidasViewTest {
         Thread.sleep(400);
         SwingUtilities.invokeAndWait(() -> { });
         SwingUtilities.invokeAndWait(() -> { });
-    }
-
-    // ----- recorrer(): el doInBackground de «Buscar partidas», sin Swing -----
-
-    @Test void recorrer_pararTrasElPrimerJugador_noPideAlSiguienteYVuelveDetenida() {
-        boolean[] parar = { false };
-        List<Long> pedidas = new ArrayList<>();
-        Instant fin = Instant.now().minusSeconds(600);
-        BusquedasPartidas.Recorrido r = BusquedasPartidas.recorrer(List.of(A, B, C), fin.minusSeconds(86_400), 50, 0,
-                (pid, pag, pp) -> { pedidas.add(pid); parar[0] = true; return List.of(partida(pid, pid == A.id() ? A : B, fin)); },
-                m -> false, () -> parar[0], s -> { });
-        assertEquals(List.of(A.id()), pedidas, "Detener pulsado durante la página de A: ni B ni C se consultan");
-        assertTrue(r.detenida());
-    }
-
-    @Test void recorrer_elFrenoCortaLaEspera_noSigueConElSiguienteJugador() {
-        boolean[] parar = { false };
-        List<Long> pedidas = new ArrayList<>();
-        Instant fin = Instant.now().minusSeconds(600);
-        BusquedasPartidas.Recorrido r = BusquedasPartidas.recorrer(List.of(A, B, C), fin.minusSeconds(86_400), 50, 0,
-                (pid, pag, pp) -> {
-                    pedidas.add(pid);
-                    if (pid == B.id()) { parar[0] = true; throw new InterruptedException("detenido"); }   // lo que lanza el freno
-                    return List.of(partida(pid, A, fin));
-                },
-                m -> false, () -> parar[0], s -> { });
-        assertEquals(List.of(A.id(), B.id()), pedidas, "el corte del freno en B no deja pasar a C");
-        assertTrue(r.detenida());
-        assertEquals(0, r.fallos(), "un corte pedido no es un fallo del servicio");
-    }
-
-    @Test void recorrer_sinParar_recorreATodosYNoVuelveDetenida() {
-        Instant fin = Instant.now().minusSeconds(600);
-        BusquedasPartidas.Recorrido r = BusquedasPartidas.recorrer(List.of(A, B), fin.minusSeconds(86_400), 50, 0,
-                (pid, pag, pp) -> List.of(partida(pid, pid == A.id() ? A : B, fin)),
-                m -> false, () -> false, s -> { });
-        assertFalse(r.detenida());
-        assertEquals(2, r.lista().size());
-        assertEquals(java.util.Set.of(A.id(), B.id()), r.exitosos());
     }
 
     // ----- general F4 / watchlist F6: Detener de la barra y la × paran la búsqueda -----
@@ -629,6 +620,8 @@ class PartidasViewTest {
             esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "que acabe el primero");
             anfitrion.soltarDestino = null;
             anfitrion.estados.clear();
+            anfitrion.estado = "";   // si no, la espera de abajo la cumplía el resumen del PRIMERO y el tercero acababa
+                                     // fuera de conSavegame, ya sin carpeta en config (abría el diálogo real)
             enEdt(() -> vista.enviarInteligente(List.of(m)));   // acabado el primero, se puede volver a enviar
             esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "el tercero");
             assertFalse(anfitrion.estados.stream().anyMatch(s -> s.startsWith("Ya se está enviando")));
