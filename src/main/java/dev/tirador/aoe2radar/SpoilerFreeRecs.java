@@ -390,7 +390,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     }
     /** Barra de estado, semáforo de la operación en curso y toast: ver ui.BarraEstado. Se crea en el mismo
      *  punto donde antes se creaban status/progreso/cafeBtn (eran campos inicializados, antes del constructor). */
-    final BarraEstado barraEstado = new BarraEstado(this, barraEstadoAnfitrion(), DONAR_URL);
+    final BarraEstado barraEstado = new BarraEstado(this, CableadoCromo.barraEstadoAnfitrion(this), DONAR_URL);
     // status/progreso/cafeBtn: alias al mismo objeto de ui.BarraEstado. Decenas de sitios de otras zonas de
     // esta ventana los usan por su nombre de campo (status.setText(...) sobre todo): mover el campo sin
     // tener que tocar cada uno de esos sitios.
@@ -531,11 +531,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // =====================================================================================
     // Desplazamiento con la rueda pulsada (como Chrome) y vuelta arriba al cambiar de vista
     // =====================================================================================
-    // Infraestructura de toda la ventana (no de una vista): ver ui.AutoScroll.
-    private final AutoScroll autoScroll = new AutoScroll(new AutoScroll.Anfitrion() {
-        @Override public void atras() { if (!perfil.h2hAtrasSiProcede()) volverAtras(); }
-        @Override public void adelante() { irAdelante(); }
-    });
+    // Infraestructura de toda la ventana (no de una vista): ver ui.AutoScroll. El cableado (el Anfitrion que
+    // hace de atras/adelante) vive en CableadoCromo.autoScroll (fase 3, tanda 4, oleada B, T4-B3).
+    private final AutoScroll autoScroll = CableadoCromo.autoScroll(this);
 
     void instalarAutoScroll() { autoScroll.instalar(); }
     void pararAutoScroll() { autoScroll.parar(); }
@@ -559,34 +557,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // mientras el socket esté sano). El protocolo y qué significa cada evento viven en service.EnlaceVivo
     // (fase 3, tanda 4, Z4): aquí solo queda avisar a las vistas por Vistas (con la vuelta al EDT, que
     // service no puede tocar) y los delegados de una línea que usa el resto de la ventana.
-    /** El cableado del socket (ver service.EnlaceVivo); aquí solo se traducen sus avisos a las vistas concretas. */
-    final EnlaceVivo enlaceVivo = new EnlaceVivo(VIVO, LIVE, new EnlaceVivo.Vistas() {
-        @Override public List<Long> idsWatchlist() {
-            List<Long> ids = new ArrayList<>();
-            for (int i = 0; i < playersModel.size(); i++) ids.add(playersModel.get(i).id());
-            return ids;
-        }
-        @Override public List<Long> idsTodosJugadores() {
-            List<Long> ids = new ArrayList<>();
-            for (Player p : todosJugadores) ids.add(p.id());
-            return ids;
-        }
-        @Override public List<Long> idsTopLadder() {
-            List<Long> ids = new ArrayList<>();
-            for (Player p : watchlist.topLadderSnapshot()) ids.add(p.id());
-            return ids;
-        }
-        @Override public Set<Long> idsSocketExtra() { return liveNow != null ? liveNow.socketExtra : Set.of(); }
-        @Override public void liveEvento(long pid, Match m, boolean terminada) { if (liveNow != null) liveNow.liveEvento(pid, m, terminada); }
-        @Override public void avisarSiCampana(long pid, Match m) { watchlist.avisarSiCampana(pid, m); }
-        @Override public void avisarMiPartida(long pid, Match m) { watchlist.avisarMiPartida(pid, m); }
-        @Override public void avisarTrasCambio() {
-            SwingUtilities.invokeLater(() -> { watchlist.actualizarIndicadoresVivos(); watchlist.refrescarAlturasWatch(); playersList.repaint(); partidas.table.repaint(); });
-        }
-        @Override public void refrescarLiveNowSiAbierta() {
-            if (liveNow != null && liveNow.ahoraAbierta) SwingUtilities.invokeLater(() -> liveNow.refrescar(true));
-        }
-    });
+    /** El cableado del socket (ver service.EnlaceVivo); aquí solo se traducen sus avisos a las vistas concretas.
+     *  El Anfitrion (EnlaceVivo.Vistas) vive en CableadoCromo.enlaceVivo (fase 3, tanda 4, oleada B, T4-B3). */
+    final EnlaceVivo enlaceVivo = CableadoCromo.enlaceVivo(this);
     long ultimoResyncMs;
 
     /** Conecta (o reconecta) con los ids visibles; si no cambian y el socket está sano, no hace nada. Delegado
@@ -672,27 +645,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         };
     }
 
-    /** Lo que ui.BarraEstado necesita del resto de la ventana: el freno de cancelación real (api.Cancelacion)
-     *  y la red (api.Http, java.net) viven aquí porque ui no puede importarlos; «operacionTerminada» reactiva
-     *  los botones de ui.PartidasView, que tampoco son suyos. */
-    private BarraEstado.Anfitrion barraEstadoAnfitrion() {
-        return new BarraEstado.Anfitrion() {
-            @Override public void iniciarOperacion() { stopOperacion = false; hiloOperacion = null; }
-            @Override public void marcarOperacionEnCurso(boolean on) { opEnCurso = on; }
-            @Override public void operacionTerminada() {
-                partidas.fetchBtn.setEnabled(true); partidas.azarBtn.setEnabled(true); partidas.gteBtn.setEnabled(true);
-                if (partidas.dlSel != null) partidas.dlSel.setEnabled(true);
-                if (partidas.dlAll != null) partidas.dlAll.setEnabled(true);
-            }
-            @Override public void pararOperacion() { stopOperacion = true; }
-            @Override public void renovarHttp() { HTTP = nuevoHttp(); }
-            @Override public void continuarBuscando() { partidas.buscarAleatorias(true); }
-            @Override public void abrirTwitch() { SpoilerFreeRecs.this.abrirTwitch(); }
-            @Override public void abrirDonacion() { SpoilerFreeRecs.this.abrirDonacion(); }
-            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-            @Override public void espectarPartida(long matchId) { SpoilerFreeRecs.this.espectarPartida(matchId); }
-        };
-    }
+    // barraEstadoAnfitrion(): movido a CableadoCromo.barraEstadoAnfitrion (fase 3, tanda 4, oleada B, T4-B3);
+    // el campo barraEstado (más arriba) sigue llamándolo en el mismo punto, ahora como CableadoCromo.barraEstadoAnfitrion(this).
 
     /** Lo que la Watchlist pide al resto de la ventana (cromo, red que no es de servicio): ver
      *  ui.WatchlistView.Anfitrion. */
@@ -758,7 +712,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     public SpoilerFreeRecs(String temaInicial) {   // visible para app.Main (main() construye la ventana desde fuera del paquete)
         super(NOMBRE + " " + VERSION + t(" — tu radar del AoE2 competitivo, sin spoilers · por ", " — your competitive AoE2 radar, spoiler-free · by ") + AUTOR);
-        configurarVentana();
+        CableadoCromo.configurarVentana(this);
         navegador = new dev.tirador.aoe2radar.ui.Navegador(status, partidas, this::perfilDesdeBoton);
 
         sujetosPanel = new JPanel();
@@ -770,122 +724,22 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 PAUSA_MS, PER_PAGE);
         JPanel left = watchlist.panel();
 
-        JPanel top = construirBarraSuperior(temaInicial);
+        JPanel top = CableadoCromo.construirBarraSuperior(this, temaInicial);
 
         partidas.construirTabla();
 
-        JPanel bottom = construirBarraInferior();
+        JPanel bottom = CableadoCromo.construirBarraInferior(this);
 
         JPanel center = construirCentro(top, bottom);
 
-        montarVentana(left, center);
+        CableadoCromo.montarVentana(this, left, center);
         navegador.conectarVistas(watchlist, perfil, liveNow, techTree, ratings, civStats, directos, centroCards, splitPrincipal);
 
         arrancar();
     }
 
-    // Cierre, ventana recordada, foco perdido e iconos: ajustes del JFrame antes
-    // de construir ningun panel. Se separa del resto del constructor porque es
-    // configuración de ventana, no construcción de paneles.
-    private void configurarVentana() {
-        VentanaPrincipalAjustes.configurar(this, logo, new VentanaPrincipalAjustes.Anfitrion() {
-            @Override public void alCerrar() { guardarVentana(); enlaceVivo.cerrar(); }
-            @Override public void alPerderFoco() { watchlist.ocultarHoverCard(true); }
-        });
-    }
-
-
-    // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,
-    // flechas de historial y el menú Configuración (idioma, tema, letra...). Recibe
-    // temaInicial porque el menú de Tema marca la opción ya activa al abrir.
-    private JPanel construirBarraSuperior(String temaInicial) {
-        // Barra superior: ventana de horas + buscar + filtro de modo + acerca de
-        JPanel fila1 = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));   // fija: nada salta de sitio
-        unidadCombo.setSelectedIndex(Math.max(0, Math.min(2, Integer.parseInt(leerConfig("ventana_unidad", "0")))));
-        unidadCombo.setFocusable(false);
-        unidadCombo.setToolTipText(t("Unidad de la ventana de búsqueda (hasta 1 año)", "Unit of the search window (up to 1 year)"));
-        hoursSpinner.setToolTipText(t("Ventana de búsqueda: hasta 1 año. Las ventanas largas piden más páginas por jugador (tope: 300 partidas/jugador, se avisa).",
-                "Search window: up to 1 year. Long windows fetch more pages per player (cap: 300 games/player, you get a warning)."));
-        unidadCombo.addActionListener(e -> {
-            guardarConfig("ventana_unidad", String.valueOf(unidadCombo.getSelectedIndex()));
-            int u = unidadCombo.getSelectedIndex(), max = u == 0 ? 24 : u == 1 ? 7 : 1;   // el techo, en la unidad elegida: 24 h, 7 días o 1 semana
-            SpinnerNumberModel sm = (SpinnerNumberModel) hoursSpinner.getModel();
-            sm.setMaximum(max);
-            if ((int) hoursSpinner.getValue() > max) hoursSpinner.setValue(max);
-        });
-        { int u0 = unidadCombo.getSelectedIndex(); int max0 = u0 == 0 ? 24 : u0 == 1 ? 7 : 1; ((SpinnerNumberModel) hoursSpinner.getModel()).setMaximum(max0); if ((int) hoursSpinner.getValue() > max0) hoursSpinner.setValue(max0); }
-        fila1.add(par(new JLabel(t("Últimas", "Last")), hoursSpinner, unidadCombo));
-        partidas.agregarFilaConsulta(fila1);   // modo, rival (sugerencias), mapa, periodo, Buscar partidas, Al azar por ELO, Guess the ELO: ver ui.PartidasView
-        // Pestañas de vistas y flechas de atrás/adelante: ver ui.Navegador.construirFilaVistas (fase 3, tanda 4, T4-Z1).
-        JPanel filaVistas = navegador.construirFilaVistas();
-
-        // El botón «Configuración ▾», todos sus ítems y la esquina «Mi perfil»: ver ui.MenuConfiguracion. Lo
-        // que sus ítems necesitan de otras zonas (tema, watchlist, vigilancia, CaptureAge, mi perfil, acerca
-        // de, carpeta savegame…) llega por MenuConfiguracion.Anfitrion, implementado aquí con lambdas.
-        menuConfiguracion = new MenuConfiguracion(temaInicial, autoSgItem, CONTROL_SERVICE, new MenuConfiguracion.Anfitrion() {
-            @Override public Component padre() { return SpoilerFreeRecs.this; }
-            @Override public void estado(String texto) { status.setText(texto); }
-            @Override public void aplicarTema(String tema) { SpoilerFreeRecs.aplicarTema(tema, SpoilerFreeRecs.this); }
-            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
-            @Override public void mostrarNuevaVersion(String etiqueta) {
-                if (actualizarBtn != null) { actualizarBtn.setText(etiqueta); actualizarBtn.setVisible(true); }
-            }
-            @Override public boolean mostrarEloWatch() { return watchlist.mostrarEloWatch; }
-            @Override public void fijarMostrarEloWatch(boolean mostrar) { watchlist.mostrarEloWatch = mostrar; }
-            @Override public void repintarListaJugadores() { playersList.repaint(); }
-            @Override public void reiniciarVigilancia() {
-                if (vigilante != null) { vigilante.setDelay(tickMs()); vigilante.setInitialDelay(tickMs()); vigilante.restart(); }
-            }
-            @Override public void cargarAliasesYNotas() { cargarAliases(); cargarNotas(); }
-            @Override public boolean modoTop() { return watchlist.modoTop(); }
-            @Override public void forzarRecargaTop() { watchlist.forzarRecargaTop(); }
-            @Override public Path elegirCarpetaSavegame() { return partidas.elegirSavegameManual(); }
-            @Override public void refiltrarPartidas() { partidas.applyFilters(); }
-            @Override public boolean hayCarpetaSavegame() { return partidas.obtenerSavegame(true) != null; }
-            @Override public void mostrarMiPerfil() { abrirMiPerfil(); }
-            @Override public void cambiarCuentaPropia() { preguntarMiNick(); }
-            @Override public void mostrarAcercaDe() { showAbout(); }
-        });
-        JPanel esquina = menuConfiguracion.esquina();
-
-        JPanel fila2 = partidas.construirFilaNota();   // nota sin-spoilers + «Mostrar resultados»: ver ui.PartidasView
-
-        JPanel filasIzq = new JPanel();
-        filasIzq.setLayout(new BoxLayout(filasIzq, BoxLayout.Y_AXIS));
-        fila1.setAlignmentX(Component.LEFT_ALIGNMENT); filaVistas.setAlignmentX(Component.LEFT_ALIGNMENT);
-        filasIzq.add(fila1);
-        filasIzq.add(filaVistas);
-        JPanel barraSuperior = new JPanel(new BorderLayout());
-        barraSuperior.add(filasIzq, BorderLayout.CENTER);
-        JPanel esquinaArriba = new JPanel(new BorderLayout());
-        esquinaArriba.add(esquina, BorderLayout.NORTH);
-        barraSuperior.add(esquinaArriba, BorderLayout.EAST);
-        JPanel top = new JPanel();
-        top.setLayout(new BoxLayout(top, BoxLayout.Y_AXIS));
-        barraSuperior.setAlignmentX(Component.LEFT_ALIGNMENT); fila2.setAlignmentX(Component.LEFT_ALIGNMENT);
-        top.add(barraSuperior);
-        top.add(fila2);
-        setMinimumSize(new Dimension(1100, 640));
-        return top;
-    }
-
-    // La tabla de partidas: construirTablaPartidas() movida a ui.PartidasView.construirTabla().
-    // La franja inferior: los botones de descargar/enviar al juego, el menú de
-    // carpetas, la firma y donacion, y la barra de estado (progreso, detener,
-    // continuar buscando). Devuelve el panel para el centro de la ventana.
-    private JPanel construirBarraInferior() {
-        JPanel filasBtns = partidas.construirBotonesInferiores();   // dlSel/dlAll/carpetas/enviarSg/todasPerfilBtn: ver ui.PartidasView
-        JPanel filaEstado = barraEstado.construirFila();   // progreso/detener/continuar, status, firma/café/actualizar: ver ui.BarraEstado
-        firma = barraEstado.firma;
-        actualizarBtn = barraEstado.actualizarBtn;
-        detenerDescBtn = barraEstado.detenerDescBtn;
-        continuarBtn = barraEstado.continuarBtn;
-
-        JPanel bottom = new JPanel(new BorderLayout());
-        bottom.add(filasBtns, BorderLayout.NORTH);
-        bottom.add(filaEstado, BorderLayout.SOUTH);
-        return bottom;
-    }
+    // configurarVentana/construirBarraSuperior/construirBarraInferior: movidos a CableadoCromo (fase 3, tanda 4,
+    // oleada B, T4-B3), llamados desde el constructor en el mismo punto y orden.
 
     // El centro de la ventana: las cartas (CardLayout) de cada vista -- tabla de
     // partidas/guia, Directos, Live now, tech tree, Ratings, Civ Stats y Perfil --
@@ -1001,40 +855,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         return center;
     }
 
-    // El split principal (Watchlist | resto) y el filtro global de clics: en
-    // cualquier fondo sin control, clic izquierdo = quitar la selección de la
-    // Watchlist (como el Explorador de Windows).
-    private void montarVentana(JPanel left, JPanel center) {
-        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, center);
-        split.setContinuousLayout(true);
-        split.setDividerSize(7);
-        split.setResizeWeight(0);   // al agrandar la ventana crece la tabla
-        left.setMinimumSize(new Dimension(230, 100));
-        center.setMinimumSize(new Dimension(420, 100));
-        try { split.setDividerLocation(Integer.parseInt(leerConfig("divisor", "355"))); }
-        catch (Exception ignored) { split.setDividerLocation(355); }
-        if (split.getUI() instanceof javax.swing.plaf.basic.BasicSplitPaneUI bui)
-            bui.getDivider().addMouseListener(new MouseAdapter() {
-                @Override public void mouseClicked(MouseEvent e) {
-                    if (e.getClickCount() == 2) split.setDividerLocation(355);   // vuelta al ancho por defecto
-                }
-            });
-        splitPrincipal = split;
-        // Como el Explorador, en toda la ventana: clic en cualquier fondo que no sea un control = sin selección.
-        // Excepciones: la cabecera de columnas (ordena) y la cabecera «Partidas de:» (sus nombres son clicables).
-        // Ver ui.ClicEnFondo: mezcla excepciones de varias vistas, así que se las pedimos por interfaz.
-        ClicEnFondo.instalarGlobal(this, new ClicEnFondo.Anfitrion() {
-            @Override public JLabel cabeceraWatchlist() { return watchlist.cabLabel; }
-            @Override public JPanel sujetosPanel() { return sujetosPanel; }
-            @Override public JTable tablaPartidas() { return partidas.table; }
-            @Override public JTable tablaDirectos() { return directos == null ? null : directos.tablaDirectos; }
-            @Override public JComponent panelRatings() { return ratings == null ? null : ratings.panel(); }
-            @Override public void ocultarDetalleTechTree() { techTree.ocultarDetalle(); }
-            @Override public boolean haySeleccionWatchlist() { return !playersList.isSelectionEmpty(); }
-            @Override public void limpiarSeleccionWatchlist() { playersList.clearSelection(); partidas.actualizarTextoBuscar(); }
-        });
-        add(split, BorderLayout.CENTER);
-    }
+    // montarVentana (split Watchlist/resto + ClicEnFondo): movido a CableadoCromo (fase 3, tanda 4, oleada B,
+    // T4-B3), llamado desde el constructor en el mismo punto.
 
     // Cargas iniciales (canales, jugadores, tema/fuentes) y el arranque de los
     // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
@@ -1258,14 +1080,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // ----- Alta de jugadores (búsqueda por nick, sin visitar webs) -----------
     // ----- «Mi partida»: quién eres, aviso al encontrar partida (log del juego) y panel sobre el juego -----
     // Sale a ui.MiPartidaPanel + ui.MiPartidaPresenter + service.MiPartidaServiceJuego (fase 3, tanda 3): mismos
-    // textos, mismo Timer de 2s, mismos nombres de hilo ("log-juego", "lobby-oficial", "mi-perfil").
-    final MiPartidaPanel miPartida = new MiPartidaPanel(
-            new MiPartidaServiceJuego(this::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
-            Tareas.SWING, this, this, new MiPartidaPanel.Anfitrion() {
-                @Override public List<String[]> buscarPerfiles(String nick) { return Servicios.buscarPerfiles(nick); }
-                @Override public void mostrarEstado(String texto) { status.setText(texto); }
-                @Override public void sincronizarSocket() { SpoilerFreeRecs.this.sincronizarSocket(); }
-            });
+    // textos, mismo Timer de 2s, mismos nombres de hilo ("log-juego", "lobby-oficial", "mi-perfil"). El
+    // cableado (su Anfitrion) vive en CableadoCromo.miPartida (fase 3, tanda 4, oleada B, T4-B3).
+    final MiPartidaPanel miPartida = CableadoCromo.miPartida(this);
 
     /** Delegado: ver ui.MiPartidaPanel.iniciarVigilancia. Nombre conservado para quien lo llama (constructor). */
     void iniciarVigilanciaLogJuego() { miPartida.iniciarVigilancia(); }
