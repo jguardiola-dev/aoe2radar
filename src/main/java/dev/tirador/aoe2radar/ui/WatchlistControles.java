@@ -26,9 +26,7 @@ import java.awt.Font;
 import java.awt.Insets;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -103,7 +101,7 @@ final class WatchlistControles {
                 boolean esNuevo = s.equals(t("+ Nuevo grupo…", "+ New group…"));
                 boolean esTodos = s.equals(t("Todos", "All"));
                 boolean esGestion = s.equals(t("Gestionar grupos…", "Manage groups…"));
-                if (!esNuevo && !esGestion && wv.grupoTieneVivo(esTodos ? null : s)) {
+                if (!esNuevo && !esGestion && wv.presenter.grupoTieneVivo(esTodos ? null : s)) {
                     l.setText("<html><font color='#" + colorVivoHex() + "'>\u25CF</font> "
                             + escapeHtml(s) + "</html>");
                 }
@@ -126,14 +124,7 @@ final class WatchlistControles {
             wv.aplicarFiltroGrupo();
         });
         String paisGuardado = leerConfig("top_pais", "es");
-        List<PaisItem> ordenPais = new ArrayList<>();
-        for (PaisItem pi : wv.PAISES) if (pi.code().equals(paisGuardado)) ordenPais.add(pi);
-        List<PaisItem> resto = new ArrayList<>();
-        for (PaisItem pi : wv.PAISES) if (!pi.code().equals(paisGuardado)) resto.add(pi);
-        resto.sort(Comparator.comparing(PaisItem::nombre, String.CASE_INSENSITIVE_ORDER));
-        ordenPais.addAll(resto);
-        wv.catalogoOrdenado = ordenPais;
-        wv.paisActual = ordenPais.get(0);   // el favorito guardado
+        List<PaisItem> ordenPais = wv.presenter.ordenarPaises(paisGuardado);   // deja paisActual = el favorito guardado
         wv.buscaPais = new JTextField(6);
         wv.buscaPais.putClientProperty("JTextField.placeholderText", t("Buscar\u2026", "Search\u2026"));
         wv.buscaPais.setToolTipText(t("Filtra países al teclear: «bul» → Bulgaria; Enter elige el primero",
@@ -151,7 +142,7 @@ final class WatchlistControles {
         wv.paisCombo.setToolTipText(t("País del top a mostrar (se recuerda como predeterminado)",
                 "Country whose top to show (remembered as default)"));
         wv.paisCombo.addActionListener(e -> {
-            if (!wv.rearmandoPais && wv.paisCombo.getSelectedItem() instanceof PaisItem p) fijarPais(p);
+            if (!wv.rearmandoPais && wv.paisCombo.getSelectedItem() instanceof PaisItem p) wv.presenter.fijarPais(p);
         });
         instalarFiltroPais();
         wv.paisCombo.setPrototypeDisplayValue(null);
@@ -187,12 +178,12 @@ final class WatchlistControles {
         grupoFila.add(gruposBtn);
         wv.campanaBtn = new JToggleButton(wv.anfitrion.iconoVista("campana"));
         wv.campanaBtn.setFocusable(false); wv.campanaBtn.setMargin(new Insets(2, 5, 2, 5)); wv.campanaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        wv.campanaBtn.addActionListener(e -> alternarCampana());
+        wv.campanaBtn.addActionListener(e -> wv.presenter.alternarCampana());
         grupoFila.add(wv.campanaBtn);
         wv.topNCombo = new JComboBox<>(new String[]{ "Top 25", "Top 50", "Top 100" });
         wv.topNCombo.setToolTipText(t("Cuántos jugadores enseñan Top ladder y Top país", "How many players Top ladder and Top country show"));
         wv.topNCombo.setSelectedIndex(Math.max(0, Arrays.asList("25", "50", "100").indexOf(leerConfig("top_n", "50"))));
-        wv.topNCombo.addActionListener(e -> { if (wv.rellenandoTopN) return; String n = new String[]{ "25", "50", "100" }[Math.max(0, wv.topNCombo.getSelectedIndex())]; if (n.equals(leerConfig("top_n", "50"))) return; guardarConfig("top_n", n); if (wv.modoTop() && !wv.modoClan()) { wv.topCargado = 0; wv.cargarTopLadder(true); } });
+        wv.topNCombo.addActionListener(e -> { if (wv.rellenandoTopN) return; String n = new String[]{ "25", "50", "100" }[Math.max(0, wv.topNCombo.getSelectedIndex())]; if (n.equals(leerConfig("top_n", "50"))) return; guardarConfig("top_n", n); if (wv.modoTop() && !wv.modoClan()) { wv.presenter.top.topCargado = 0; wv.cargarTopLadder(true); } });
         wv.topNCombo.setVisible(false);
         grupoFila.add(wv.topNCombo);
         wv.addJugBtn = new JButton(t("+ Añadir jugador", "+ Add player"));
@@ -211,9 +202,9 @@ final class WatchlistControles {
         wv.formaBtn = new JButton(t("Ver forma", "Recent form"));
         wv.formaBtn.putClientProperty("JButton.buttonType", "roundRect");
         wv.formaBtn.setFocusable(false);
-        wv.formaBtn.setToolTipText(WatchlistView.tipVerForma());
-        wv.formaBtn.addActionListener(e -> wv.cargarForma(wv.objetivoForma(), wv.ventanaForma, () -> {   // siempre consulta (y suma a lo ya consultado)
-            wv.formaVisible = true; wv.actualizarTextoForma();
+        wv.formaBtn.setToolTipText(WatchlistPresenter.tipVerForma());
+        wv.formaBtn.addActionListener(e -> wv.cargarForma(wv.objetivoForma(), wv.presenter.ventanaForma, () -> {   // siempre consulta (y suma a lo ya consultado)
+            wv.presenter.formaVisible = true; wv.actualizarTextoForma();
             if (wv.ocultarFormaBtn != null) wv.ocultarFormaBtn.setVisible(true);
             wv.refrescarCabeceraOrden(); wv.aplicarFiltroGrupo(); wv.playersList.repaint();
         }));
@@ -221,15 +212,15 @@ final class WatchlistControles {
         wv.ocultarFormaBtn.setFocusable(false);
         wv.ocultarFormaBtn.setMargin(new Insets(1, 6, 1, 6));
         wv.ocultarFormaBtn.putClientProperty("JButton.buttonType", "roundRect");
-        wv.ocultarFormaBtn.setToolTipText(WatchlistView.tipOcultarForma());
+        wv.ocultarFormaBtn.setToolTipText(WatchlistPresenter.tipOcultarForma());
         wv.ocultarFormaBtn.setVisible(false);
         wv.ocultarFormaBtn.addActionListener(e -> wv.apagarForma());
         JComboBox<String> ventanaCb = new JComboBox<>(new String[]{ t("últimas 24 h", "last 24 h"), t("últimos 7 días", "last 7 days") });
         ventanaCb.setFocusable(false);
         ventanaCb.setToolTipText(t("Ventana de la forma que consulta «Ver forma»", "Window used by \u201CRecent form\u201D"));
         ventanaCb.addActionListener(e -> {
-            wv.ventanaForma = ventanaCb.getSelectedIndex() == 1 ? 24 * 7 : 24;
-            if (wv.formaVisible) { wv.refrescarCabeceraOrden(); wv.aplicarFiltroGrupo(); wv.playersList.repaint(); }   // la columna cambia de ventana al instante
+            wv.presenter.ventanaForma = ventanaCb.getSelectedIndex() == 1 ? 24 * 7 : 24;
+            if (wv.presenter.formaVisible) { wv.refrescarCabeceraOrden(); wv.aplicarFiltroGrupo(); wv.playersList.repaint(); }   // la columna cambia de ventana al instante
         });
         JPanel chips = new JPanel(new WrapLayout(FlowLayout.LEFT, 4, 2));   // envuelve a otra línea, nunca se trunca
         chips.setOpaque(false);
@@ -320,7 +311,7 @@ final class WatchlistControles {
         wv.clanEstrella.addActionListener(e -> {
             String tag = wv.clanField.getText().trim();
             if (tag.isEmpty()) return;
-            List<String> l = wv.clanesGuardados();
+            List<String> l = wv.presenter.clanesGuardados();
             if (l.removeIf(x -> x.equalsIgnoreCase(tag))) wv.status.setText(t("Clan quitado de guardados: ", "Clan removed from saved: ") + tag); else { l.add(tag); wv.status.setText(t("Clan guardado: ", "Clan saved: ") + tag); }
             wv.guardarCfg.accept("clanes_guardados", String.join(",", l));   // la misma config que lee wv.clanesGuardados()
             refrescarClanesGuardados();
@@ -353,14 +344,12 @@ final class WatchlistControles {
     private void instalarFiltroPais() {
         wv.buscaPais.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             void filtrar() {
-                String q = dev.tirador.aoe2radar.util.Texto.sinTildes(wv.buscaPais.getText().trim());
-                PaisItem prev = wv.paisActual;
+                List<PaisItem> coinciden = wv.presenter.paisesQueCoinciden(wv.buscaPais.getText());
+                PaisItem prev = wv.presenter.paisActual;
                 wv.rearmandoPais = true;
                 try {
                     wv.paisCombo.removeAllItems();
-                    for (PaisItem pi : wv.catalogoOrdenado)
-                        if (q.isEmpty() || dev.tirador.aoe2radar.util.Texto.sinTildes(pi.nombre()).contains(q) || pi.code().startsWith(q))
-                            wv.paisCombo.addItem(pi);
+                    for (PaisItem pi : coinciden) wv.paisCombo.addItem(pi);
                     if (prev != null)
                         for (int i = 0; i < wv.paisCombo.getItemCount(); i++)
                             if (wv.paisCombo.getItemAt(i).code().equals(prev.code())) { wv.paisCombo.setSelectedIndex(i); break; }
@@ -375,34 +364,21 @@ final class WatchlistControles {
         });
     }
 
-    private void fijarPais(PaisItem pi) {
-        wv.paisActual = pi;
-        guardarConfig("top_pais", pi.code());
-        if (wv.modoPais()) wv.cargarTopLadder(true);
-    }
-
-    private void refrescarCampanaBtn() {
+    void refrescarCampanaBtn() {
         if (wv.campanaBtn == null) return;
-        boolean on = wv.campanas.campanas().contains(wv.idVistaCampana());
+        boolean on = wv.presenter.campanaActiva();
         wv.campanaBtn.setSelected(on);
         wv.campanaBtn.setForeground(on ? (temaOscuroActivo ? new Color(0xff, 0xd5, 0x6a) : new Color(0xb0, 0x6a, 0x00)) : UIManager.getColor("Button.foreground"));
         wv.campanaBtn.setToolTipText(on ? t("Avisos activados para esta lista: te avisa cuando alguien de aquí entre en partida (clic para apagar)", "Alerts on for this list: you get a notice when someone here starts a game (click to turn off)")
                 : t("Activar para recibir un aviso cuando alguien de esta lista entre en partida", "Turn on to get a notice when someone in this list starts a game"));
     }
 
-    private void alternarCampana() {
-        String id = wv.idVistaCampana();
-        boolean activo = wv.campanas.alternar(id);
-        refrescarCampanaBtn();
-        wv.refrescarCampanas();
-        wv.status.setText(activo ? t("Avisos activados para «", "Alerts on for \u201C") + wv.nombreVistaCampana() + t("»: te avisaré cuando alguien entre en partida.", "\u201D: you'll get a notice when someone starts a game.") : t("Avisos apagados para esta lista.", "Alerts off for this list."));
-    }
 
     private void refrescarClanesGuardados() {
         if (wv.clanesGuardadosCombo == null) return;
         wv.rellenandoClanes = true;
         try {
-            List<String> l = wv.clanesGuardados();
+            List<String> l = wv.presenter.clanesGuardados();
             wv.clanesGuardadosCombo.removeAllItems();
             wv.clanesGuardadosCombo.addItem(l.isEmpty() ? t("(sin clanes guardados)", "(no saved clans)") : t("Guardados…", "Saved…"));
             for (String x : l) wv.clanesGuardadosCombo.addItem(x);
@@ -420,7 +396,7 @@ final class WatchlistControles {
         if (wv.delBtn != null) wv.delBtn.setEnabled(editable);
         if (wv.parPais != null) wv.parPais.setVisible(wv.modoPais());
         if (wv.parClan != null) wv.parClan.setVisible(wv.modoClan());
-        if (wv.parClanGuardados != null) wv.parClanGuardados.setVisible(wv.modoClan() && !wv.clanesGuardados().isEmpty());
+        if (wv.parClanGuardados != null) wv.parClanGuardados.setVisible(wv.modoClan() && !wv.presenter.clanesGuardados().isEmpty());
         if (wv.topNCombo != null) { wv.topNCombo.setVisible(wv.modoTop() && !wv.modoClan()); wv.rellenandoTopN = true; try { wv.topNCombo.setSelectedIndex(Math.max(0, Arrays.asList("25", "50", "100").indexOf(leerConfig("top_n", "50")))); } finally { wv.rellenandoTopN = false; } }
         refrescarCampanaBtn();
         if (wv.addJugBtn != null) wv.addJugBtn.setVisible(!wv.modoTop());   // en los tops se ficha desde la fila
