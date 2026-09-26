@@ -1,6 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuenteLadder;
 import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
@@ -38,7 +38,7 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * en la 1.1: no se ha tocado esa carrera de datos, solo se ha envuelto en una función, como en FormService).
  */
 public final class Campanas {
-    private final CompanionApi api;
+    private final FuenteLadder api;
     private final BiFunction<String, String, String> leerConfig;
     private final BiConsumer<String, String> guardarConfig;
     /** ¿Existe un grupo del usuario con ese nombre? Lo consulta normalizarVistaTodos, en cada lectura (no una
@@ -48,7 +48,7 @@ public final class Campanas {
     /** pid|matchId (o «mi|matchId») ya avisados: una campana solo avisa una vez por partida. */
     private final Set<String> avisadosClave = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    public Campanas(CompanionApi api, BiFunction<String, String, String> leerConfig, BiConsumer<String, String> guardarConfig,
+    public Campanas(FuenteLadder api, BiFunction<String, String, String> leerConfig, BiConsumer<String, String> guardarConfig,
                      Predicate<String> esGrupoDeUsuario) {
         this.api = api;
         this.leerConfig = leerConfig;
@@ -113,7 +113,7 @@ public final class Campanas {
 
     /**
      * Recalcula los jugadores de cada vista con campana: grupo → todosJugadores; ★ladder/★país → el top del
-     * ladder 1v1 (idsLeaderboard, vía CompanionApi); ★clan → miembrosClan (ConsultasLadder, ladder de sfr-data).
+     * ladder 1v1 (idsLeaderboard, vía FuenteLadder); ★clan → miembrosClan (ConsultasLadder, ladder de sfr-data).
      * Un fallo en una vista no interrumpe las demás (se anota en el log, como en la 1.1). Va a la red.
      */
     public Map<String, Set<Long>> calcularCampanaIds(Set<String> vistas, List<Player> todosJugadores) {

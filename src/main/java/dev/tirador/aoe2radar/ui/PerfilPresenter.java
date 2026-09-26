@@ -198,6 +198,7 @@ public final class PerfilPresenter {
         pantalla.hoyIniciado();
         tareas.enFondo("perfil-hoy", () -> {
             try {
+                perfiles.olvidarFicha(pid);   // la cabecera, de ahora: sin la ficha de la sesión ni la de la caché por URL (C5)
                 FichaPerfil ficha = fichaOConocida(pid);
                 pantalla.marcarVinculadasPedidas(pid);
                 int nuevas = perfiles.traerHoy(pid);

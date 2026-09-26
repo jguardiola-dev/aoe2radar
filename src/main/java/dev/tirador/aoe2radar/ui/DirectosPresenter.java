@@ -2,6 +2,7 @@ package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.TwitchService;
+import dev.tirador.aoe2radar.util.Reloj;
 
 import java.util.List;
 import java.util.Map;
@@ -40,6 +41,8 @@ public final class DirectosPresenter {
         boolean seleccionada();
         /** Una miniatura ya lista: la vista la monta en un ImageIcon y repinta la tabla. */
         void miniaturaLista(String login, TwitchService.Miniatura miniatura, long enMs);
+        /** ¿La ventana está minimizada? Entonces no se barre (nadie lo ve). Por defecto no (dobles de prueba). */
+        default boolean minimizada() { return false; }
     }
 
     private final TwitchService twitchService;
@@ -50,11 +53,24 @@ public final class DirectosPresenter {
     private volatile boolean vigilandoTwitch;
     private long ultimoTwitchMs;
 
+    /** Ritmo del barrido con la pestaña Directos a la vista (el de la 1.1) y fuera de ella (plan API de la 1.3): fuera
+     *  solo se ven las insignias TW de la watchlist, que no necesitan refrescarse cada 3 min. Los dos, × el «mando a
+     *  distancia» (twitch_mult). reiniciarThrottle (F5, conjunto nuevo) se los salta igual que antes. */
+    public static final long RITMO_EN_DIRECTOS_MS = 170_000, RITMO_FUERA_MS = 360_000;
+
+    private final Reloj reloj;
+
     public DirectosPresenter(TwitchService twitchService, Map<Long, String[]> twitchLive, Tareas tareas, Pantalla pantalla) {
+        this(twitchService, twitchLive, tareas, pantalla, Reloj.SISTEMA);
+    }
+
+    /** Como el otro, con el reloj del ritmo (los tests traen uno falso). */
+    public DirectosPresenter(TwitchService twitchService, Map<Long, String[]> twitchLive, Tareas tareas, Pantalla pantalla, Reloj reloj) {
         this.twitchService = twitchService;
         this.twitchLive = twitchLive;
         this.tareas = tareas;
         this.pantalla = pantalla;
+        this.reloj = reloj;
     }
 
     /** Fuerza el próximo vigilarTwitch() a saltarse el throttle (F5, o un conjunto de jugadores nuevo). */
@@ -62,7 +78,8 @@ public final class DirectosPresenter {
 
     /**
      * Cruza el listado global de Twitch con los jugadores visibles, con el mismo throttle y anti-solape que la 1.1
-     * (170 s × el «mando a distancia», y no relanzar si ya hay un barrido en curso). {@code visibles} se evalúa
+     * (170 s × el «mando a distancia», y no relanzar si ya hay un barrido en curso); desde la 1.3, 6 min fuera de la
+     * pestaña Directos y ninguno con la ventana minimizada (ver RITMO_FUERA_MS). {@code visibles} se evalúa
      * DESPUÉS de pasar las dos guardas, como hacía la 1.1 (leía playersModel ya dentro de vigilarTwitch, tras los
      * "return" de anti-solape y throttle): así una llamada que se descarta no paga ni el coste de mirar la lista.
      */
@@ -75,8 +92,12 @@ public final class DirectosPresenter {
      */
     public void vigilarTwitch(Supplier<List<Player>> visibles, Supplier<List<Player>> otrosVigilados) {
         if (vigilandoTwitch) return;
-        if (System.currentTimeMillis() - ultimoTwitchMs < (long) (170_000 * twitchService.multiplicador())) return;
-        ultimoTwitchMs = System.currentTimeMillis();
+        // Minimizada nadie ve ni la tabla ni las insignias TW: ni barrido ni hora apuntada, así el primer tick tras
+        // restaurarla barre ya (plan API de la 1.3).
+        if (pantalla.minimizada()) return;
+        long ritmo = pantalla.seleccionada() ? RITMO_EN_DIRECTOS_MS : RITMO_FUERA_MS;
+        if (reloj.ahoraMs() - ultimoTwitchMs < (long) (ritmo * twitchService.multiplicador())) return;
+        ultimoTwitchMs = reloj.ahoraMs();
         vigilandoTwitch = true;
         List<Player> lista = visibles.get();
         List<Player> otros = otrosVigilados.get();

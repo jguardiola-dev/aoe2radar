@@ -59,6 +59,7 @@ final class CableadoCentro {
             @Override public void estado(String texto) { v.status.setText(texto); }
             @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
             @Override public boolean seleccionada() { return v.navegador.directosBtn != null && v.navegador.directosBtn.isSelected(); }
+            @Override public boolean ventanaMinimizada() { return (v.getExtendedState() & java.awt.Frame.ICONIFIED) != 0; }
         });
         v.centroCards.add(v.directos.panel(), "directos");
         // techTree se crea AQUÍ, antes que Live now (fila 119 de DEUDA). La lambda de más abajo

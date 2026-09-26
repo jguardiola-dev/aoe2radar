@@ -1,6 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuentePartidas;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.util.Reloj;
@@ -55,7 +55,7 @@ public final class BarridoVivos {
      *  son 4 por cabeza, sin una llamada más. */
     public static final int PARTIDAS_POR_LOTE = 100;
 
-    private final CompanionApi api;
+    private final FuentePartidas api;
     private final Reloj reloj;
     private final BiFunction<Match, Long, String> resumen;
     private final Map<Long, int[]> eloAyer;
@@ -63,7 +63,7 @@ public final class BarridoVivos {
     private final long pausaMs;
     private final int porPagina;
 
-    public BarridoVivos(CompanionApi api, Reloj reloj, BiFunction<Match, Long, String> resumen, Map<Long, int[]> eloAyer,
+    public BarridoVivos(FuentePartidas api, Reloj reloj, BiFunction<Match, Long, String> resumen, Map<Long, int[]> eloAyer,
                         LongConsumer pausa, long pausaMs, int porPagina) {
         this.api = api; this.reloj = reloj; this.resumen = resumen; this.eloAyer = eloAyer;
         this.pausa = pausa; this.pausaMs = pausaMs; this.porPagina = porPagina;

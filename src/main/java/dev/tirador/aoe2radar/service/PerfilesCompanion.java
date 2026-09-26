@@ -81,12 +81,14 @@ public final class PerfilesCompanion implements ProfileService {
 
     @Override public FichaPerfil fichaConocida(long pid) { return fichas.ultimo(pid); }
 
+    @Override public void olvidarFicha(long pid) { fichas.caducar(pid); api.invalidarPerfil(pid); }
+
     @Override public Integer elo1v1(long pid) { return elo1v1Leido(pid).elo(); }   // null si no tiene o si falla, como la 1.1
 
     @Override public Elo1v1 elo1v1Leido(long pid) {
         avisarSiUi("ProfileService.elo1v1");
         try {   // la vía del perfil: la misma que usa el hover, probada
-            Perfil pf = api.perfil(pid);
+            Perfil pf = api.perfilFresco(pid);   // ELO actual: nunca de la caché por URL (tras una partida, EloSesion lo vuelve a pedir)
             aprenderCanal.accept(pid, pf.canal());
             for (Perfil.Ladder lb : pf.ladders()) {
                 String lid = String.valueOf(lb.id());

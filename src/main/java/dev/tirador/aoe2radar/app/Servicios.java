@@ -135,12 +135,14 @@ public class Servicios {
     public static final ControlService CONTROL_SERVICE = new ControlService(TRANSPORTE_CONTROL, TRANSPORTE);
     /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
     public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
-    /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
-    public static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
+    /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto.
+     *  Con la caché por URL (1.3): fichas /profiles 10 min y páginas del ladder 14 min; lo que debe ser de ahora (ELO 1v1,
+     *  hover, recarga forzada del top) va por perfilFresco/clasificacionFresca. /matches, búsqueda y Twitch, nunca. */
+    public static final CompanionApi COMPANION = CompanionApi.conCache(API_CLIENTE, Reloj.SISTEMA);
     /** Las reglas del directo que necesitan la API (ver service.LiveService). */
     public static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);
     /** Los tops de la watchlist: red, decisión y disco de cargarTopLadder/cargarTopClan/vigilarTop (ver service.TopLadderService). */
-    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
+    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
     public static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
             new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
@@ -153,7 +155,7 @@ public class Servicios {
      *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
     public static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
     /** El barrido de Twitch y sus miniaturas (ver service.TwitchService); usa dormir() entre las llamadas una a una. */
-    public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms));
+    public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms), pid -> VIVO.jugando(pid), Reloj.SISTEMA);
 
     public static void dormir(long ms) {
         long fin = System.currentTimeMillis() + ms;

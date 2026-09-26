@@ -68,6 +68,8 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
         void abrirUrl(String url);
         /** ¿Está esta pestaña seleccionada ahora mismo? (directosBtn.isSelected() de la 1.1). */
         boolean seleccionada();
+        /** ¿La ventana principal está minimizada (iconificada)? Entonces no se barre Twitch. */
+        boolean ventanaMinimizada();
     }
 
     private final Anfitrion anfitrion;
@@ -110,6 +112,8 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
     @Override public void repintarLista() { anfitrion.repintarLista(); }
 
     @Override public boolean seleccionada() { return anfitrion.seleccionada(); }
+
+    @Override public boolean minimizada() { return anfitrion.ventanaMinimizada(); }
 
     @Override public void miniaturaLista(String login, TwitchService.Miniatura m, long enMs) {
         BufferedImage img = new BufferedImage(m.ancho(), m.alto(), BufferedImage.TYPE_INT_ARGB);

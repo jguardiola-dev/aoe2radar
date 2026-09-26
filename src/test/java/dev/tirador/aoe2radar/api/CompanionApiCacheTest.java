@@ -72,7 +72,7 @@ class CompanionApiCacheTest {
         assertEquals(10 * 60_000L, CompanionApi.TTL_PERFIL_MS);
     }
 
-    @Test void elLadderCaducaALosQuinceMinutos() throws Exception {
+    @Test void elLadderCaducaALosCatorceMinutos() throws Exception {
         companion.clasificacion("rm_1v1", 1, 100, null);
         reloj.avanzar(CompanionApi.TTL_LADDER_MS - 1);
         companion.clasificacion("rm_1v1", 1, 100, null);
@@ -80,7 +80,7 @@ class CompanionApiCacheTest {
         reloj.avanzar(1);
         companion.clasificacion("rm_1v1", 1, 100, null);
         assertEquals(2, peticiones());
-        assertEquals(15 * 60_000L, CompanionApi.TTL_LADDER_MS);
+        assertEquals(14 * 60_000L, CompanionApi.TTL_LADDER_MS);   // uno menos que el ritmo de top y campanas (15)
     }
 
     @Test void noGuardaErrores() throws Exception {
@@ -166,5 +166,21 @@ class CompanionApiCacheTest {
         companion.twitchCanal("x"); companion.twitchCanal("x");
         assertEquals(10, peticiones(), "tiempo real: siempre a la red");
         assertEquals(0, companion.aciertosCache());
+    }
+
+    /** Un acierto no pasa por el freno (que es donde se atiende a Detener): tiene que mirar él la bandera. */
+    @Test void unAciertoRespetaDetener() throws Exception {
+        boolean[] detenida = { false };
+        CompanionApi c = CompanionApi.conCache(new ApiClient(new ApiClientTest.ThrottleEspia(), red, s -> { }, () -> detenida[0]), reloj);
+        c.perfil(1L);
+        c.clasificacion("rm_1v1", 1, 100, null);
+        detenida[0] = true;
+        InterruptedException e = assertThrows(InterruptedException.class, () -> c.perfil(1L));
+        assertEquals("detenido", e.getMessage());
+        assertThrows(InterruptedException.class, () -> c.clasificacion("rm_1v1", 1, 100, null));
+        assertEquals(2, peticiones(), "no se fue a la red: se cortó antes de devolver lo guardado");
+        detenida[0] = false;
+        c.perfil(1L);
+        assertEquals(2, peticiones(), "sin Detener, el acierto vuelve a servir");
     }
 }

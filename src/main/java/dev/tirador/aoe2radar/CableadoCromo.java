@@ -61,6 +61,7 @@ final class CableadoCromo {
         VentanaPrincipalAjustes.configurar(v, v.logo, new VentanaPrincipalAjustes.Anfitrion() {
             @Override public void alCerrar() {
                 VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar();
+                Servicios.API_CLIENTE.volcarLlamadas();   // la cuenta de llamadas desde el último volcado horario, al log (sin red)
                 Paises.guardarAlCerrar(2000);   // F13 (1.3): los países del último minuto; retiene el cierre 2 s como mucho
             }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
@@ -254,7 +255,7 @@ final class CableadoCromo {
                 for (Player p : v.watchlist.topLadderSnapshot()) ids.add(p.id());
                 return ids;
             }
-            @Override public Set<Long> idsSocketExtra() { return v.liveNow != null ? v.liveNow.socketExtra : Set.of(); }
+            @Override public Set<Long> idsSocketExtra() { return v.liveNow != null ? v.liveNow.idsSocket() : Set.of(); }   // sin el top de Live now si lleva 5 min cerrada
             @Override public void liveEvento(long pid, Match m, boolean terminada) { if (v.liveNow != null) v.liveNow.liveEvento(pid, m, terminada); }
             @Override public void liveTerminada(long pid, long matchId, Match fin) { if (v.liveNow != null) v.liveNow.liveTerminada(pid, matchId, fin); }
             @Override public List<Long> jugadoresLiveNow(long matchId) { return v.liveNow != null ? v.liveNow.jugadoresEnPartida(matchId) : List.of(); }
