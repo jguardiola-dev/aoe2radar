@@ -50,13 +50,6 @@ final class BusquedasPartidas {
 
     BusquedasPartidas(PartidasView vista) { this.vista = vista; }
 
-    /** «36 h», «3 días», «2 semanas»: la ventana en la unidad que se lee mejor. */
-    static String textoVentana(int horas) {
-        if (horas % (24 * 7) == 0 && horas >= 24 * 7) { int w = horas / (24 * 7); return w + (w == 1 ? t(" semana", " week") : t(" semanas", " weeks")); }
-        if (horas % 24 == 0 && horas >= 48) return (horas / 24) + t(" días", " days");
-        return horas + " h";
-    }
-
     public void buscarAleatorias() { buscarAleatorias(false); }
 
     public void buscarAleatorias(boolean continuar) {
@@ -143,14 +136,10 @@ final class BusquedasPartidas {
                     log("azar #" + miSerial + ": done, " + res.size() + " partidas, stop=" + vista.anfitrion.detenido());
                     vista.anfitrion.aprenderCatalogos(res);
                     if (vista.anfitrion.detenido()) {
-                        vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped.")
-                                + (res.isEmpty() ? "" : "  " + res.size()
-                                   + t(" encontradas hasta el corte, aplicadas.", " found before the cut, applied.")));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeAzarDetenido(res.size()));
                         if (res.isEmpty()) return;
                     } else if (res.isEmpty()) {
-                        vista.anfitrion.estado(t("Nada en ", "Nothing in ") + lo + "–" + hi
-                                + t(" en las últimas ", " in the last ") + hours
-                                + t(" h. Detalle del muestreo en descargas.log.", " h. Sampling details in descargas.log."));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeAzarNada(lo, hi, hours));
                         return;
                     }
                     List<Player> refs = new ArrayList<>();
@@ -172,15 +161,7 @@ final class BusquedasPartidas {
                     vista.enlaceWatchlist.limpiarSeleccion();
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    String extra = "";
-                    if (res.size() < 10 && vista.azarService.tramoAgotado())
-                        extra = t(" No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
-                                  " Nothing else with those filters: whole bracket checked (widen hours or range).");
-                    else if (res.size() < 10)
-                        extra = t(" Repite la búsqueda: continúa donde lo dejó.",
-                                  " Run it again: it picks up where it left off.");
-                    vista.anfitrion.estado(res.size() + t(" partidas 1v1 al azar, ELO ", " random 1v1s, ELO ") + lo + "–" + hi
-                            + t(", últimas ", ", last ") + hours + " h." + extra);
+                    vista.anfitrion.estado(PartidasPresenter.mensajeAzar(res.size(), lo, hi, hours, vista.azarService::tramoAgotado));
                 } catch (Exception ex) {
                     vista.anfitrion.estado(vista.anfitrion.detenido() ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("al azar por ELO: ERROR " + causa(ex));
@@ -217,8 +198,7 @@ final class BusquedasPartidas {
                     List<Match> res = get();
                     vista.anfitrion.aprenderCatalogos(res);
                     if (res.isEmpty()) {
-                        vista.anfitrion.estado(t("Sin partidas para Guess the ELO en las últimas ", "No games for Guess the ELO in the last ") + hours
-                                + t(" h. Detalle en descargas.log.", " h. Details in descargas.log."));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeGteNada(hours));
                         return;
                     }
                     vista.all.clear();
@@ -226,9 +206,7 @@ final class BusquedasPartidas {
                     vista.enlaceWatchlist.limpiarSeleccion();
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(res.size() + t(" partidas Guess the ELO (archivos: «Guess the ELO ", " Guess the ELO games (files: “Guess the ELO ")
-                            + res.get(0).gte + t("»–«", "”–“") + res.get(res.size() - 1).gte
-                            + t("»). Adivina y comprueba con «Revelar resultado…».", "”). Guess, then check with “Reveal result…”."));
+                    vista.anfitrion.estado(PartidasPresenter.mensajeGte(res));
                 } catch (Exception ex) {
                     vista.anfitrion.estado(vista.anfitrion.detenido() ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("Guess the ELO: ERROR " + causa(ex));
@@ -387,15 +365,7 @@ final class BusquedasPartidas {
                     vista.all.addAll(res);
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(vista.view.size() + t(" de ", " of ") + vista.all.size() + t(" partidas en las últimas ", " games in the last ") + textoVentana(hours) + "."
-                            + (topeAlcanzado
-                                ? "  \u26A0 " + t("Tope de la búsqueda alcanzado: puede faltar historial antiguo — acorta la ventana o filtra por modo.",
-                                                  "Search cap reached: older history may be missing — shorten the window or filter by mode.")
-                                : "")
-                            + (fallosFetch > 0
-                                ? "  \u26A0 " + fallosFetch + t(" jugador(es) SIN RESPUESTA del servicio (¿429/caído?): sus partidas faltan — reintenta en un minuto.",
-                                                              " player(s) got NO RESPONSE from the service (429/down?): their games are missing — retry in a minute.")
-                                : ""));
+                    vista.anfitrion.estado(PartidasPresenter.mensajeBusqueda(vista.view.size(), vista.all.size(), hours, topeAlcanzado, fallosFetch));
                 } catch (Exception ex) {
                     vista.anfitrion.estado("Error: " + causa(ex));
                 }

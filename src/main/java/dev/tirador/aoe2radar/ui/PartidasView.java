@@ -105,7 +105,7 @@ public final class PartidasView {
     }
 
     /** Lo que Partidas necesita del resto de la ventana (cromo, perfil, red) que no es la Watchlist. */
-    public interface Anfitrion {
+    public interface Anfitrion extends PartidasPresenter.Entorno {
         void estado(String texto);
         void mostrarDirectos(boolean mostrar);
         void refrescarDirectos();
@@ -575,17 +575,9 @@ public final class PartidasView {
     /** El botón principal dice a quién va a buscar. */
     public void actualizarTextoBuscar() {
         if (fetchWorker != null) return;
-        String quien;
-        objetivoEtiqueta = null;
-        if (enlaceWatchlist.invitado() != null) quien = anfitrion.nombreVisible(enlaceWatchlist.invitado().id(), enlaceWatchlist.invitado().name());
-        else if (anfitrion.perfilAbiertoPid() > 0 && enlaceWatchlist.seleccionSize() == 0 && (anfitrion.perfilAbierto() || enlaceWatchlist.modoTop())) { quien = anfitrion.perfilNombreAbierto(); objetivoEtiqueta = new Player(anfitrion.perfilAbiertoPid(), anfitrion.perfilNombreAbierto(), ""); }
-        else {
-            int n = enlaceWatchlist.seleccionSize();
-            if (n > 0) quien = n + t(" seleccionado" + (n > 1 ? "s" : ""), " selected");
-            else if (enlaceWatchlist.modoTop()) quien = t("selecciona a alguien", "select someone");
-            else quien = t("todo el grupo", "whole group");
-        }
-        fetchBtn.setText(t("Buscar partidas", "Search games") + " (" + quien + ")");
+        PartidasPresenter.QuienBusca quien = PartidasPresenter.quienBusca(enlaceWatchlist, anfitrion);
+        objetivoEtiqueta = quien.objetivo();
+        fetchBtn.setText(quien.textoBoton());
         if (guiaBtn != null) guiaBtn.setText(fetchBtn.getText());
         enlaceWatchlist.actualizarTextoForma();
     }

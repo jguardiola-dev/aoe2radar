@@ -183,8 +183,7 @@ final class DescargasPartidas {
             @Override protected void done() {
                 try {
                     Copia c = get();
-                    vista.anfitrion.estado(c.ok() + t(" recs enviadas al juego", " recs sent to the game") +
-                            (c.yaEstaban() > 0 ? " (" + c.yaEstaban() + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
+                    vista.anfitrion.estado(PartidasPresenter.mensajeEnvio(c.ok(), c.yaEstaban()));
                 } catch (Exception ex) {
                     log("enviar al juego: ERROR " + causa(ex));
                     vista.anfitrion.estado("Error: " + causa(ex));
@@ -303,10 +302,7 @@ final class DescargasPartidas {
                 final int n = ok, tot = objetivo.size(), cop = copiadas;
                 final boolean parada = vista.anfitrion.detenido();
                 SwingUtilities.invokeLater(() ->
-                        vista.anfitrion.estado((parada ? t("Detenido. ", "Stopped. ") : "")
-                                + n + "/" + tot + t(" recs guardadas en ", " recs saved to ") + vista.anfitrion.recsDir()
-                                + (cop > 0 ? "  ·  " + cop + t(" al juego", " to the game") : "")
-                                + (n < tot ? t("  ·  detalle en descargas.log", "  ·  details in descargas.log") : "")));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeDescarga(parada, n, tot, vista.anfitrion.recsDir(), cop)));
                 return null;
             }
             @Override protected void done() {

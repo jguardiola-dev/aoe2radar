@@ -313,4 +313,90 @@ class PartidasPresenterTest {
         assertEquals(List.of("Rival1=1", "Rival12=1"), textos(PartidasPresenter.sugerenciasRival(all, "rival1", m -> m.refId = 10, (pid, n) -> n)),
                 "exacta pero no única: se sugieren las dos");
     }
+
+    // ----- a quién busca «Buscar partidas» -----
+
+    static final class EntornoFalso implements PartidasPresenter.Entorno {
+        long pid; boolean abierto; String nombre = "";
+        @Override public String nombreVisible(long p, String n) { return n + "*"; }
+        @Override public long perfilAbiertoPid() { return pid; }
+        @Override public boolean perfilAbierto() { return abierto; }
+        @Override public String perfilNombreAbierto() { return nombre; }
+    }
+
+    @Test void quienBusca_todasLasRamas() {
+        WatchlistFalsa w = new WatchlistFalsa();
+        EntornoFalso e = new EntornoFalso();
+        assertEquals(new PartidasPresenter.QuienBusca("Buscar partidas (todo el grupo)", null), PartidasPresenter.quienBusca(w, e));
+        w.modoTop = true;
+        assertEquals("Buscar partidas (selecciona a alguien)", PartidasPresenter.quienBusca(w, e).textoBoton());
+        e.pid = 55; e.nombre = "Zed";
+        assertEquals(new PartidasPresenter.QuienBusca("Buscar partidas (Zed)", new Player(55, "Zed", "")), PartidasPresenter.quienBusca(w, e),
+                "perfil sin abrir pero watchlist en ★: el del perfil");
+        w.modoTop = false;
+        assertEquals("Buscar partidas (todo el grupo)", PartidasPresenter.quienBusca(w, e).textoBoton());
+        e.abierto = true;
+        assertEquals(new Player(55, "Zed", ""), PartidasPresenter.quienBusca(w, e).objetivo());
+        w.seleccion.add(new Player(1, "a", "G"));
+        assertEquals(new PartidasPresenter.QuienBusca("Buscar partidas (1 seleccionado)", null), PartidasPresenter.quienBusca(w, e));
+        w.seleccion.add(new Player(2, "b", "G"));
+        assertEquals("Buscar partidas (2 seleccionados)", PartidasPresenter.quienBusca(w, e).textoBoton());
+        w.invitado = new Player(9, "Inv", "G");
+        assertEquals(new PartidasPresenter.QuienBusca("Buscar partidas (Inv*)", null), PartidasPresenter.quienBusca(w, e), "el invitado, con su nombre visible");
+        IDIOMA = "en";
+        w.invitado = null;
+        assertEquals("Search games (2 selected)", PartidasPresenter.quienBusca(w, e).textoBoton());
+    }
+
+    // ----- mensajes de estado -----
+
+    @Test void textoVentana_enLaUnidadQueSeLeeMejor() {
+        assertEquals("24 h", PartidasPresenter.textoVentana(24));
+        assertEquals("36 h", PartidasPresenter.textoVentana(36));
+        assertEquals("2 días", PartidasPresenter.textoVentana(48));
+        assertEquals("1 semana", PartidasPresenter.textoVentana(168));
+        assertEquals("2 semanas", PartidasPresenter.textoVentana(336));
+        assertEquals("8 días", PartidasPresenter.textoVentana(192));
+    }
+
+    @Test void mensajeBusqueda_conTopeYFallos() {
+        assertEquals("3 de 4 partidas en las últimas 2 días.", PartidasPresenter.mensajeBusqueda(3, 4, 48, false, 0));
+        assertEquals("3 de 4 partidas en las últimas 24 h.  ⚠ Tope de la búsqueda alcanzado: puede faltar historial antiguo — acorta la ventana o filtra por modo.",
+                PartidasPresenter.mensajeBusqueda(3, 4, 24, true, 0));
+        assertEquals("3 de 4 partidas en las últimas 24 h.  ⚠ 2 jugador(es) SIN RESPUESTA del servicio (¿429/caído?): sus partidas faltan — reintenta en un minuto.",
+                PartidasPresenter.mensajeBusqueda(3, 4, 24, false, 2));
+        assertTrue(PartidasPresenter.mensajeBusqueda(3, 4, 24, true, 1).matches(".*Tope.*\u26A0 1 jugador.*"));
+    }
+
+    @Test void mensajesDelAzar() {
+        assertEquals("Búsqueda detenida.", PartidasPresenter.mensajeAzarDetenido(0));
+        assertEquals("Búsqueda detenida.  4 encontradas hasta el corte, aplicadas.", PartidasPresenter.mensajeAzarDetenido(4));
+        assertEquals("Nada en 1800–1900 en las últimas 36 h. Detalle del muestreo en descargas.log.", PartidasPresenter.mensajeAzarNada(1800, 1900, 36));
+        assertEquals("3 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h. Repite la búsqueda: continúa donde lo dejó.",
+                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, () -> false));
+        assertEquals("3 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h. No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
+                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, () -> true));
+        int[] consultas = { 0 };
+        assertEquals("10 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h.",
+                PartidasPresenter.mensajeAzar(10, 1800, 1900, 36, () -> { consultas[0]++; return true; }));
+        assertEquals(0, consultas[0], "con 10 no se pregunta si el tramo se agotó");
+    }
+
+    @Test void mensajesDeGuessTheElo() {
+        Match a = partida(1), b = partida(2), c = partida(3);
+        a.gte = 3; b.gte = 5; c.gte = 7;
+        assertEquals("3 partidas Guess the ELO (archivos: «Guess the ELO 3»–«7»). Adivina y comprueba con «Revelar resultado…».",
+                PartidasPresenter.mensajeGte(List.of(a, b, c)));
+        assertEquals("Sin partidas para Guess the ELO en las últimas 48 h. Detalle en descargas.log.", PartidasPresenter.mensajeGteNada(48));
+    }
+
+    @Test void mensajesDeDescargaYEnvio() {
+        java.nio.file.Path dir = java.nio.file.Path.of("recs");
+        assertEquals("2/2 recs guardadas en recs", PartidasPresenter.mensajeDescarga(false, 2, 2, dir, 0));
+        assertEquals("Detenido. 1/3 recs guardadas en recs  ·  1 al juego  ·  detalle en descargas.log", PartidasPresenter.mensajeDescarga(true, 1, 3, dir, 1));
+        assertEquals("2 recs enviadas al juego.", PartidasPresenter.mensajeEnvio(2, 0));
+        assertEquals("2 recs enviadas al juego (1 ya estaban, actualizadas).", PartidasPresenter.mensajeEnvio(2, 1));
+        IDIOMA = "en";
+        assertEquals("2 recs sent to the game (1 were already there, refreshed).", PartidasPresenter.mensajeEnvio(2, 1));
+    }
 }
