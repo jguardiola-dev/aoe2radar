@@ -599,9 +599,9 @@ public final class CivStatsView {
      * Qué filas de matchups pinta la matriz: las del mapa pedido si hay alguna de ese modo y tramo (datos de
      * sfr-data 1.5.4 o posterior y mapa con partidas suficientes); si no, "*" (el agregado de todos los mapas).
      */
-    static String mapaMatriz(List<Matchup> matchups, String modo, String mapa, java.util.function.Predicate<String> tramoOk) {
+    static String mapaMatriz(Map<String, List<Matchup>> porMapa, String modo, String mapa, java.util.function.Predicate<String> tramoOk) {
         if (mapa == null || "*".equals(mapa)) return "*";
-        for (Matchup mu : matchups) if (mapa.equals(mu.mapa()) && mu.modo().equals(modo) && tramoOk.test(mu.tramo())) return mapa;
+        for (Matchup mu : porMapa.getOrDefault(mapa, List.of())) if (mu.modo().equals(modo) && tramoOk.test(mu.tramo())) return mapa;
         return "*";
     }
 
@@ -817,9 +817,8 @@ public final class CivStatsView {
             List<String> cs = new ArrayList<>();
             for (CivAgg a : orden) cs.add(a.civ());
             Map<String, int[]> m = new HashMap<>();
-            String mapa = mapaMatriz(v.matchups(), filtroStats.modo(), filtroStats.mapa(), tr -> stats.tramoEnRango(tr, v.tramos(), filtroStats.tramo()));
-            for (Matchup mu : v.matchups()) {
-                if (!mu.mapa().equals(mapa)) continue;
+            String mapa = mapaMatriz(v.matchupsPorMapa(), filtroStats.modo(), filtroStats.mapa(), tr -> stats.tramoEnRango(tr, v.tramos(), filtroStats.tramo()));
+            for (Matchup mu : v.matchupsPorMapa().getOrDefault(mapa, List.of())) {   // solo las filas de ese mapa ("*" = el agregado)
                 if (!mu.modo().equals(filtroStats.modo())) continue;
                 if (!stats.tramoEnRango(mu.tramo(), v.tramos(), filtroStats.tramo())) continue;
                 int[] ab = m.computeIfAbsent(mu.ca() + "|" + mu.cb(), k -> new int[2]); ab[0] += mu.n(); ab[1] += mu.wa();

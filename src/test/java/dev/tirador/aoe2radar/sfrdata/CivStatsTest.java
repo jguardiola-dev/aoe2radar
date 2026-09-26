@@ -75,6 +75,11 @@ class CivStatsTest {
                 new Matchup("rm_1v1", "arabia", "0-1000", "aztecs", "britons", 7, 5),
                 new Matchup("rm_1v1", "arena", "0-1000", "aztecs", "britons", 3, 1)), v.matchups());
         assertSame(v.matchups().get(1).ca(), v.matchups().get(2).ca());
+        // agrupados por mapa al crear la ventana: las mismas filas, sin recorrer la lista entera en cada filtro
+        assertEquals(List.of(v.matchups().get(0)), v.matchupsPorMapa().get("*"));
+        assertEquals(List.of(v.matchups().get(1)), v.matchupsPorMapa().get("arabia"));
+        assertEquals(List.of(v.matchups().get(2)), v.matchupsPorMapa().get("arena"));
+        assertEquals(3, v.matchupsPorMapa().size());
     }
 
     @Test void dosLlamadoresALaVezNoSePisan(@TempDir Path dirA, @TempDir Path dirB) throws Exception {
