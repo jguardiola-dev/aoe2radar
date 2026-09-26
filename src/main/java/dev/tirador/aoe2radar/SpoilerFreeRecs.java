@@ -52,7 +52,6 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Matchup;
 import dev.tirador.aoe2radar.model.PaginaPartidas;
-import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Player;
@@ -382,12 +381,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
     /** Quién está en partida ahora (ver service.EstadoVivo): un solo dueño para el socket, los barridos y la UI. */
     static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
-    /** Fuerza la carga de la clase ui.WatchlistView AQUÍ, en la inicialización estática de SpoilerFreeRecs — el
-     *  mismo punto relativo donde TOP_LADDER/TOP_PAIS/TOP_CLAN/PAISES vivían en la 1.1 — para que esos static
-     *  se evalúen ANTES de que main() fije IDIOMA (por eso salen siempre en español, aunque el sistema esté en
-     *  inglés). Es una rareza de orden de carga ya existente en la 1.1; decisión de Opus: conservarla tal cual
-     *  al sacar la Watchlist, no corregirla de paso. Ver docs/DEUDA.md. */
-    static final PaisItem[] PAISES = dev.tirador.aoe2radar.ui.WatchlistView.PAISES;
     javax.swing.Timer vigilante;      // barrido periódico del «en directo» (nunca del ELO)
     final JSpinner hoursSpinner = new JSpinner(new SpinnerNumberModel(
             Math.min(24, Integer.parseInt(leerConfig("ventana_n", leerConfig("horas", "24")))), 1, 24, 1));
@@ -1473,7 +1466,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public boolean seleccionada() { return directosBtn != null && directosBtn.isSelected(); }
         });
         centroCards.add(directos.panel(), "directos");
-        liveNow = new LiveNowView(campanas, LIVE, List.of(WatchlistView.PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
+        liveNow = new LiveNowView(campanas, LIVE, List.of(watchlist.PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
             @Override public List<String> clanesGuardados() { return watchlist.clanesGuardados(); }
             @Override public String paisSel() { return watchlist.paisSel(); }
             @Override public String clanBuscado() { return watchlist.clanBuscado(); }

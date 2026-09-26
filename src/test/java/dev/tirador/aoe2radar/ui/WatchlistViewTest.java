@@ -9,6 +9,7 @@ import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.PaginaPartidas;
+import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Player;
@@ -21,7 +22,9 @@ import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.TopLadderService;
+import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.RelojFalso;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -29,6 +32,7 @@ import javax.swing.DefaultListModel;
 import javax.swing.JLabel;
 import javax.swing.JList;
 import javax.swing.JProgressBar;
+import java.nio.file.Files;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -39,6 +43,7 @@ import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongFunction;
 
+import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -182,7 +187,15 @@ class WatchlistViewTest {
     Campanas campanas;
     WatchlistView watchlist;
 
+    /** TOP_PAIS/TOP_CLAN/PAISES se calculan en el constructor de WatchlistView (arreglo de fase 4: antes eran
+     *  "static final" y salían siempre en español, ver docs/DEUDA.md), así que hay que fijar I18n.IDIOMA
+     *  ANTES de construir. Por eso "es" se fija aquí mismo, no en un @BeforeEach aparte (el orden entre dos
+     *  @BeforeEach de una misma clase no está garantizado). */
+    String idiomaPrevio;
+
     @BeforeEach void crear() {
+        idiomaPrevio = IDIOMA;
+        IDIOMA = "es";
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
         TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
@@ -231,6 +244,131 @@ class WatchlistViewTest {
                 todosJugadores, playersModel, playersList, eloWatch, gamesWatch, new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
                 java.nio.file.Path.of("players_test.txt"), java.nio.file.Path.of("top_cache_test.txt"), 300L, 50);
+    }
+
+    @AfterEach void restaurar() {
+        IDIOMA = idiomaPrevio;
+        // config.properties: util.Config lee/escribe un fichero real (no está inyectado); los tests de
+        // grupo_activo lo tocan a propósito, así que se borra aquí para no dejar rastro entre tests.
+        try { Files.deleteIfExists(Config.CONFIG_FILE); } catch (Exception ignored) { }
+    }
+
+    /**
+     * Una WatchlistView nueva e independiente de "watchlist" (el @BeforeEach), para los tests que necesitan
+     * fijar I18n.IDIOMA justo antes de construir: TOP_PAIS, TOP_CLAN y PAISES se calculan en el constructor
+     * (arreglo de fase 4, ver docs/DEUDA.md), así que reutilizar "watchlist" no serviría para probar el otro
+     * idioma. Dobles nuevos y ficheros de test distintos: no comparte estado con "watchlist".
+     */
+    private WatchlistView nuevaInstancia() {
+        Transporte redNunca = new TransporteNuncaLlamado();
+        CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
+        TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
+        Campanas camp = new Campanas(companion, (k, def) -> def, (k, v) -> { });
+        BarridoVivos barridoVivos = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 300, 50);
+        EloSesion eloSesion = new EloSesion(EstadoVivo.SISTEMA, new RelojFalso(), Duration.ofMinutes(6));
+        AnotacionesService anotaciones = new AnotacionesService(new HashMap<>(), new HashMap<>(), (k, v) -> { });
+        DialogosJugador dialogos = new DialogosJugador(null, anotaciones, new ProfileServiceFalso(),
+                new DialogosJugador.RedSteam() {
+                    @Override public String steamId(long pid) { return ""; }
+                    @Override public List<String[]> alias(String steamId) { return List.of(); }
+                },
+                new DialogosJugador.Anfitrion() {
+                    @Override public void repintarLista() { }
+                    @Override public void refrescarAlturas() { }
+                    @Override public void refrescarTabla() { }
+                    @Override public void ajustarColumnasTabla() { }
+                    @Override public void actualizarControles() { }
+                    @Override public void refrescarSujetos() { }
+                    @Override public void mostrarEstado(String texto) { }
+                    @Override public boolean enWatchlist(long pid) { return false; }
+                    @Override public void ponerEloWatch(long pid, int elo) { }
+                    @Override public Set<String> gruposDisponibles() { return Set.of(); }
+                    @Override public String grupoActivo() { return null; }
+                    @Override public void agregarJugador(long pid, String nombre, String grupo) { }
+                    @Override public void guardarJugadores() { }
+                    @Override public void reconstruirGrupos() { }
+                    @Override public void marcarFamiliaVinculada(Set<Long> familia) { }
+                    @Override public void aplicarFiltro() { }
+                    @Override public void refrescarWatchlist() { }
+                    @Override public void pausaCortesia() { }
+                });
+        return new WatchlistView(null, new ProfileServiceFalso(), new BusquedaFalsa(), topLadderService,
+                new FormServiceFalso(), camp, barridoVivos, eloSesion,
+                new MenusFalso(), dialogos, new NavegacionFalsa(),
+                Tareas.SWING, new EnlaceFalso(), new AnfitrionFalso(),
+                new ArrayList<>(), new DefaultListModel<>(), new JList<>(new DefaultListModel<>()),
+                new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
+                new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
+                java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50);
+    }
+
+    // ===== idioma: TOP_PAIS/TOP_CLAN/PAISES tras fijar I18n.IDIOMA (bug resuelto en fase 4) ====================
+
+    @Test void idiomaIngles_textosDeTopEnIngles() {
+        IDIOMA = "en";
+        WatchlistView w = nuevaInstancia();
+        w.grupoCombo.addItem("★ Country top");
+        sinListeners(() -> w.grupoCombo.setSelectedItem("★ Country top"), w.grupoCombo);
+        assertTrue(w.modoPais(), "con IDIOMA=en, el item del combo debe ser el texto inglés, no el español");
+        w.grupoCombo.addItem("★ Clan top");
+        sinListeners(() -> w.grupoCombo.setSelectedItem("★ Clan top"), w.grupoCombo);
+        assertTrue(w.modoClan());
+    }
+
+    @Test void idiomaEspanol_textosDeTopEnEspanol() {
+        IDIOMA = "es";
+        WatchlistView w = nuevaInstancia();
+        w.grupoCombo.addItem("★ Top país");
+        sinListeners(() -> w.grupoCombo.setSelectedItem("★ Top país"), w.grupoCombo);
+        assertTrue(w.modoPais(), "con IDIOMA=es, el item del combo debe ser el texto español, no el inglés");
+    }
+
+    @Test void catalogoPaises_ingles_nombreYOrdenColator() {
+        IDIOMA = "en";
+        WatchlistView w = nuevaInstancia();
+        boolean encontrado = false;
+        for (PaisItem pi : w.PAISES) if (pi.code().equals("es")) { assertEquals("Spain", pi.nombre()); encontrado = true; }
+        assertTrue(encontrado, "el catálogo debe incluir España (code \"es\")");
+        java.text.Collator col = java.text.Collator.getInstance(java.util.Locale.forLanguageTag("en"));
+        for (int i = 1; i < w.PAISES.length; i++)
+            assertTrue(col.compare(w.PAISES[i - 1].nombre(), w.PAISES[i].nombre()) <= 0,
+                    "fuera de orden (collator inglés): " + w.PAISES[i - 1].nombre() + " / " + w.PAISES[i].nombre());
+    }
+
+    @Test void catalogoPaises_espanol_nombreYOrdenColator() {
+        IDIOMA = "es";
+        WatchlistView w = nuevaInstancia();
+        boolean encontrado = false;
+        for (PaisItem pi : w.PAISES) if (pi.code().equals("es")) { assertEquals("España", pi.nombre()); encontrado = true; }
+        assertTrue(encontrado, "el catálogo debe incluir España (code \"es\")");
+        java.text.Collator col = java.text.Collator.getInstance(java.util.Locale.forLanguageTag("es"));
+        for (int i = 1; i < w.PAISES.length; i++)
+            assertTrue(col.compare(w.PAISES[i - 1].nombre(), w.PAISES[i].nombre()) <= 0,
+                    "fuera de orden (collator español): " + w.PAISES[i - 1].nombre() + " / " + w.PAISES[i].nombre());
+    }
+
+    @Test void grupoActivoGuardadoEnEspanol_appEnIngles_seleccionaTopPais() {
+        Config.guardarConfig("grupo_activo", "★ Top país");
+        IDIOMA = "en";
+        WatchlistView w = nuevaInstancia();
+        w.rebuildGrupos();
+        assertTrue(w.modoPais(), "el \"★ Top país\" guardado en español debe reconocerse con la app en inglés");
+    }
+
+    @Test void grupoActivoGuardadoEnIngles_appEnEspanol_seleccionaTopClan() {
+        Config.guardarConfig("grupo_activo", "★ Clan top");
+        IDIOMA = "es";
+        WatchlistView w = nuevaInstancia();
+        w.rebuildGrupos();
+        assertTrue(w.modoClan(), "el \"★ Clan top\" guardado en inglés debe reconocerse con la app en español");
+    }
+
+    @Test void grupoActivoGuardadoComoAll_appEnEspanol_esTodos() {
+        Config.guardarConfig("grupo_activo", "All");
+        IDIOMA = "es";
+        WatchlistView w = nuevaInstancia();
+        w.rebuildGrupos();
+        assertNull(w.grupoActivo(), "\"All\" guardado en inglés debe reconocerse como \"Todos\" en español");
     }
 
     // ===== grupos / filtro =====================================================================================
