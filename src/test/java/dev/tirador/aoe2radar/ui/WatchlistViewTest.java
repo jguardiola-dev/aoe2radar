@@ -672,6 +672,20 @@ class WatchlistViewTest {
         } finally { EstadoVivo.SISTEMA.marcarFuera(pid); }
     }
 
+    /** F5 de la revisión 1.3: en un grupo, el barrido pone en eloWatch el ELO de anoche (snapshot) y «Ver forma» se lo
+     *  restaba al de anoche: diff 0, «sin partidas». Con el ELO del snapshot, la resta no tiene «ELO actual» y la forma
+     *  va por la vía exacta (porSerie). Un ELO fresco (API, leaderboard) vuelve a valer para la resta. */
+    @Test void eloParaResta_elDelSnapshotNoValeComoEloActual() {
+        long pid = 42L;
+        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 30));   // del snapshot
+        assertEquals(1500, eloWatch.get(pid), "la lista sigue enseñando el ELO del snapshot");
+        assertNull(WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "restar anoche de anoche da 0: no vale");
+
+        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1523, null));   // de la API
+        assertEquals(1523, WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "un ELO fresco sí vale para la resta");
+        EstadoVivo.SISTEMA.marcarFuera(pid);
+    }
+
     @Test void sugerenciaCaducada_siElTextoCambio() {
         assertTrue(WatchlistView.sugerenciaCaducada("tirador", "otra cosa"));
         assertFalse(WatchlistView.sugerenciaCaducada("tirador", "tirador "));   // el trim es parte del criterio

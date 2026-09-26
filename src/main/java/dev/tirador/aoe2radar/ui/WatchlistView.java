@@ -414,6 +414,17 @@ public final class WatchlistView {
 
     Map<Long, Forma> formaActiva() { return ventanaForma <= 24 ? forma24 : forma7d; }
 
+    /** Jugadores cuyo ELO en eloWatch es el del snapshot nocturno (el barrido de un grupo sin red, o el resumen
+     *  diario de ★ Top clan), no uno fresco. Lo escriben el EDT y lo lee el hilo de «Ver forma»: concurrente. */
+    final Set<Long> eloDelSnapshot = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** El «ELO actual» que «Ver forma» resta al de anoche (FormService.porResta): null si el que se conoce ES el de
+     *  anoche, porque la resta daría 0 y «sin partidas» (F5 de la revisión 1.3). Con null, porResta no sirve y la
+     *  forma va por la vía exacta (porSerie, una llamada). */
+    static Integer eloParaResta(long pid, Map<Long, Integer> eloWatch, Set<Long> delSnapshot) {
+        return delSnapshot.contains(pid) ? null : eloWatch.get(pid);
+    }
+
     public void apagarForma() { trabajos.apagarForma(); }
     void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) { trabajos.cargarForma(objetivo, horas, alTerminar); }
     List<Player> objetivoForma() { return trabajos.objetivoForma(); }

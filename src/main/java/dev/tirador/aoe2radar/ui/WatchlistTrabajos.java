@@ -70,7 +70,7 @@ final class WatchlistTrabajos {
                 List<Player> porApi = new ArrayList<>();
                 long ahoraTs = System.currentTimeMillis();
                 for (Player p : pendientes) {   // 1) resta con el snapshot nocturno: sin llamadas
-                    Forma[] f = wv.formaService.porResta(p.id(), wv.eloWatch::get, wv.gamesWatch::get);
+                    Forma[] f = wv.formaService.porResta(p.id(), pid -> WatchlistView.eloParaResta(pid, wv.eloWatch, wv.eloDelSnapshot), wv.gamesWatch::get);
                     if (f == null) { porApi.add(p); continue; }
                     wv.forma24.put(p.id(), f[0]); wv.formaTs24.put(p.id(), ahoraTs);
                     if (f[1] != null) { wv.forma7d.put(p.id(), f[1]); wv.formaTs7d.put(p.id(), ahoraTs); } else if (horas > 24) porApi.add(p);
@@ -131,6 +131,7 @@ final class WatchlistTrabajos {
                 for (TopLadderService.FilaClan f : res.miembros()) {
                     wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
                     wv.eloWatch.put(f.pid(), f.rating());
+                    wv.eloDelSnapshot.add(f.pid());   // resumen diario de sfr-data: ELO de anoche (F5)
                     wv.rankTop.put(f.pid(), wv.topLadder.size());
                 }
                 guardarConfig("clan_tag", tag);
@@ -207,6 +208,7 @@ final class WatchlistTrabajos {
                     for (TopLadderService.FilaTop f : res.filas()) {
                         wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
                         wv.eloWatch.put(f.pid(), f.rating());
+                        wv.eloDelSnapshot.remove(f.pid());   // del leaderboard: fresco (F5)
                         wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
                         wv.rankTop.put(f.pid(), wv.topLadder.size());
                     }
@@ -244,7 +246,7 @@ final class WatchlistTrabajos {
         wv.rankTop.clear();
         for (TopLadderService.FilaCache f : cache.filas()) {
             wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-            if (f.elo() > 0) wv.eloWatch.put(f.pid(), f.elo());
+            if (f.elo() > 0) { wv.eloWatch.put(f.pid(), f.elo()); wv.eloDelSnapshot.remove(f.pid()); }   // del leaderboard, aunque de caché (F5)
             wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
             wv.rankTop.put(f.pid(), wv.topLadder.size());
         }
@@ -340,7 +342,10 @@ final class WatchlistTrabajos {
                 if (WatchlistView.VIVO.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) WatchlistView.VIVO.ponerInfo(r.pid(), r.resumen());
             } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
         }
-        if (r.elo() != null) wv.eloWatch.put(r.pid(), r.elo());
+        if (r.elo() != null) {
+            wv.eloWatch.put(r.pid(), r.elo());
+            if (r.sabeSiJuega()) wv.eloDelSnapshot.remove(r.pid()); else wv.eloDelSnapshot.add(r.pid());   // F5: ¿fresco o de anoche?
+        }
     }
 
     /** Vigilancia periódica de TODA la watchlist: solo detecta quién está jugando ahora. Se salta el tick si

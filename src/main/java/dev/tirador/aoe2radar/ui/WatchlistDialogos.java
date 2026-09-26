@@ -262,6 +262,7 @@ final class WatchlistDialogos {
                 }
                 for (Perfil.Vinculada v : vinc) if (wv.containsPlayerId(v.pid())) familia.add(v.pid());
                 wv.eloWatch.putAll(elosV);
+                wv.eloDelSnapshot.removeAll(elosV.keySet());   // ELO de la API: fresco (F5)
                 wv.marcarVinculo(familia);
                 wv.savePlayers();
                 wv.rebuildGrupos();
@@ -339,6 +340,7 @@ final class WatchlistDialogos {
                             Integer ei = wv.perfiles.elo1v1(p.id());
                             if (ei != null) SwingUtilities.invokeLater(() -> {
                                 wv.eloWatch.put(p.id(), ei);
+                                wv.eloDelSnapshot.remove(p.id());   // ELO de la API: fresco (F5)
                                 wv.playersList.repaint();
                                 wv.enlacePartidas.refrescarSujetos(wv.enlacePartidas.ultimosSujetos(), wv.enlacePartidas.invitado() != null);   // el ELO recién llegado, a la cabecera
                             });
