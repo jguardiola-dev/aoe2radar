@@ -448,6 +448,15 @@ class WatchlistViewTest {
         assertTrue(watchlist.modoClan());
     }
 
+    /** Dudoso de la revisión 1.3, confirmado: «★ Top clan» salía como grupo activo y grupoDestino() lo daba como
+     *  grupo donde fichar. Las tres vistas ★ son iguales: ninguna es un grupo. */
+    @Test void grupoActivo_topClanEsNullYFichaEnGeneral() {
+        watchlist.grupoCombo.addItem("★ Top clan");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
+        assertNull(watchlist.grupoActivo());
+        assertEquals(WatchlistView.GRUPO_GENERAL, watchlist.grupoDestino());
+    }
+
     @Test void vistaActualId_combinaGrupoYPais() {
         watchlist.grupoCombo.addItem("Amigos");
         sinListeners(() -> watchlist.grupoCombo.setSelectedItem("Amigos"), watchlist.grupoCombo);

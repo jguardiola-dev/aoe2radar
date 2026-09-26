@@ -527,11 +527,14 @@ public final class WatchlistView {
 
     // ===== Grupos ========================================================================================
 
-    public String grupoActivo() {   // null = «Todos»
+    /** El grupo de usuario elegido; null = «Todos» o una vista ★ (ladder, país o clan: ninguna es un grupo donde
+     *  fichar). Antes de la 1.3 se colaba «★ Top clan»: grupoDestino() lo daba como grupo y el invitado de
+     *  «Ver sus partidas» nacía con ese grupo. */
+    public String grupoActivo() {
         Object sel = grupoCombo.getSelectedItem();
         if (sel == null) return null;
         String s = String.valueOf(sel);
-        return s.equals(t("Todos", "All")) || s.equals(TOP_LADDER) || s.equals(TOP_PAIS)
+        return s.equals(t("Todos", "All")) || s.equals(TOP_LADDER) || s.equals(TOP_PAIS) || s.equals(TOP_CLAN)
                 || s.equals(t("+ Nuevo grupo…", "+ New group…"))
                 || s.equals(t("Gestionar grupos…", "Manage groups…")) ? null : s;
     }
