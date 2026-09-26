@@ -108,6 +108,29 @@ class PerfilViewTest {
         assertEquals("Abre primero un perfil con historial cargado.", estado[0]);
     }
 
+    /** D3 (1.3): una partida sin hora de inicio (AnioDesdeSfr pone started=null si ini<=0; traerHoy tampoco la
+     *  filtra) hacía saltar una NullPointerException en actPintar, en el EDT, y el perfil quedaba a medias. */
+    @Test void partidaSinHoraDeInicioNoRevientaElPintado() throws Exception {
+        Match sinHora = new Match();
+        sinHora.id = 1; sinHora.mode = "1v1 Random Map"; sinHora.map = "Arabia"; sinHora.started = null;
+        dev.tirador.aoe2radar.model.MatchPlayer yo = new dev.tirador.aoe2radar.model.MatchPlayer();
+        yo.id = 5L; yo.name = "Fulano"; yo.team = 1;
+        sinHora.players.add(yo);
+        Match conHora = new Match();
+        conHora.id = 2; conHora.mode = "1v1 Random Map"; conHora.map = "Arabia"; conHora.started = java.time.Instant.now().minusSeconds(3600);
+        conHora.players.add(yo);
+        Actividad a = new Actividad(5L, "Fulano", List.of(conHora, sinHora), true, 1, System.currentTimeMillis());
+        actividadCache.put(5L, a);
+        String[] estado = new String[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            v.actPid = 5L; v.actNombre = "Fulano";
+            v.desdeSfr(a, "2026-09-24");   // pinta el cuerpo entero (actPintar)
+            estado[0] = v.actEstado.getText();
+        });
+        assertEquals("2 partidas · último año · de sfr-data", estado[0], "el pintado llegó al final");
+    }
+
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la
      *  cabecera que ya estaba pintada no se sustituye por «Sin datos de perfil». */
     @Test void actualizarHoySinFichaNoBorraLaCabecera() throws Exception {

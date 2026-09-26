@@ -959,6 +959,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         for (Match m : a.partidas()) {
             if (!"*".equals(actModo) && !actModo.equals(m.mode)) continue;
             if (!enPeriodo(m)) continue;
+            if (m.started == null) continue;   // D3 (1.3): sin hora de inicio (AnioDesdeSfr con ini<=0, o traerHoy) no se puede fechar; antes reventaba el pintado en el EDT
             MatchPlayer yo = null;
             for (MatchPlayer p : m.players) if (p.id == actPid) { yo = p; break; }
             if (yo == null) continue;
