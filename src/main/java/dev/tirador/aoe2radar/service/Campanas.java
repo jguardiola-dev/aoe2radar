@@ -16,6 +16,7 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.BiFunction;
 import java.util.function.LongFunction;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
@@ -40,14 +41,19 @@ public final class Campanas {
     private final CompanionApi api;
     private final BiFunction<String, String, String> leerConfig;
     private final BiConsumer<String, String> guardarConfig;
+    /** ¿Existe un grupo del usuario con ese nombre? Lo consulta normalizarVistaTodos, en cada lectura (no una
+     *  copia): decide WatchlistView (sus grupos pueden cambiar en cualquier momento), Campanas solo pregunta. */
+    private final Predicate<String> esGrupoDeUsuario;
 
     /** pid|matchId (o «mi|matchId») ya avisados: una campana solo avisa una vez por partida. */
     private final Set<String> avisadosClave = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
-    public Campanas(CompanionApi api, BiFunction<String, String, String> leerConfig, BiConsumer<String, String> guardarConfig) {
+    public Campanas(CompanionApi api, BiFunction<String, String, String> leerConfig, BiConsumer<String, String> guardarConfig,
+                     Predicate<String> esGrupoDeUsuario) {
         this.api = api;
         this.leerConfig = leerConfig;
         this.guardarConfig = guardarConfig;
+        this.esGrupoDeUsuario = esGrupoDeUsuario;
     }
 
     // ----- el set de campanas activas (config «campanas») -----
@@ -64,8 +70,28 @@ public final class Campanas {
         // Pattern.quote: partir por el texto literal SEPARADOR, no por la expresión regular \u0001 (que Pattern
         // interpreta como el carácter real U+0001 y que, como tal, nunca aparece en lo guardado: antes del
         // arreglo esto dejaba pegadas todas las campanas en un único elemento cuando había más de una).
-        for (String x : leerConfig.apply("campanas", "").split(Pattern.quote(SEPARADOR))) if (!x.isBlank()) s.add(x);
+        for (String x : leerConfig.apply("campanas", "").split(Pattern.quote(SEPARADOR))) if (!x.isBlank()) s.add(normalizarVistaTodos(x));
         return s;
+    }
+
+    /**
+     * El id de la campana del grupo especial «Todos»/«All» (WatchlistView.idVistaCampana: "grupo|" + el texto
+     * de ese item del combo) se guardó con el texto del idioma activo en su día; si la app cambió de idioma
+     * desde entonces, tradúcelo al idioma actual para que siga casando con las campanas recién calculadas.
+     * Bug resuelto en fase 4 (ver docs/DEUDA.md): antes, cambiar de idioma apagaba esta campana sin avisar.
+     * Los demás ids (grupo de usuario, ★ladder/★país/★clan) ya son estables: usan nombres propios o el
+     * código ISO/tag del clan, nunca un texto traducido, así que no necesitan este arreglo.
+     * <p>Decisión (fase 4): esta traducción solo vale para el pseudogrupo «Todos»/«All», no para un grupo de
+     * usuario que se llame igual por casualidad (p.ej. uno literalmente llamado «All»). Por eso se pregunta a
+     * esGrupoDeUsuario antes de traducir: si ese nombre es un grupo de verdad, el id se deja tal cual, porque
+     * esa campana es la de ESE grupo y no la de «todos los jugadores».
+     */
+    private String normalizarVistaTodos(String id) {
+        if (!id.startsWith("grupo|")) return id;
+        String g = id.substring(6);
+        if (!(g.equalsIgnoreCase("Todos") || g.equalsIgnoreCase("All"))) return id;
+        if (esGrupoDeUsuario.test(g)) return id;
+        return "grupo|" + t("Todos", "All");
     }
 
     public void guardarCampanas(Set<String> s) { guardarConfig.accept("campanas", String.join(SEPARADOR, s)); }

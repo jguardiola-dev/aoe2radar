@@ -242,8 +242,12 @@ public final class WatchlistView {
     public JLabel resumenWatch;   // visible para RegresionCapturas; ejemplo: «50 jugadores · 6 en directo»
 
     public static final String TOP_LADDER = "\u2605 Top ladder";
-    private static final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
-    private static final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
+    /** No son "static final": si lo fueran (como en la 1.1), se evaluarían al cargar la clase WatchlistView,
+     *  que puede pasar ANTES de que main() fije I18n.IDIOMA, y saldrían siempre en español aunque la app esté
+     *  en inglés. Al ser de instancia, se calculan al construir la Watchlist (new WatchlistView(...) en
+     *  SpoilerFreeRecs), que ya ocurre con el idioma fijado. Bug resuelto en fase 4: ver docs/DEUDA.md. */
+    private final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
+    private final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
 
     /** TODOS los países ISO con su nombre en el idioma de la app — Bulgaria
      *  incluida y sin listas que mantener a mano. */
@@ -259,7 +263,9 @@ public final class WatchlistView {
         out.sort((a, b) -> col.compare(a.nombre(), b.nombre()));
         return out.toArray(PaisItem[]::new);
     }
-    public static final PaisItem[] PAISES = catalogoPaises();
+    /** De instancia por el mismo motivo que TOP_PAIS/TOP_CLAN (comentario de arriba): así sale en el idioma
+     *  activo de verdad, y no en el que estuviera fijado (o sin fijar) cuando se cargó la clase. */
+    public final PaisItem[] PAISES = catalogoPaises();
     private PaisItem paisActual;
     private JComboBox<PaisItem> paisCombo;
     private JTextField buscaPais;
@@ -1715,6 +1721,7 @@ public final class WatchlistView {
         }.execute();
     }
 
+    // visible para esGrupoDeUsuario (y para el menú "mover a grupo")
     private Set<String> gruposExistentes() {
         Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         gs.add(GRUPO_GENERAL);
@@ -1722,6 +1729,14 @@ public final class WatchlistView {
         gs.addAll(gruposConfig());
         return gs;
     }
+
+    /**
+     * ¿"nombre" es un grupo de verdad (General, uno con jugadores dentro o uno registrado en config), no un
+     * texto que solo coincide por casualidad con "Todos"/"All"? Lo usa Campanas (inyectado desde
+     * SpoilerFreeRecs) para no traducir la campana de un grupo que el usuario llamó, por ejemplo, "All": esa
+     * campana es la de ESE grupo, no la del pseudogrupo "todos los jugadores".
+     */
+    public boolean esGrupoDeUsuario(String nombre) { return gruposExistentes().contains(nombre); }
 
     private void moverVarios(List<Player> lista, String g) {
         int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
@@ -1774,9 +1789,35 @@ public final class WatchlistView {
         grupoCombo.addItem(TOP_CLAN);
         for (String g : grupos) grupoCombo.addItem(g);
         grupoCombo.setSelectedItem(t("Todos", "All"));
+        // Dos pasadas, EN ESTE ORDEN: 1) coincidencia exacta, como hacía la 1.1 (equalsIgnoreCase a secas). 2)
+        // solo si no hubo, la equivalencia bilingüe (coincideGrupoGuardado). Si se hiciera al revés, un grupo
+        // de usuario que se llame igual que un texto bilingüe del combo (p.ej. un grupo llamado "All") nunca
+        // se podría seleccionar: siempre ganaría la traducción a "Todos" antes de llegar a él en la lista.
+        int idx = -1;
         for (int i = 0; i < grupoCombo.getItemCount(); i++)
-            if (grupoCombo.getItemAt(i).equalsIgnoreCase(guardado)) { grupoCombo.setSelectedIndex(i); break; }
+            if (grupoCombo.getItemAt(i).equalsIgnoreCase(guardado)) { idx = i; break; }
+        if (idx < 0)
+            for (int i = 0; i < grupoCombo.getItemCount(); i++)
+                if (coincideGrupoGuardado(grupoCombo.getItemAt(i), guardado)) { idx = i; break; }
+        if (idx >= 0) grupoCombo.setSelectedIndex(idx);
         for (var l : listener) grupoCombo.addActionListener(l);
+    }
+
+    /**
+     * ¿Es "itemActual" (un item del combo, en el idioma activo ahora mismo) la variante bilingüe de "guardado"
+     * (el valor de config grupo_activo, escrito quizá en una sesión con otro idioma)? Solo se llama cuando
+     * rebuildGrupos() ya comprobó que NO hay ninguna coincidencia EXACTA con ningún item (ver el comentario de
+     * la llamada): así, un grupo de usuario con ese mismo nombre por casualidad siempre gana a la traducción,
+     * que es solo una red de seguridad. Los grupos del usuario son texto libre, no bilingüe: aquí solo se
+     * traducen "Todos"/"All", TOP_PAIS y TOP_CLAN, los tres textos fijos del combo que sí cambian con el
+     * idioma. Sin esto, cambiar el idioma de la app "perdía" el grupo activo guardado (bug resuelto en fase 4,
+     * ver docs/DEUDA.md).
+     */
+    private boolean coincideGrupoGuardado(String itemActual, String guardado) {
+        if (itemActual.equals(t("Todos", "All"))) return guardado.equalsIgnoreCase("Todos") || guardado.equalsIgnoreCase("All");
+        if (itemActual.equals(TOP_PAIS)) return guardado.equalsIgnoreCase("\u2605 Top pa\u00eds") || guardado.equalsIgnoreCase("\u2605 Country top");
+        if (itemActual.equals(TOP_CLAN)) return guardado.equalsIgnoreCase("\u2605 Top clan") || guardado.equalsIgnoreCase("\u2605 Clan top");
+        return false;
     }
 
     private void onGrupoElegido() {

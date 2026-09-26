@@ -51,7 +51,6 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Matchup;
 import dev.tirador.aoe2radar.model.PaginaPartidas;
-import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.PerfilEncontrado;
 import dev.tirador.aoe2radar.model.Player;
@@ -377,15 +376,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
     };
     final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
-    // VIVO: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el import static
-    // de más arriba. No depende del momento en que se crean los demás servicios (EstadoVivo.SISTEMA es un
-    // singleton propio, sin conexión con COMPANION/API_CLIENTE), así que moverlo no cambia el comportamiento.
-    /** Fuerza la carga de la clase ui.WatchlistView AQUÍ, en la inicialización estática de SpoilerFreeRecs — el
-     *  mismo punto relativo donde TOP_LADDER/TOP_PAIS/TOP_CLAN/PAISES vivían en la 1.1 — para que esos static
-     *  se evalúen ANTES de que main() fije IDIOMA (por eso salen siempre en español, aunque el sistema esté en
-     *  inglés). Es una rareza de orden de carga ya existente en la 1.1; decisión de Opus: conservarla tal cual
-     *  al sacar la Watchlist, no corregirla de paso. Ver docs/DEUDA.md. */
-    static final PaisItem[] PAISES = dev.tirador.aoe2radar.ui.WatchlistView.PAISES;
     javax.swing.Timer vigilante;      // barrido periódico del «en directo» (nunca del ELO)
     final JSpinner hoursSpinner = new JSpinner(new SpinnerNumberModel(
             Math.min(24, Integer.parseInt(leerConfig("ventana_n", leerConfig("horas", "24")))), 1, 24, 1));
@@ -508,7 +498,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // La red, la config y la deduplicacion de avisos viven en service.Campanas; aqui solo queda
     // Swing (boton, toast) y el estado compartido (campanaIds, socketExtra). Cableado junto al
     // propio Campanas, no al lado de COMPANION/LIVE/SERVICIO_PERFIL.
-    final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig);
+    // "watchlist" (más abajo) todavía no existe cuando se construye este campo: el método de abajo lo lee al
+    // llamarlo (no al crearse la referencia), y para entonces la ventana ya está montada del todo. Referencia
+    // de método en vez de lambda directa: leer "watchlist" (blank final) desde la propia expresión del
+    // inicializador no compila («might not have been initialized»), aunque solo se fuera a usar más tarde.
+    final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig, this::esGrupoDeUsuarioWatchlist);
+    /** Ver el comentario de "campanas": separado en un método para poder pasarlo como Predicate ahí mismo. */
+    private boolean esGrupoDeUsuarioWatchlist(String nombre) { return watchlist != null && watchlist.esGrupoDeUsuario(nombre); }
     javax.swing.Timer campanasTimer;   // barrido de campanas (Watchlist): el toast que dispara se sacó a ui.BarraEstado (T4-Z3)
 
     /** El aviso flotante («X ha empezado una partida»): ver ui.BarraEstado. */
@@ -913,7 +909,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public boolean seleccionada() { return navegador.directosBtn != null && navegador.directosBtn.isSelected(); }
         });
         centroCards.add(directos.panel(), "directos");
-        liveNow = new LiveNowView(campanas, LIVE, List.of(WatchlistView.PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
+        liveNow = new LiveNowView(campanas, LIVE, List.of(watchlist.PAISES), todosJugadores, eloWatch, twitchLive, civ -> techTree.claveCivDeNombre(civ), Tareas.SWING, this, menus, this, new LiveNowView.Anfitrion() {
             @Override public List<String> clanesGuardados() { return watchlist.clanesGuardados(); }
             @Override public String paisSel() { return watchlist.paisSel(); }
             @Override public String clanBuscado() { return watchlist.clanBuscado(); }
