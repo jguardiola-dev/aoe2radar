@@ -93,7 +93,9 @@ class PartidasViewTest {
         @Override public String nombreVisible(long pid, String nombre) { return nombre; }
         @Override public String paisDe(long pid) { return null; }
         @Override public boolean enCursoReal(Match m) { return false; }
-        @Override public Path destino(Match m) { return recs.resolve(m.id + ".aoe2record"); }
+        /** En qué hilo se pidió cada ruta de rec (true = EDT): quien la pide va a mirar el disco justo después. */
+        final List<Boolean> destinoEnEdt = Collections.synchronizedList(new ArrayList<>());
+        @Override public Path destino(Match m) { destinoEnEdt.add(SwingUtilities.isEventDispatchThread()); return recs.resolve(m.id + ".aoe2record"); }
         @Override public Path recsDir() { return recs; }
         @Override public void trabajando(boolean on) { progreso = on; if (on) { stop = false; opSerial++; } }
         @Override public long operacionActual() { return opSerial; }
@@ -417,6 +419,58 @@ class PartidasViewTest {
             assertNull(vista.descargas.alTerminarDescarga);
         });
         assertTrue(anfitrion.mostrarDirectos.isEmpty(), "sin cambiar de vista");
+    }
+
+    // ----- «Enviar al juego» fuera del EDT -----
+
+    /** Corre {@code cuerpo} con la carpeta savegame de config apuntando a {@code sg}, y deja config.properties
+     *  (el del directorio de trabajo del test, target/harness) como estaba. */
+    static void conSavegame(Path sg, ThrowingRunnable cuerpo) throws Exception {
+        Path cfg = dev.tirador.aoe2radar.util.Config.CONFIG_FILE;
+        byte[] previo = java.nio.file.Files.exists(cfg) ? java.nio.file.Files.readAllBytes(cfg) : null;
+        try {
+            dev.tirador.aoe2radar.util.Config.guardarConfig("savegame", sg.toString());
+            cuerpo.run();
+        } finally {
+            if (previo != null) java.nio.file.Files.write(cfg, previo); else java.nio.file.Files.deleteIfExists(cfg);
+        }
+    }
+    interface ThrowingRunnable { void run() throws Exception; }
+
+    @Test void enviarAlJuego_leeYCopiaFueraDelEdt() throws Exception {
+        Path sg = java.nio.file.Files.createDirectories(recs.resolve("savegame"));
+        Match m = partida(8301, A, Instant.now().minusSeconds(600));
+        java.nio.file.Files.write(recs.resolve("8301.aoe2record"), new byte[6000]);   // una rec «sana» (≥ 5000 B)
+        conSavegame(sg, () -> {
+            anfitrion.destinoEnEdt.clear();
+            enEdt(() -> vista.enviarInteligente(List.of(m)));
+            esperar(() -> anfitrion.estado.contains("recs enviadas al juego"), "el resumen del envío");
+            assertFalse(anfitrion.destinoEnEdt.isEmpty(), "se miró la rec");
+            assertFalse(anfitrion.destinoEnEdt.contains(true), "leer la cabecera y copiar no van en el EDT");
+            assertTrue(rec.procesadas.isEmpty(), "una rec sana no se vuelve a descargar");
+        });
+    }
+
+    @Test void enviarAlJuego_loQueFaltaSeDescargaDespuesDeCopiar() throws Exception {
+        Path sg = java.nio.file.Files.createDirectories(recs.resolve("savegame"));
+        Match sana = partida(8302, A, Instant.now().minusSeconds(600));
+        Match falta = partida(8303, A, Instant.now().minusSeconds(900));
+        java.nio.file.Files.write(recs.resolve("8302.aoe2record"), new byte[6000]);
+        conSavegame(sg, () -> {
+            enEdt(() -> vista.enviarInteligente(List.of(sana, falta)));
+            esperar(() -> rec.procesadas.contains(8303L) && !anfitrion.progreso, "la descarga de la que faltaba");
+            int iCopia = -1, iDescarga = -1;
+            synchronized (anfitrion.estados) {
+                for (int i = 0; i < anfitrion.estados.size(); i++) {
+                    String s = anfitrion.estados.get(i);
+                    if (iCopia < 0 && s.contains("recs enviadas al juego")) iCopia = i;
+                    if (iDescarga < 0 && s.contains("recs guardadas en")) iDescarga = i;
+                }
+            }
+            assertTrue(iCopia >= 0, "hubo resumen de la copia: " + anfitrion.estados);
+            assertTrue(iDescarga > iCopia, "primero se copia lo sano y después se descarga lo que falta: " + anfitrion.estados);
+            assertEquals(List.of(8303L), rec.procesadas, "solo se descarga la que faltaba");
+        });
     }
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {

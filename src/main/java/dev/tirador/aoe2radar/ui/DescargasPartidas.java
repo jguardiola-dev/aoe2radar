@@ -115,27 +115,56 @@ final class DescargasPartidas {
      *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
     public void enviarInteligente(List<Match> objetivo) {
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
-        separarSanas(objetivo, vista.anfitrion::destino, enDisco, faltan);
-        if (!enDisco.isEmpty()) enviarASavegame(enDisco);
-        if (!faltan.isEmpty()) download(faltan, true);
+        // Leer la cabecera de cada rec es disco: va en un hilo de fondo (revisión 1.3). Lo que sigue (el diálogo del
+        // savegame, la copia y la descarga de lo que falte) arranca desde done(), ya en el EDT, en el mismo orden.
+        final List<Match> lista = new ArrayList<>(objetivo);
+        final Function<Match, Path> destino = vista.anfitrion::destino;
+        new SwingWorker<Void, Void>() {
+            final List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
+            @Override protected Void doInBackground() { separarSanas(lista, destino, enDisco, faltan); return null; }
+            @Override protected void done() {
+                Runnable descargarFaltan = faltan.isEmpty() ? null : () -> download(faltan, true);
+                if (!enDisco.isEmpty()) enviarASavegame(enDisco, descargarFaltan);   // copia primero; luego descarga
+                else if (descargarFaltan != null) descargarFaltan.run();
+            }
+        }.execute();
     }
 
     /** Copia al savegame lo que le llegue en `objetivo`: NO vuelve a comprobar RecService.recSana (su único
      *  llamador, enviarInteligente, ya leyó la cabecera de cada archivo para armar esta lista); así es una sola
      *  lectura de cabecera por partida, no dos. */
-    public void enviarASavegame(List<Match> objetivo) {
-        if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        Path sg = obtenerSavegame(true);
-        if (sg == null) { vista.anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        Copia c = copiarAlSavegame(objetivo, sg, vista.anfitrion::destino, m -> vista.setEstado(m, t("✓✓ en juego", "✓✓ in game")));
-        vista.anfitrion.estado(c.ok() + t(" recs enviadas al juego", " recs sent to the game") +
-                (c.yaEstaban() > 0 ? " (" + c.yaEstaban() + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
+    public void enviarASavegame(List<Match> objetivo) { enviarASavegame(objetivo, null); }
+
+    /** Igual, y al acabar (copie o no) corre {@code despues} en el EDT: enviarInteligente descarga ahí lo que
+     *  faltaba, para que siga yendo después de la copia, como antes. */
+    void enviarASavegame(List<Match> objetivo, Runnable despues) {
+        if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); if (despues != null) despues.run(); return; }
+        Path sg = obtenerSavegame(true);   // puede abrir diálogos: en el EDT
+        if (sg == null) { vista.anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); if (despues != null) despues.run(); return; }
+        final List<Match> lista = new ArrayList<>(objetivo);
+        final Function<Match, Path> destino = vista.anfitrion::destino;
+        final String enJuego = t("✓✓ en juego", "✓✓ in game");
+        new SwingWorker<Copia, Void>() {
+            @Override protected Copia doInBackground() {   // copiar es disco: fuera del EDT (setEstado ya va por invokeLater)
+                return copiarAlSavegame(lista, sg, destino, m -> vista.setEstado(m, enJuego));
+            }
+            @Override protected void done() {
+                try {
+                    Copia c = get();
+                    vista.anfitrion.estado(c.ok() + t(" recs enviadas al juego", " recs sent to the game") +
+                            (c.yaEstaban() > 0 ? " (" + c.yaEstaban() + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
+                } catch (Exception ex) {
+                    log("enviar al juego: ERROR " + causa(ex));
+                    vista.anfitrion.estado("Error: " + causa(ex));
+                }
+                if (despues != null) despues.run();
+            }
+        }.execute();
     }
 
-    // Núcleo sin Swing de «Enviar al juego» (costura para sacarlo del EDT en otra ronda): el prólogo (lista vacía,
-    // obtenerSavegame con sus diálogos) y el epílogo (anfitrion.estado) se quedan arriba, en el EDT; esto solo
-    // lee y copia archivos. Hoy se sigue llamando en el EDT, en el mismo punto y con el mismo orden que antes.
+    // Núcleo sin Swing de «Enviar al juego»: el prólogo (lista vacía, obtenerSavegame con sus diálogos) y el
+    // epílogo (anfitrion.estado) se quedan en el EDT; esto solo lee y copia archivos, y desde la 1.3 corre en el
+    // hilo de fondo de un SwingWorker (separarSanas en enviarInteligente, copiarAlSavegame en enviarASavegame).
 
     /** Reparte `objetivo` en lo que ya está sano en disco (RecService.recSana: lee la cabecera) y lo que falta. */
     static void separarSanas(List<Match> objetivo, Function<Match, Path> destino, List<Match> enDisco, List<Match> faltan) {
