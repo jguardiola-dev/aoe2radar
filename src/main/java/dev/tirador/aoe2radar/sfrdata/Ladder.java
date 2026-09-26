@@ -48,6 +48,13 @@ public final class Ladder {
     /** Baja un archivo de sfr-data si cambió (ETag) y devuelve su contenido (gzip transparente). Ver SfrDataClient.datos. */
     public static byte[] sfrDataArchivo(String nombre) throws Exception { return SfrDataClient.SISTEMA.datos(nombre); }
 
+    /**
+     * El sello de frescura del ladder. Ladder es un singleton estático (no admite inyección de reloj sin tocar a
+     * todos sus llamadores, fuera de este encargo): este accesor deja que los tests fijen el sello a mano
+     * (sello.marcar()) para no ir a la red, sin recurrir a reflexión (fila 108 de DEUDA; ver TopLadderServiceTest).
+     */
+    public static Sello selloLadder() { return LADDER_SELLO; }
+
     public static double dblNum(Object o) { return o instanceof Number n ? n.doubleValue() : 0; }
 
     public static Map<String, LadderHist> parsearHists(Object o) {

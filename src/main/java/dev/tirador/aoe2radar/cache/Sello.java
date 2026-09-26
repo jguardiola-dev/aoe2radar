@@ -18,6 +18,9 @@ public final class Sello {
 
     public void marcar() { marcaMs = cache.reloj().ahoraMs(); }
 
+    /** La marca actual (Long.MIN_VALUE si nunca se marcó): para tests que necesiten respaldarla y restaurarla. */
+    public long marcaMs() { return marcaMs; }
+
     /**
      * Marca con una hora dada: la del dato, no la de ahora. Para lo que se guarda también en disco: si la memoria se
      * sellara al leer la copia, las dos caducidades se sumarían (una copia de 5 h valdría otras 6 h en memoria).

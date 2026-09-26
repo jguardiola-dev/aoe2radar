@@ -7,6 +7,7 @@ import dev.tirador.aoe2radar.api.Throttle;
 import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.cache.Canales;
 import dev.tirador.aoe2radar.cache.Paises;
+import dev.tirador.aoe2radar.cache.Sello;
 import dev.tirador.aoe2radar.model.LadderHist;
 import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
@@ -18,7 +19,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -43,8 +43,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 2023: Json.when lee como milisegundos los números por encima de 1e11).
  *
  * <p>topClan necesita que sfrdata.Ladder.ladderAsegurar no vaya a la red: como esa clase es un singleton estático sin
- * puerto de inyección (queda fuera de este encargo), se fuerza su «sello» a fresco por reflexión, solo en este test,
- * y se limpia después (ver marcarLadderFresco/limpiarLadder). Es la única concesión: ver DEUDA.
+ * puerto de inyección (queda fuera de este encargo), se fuerza su «sello» a fresco con Ladder.selloLadder(), sin
+ * reflexión (ver marcarLadderFresco/restaurarEstadoLadder; fila 108 de DEUDA, ya resuelta).
  */
 class TopLadderServiceTest {
     static final long HORA = 1_700_000_000_000L;   // nov. 2023, en ms: por encima de 1e11 (Json.when las lee en ms)
@@ -246,39 +246,34 @@ class TopLadderServiceTest {
 
     // ===================== ★ Top clan =====================
     // sfrdata.Ladder es un singleton estático sin puerto de inyección (fuera de este encargo): para que
-    // ladderAsegurar no vaya a la red se fuerza su «sello» a fresco por reflexión, solo en los tests de topClan.
+    // ladderAsegurar no vaya a la red se fuerza su «sello» a fresco con Ladder.selloLadder(), en los tests de topClan.
     // Se guardan aquí los valores PREVIOS de clanes/ladderHists/sello y se restauran siempre (no se fijan a 0L o
     // Map.of(): otro test que corra antes podría haber dejado un estado válido que no nos toca borrar).
 
     Map<String, List<LadderRow>> clanesPrevios;
     Map<String, LadderHist> ladderHistsPrevios;
-    Field campoSello, campoMarcaMs;
+    Sello sello;
     long selloPrevioMs;
 
-    @BeforeEach void guardarEstadoLadder() throws Exception {
+    @BeforeEach void guardarEstadoLadder() {
         clanesPrevios = Ladder.clanes;
         ladderHistsPrevios = Ladder.ladderHists;
-        campoSello = Ladder.class.getDeclaredField("LADDER_SELLO");
-        campoSello.setAccessible(true);
-        Object sello = campoSello.get(null);
-        campoMarcaMs = sello.getClass().getDeclaredField("marcaMs");
-        campoMarcaMs.setAccessible(true);
-        selloPrevioMs = (long) campoMarcaMs.get(sello);
+        sello = Ladder.selloLadder();
+        selloPrevioMs = sello.marcaMs();
     }
 
-    @AfterEach void restaurarEstadoLadder() throws Exception {
+    @AfterEach void restaurarEstadoLadder() {
         Ladder.clanes = clanesPrevios;
         Ladder.ladderHists = ladderHistsPrevios;
-        campoMarcaMs.set(campoSello.get(null), selloPrevioMs);
+        sello.marcar(selloPrevioMs);
     }
 
-    /** Fuerza el «sello» del ladder a fresco por reflexión para que ladderAsegurar no vaya a la red (ver DEUDA).
+    /** Fuerza el «sello» del ladder a fresco para que ladderAsegurar no vaya a la red (ver DEUDA, fila 108).
      *  El sello cuenta con el reloj REAL de CacheService.SISTEMA (no con el RelojFalso de este test): se marca
      *  con marcar(), que apunta la hora real de ahora, igual que haría una carga de verdad. */
-    void marcarLadderFresco() throws Exception {
+    void marcarLadderFresco() {
         Ladder.ladderHists = Map.of("rm_1v1", new LadderHist(1, 0, new int[]{ 1 }, 0, Map.of()));
-        Object sello = campoSello.get(null);
-        sello.getClass().getMethod("marcar").invoke(sello);
+        sello.marcar();
     }
 
     @Test void topClan_construyeLaListaDesdeLosMiembros() throws Exception {
