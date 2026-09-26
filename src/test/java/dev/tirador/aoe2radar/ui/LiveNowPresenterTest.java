@@ -329,6 +329,23 @@ class LiveNowPresenterTest {
         assertEquals(List.of(632L), presenter.jugadoresEn(9331L));
     }
 
+    /** Menor del revisor: la quitada sin datos (fin null) de la partida A no suelta la partida B en la que ya está. */
+    @Test void liveTerminada_sinPartidaDeLaApi_soloQuitaSiEsEsaPartida() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        pantalla.fuente = List.<Object[]>of(ficha(641L, "Uno", 1500, 10, "es"));
+        p.refrescar(false);
+        Match a = matchEnCurso(9341L, 641L), b = matchEnCurso(9342L, 641L);
+        p.liveEvento(641L, a, false);
+        p.liveEvento(641L, b, false);         // en el hueco, el socket lo mete en B
+        p.liveTerminada(641L, 9341L, null);   // llega el «sin datos» de A
+        assertEquals(b, p.enCursoSnapshot().get(641L), "sigue en B");
+        assertEquals(b, vivo.partida(641L));
+        p.liveTerminada(641L, 9342L, null);   // y cuando es la suya, sí: a «Terminadas» con la guardada
+        assertFalse(p.enCursoSnapshot().containsKey(641L));
+        assertTrue(p.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9342L));
+    }
+
     @Test void liveEvento_noRepintaSiLaPantallaNoLoPermite() {
         pantalla.fuente = List.<Object[]>of(ficha(701L, "Uno", 1500, 10, "es"));
         presenter.refrescar(false);
@@ -397,6 +414,23 @@ class LiveNowPresenterTest {
         p.pedirClanes();
         assertEquals("clanes", tareas.ultimoNombreDemonio);
         assertNotNull(tareas.trabajoDemonioPendiente);
+    }
+
+    /** Menor del revisor: a un jugador sin consultar se le conserva la partida, pero no si ya se sabe terminada. */
+    @Test void refrescar_cortado_noConservaUnaPartidaSinConsultarQueYaSeSabeTerminada() {
+        EstadoVivo vivo = new EstadoVivo(Reloj.SISTEMA);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, vivo);
+        List<Object[]> fuente = new ArrayList<>();
+        for (long i = 1; i <= 20; i++) fuente.add(ficha(950 + i, "J" + i, 1000, (int) i, "es"));   // 2 lotes de 15
+        pantalla.fuente = fuente;
+        buscador.resultado = List.of(matchEnCurso(9970L, 970L));   // 970, en el segundo lote
+        p.refrescar(true);
+        assertTrue(p.enCursoSnapshot().containsKey(970L));
+        vivo.apuntarTerminada(9970L);   // el socket (o espectar) sabe que terminó
+        buscador.resultado = List.of();
+        buscador.alPedir = () -> pantalla.abierta = false;   // barrido cortado tras el primer lote: 970 sin consultar
+        p.refrescar(true);
+        assertFalse(p.enCursoSnapshot().containsKey(970L), "sin consultar, pero terminada: fuera");
     }
 
     // ----- el barrido fusiona con lo que llegó del socket entretanto (revisión 1.3, F2) --------

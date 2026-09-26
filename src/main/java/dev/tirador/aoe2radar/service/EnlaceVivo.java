@@ -44,6 +44,9 @@ public final class EnlaceVivo {
         Set<Long> idsSocketExtra();
         /** Avisa a Live now de un evento de pid (no hace nada si Live now no existe aún). */
         void liveEvento(long pid, Match m, boolean terminada);
+        /** Avisa a Live now de que la partida matchId de pid terminó (fin: la que dio la API, o null si no hubo datos).
+         *  Con el id, Live now solo la quita si sigue siendo la partida de pid (no hace nada si Live now no existe). */
+        void liveTerminada(long pid, long matchId, Match fin);
         /** Quiénes tiene Live now «en partida» en matchId (lo vio su barrido, aunque nadie los marcara en EstadoVivo);
          *  vacío si nadie o si Live now no existe aún. Sin red; seguro desde cualquier hilo (revisión 1.3, F1). */
         List<Long> jugadoresLiveNow(long matchId);
@@ -165,8 +168,9 @@ public final class EnlaceVivo {
             // TERMINADA: la partida que devolvió la API, con su hora de fin (si no, Live now pintaba «hace 0 min» hasta
             // que caducaba a las 2 h). Sin datos: null, como antes (Live now usa la que guardó al empezar). Revisión 1.3, F5.
             Match fin = c.veredicto() == LiveService.Veredicto.TERMINADA ? c.partida() : null;
-            for (long pid : fuera) { vistas.liveEvento(pid, fin, true); cambio = true; }
-            for (long pid : soloLive) vistas.liveEvento(pid, fin, true);   // F1: solo Live now los tenía (sin repetir: se quitaron los marcados arriba)
+            // con el matchId: si en el hueco el socket lo metió en otra partida, Live now no la suelta (menor del revisor)
+            for (long pid : fuera) { vistas.liveTerminada(pid, matchId, fin); cambio = true; }
+            for (long pid : soloLive) vistas.liveTerminada(pid, matchId, fin);   // F1: solo Live now los tenía (sin repetir: se quitaron los marcados arriba)
             if (cambio) vistas.avisarTrasCambio();
         } finally {
             if (!sigue) quitadasEnVuelo.remove(matchId);

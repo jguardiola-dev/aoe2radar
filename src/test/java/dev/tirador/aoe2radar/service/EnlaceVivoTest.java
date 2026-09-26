@@ -76,6 +76,8 @@ class EnlaceVivoTest {
         final List<Match> partidasLive = new ArrayList<>();   // la partida que llegó con cada liveEvento (null si ninguna)
         @Override public void liveEvento(long pid, Match m, boolean terminada) { avisos.add("liveEvento:" + pid + ":" + terminada); partidasLive.add(m); }
         final java.util.Map<Long, List<Long>> liveNow = new java.util.HashMap<>();   // matchId → quiénes tiene Live now en ella
+        final List<Long> idsTerminadaLive = new ArrayList<>();   // el matchId que llegó con cada liveTerminada
+        @Override public void liveTerminada(long pid, long matchId, Match fin) { avisos.add("liveEvento:" + pid + ":true"); partidasLive.add(fin); idsTerminadaLive.add(matchId); }
         @Override public List<Long> jugadoresLiveNow(long matchId) { return liveNow.getOrDefault(matchId, List.of()); }
         @Override public void avisarSiCampana(long pid, Match m) { avisos.add("campana:" + pid); }
         @Override public void avisarMiPartida(long pid, Match m) { avisos.add("miPartida:" + pid); }
@@ -291,6 +293,24 @@ class EnlaceVivoTest {
         assertEquals(List.of("liveEvento:8:true"), vistas.avisos, "a Live now, con la partida de la API; la watchlist no cambia");
         assertNotNull(vistas.partidasLive.get(0));
         assertTrue(vivo.terminada(555));
+    }
+
+    /** Menor del revisor: sin datos, Live now recibe igual el matchId (no un null que le haga soltar cualquier partida). */
+    @Test void quitadaSinDatosDeLiveNowPasaElIdDeLaPartida() {
+        red.cuerpo = "{\"matches\":[]}";
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.comprobarQuitada(555, 2);   // último intento sin datos
+        assertEquals(List.of("liveEvento:8:true"), vistas.avisos);
+        assertNull(vistas.partidasLive.get(0), "sin partida de la API");
+        assertEquals(List.of(555L), vistas.idsTerminadaLive, "pero con el id: Live now solo quita esa");
+    }
+
+    /** Menor del revisor: dos matchRemoved seguidos de una partida que solo vio Live now programan una sola espera. */
+    @Test void dosQuitadasDeUnaPartidaSoloDeLiveNowProgramanUnaSolaComprobacion() {
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        assertEquals(1, esperasQuitada().size());
     }
 
     @Test void quitadaConMarcadosYDeLiveNowNoAvisaDosVecesAlMismo() {
