@@ -15,6 +15,12 @@ import java.util.concurrent.atomic.LongAdder;
  * Solo se guarda lo que el llamador le da (CompanionApi solo le da respuestas 2xx: los errores salen como excepción
  * antes de llegar aquí). Seguro entre hilos con un monitor (las operaciones son de microsegundos). Dos hilos que
  * piden a la vez una URL que no está la piden los dos a la red: la caché no bloquea a nadie mientras se descarga.
+ *
+ * Memoria: como mucho «maximo» textos (500 en la app, CompanionApi.MAX_CACHE). Una ficha /profiles con su serie de
+ * ratings o una página de 100 filas del ladder ocupan del orden de 20-40 KB, así que el peor caso ronda 10-20 MB; en
+ * uso normal, muy por debajo (unas decenas de entradas). No hay hilo de limpieza: una entrada caducada sale cuando
+ * alguien la vuelve a leer (vigente la quita) o cuando la empuja fuera el LRU al pasar del máximo; hasta entonces
+ * ocupa memoria pero nunca se sirve.
  */
 public final class CacheRespuestas {
     private record Entrada(String cuerpo, long caducaMs) { }
