@@ -4,8 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.swing.JFrame;
 import javax.swing.SwingUtilities;
-import java.awt.Frame;
-import java.awt.event.WindowEvent;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.List;
@@ -285,50 +283,6 @@ class BarraEstadoTest {
             String tip = b.detenerDescBtn.getToolTipText();
             assertTrue(tip.contains("15 s"), tip);
             assertFalse(tip.contains("25 s"), tip);
-        });
-        cerrar(b, ventana);
-    }
-
-    // ----- mensaje de control.json (F10 de la revisión 1.3) -----
-
-    @Test void avisoDeControlConLaVentanaALaVistaSeEnsenaYSeMarcaVisto() throws Exception {
-        AnfitrionFalso anf = new AnfitrionFalso();
-        JFrame ventana = new JFrame();
-        BarraEstado b = nuevo(anf, ventana);
-        int[] marcado = new int[1];
-        SwingUtilities.invokeAndWait(() -> {
-            b.aLaVista = () -> true;
-            b.mostrarAvisoCuandoSeVea("Aviso para todos", () -> marcado[0]++);
-            assertEquals("Aviso para todos", b.status.getText());
-            assertTrue(b.toast() != null, "además de la barra, como toast: otro estado no lo pisa");
-            assertEquals(1, marcado[0], "enseñado: ahora sí se marca como visto");
-        });
-        cerrar(b, ventana);
-    }
-
-    @Test void avisoDeControlConLaVentanaMinimizadaEsperaASerVistaParaMarcarse() throws Exception {
-        AnfitrionFalso anf = new AnfitrionFalso();
-        JFrame ventana = new JFrame();
-        BarraEstado b = nuevo(anf, ventana);
-        int[] marcado = new int[1];
-        boolean[] aLaVista = { false };
-        SwingUtilities.invokeAndWait(() -> {
-            b.aLaVista = () -> aLaVista[0];
-            String antes = b.status.getText();
-            int oyentes = ventana.getWindowStateListeners().length;
-            b.mostrarAvisoCuandoSeVea("Aviso para todos", () -> marcado[0]++);
-            b.mostrarAvisoCuandoSeVea("Aviso para todos", () -> marcado[0]++);   // la recarga de la hora siguiente
-            assertEquals(antes, b.status.getText(), "minimizada: todavía no se enseña");
-            assertNull(b.toast());
-            assertEquals(0, marcado[0], "sin enseñarlo, no se marca como visto");
-            assertEquals(oyentes + 1, ventana.getWindowStateListeners().length, "una sola espera aunque llegue dos veces");
-
-            aLaVista[0] = true;   // el usuario la restaura desde la barra de tareas
-            ventana.dispatchEvent(new WindowEvent(ventana, WindowEvent.WINDOW_STATE_CHANGED, Frame.ICONIFIED, Frame.NORMAL));
-            assertEquals("Aviso para todos", b.status.getText());
-            assertTrue(b.toast() != null);
-            assertEquals(1, marcado[0], "restaurada: se enseña y se marca una sola vez");
-            assertEquals(oyentes, ventana.getWindowStateListeners().length, "la espera se retira sola");
         });
         cerrar(b, ventana);
     }

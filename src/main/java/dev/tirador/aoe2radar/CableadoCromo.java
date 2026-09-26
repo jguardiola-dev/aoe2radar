@@ -10,6 +10,7 @@ import dev.tirador.aoe2radar.service.MiPartidaServiceJuego;
 import dev.tirador.aoe2radar.ui.AutoScroll;
 import dev.tirador.aoe2radar.ui.BarraEstado;
 import dev.tirador.aoe2radar.ui.ClicEnFondo;
+import dev.tirador.aoe2radar.ui.FranjaAviso;
 import dev.tirador.aoe2radar.ui.MenuConfiguracion;
 import dev.tirador.aoe2radar.ui.MiPartidaPanel;
 import dev.tirador.aoe2radar.ui.Tareas;
@@ -69,9 +70,6 @@ final class CableadoCromo {
         // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
         // barraEstado ya construido (es un inicializador de campo, corre antes que el cuerpo del constructor).
         Servicios.avisoPausa429 = v.barraEstado::mostrarPausaApi;
-        // El mensaje de control.json (arreglo F10 de la revisión 1.3): la barra lo enseña cuando la ventana está a
-        // la vista y solo entonces se marca como visto.
-        Servicios.avisoControl = v.barraEstado::mostrarAvisoCuandoSeVea;
     }
 
     // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,
@@ -203,6 +201,13 @@ final class CableadoCromo {
             @Override public void limpiarSeleccionWatchlist() { v.playersList.clearSelection(); v.partidas.actualizarTextoBuscar(); }
         });
         v.add(split, BorderLayout.CENTER);
+        // El mensaje de control.json (decisión de Jorge, 1.3): una franja fina encima de todo, a lo ancho de la
+        // ventana, que nace oculta (sin mensaje no ocupa sitio) y se queda hasta que el usuario pulsa su ×; solo
+        // entonces se marca como visto. Se fija aquí, en el EDT y antes de AccionesVentana.arrancar, que es quien
+        // lanza la primera lectura de control.json.
+        FranjaAviso franja = new FranjaAviso();
+        v.add(franja, BorderLayout.NORTH);
+        Servicios.avisoControl = franja::mostrar;
     }
 
     /** Lo que ui.BarraEstado necesita del resto de la ventana: el freno de cancelación real (api.Cancelacion)

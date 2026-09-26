@@ -108,15 +108,16 @@ public class Servicios {
     static void avisarPausa429(long seg) {
         SwingUtilities.invokeLater(() -> avisoPausa429.accept(seg));
     }
-    /** Camino hacia la barra de estado para el mensaje de control.json (arreglo F10 de la revisión 1.3): la ventana
-     *  lo fija en el EDT al construirse (CableadoCromo.configurarVentana), como avisoPausa429. Recibe el texto y lo
-     *  que hay que hacer cuando ya se ha enseñado (marcarlo como visto). Sin ventana, no se enseña ni se marca. */
-    public static volatile java.util.function.BiConsumer<String, Runnable> avisoControl = (txt, alMostrarse) -> {};
+    /** Camino hacia la franja de avisos (ui.FranjaAviso) para el mensaje de control.json (decisión de Jorge, 1.3): la
+     *  ventana lo fija en el EDT al construirse (CableadoCromo.montarVentana), como avisoPausa429. Recibe el texto y
+     *  lo que hay que hacer cuando el usuario lo cierra con su × (marcarlo como visto). Sin ventana, no se enseña ni
+     *  se marca. */
+    public static volatile java.util.function.BiConsumer<String, Runnable> avisoControl = (txt, alCerrar) -> {};
 
     /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
      *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pasar el mensaje
-     *  a la ventana. Se marca visto solo cuando la barra lo ha enseñado con la ventana a la vista (F10), y en un
-     *  hilo aparte: el disco, fuera del EDT. Mientras no se enseñe, la recarga de cada hora lo vuelve a traer. */
+     *  a la ventana. Se marca visto solo cuando el usuario cierra la franja con la ×, y en un hilo aparte: el disco,
+     *  fuera del EDT. Mientras no la cierre, la recarga de cada hora lo vuelve a traer (la franja ignora el repetido). */
     public static void cargarControl() {
         String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""));
         if (msg != null)

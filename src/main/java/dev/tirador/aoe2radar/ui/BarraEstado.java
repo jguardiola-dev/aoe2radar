@@ -13,13 +13,9 @@ import java.awt.Cursor;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.FlowLayout;
-import java.awt.Frame;
 import java.awt.Insets;
-import java.awt.Window;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -224,55 +220,6 @@ public final class BarraEstado {
     }
 
     public void ocultarToast() { if (toast != null) { ventana.getLayeredPane().remove(toast); ventana.getLayeredPane().repaint(); toast = null; } }
-
-    // ======================================================================
-    // Mensaje del mando a distancia (control.json), arreglo F10 de la revisión 1.3: antes se marcaba como visto al
-    // descargarlo y se pintaba una vez en `status`, donde otros estados lo pisaban en milisegundos (o la ventana
-    // estaba minimizada). Ahora va también como toast y solo con la ventana a la vista.
-    // ======================================================================
-
-    /** ¿Está la ventana a la vista (mostrada y no minimizada)? Campo, no método, solo para que BarraEstadoTest
-     *  simule una ventana a la vista sin pantalla; en producción es siempre esta comprobación. */
-    java.util.function.BooleanSupplier aLaVista = this::ventanaALaVista;
-    /** El mensaje que espera a que la ventana se vea (null si no hay ninguno): evita apilar esperas si la recarga
-     *  de cada hora trae el mismo mensaje mientras la ventana sigue minimizada. */
-    private String avisoPendiente;
-
-    private boolean ventanaALaVista() {
-        return ventana.getRootPane().isShowing()
-                && !(ventana instanceof Frame f && (f.getExtendedState() & Frame.ICONIFIED) != 0);
-    }
-
-    /** Enseña el mensaje en la barra y como toast si la ventana está a la vista; si no (minimizada o aún sin abrir),
-     *  espera a que se abra o se restaure. alMostrarse corre en el EDT justo después de enseñarlo: ahí, y no antes,
-     *  se marca como visto. */
-    public void mostrarAvisoCuandoSeVea(String texto, Runnable alMostrarse) {
-        if (aLaVista.getAsBoolean()) {
-            avisoPendiente = null;
-            status.setText(texto);
-            mostrarToast(texto, 0);
-            alMostrarse.run();
-            return;
-        }
-        if (texto.equals(avisoPendiente) || !(ventana instanceof Window w)) return;
-        avisoPendiente = texto;
-        WindowAdapter espera = new WindowAdapter() {
-            @Override public void windowOpened(WindowEvent e) { reintentar(); }
-            @Override public void windowDeiconified(WindowEvent e) { reintentar(); }
-            @Override public void windowStateChanged(WindowEvent e) { reintentar(); }
-            @Override public void windowActivated(WindowEvent e) { reintentar(); }
-            private void reintentar() {
-                if (!texto.equals(avisoPendiente)) { quitar(); return; }   // llegó otro mensaje más nuevo: este sobra
-                if (!aLaVista.getAsBoolean()) return;
-                quitar();
-                avisoPendiente = null;
-                mostrarAvisoCuandoSeVea(texto, alMostrarse);
-            }
-            private void quitar() { w.removeWindowListener(this); w.removeWindowStateListener(this); }
-        };
-        w.addWindowListener(espera);
-        w.addWindowStateListener(espera);
-    }
 
     // ======================================================================
     // Aviso de pausa por 429 (decisión de Jorge, DEUDA 45): "Buscar" y Twitch se quedaban en "Consultando..."

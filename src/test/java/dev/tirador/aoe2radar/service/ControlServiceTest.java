@@ -79,8 +79,8 @@ class ControlServiceTest {
     }
 
     @Test void mensajeNuevoSeDevuelveSinMarcarloVisto() {
-        // F10 (revisión 1.3): el servicio ya no lo marca como visto; lo hace la ventana cuando lo ha enseñado
-        // (BarraEstado.mostrarAvisoCuandoSeVea). Por eso cargarControl ya no recibe con qué marcarlo.
+        // F10 (revisión 1.3): el servicio ya no lo marca como visto; lo hace la ventana cuando el usuario cierra la
+        // franja (ui.FranjaAviso, su ×). Por eso cargarControl ya no recibe con qué marcarlo.
         control.cuerpo = "{\"mensaje\":\"hola\"}";
         assertEquals("hola", servicio.cargarControl(""));
         assertEquals("hola", servicio.cargarControl(""), "sin marcar, la recarga de cada hora lo vuelve a traer");
