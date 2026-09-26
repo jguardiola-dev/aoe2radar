@@ -24,8 +24,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * MenuConfiguracion sin pantalla: la construcción del menú (orden de ítems, checkboxes reflejando la config y
  * el Anfitrion) corre en el EDT con invokeAndWait, igual que en la app; nunca se dispara manual=true en
- * comprobarActualizacion ni se llama abrirDonacion(), porque ambas abrirían una ventana/navegador real. El
- * doble de Anfitrion graba qué le pide el menú, como haría la ventana de verdad con sus lambdas.
+ * comprobarActualizacion, porque abriría un diálogo modal real. abrirDonacion() no vive aquí: se quedó en la
+ * ventana porque usa java.net.URI, que ui no puede importar. El doble de Anfitrion graba qué le pide el menú,
+ * como haría la ventana de verdad con sus lambdas.
  */
 class MenuConfiguracionTest {
 
@@ -75,7 +76,7 @@ class MenuConfiguracionTest {
         Transporte transporteQueNoSeUsa = url -> { throw new AssertionError("no debería llamarse en este test"); };
         ControlService controlService = new ControlService(transporteQueNoSeUsa, transporteQueNoSeUsa);
         SwingUtilities.invokeAndWait(() ->
-                caja[0] = new MenuConfiguracion("sistema", autoSgItem, controlService, "https://ejemplo.invalido/donar", anfitrion));
+                caja[0] = new MenuConfiguracion("sistema", autoSgItem, controlService, anfitrion));
         return caja[0];
     }
 
@@ -220,7 +221,7 @@ class MenuConfiguracionTest {
         ControlService controlService = new ControlService(version, version);
         MenuConfiguracion[] caja = new MenuConfiguracion[1];
         SwingUtilities.invokeAndWait(() ->
-                caja[0] = new MenuConfiguracion("sistema", autoSgItem, controlService, "https://ejemplo.invalido/donar", anfitrion));
+                caja[0] = new MenuConfiguracion("sistema", autoSgItem, controlService, anfitrion));
         // manual=false: nunca abre diálogos ni navega, solo puede avisar al botón "Nueva versión" si toca.
         caja[0].comprobarActualizacion(false);
         assertTrue(listo.await(3, TimeUnit.SECONDS), "el hilo 'actualizaciones' debía terminar y avisar por el EDT");

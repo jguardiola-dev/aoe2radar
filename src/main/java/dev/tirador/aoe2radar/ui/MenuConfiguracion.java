@@ -14,11 +14,9 @@ import javax.swing.JPopupMenu;
 import javax.swing.JRadioButtonMenuItem;
 import javax.swing.SwingUtilities;
 import java.awt.Component;
-import java.awt.Desktop;
 import java.awt.FlowLayout;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
-import java.net.URI;
 import java.nio.file.Path;
 
 import static dev.tirador.aoe2radar.service.Juego.rutaCaptureAge;
@@ -75,18 +73,17 @@ public final class MenuConfiguracion {
 
     private final Anfitrion anfitrion;
     private final ControlService controlService;
-    private final String donarUrl;
     private final JPopupMenu menu;
     private final JPanel esquina;
 
     /** Construye el menú completo y la esquina «Mi perfil», en el mismo orden que antes en
      *  construirBarraSuperior. {@code autoSgItem} es un campo YA existente de la ventana (lo usa también
-     *  Partidas para saber si copia la rec al savegame), no uno nuevo: se recibe ya construido. */
+     *  Partidas para saber si copia la rec al savegame), no uno nuevo: se recibe ya construido.
+     *  abrirDonacion() se queda en la ventana (usa java.net.URI, que ui no puede importar). */
     public MenuConfiguracion(String temaInicial, JCheckBoxMenuItem autoSgItem, ControlService controlService,
-                              String donarUrl, Anfitrion anfitrion) {
+                              Anfitrion anfitrion) {
         this.anfitrion = anfitrion;
         this.controlService = controlService;
-        this.donarUrl = donarUrl;
 
         JButton configBtn = new JButton(t("Configuración ▾", "Settings ▾"));
         JPopupMenu configMenu = new JPopupMenu();
@@ -211,7 +208,7 @@ public final class MenuConfiguracion {
             guardarConfig("usar_ca", String.valueOf(usarCaItem.isSelected()));
             if (usarCaItem.isSelected() && rutaCaptureAge() == null)
                 anfitrion.estado(t("CaptureAge no aparece en la ruta estándar: usa «Cambiar ruta de CaptureAge…».",
-                        "CaptureAge isn't at the standard path: use “Change CaptureAge path…”."));
+                        "CaptureAge isn't at the standard path: use \u201CChange CaptureAge path\u2026\u201D."));
         });
         configMenu.add(usarCaItem);
         JMenuItem rutaCaItem = new JMenuItem(t("Cambiar ruta de CaptureAge…", "Change CaptureAge path…"));
@@ -298,7 +295,7 @@ public final class MenuConfiguracion {
             SwingUtilities.invokeLater(() -> {
                 if (tagF != null && versionMayor(tagF, VERSION)) {
                     String limpia = tagF.replaceFirst("^[vV]", "");
-                    anfitrion.mostrarNuevaVersion(t("Nueva versión ", "New version ") + limpia + t(" — Descargar", " — Download"));
+                    anfitrion.mostrarNuevaVersion(t("Nueva versión ", "New version ") + limpia + t(" \u2014 Descargar", " \u2014 Download"));
                     if (manual) JOptionPane.showMessageDialog(anfitrion.padre(),
                             t("Hay una versión nueva: ", "There is a new version: ") + limpia
                                     + t("\nSe abrirá la página de descarga.", "\nThe download page will open."),
@@ -312,11 +309,5 @@ public final class MenuConfiguracion {
                 }
             });
         }, "actualizaciones").start();
-    }
-
-    /** Abre la página de donación; si el navegador no se puede lanzar, deja la URL en el estado para copiarla a mano. */
-    public void abrirDonacion() {
-        try { Desktop.getDesktop().browse(URI.create(donarUrl)); }
-        catch (Exception ex) { anfitrion.estado("Abre en tu navegador: " + donarUrl); }
     }
 }

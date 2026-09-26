@@ -865,8 +865,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // truncarPx: ver util.Formato (recorte con puntos suspensivos, compartido por Live now y la watchlist).
 
-    /** Delegado: la construccion de la UI y el hilo "actualizaciones" viven en ui.MenuConfiguracion (comparten
-     *  el boton "Configuracion" con el item "Buscar actualizaciones..."). Nombre conservado: arrancar() la llama al arranque. */
+    /** Delegado: la construcción de la UI y el hilo «actualizaciones» viven en ui.MenuConfiguracion (comparten
+     *  el botón «Configuración ▾» con el ítem «Buscar actualizaciones…»). Nombre conservado: arrancar() la llama al arranque. */
     void comprobarActualizacion(boolean manual) { menuConfiguracion.comprobarActualizacion(manual); }
 
     static int tickMs() {
@@ -1142,10 +1142,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         filaVistas.add(techTreeBtn);
         filaVistas.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(128, 128, 128, 70)));
 
-        // El boton "Configuracion (V)", todos sus items y la esquina "Mi perfil": ver ui.MenuConfiguracion. Lo
-        // que sus items necesitan de otras zonas (tema, watchlist, vigilancia, CaptureAge, mi perfil, acerca
-        // de, carpeta savegame...) llega por MenuConfiguracion.Anfitrion, implementado aqui con lambdas.
-        menuConfiguracion = new MenuConfiguracion(temaInicial, autoSgItem, CONTROL_SERVICE, DONAR_URL, new MenuConfiguracion.Anfitrion() {
+        // El botón «Configuración ▾», todos sus ítems y la esquina «Mi perfil»: ver ui.MenuConfiguracion. Lo
+        // que sus ítems necesitan de otras zonas (tema, watchlist, vigilancia, CaptureAge, mi perfil, acerca
+        // de, carpeta savegame…) llega por MenuConfiguracion.Anfitrion, implementado aquí con lambdas.
+        menuConfiguracion = new MenuConfiguracion(temaInicial, autoSgItem, CONTROL_SERVICE, new MenuConfiguracion.Anfitrion() {
             @Override public Component padre() { return SpoilerFreeRecs.this; }
             @Override public void estado(String texto) { status.setText(texto); }
             @Override public void aplicarTema(String tema) { SpoilerFreeRecs.aplicarTema(tema, SpoilerFreeRecs.this); }
@@ -1615,9 +1615,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         catch (Exception ex) { status.setText("Abre en tu navegador: https://" + TWITCH); }
     }
 
-    /** Delegado: el cuerpo (Desktop.browse + aviso en el estado si falla) vive en ui.MenuConfiguracion,
-     *  junto al resto del boton "Configuracion". Nombre conservado: el boton cafeBtn lo llama por su nombre. */
-    void abrirDonacion() { menuConfiguracion.abrirDonacion(); }
+    void abrirDonacion() {
+        try { Desktop.getDesktop().browse(URI.create(DONAR_URL)); }
+        catch (Exception ex) { status.setText("Abre en tu navegador: " + DONAR_URL); }
+    }
 
     // ----- Acerca de: movido a ui.AcercaDe (logo, showAbout, generarIco) -----
     void showAbout() { AcercaDe.showAbout(this, logo); }
@@ -1644,7 +1645,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // ----- ComponentesTema: los componentes que TemaApp necesita repintar ---
     // visible para ui.TemaApp (inversion de dependencias: TemaApp no conoce SpoilerFreeRecs)
     @Override public java.awt.Component raiz() { return this; }
-    @Override public JPopupMenu configMenu() { return menuConfiguracion.menu(); }
+    @Override public JPopupMenu configMenu() { return menuConfiguracion == null ? null : menuConfiguracion.menu(); }
     @Override public JLabel nota() { return partidas == null ? null : partidas.nota; }
     @Override public JLabel firma() { return firma; }
     @Override public JLabel watchPista1() { return watchlist.watchPista1(); }
