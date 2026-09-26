@@ -20,4 +20,18 @@ public interface Throttle {
      * acabó la última pausa, se olvida la escalada. Devuelve la pausa que queda, en ms.
      */
     long registrar429();
+
+    /**
+     * Lo que deja un 429: la pausa que queda (ms) y si este 429 la ABRIÓ (nueva = episodio nuevo) o cayó en una ya
+     * vigente (misma ráfaga). Con eso ApiClient avisa una vez por pausa y no una por respuesta.
+     */
+    record Pausa429(long ms, boolean nueva) {}
+
+    /**
+     * Como registrar429() (misma escalada, misma pausa), diciendo además si la pausa es nueva. Por defecto toda pausa
+     * cuenta como nueva: un Throttle que no lo sabe (los dobles de prueba) avisa en cada 429, como antes.
+     * <p>Ojo: quien implemente registrar429() delegando en este método (como ThrottleCubo) debe sobrescribir también
+     * este; si no, los dos se llaman entre sí sin fin.
+     */
+    default Pausa429 registrarEpisodio429() { return new Pausa429(registrar429(), true); }
 }

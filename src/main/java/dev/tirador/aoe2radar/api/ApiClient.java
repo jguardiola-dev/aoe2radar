@@ -68,10 +68,15 @@ public final class ApiClient {
         }
     }
 
-    /** Un 429 del companion: pausa global en el Throttle, línea en el log y aviso a quien escuche (la UI). */
+    /**
+     * Un 429 del companion: siempre al Throttle (pausa global y escalada viven allí). Línea en el log y aviso a quien
+     * escuche (la UI) solo si este 429 abrió la pausa: los de la misma ráfaga, que caen en una pausa vigente, ya están
+     * avisados (antes, 5 respuestas 429 seguidas escribían 5 líneas «pausa de N s» con N decreciente).
+     */
     private void registrar429() {
-        long pausa = throttle.registrar429();   // escalada y pausa global viven en el Throttle
-        long seg = (pausa + 999) / 1000;   // hacia arriba: «0 s» con la pausa aún en curso confundiría
+        Throttle.Pausa429 p = throttle.registrarEpisodio429();
+        if (!p.nueva()) return;
+        long seg = (p.ms() + 999) / 1000;   // hacia arriba: «0 s» con la pausa aún en curso confundiría
         log("API: 429 recibido: pausa global de " + seg + " s para no insistir");
         alPausar.accept(seg);
     }

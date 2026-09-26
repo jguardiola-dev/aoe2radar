@@ -39,11 +39,13 @@ class ApiClientTest {
         }
     }
 
-    /** Apunta qué le piden; el 429 siempre «pausa» 60 s. */
+    /** Apunta qué le piden; el 429 siempre «pausa» 60 s, y es pausa nueva salvo que el test diga que hay una en curso. */
     static final class ThrottleEspia implements Throttle {
         int adquiridas, cuatrocientosVeintinueve;
+        boolean pausaEnCurso;
         @Override public void adquirir(java.util.function.BooleanSupplier cancelar) { adquiridas++; }
-        @Override public long registrar429() { cuatrocientosVeintinueve++; return 60_000; }
+        @Override public long registrar429() { return registrarEpisodio429().ms(); }
+        @Override public Pausa429 registrarEpisodio429() { cuatrocientosVeintinueve++; return new Pausa429(60_000, !pausaEnCurso); }
     }
 
     final ThrottleEspia throttle = new ThrottleEspia();
@@ -79,6 +81,33 @@ class ApiClientTest {
         assertEquals(1, throttle.cuatrocientosVeintinueve);
         assertEquals(List.of(60L), avisos);
         assertEquals(1, red.pedidas.size(), "texto no reintenta");
+    }
+
+    @Test void un429DentroDeUnaPausaEnCursoCuentaPeroNoSeAvisaOtraVez() {
+        // Fase 4 (DEUDA, aviso del 429): una ráfaga de 5 respuestas 429 escribía 5 líneas «pausa de N s» con N
+        // decreciente. Ahora solo avisa (log y barra de estado) el 429 que abre la pausa.
+        throttle.pausaEnCurso = true;
+        red.responde(429);
+        assertThrows(IOException.class, () -> api.texto(COMPANION));
+        assertEquals(1, throttle.cuatrocientosVeintinueve, "al freno le llega igual");
+        assertTrue(avisos.isEmpty(), "la pausa ya se avisó cuando se abrió");
+    }
+
+    @Test void conElFrenoRealUnaRafagaDe429AvisaUnaSolaVez() throws Exception {
+        // Dos peticiones en vuelo a la vez: mientras esta espera su respuesta, otra (anidada aquí, como si fuera de otro
+        // hilo) recibe un 429 y abre la pausa; el 429 de esta llega después y cae dentro de esa pausa.
+        RelojFalso reloj = new RelojFalso();
+        ApiClient conFrenoReal = new ApiClient(new ThrottleCubo(reloj), red, avisos::add, () -> false);
+        red.trasCadaPeticion = () -> {
+            if (red.pedidas.size() != 1) return;
+            assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));   // la otra: primer 429, pausa de 60 s
+        };
+        red.responde(429, 429, 200);
+        assertThrows(IOException.class, () -> conFrenoReal.texto(COMPANION));
+        assertEquals(List.of(60L), avisos, "un solo aviso: el de la pausa nueva");
+        long antes = reloj.dormido;
+        conFrenoReal.texto(COMPANION);
+        assertEquals(60_000, reloj.dormido - antes, "la pausa sigue siendo la misma (sin escalar)");
     }
 
     @Test void textoCuentaEl429DeCualquierHostDelCompanion() {

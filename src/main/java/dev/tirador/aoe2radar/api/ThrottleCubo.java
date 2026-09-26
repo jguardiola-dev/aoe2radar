@@ -51,8 +51,13 @@ public final class ThrottleCubo implements Throttle {
         }
     }
 
+    /** Solo los ms: la lógica (y su porqué) está en registrarEpisodio429(). */
+    @Override public long registrar429() { return registrarEpisodio429().ms(); }
+
     /**
-     * Un escalón por EPISODIO, no por respuesta: si ya hay una pausa vigente, un 429 más son respuestas de la misma
+     * «nueva» es true solo cuando este 429 abre la pausa (episodio nuevo); se decide bajo el mismo candado que la abre,
+     * así que de varios hilos con un 429 a la vez solo uno la ve nueva.
+     * <p>Un escalón por EPISODIO, no por respuesta: si ya hay una pausa vigente, un 429 más son respuestas de la misma
      * ráfaga (salieron antes de la pausa) y no escalan ni acortan la pausa. Si el 429 llega después de que acabe,
      * sí escala. Para el servidor es igual (durante la pausa no le llega nada); para el usuario, 60 s y no 300 s por
      * una sola queja. Decisión de Jorge (2026-09-24). Bajo candado: la escalada es atómica.
@@ -61,16 +66,16 @@ public final class ThrottleCubo implements Throttle {
      * (éxitos cada poco) la escalada también se olvida. Decidido el 2026-09-25 (antes: «10 min desde el último éxito
      * contado», que en uso continuo no olvidaba nunca).
      */
-    @Override public long registrar429() {
+    @Override public Pausa429 registrarEpisodio429() {
         synchronized (escalada) {
             long ahora = reloj.ahoraMs();
             long vigente = pausaHastaMs - ahora;
-            if (vigente > 0) return Math.min(PAUSA_MAX_MS, vigente);   // lo que queda (con tope: si el reloj retrocede no se duerme más de 300 s)
+            if (vigente > 0) return new Pausa429(Math.min(PAUSA_MAX_MS, vigente), false);   // lo que queda (con tope: si el reloj retrocede no se duerme más de 300 s)
             if (ahora - pausaHastaMs > OLVIDO_MS) pausasSeguidas = 0;   // 10 min de calma: episodio nuevo desde cero
             pausasSeguidas = Math.min(pausasSeguidas + 1, ESCALONES);
             long pausa = Math.min(PAUSA_MAX_MS, PAUSA_BASE_MS * (1L << (pausasSeguidas - 1)));
             pausaHastaMs = reloj.ahoraMs() + pausa;
-            return pausa;
+            return new Pausa429(pausa, true);
         }
     }
 }
