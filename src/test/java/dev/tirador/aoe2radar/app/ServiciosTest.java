@@ -6,8 +6,15 @@ import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import org.junit.jupiter.api.Test;
 
+import javax.swing.SwingUtilities;
 import java.lang.reflect.Field;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.function.LongConsumer;
 
+import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
+import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
+import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -83,5 +90,48 @@ class ServiciosTest {
         long antes = System.currentTimeMillis();
         Servicios.dormir(0);
         assertTrue(System.currentTimeMillis() - antes < 200);
+    }
+
+    @Test
+    void dormirSoloAcortaLaPausaParaElHiloDeLaOperacionCancelada() {
+        // Fila 56 de DEUDA: antes, dormir miraba "stopOperacion && opEnCurso" sin comprobar el hilo, así que
+        // pulsar Detener acortaba también las pausas de un barrido de fondo ajeno a la operación cancelada.
+        // Ahora usa Cancelacion.detieneEsteHilo(), que exige además que sea el hilo de esa operación.
+        stopOperacion = true;
+        opEnCurso = true;
+        try {
+            hiloOperacion = new Thread();   // un hilo distinto al de este test: su pausa NO debe acortarse
+            long antes = System.currentTimeMillis();
+            Servicios.dormir(400);
+            assertTrue(System.currentTimeMillis() - antes >= 350,
+                    "un hilo ajeno a la operación cancelada no debe acortar su pausa");
+
+            hiloOperacion = Thread.currentThread();   // el hilo de la operación cancelada: sí debe acortarse
+            antes = System.currentTimeMillis();
+            Servicios.dormir(3000);
+            assertTrue(System.currentTimeMillis() - antes < 300,
+                    "el hilo de la operación cancelada sí debe acortar su pausa");
+        } finally {
+            stopOperacion = false; opEnCurso = false; hiloOperacion = null;
+        }
+    }
+
+    @Test
+    void avisarPausa429LlamaAlConsumidorFijadoPorLaVentanaEnElEdt() throws Exception {
+        // Limpieza 1 (fase 4): antes, avisarPausa429 buscaba la ventana viva con Frame.getFrames() y pintaba
+        // `status` a través de un putClientProperty que BarraEstado dejaba en su constructor. Ahora Servicios
+        // solo conoce un LongConsumer explícito (avisoPausa429), que la ventana fija al construir BarraEstado.
+        LongConsumer anterior = Servicios.avisoPausa429;
+        try {
+            AtomicLong segRecibidos = new AtomicLong(-1);
+            AtomicBoolean enEdt = new AtomicBoolean(false);
+            Servicios.avisoPausa429 = seg -> { segRecibidos.set(seg); enEdt.set(SwingUtilities.isEventDispatchThread()); };
+            Servicios.avisarPausa429(7);
+            SwingUtilities.invokeAndWait(() -> { });   // vacía el EDT: el invokeLater de avisarPausa429 ya corrió
+            assertEquals(7, segRecibidos.get());
+            assertTrue(enEdt.get(), "el aviso debe llegar al consumidor en el EDT, nunca desde la red");
+        } finally {
+            Servicios.avisoPausa429 = anterior;
+        }
     }
 }

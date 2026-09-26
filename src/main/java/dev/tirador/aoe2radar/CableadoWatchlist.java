@@ -134,7 +134,6 @@ final class CableadoWatchlist {
             @Override public Icon iconoVista(String tipo) { return dev.tirador.aoe2radar.ui.Navegador.iconoVista(tipo); }
             @Override public void seleccionCambiada() { if (v.ratings != null) v.ratings.sincronizarSeleccion(); if (v.perfil != null) v.perfil.sincronizarSeleccion(); }
             @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-            @Override public List<dev.tirador.aoe2radar.model.PerfilEncontrado> buscarPerfilesApi(String q) throws Exception { return COMPANION.buscarPerfiles(q); }
             @Override public Perfil perfilApi(long pid) throws Exception { return COMPANION.perfil(pid); }
             @Override public dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception { return COMPANION.pagina(pid, pagina, porPagina); }
             @Override public void reiniciarThrottleDirectos() { v.directos.reiniciarThrottle(); }

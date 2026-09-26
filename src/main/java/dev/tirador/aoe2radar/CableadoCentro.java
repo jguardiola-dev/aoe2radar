@@ -56,6 +56,23 @@ final class CableadoCentro {
             @Override public boolean seleccionada() { return v.navegador.directosBtn != null && v.navegador.directosBtn.isSelected(); }
         });
         v.centroCards.add(v.directos.panel(), "directos");
+        // techTree se crea AQUÍ, antes que Live now (fila 119 de DEUDA). La lambda de más abajo
+        // ("civ -> v.techTree.claveCivDeNombre(civ)") ya funcionaba con el orden viejo, porque lee el campo
+        // v.techTree al INVOCARSE, no al crearse; pero dependía de que nadie la llamara antes de tiempo. Con la
+        // creación movida delante, deja de depender de ese orden de llamada. No toca v.liveNow ni nada creado
+        // después, así que el cambio es seguro. El panel se añade al CardLayout más abajo, en su sitio de
+        // siempre, para no mover el orden de las cartas.
+        v.techTree = new TechTreeView(v, TechTreeServiceDatos.SISTEMA, v.stats, v.filtroStats, v.listas, v, Tareas.SWING,
+                new TechTreeView.Anfitrion() {
+                    @Override public void precalentarPerfiles() { v.perfil.precalentar(); }
+                    @Override public void cerrar() { v.navegador.cerrarTechTree(); }
+                },
+                new TechTreeView.EnlaceCivStats() {
+                    // Civ Stats se crea después (civStats es null mientras se construye el tech tree, como civStatsPanel en la 1.1)
+                    @Override public boolean construida() { return v.civStats != null; }
+                    @Override public void filtrosCambiados(boolean repintarTechTree) { if (v.civStats != null) v.civStats.filtrosCambiados(repintarTechTree); }
+                    @Override public void sincronizarVentana(String ventana) { if (v.civStats != null) v.civStats.ponerVentanaSinDisparar(ventana); }
+                });
         v.liveNow = new LiveNowView(v.campanas, LIVE, List.of(v.watchlist.PAISES), v.todosJugadores, v.eloWatch, v.twitchLive, civ -> v.techTree.claveCivDeNombre(civ), Tareas.SWING, v, v.menus, v, new LiveNowView.Anfitrion() {
             @Override public List<String> clanesGuardados() { return v.watchlist.clanesGuardados(); }
             @Override public String paisSel() { return v.watchlist.paisSel(); }
@@ -73,17 +90,6 @@ final class CableadoCentro {
             @Override public void estadoGlobal(String texto) { v.status.setText(texto); }
         });
         v.centroCards.add(v.liveNow.panel(), "ahora");
-        v.techTree = new TechTreeView(v, TechTreeServiceDatos.SISTEMA, v.stats, v.filtroStats, v.listas, v, Tareas.SWING,
-                new TechTreeView.Anfitrion() {
-                    @Override public void precalentarPerfiles() { v.perfil.precalentar(); }
-                    @Override public void cerrar() { v.navegador.cerrarTechTree(); }
-                },
-                new TechTreeView.EnlaceCivStats() {
-                    // Civ Stats se crea después (civStats es null mientras se construye el tech tree, como civStatsPanel en la 1.1)
-                    @Override public boolean construida() { return v.civStats != null; }
-                    @Override public void filtrosCambiados(boolean repintarTechTree) { if (v.civStats != null) v.civStats.filtrosCambiados(repintarTechTree); }
-                    @Override public void sincronizarVentana(String ventana) { if (v.civStats != null) v.civStats.ponerVentanaSinDisparar(ventana); }
-                });
         v.centroCards.add(v.techTree.panel(), "techtree");
         ToolTipManager.sharedInstance().setInitialDelay(350);
         ToolTipManager.sharedInstance().setDismissDelay(90_000);   // el tooltip aguanta mientras el ratón esté quieto

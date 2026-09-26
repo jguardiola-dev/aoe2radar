@@ -39,4 +39,32 @@ class PaisesTest {
             Paises.paisesSucios = suciosPrevio;
         }
     }
+
+    @Test void siYaHayUnGuardadoEnMarchaElSiguienteDisparoNoHaceNada() throws Exception {
+        // Hallazgo del revisor sobre la fila 25: con cargarPaises/guardarPaises corriendo en hilos aparte, dos
+        // disparos del Timer no deben escribir el archivo a la vez. GUARDANDO (paquete, no privado) simula "ya
+        // hay uno en marcha"; si guardarPaises() no respetara el flag, escribiría de verdad y dejaría
+        // paisesSucios en false (falla la aserción de abajo).
+        Map<Long, String> paisesPrevios = new HashMap<>(Paises.PAIS_DE);
+        boolean suciosPrevio = Paises.paisesSucios;
+        byte[] contenidoPrevio = Files.exists(Paises.PAISES_FILE) && !Files.isDirectory(Paises.PAISES_FILE)
+                ? Files.readAllBytes(Paises.PAISES_FILE) : null;
+        try {
+            Paises.PAIS_DE.clear();
+            Paises.PAIS_DE.put(999L, "es");
+            Paises.paisesSucios = true;
+            Paises.GUARDANDO.set(true);   // simula un guardado ya en marcha en otro hilo
+
+            Paises.guardarPaises();
+
+            assertTrue(Paises.paisesSucios, "con un guardado ya en marcha, este disparo debe saltarse sin tocar nada");
+        } finally {
+            Paises.GUARDANDO.set(false);
+            if (contenidoPrevio != null) Files.write(Paises.PAISES_FILE, contenidoPrevio);
+            else Files.deleteIfExists(Paises.PAISES_FILE);
+            Paises.PAIS_DE.clear();
+            Paises.PAIS_DE.putAll(paisesPrevios);
+            Paises.paisesSucios = suciosPrevio;
+        }
+    }
 }

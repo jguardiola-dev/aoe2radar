@@ -79,8 +79,22 @@ final class AccionesVentana {
         v.enlaceVivo.iniciarPing();
         javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
             v.menuConfiguracion.comprobarActualizacion(false); v.techTree.precargar();
-            cargarPaises(); v.autoScroll.instalar();
-            new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
+            // Fila 25 de DEUDA (con los hallazgos del revisor): PAIS_DE ya es ConcurrentHashMap, así que
+            // leerlo/escribirlo desde un hilo aparte (nunca el EDT) es seguro. El repintado de las banderas y el
+            // Timer de guardado (60 s, sigue siendo de Swing) esperan a que cargarPaises() termine: así ni se
+            // pinta la watchlist con banderas a medias ni se guarda un mapa que aún no terminó de leerse del
+            // disco. Cada disparo del Timer manda la escritura a un hilo demonio, nunca al EDT.
+            Thread cargaPaises = new Thread(() -> {
+                cargarPaises();
+                SwingUtilities.invokeLater(() -> {
+                    v.playersList.repaint();   // las banderas recién cargadas, en cuanto están listas
+                    new javax.swing.Timer(60_000, ev -> {
+                        Thread guardaPaises = new Thread(() -> guardarPaises(), "paises-guarda"); guardaPaises.setDaemon(true); guardaPaises.start();
+                    }).start();
+                });
+            }, "paises-carga");
+            cargaPaises.setDaemon(true); cargaPaises.start();
+            v.autoScroll.instalar();
             v.watchlist.refrescarCampanas();
             v.campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> v.watchlist.refrescarCampanas()); v.campanasTimer.start();
             new javax.swing.Timer(1000, ev -> { if (!VIVO.nadieJugando() && v.playersList.isShowing()) v.playersList.repaint(); }).start();   // el reloj del subtexto «en partida» corre   // las listas de las campanas (tops, país, clan) se repasan cada 15 min
@@ -91,15 +105,15 @@ final class AccionesVentana {
         v.vigilante = new javax.swing.Timer(tickMs(), e -> {
             // Con el socket conectado, quién está en partida llega al instante: los sondeos pasan a ser una resincronización
             // cada 10 min (× el multiplicador del mando a distancia). Si el socket cae, vuelven al ritmo del tick.
-            long ahora = System.currentTimeMillis();
+            long ahoraMs = System.currentTimeMillis();
             long resync = (long) (10 * 60_000L * ctrlMult("tick_mult"));
-            boolean tocaSondear = ctrlOn("sondeo") && (!v.enlaceVivo.conectado() || ahora - v.ultimoResyncMs >= resync);
-            if (tocaSondear) v.ultimoResyncMs = ahora;
+            boolean tocaSondear = ctrlOn("sondeo") && (!v.enlaceVivo.conectado() || ahoraMs - v.ultimoResyncMs >= resync);
+            if (tocaSondear) v.ultimoResyncMs = ahoraMs;
             if (tocaSondear) v.watchlist.vigilarVivos();
             if (!v.watchlist.modoTop()) v.directos.vigilarTwitch();   // en ★ lo dispara el propio río al terminar (vigilarTwitch tiene su propio ritmo)
             if (v.watchlist.modoTop() && !v.watchlist.modoClan()) {
                 // recuperación automática: si el top no pudo cargarse (o solo hay caché), reintenta
-                if (v.watchlist.topLadderVacio() || ahora - v.watchlist.topCargadoMs() > 15 * 60_000L)
+                if (v.watchlist.topLadderVacio() || ahoraMs - v.watchlist.topCargadoMs() > 15 * 60_000L)
                     v.watchlist.cargarTopLadder(true);
                 else if (tocaSondear) v.watchlist.vigilarTop();
             } else if (v.watchlist.modoClan() && tocaSondear) v.watchlist.vigilarTop();   // el clan se vigila, pero nunca se sustituye por el top del ladder
