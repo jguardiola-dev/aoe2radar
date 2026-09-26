@@ -203,6 +203,22 @@ public final class PerfilPresenter {
         });
     }
 
+    /**
+     * Fila 128: «Cargar 50 más» del diálogo «Todas las partidas» (antes vivía como hilo suelto dentro de
+     * PerfilView.mostrarHistorialPerfil). Mismo nombre de hilo y misma caché que la 1.1: "historial-mas",
+     * fundido en actividadCache para que cualquier otra vista que mire este pid vea el resultado.
+     */
+    public void cargarMasHistorialCompleto(long pid, String nombre, Runnable alTerminar) {
+        tareas.enFondo("historial-mas", () -> {
+            try {
+                Actividad base = actividadCache.get(pid);
+                Actividad a2 = perfiles.historial(pid, nombre, base, true, 1, a -> { }, () -> false);
+                actividadCache.put(pid, a2);
+            } catch (Exception ex) { log("historial: " + causa(ex)); }
+            tareas.enUi(alTerminar);
+        });
+    }
+
     /** Sugerencias del buscador de nick de la barra del perfil. Hilo "perfil-sugerir". */
     public void sugerirBuscador(String q) {
         tareas.enFondo("perfil-sugerir", () -> {

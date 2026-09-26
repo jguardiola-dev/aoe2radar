@@ -336,6 +336,36 @@ class PerfilPresenterTest {
         assertTrue(pantalla.masError.contains("timeout"));
     }
 
+    // ----- cargar más historial completo (fila 128): "historial-mas" salió de PerfilView ------
+
+    @Test void cargar_mas_historial_completo_funde_en_la_cache_y_avisa_al_terminar() {
+        Actividad base = actividad(5L, "Fulano", List.of());
+        actividadCache.put(5L, base);
+        Actividad ampliada = actividad(5L, "Fulano", List.of());
+        perfiles.historialResultado = ampliada;
+        boolean[] avisado = { false };
+        presenter.cargarMasHistorialCompleto(5L, "Fulano", () -> avisado[0] = true);
+        assertSame(ampliada, actividadCache.get(5L));
+        assertTrue(avisado[0]);
+    }
+
+    @Test void cargar_mas_historial_completo_avisa_igual_si_falla_como_hacia_el_finally_de_la_vista() {
+        perfiles.historialFalla = new java.io.IOException("timeout");
+        boolean[] avisado = { false };
+        presenter.cargarMasHistorialCompleto(5L, "Fulano", () -> avisado[0] = true);
+        assertTrue(avisado[0]);
+    }
+
+    /** Mutación (fila 128): el hilo debe llamarse "historial-mas", igual que en PerfilView.mostrarHistorialPerfil
+     *  de antes de moverlo (RegresionCapturas y cualquier volcado de hilos lo identifican por ese nombre). */
+    @Test void cargar_mas_historial_completo_usa_el_hilo_historial_mas() {
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perfiles, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        perfiles.historialResultado = actividad(5L, "Fulano", List.of());
+        p.cargarMasHistorialCompleto(5L, "Fulano", () -> { });
+        assertEquals(List.of("historial-mas"), tareasAplazadas.nombresFondo);
+    }
+
     // ----- sugerencias -------------------------------------------------------------------------
 
     @Test void sugerir_buscador_pasa_los_resultados_y_la_query() {

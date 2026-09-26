@@ -104,8 +104,6 @@ import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.lng;
-import static dev.tirador.aoe2radar.util.Log.causa;
-import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * La pestaña Perfil (card "perfil"): la página de un jugador — cabecera con ELO/rango/Top % por ladder, forma y
@@ -875,7 +873,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         modo.addActionListener(e -> { histModo = modo.getSelectedIndex() == 0 ? "*" : String.valueOf(modo.getSelectedItem()); histPagina = 0; pintar.run(); });
         ant.addActionListener(e -> { histPagina--; pintar.run(); });
         sig.addActionListener(e -> { histPagina++; pintar.run(); });
-        mas.addActionListener(e -> { mas.setEnabled(false); tareas.enFondo("historial-mas", () -> { try { Actividad base = actividadCache.get(pid); Actividad a2 = perfiles.historial(pid, nombre, base, true, 1, a -> { }, () -> false); actividadCache.put(pid, a2); } catch (Exception ex) { log("historial: " + causa(ex)); } tareas.enUi(() -> { mas.setEnabled(true); pintar.run(); }); }); });
+        mas.addActionListener(e -> { mas.setEnabled(false); presenter.cargarMasHistorialCompleto(pid, nombre, () -> { mas.setEnabled(true); pintar.run(); }); });
         JPanel sur = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 4));
         JButton desc = new JButton(t("Descargar rec", "Download rec")), env = new JButton(t("Enviar al juego", "Send to game"));
         for (JButton b : new JButton[]{ desc, env }) { b.setFocusable(false); b.setMargin(new Insets(2, 10, 2, 10)); b.putClientProperty("JButton.buttonType", "roundRect"); }
