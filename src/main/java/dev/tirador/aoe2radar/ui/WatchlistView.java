@@ -31,7 +31,6 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JLayeredPane;
 import javax.swing.JList;
-import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
@@ -70,8 +69,6 @@ import java.awt.event.KeyEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -332,6 +329,7 @@ public final class WatchlistView {
 
     // ----- piezas de la vista (1.3): reciben esta fachada y leen/escriben su estado a través de ella -----
     final WatchlistHoverCard tarjetaHover = new WatchlistHoverCard(this);
+    final WatchlistMenu menuLista = new WatchlistMenu(this);
 
     /** Ver ui.WatchlistView.EnlacePartidas y ui.WatchlistView.Anfitrion para el contrato completo. */
     public WatchlistView(Window ventana, ProfileService perfiles,
@@ -2304,156 +2302,7 @@ public final class WatchlistView {
 
     // ===== Menú contextual =================================================================================
 
-    /** Menú contextual de la watchlist y los tops, en cuatro bloques: en partida · perfil · watchlist · edición. */
-    // visible para RegresionCapturas (abre el menú contextual para fotografiarlo)
-    public void menuContextualWatchlist(Player p, MouseEvent e) {
-        JPopupMenu menu = new JPopupMenu();
-        long pid = p.id(); String nombre = anfitrion.nombreVisible(pid, p.name());
-        // ---- 1. en partida ahora
-        if (VIVO.jugando(pid)) {
-            Match m = VIVO.partida(pid);
-            JMenuItem cab = new JMenuItem(t("En partida ahora", "In a game now") + (m != null && m.map != null ? " · " + m.map : "") + (m != null && m.started != null ? " · " + dev.tirador.aoe2radar.util.Formato.reloj(Duration.between(m.started, Instant.now())) : ""));
-            cab.setEnabled(false); cab.setFont(cab.getFont().deriveFont(Font.BOLD));
-            menu.add(cab);
-            JMenuItem esp = new JMenuItem(t("Espectar en directo", "Spectate live"));
-            esp.addActionListener(a -> anfitrion.espectar(p));
-            menu.add(esp);
-            if (anfitrion.rutaCaptureAge() != null) {
-                JMenuItem espCa = new JMenuItem(t("Espectar con CaptureAge", "Spectate with CaptureAge"));
-                espCa.addActionListener(a -> { anfitrion.lanzarCaptureAge(null); anfitrion.espectar(p); });
-                menu.add(espCa);
-            }
-            MatchPlayer yo = null; if (m != null) for (MatchPlayer mp : m.players) if (mp.id == pid) yo = mp;
-            if (m != null && yo != null) {
-                List<MatchPlayer> aliados = new ArrayList<>(), rivales = new ArrayList<>();
-                for (MatchPlayer mp : m.players) { if (mp.id == pid) continue; if (mp.team == yo.team) aliados.add(mp); else rivales.add(mp); }
-                if (m.players.size() == 2 && rivales.size() == 1) menu.add(submenuJugadorPartida(rivales.get(0), t("Rival: ", "Opponent: ")));
-                else {
-                    if (!aliados.isEmpty()) { JMenu al = new JMenu(t("Aliados", "Allies")); for (MatchPlayer mp : aliados) al.add(submenuJugadorPartida(mp, "")); menu.add(al); }
-                    JMenu rv = new JMenu(t("Rivales", "Opponents")); for (MatchPlayer mp : rivales) rv.add(submenuJugadorPartida(mp, "")); menu.add(rv);
-                }
-            } else {
-                EstadoVivo.Rival riv = VIVO.rival(pid);
-                if (riv != null) { JMenu rivalMenu = menus.deJugador(riv.pid(), riv.nombre()); rivalMenu.setText(t("Rival: ", "Opponent: ") + riv.nombre()); menu.add(rivalMenu); }
-            }
-            menu.addSeparator();
-        }
-        // ---- 2. perfil
-        JMenuItem perf = new JMenuItem(t("Perfil", "Profile"));
-        perf.addActionListener(a -> navegacion.abrirPerfil(pid, nombre));
-        menu.add(perf);
-        JMenuItem perfN = new JMenuItem(t("Perfil en pestaña nueva", "Profile in a new tab"));
-        perfN.addActionListener(a -> navegacion.abrirPerfilEnPestana(pid, nombre));
-        menu.add(perfN);
-        menu.add(menus.perfilNavegador(pid));
-        if (twitchLive.containsKey(pid)) {
-            JMenuItem tw = new JMenuItem(t("Ver directo en Twitch", "Watch live on Twitch"));
-            tw.addActionListener(a -> anfitrion.abrirUrl("https://twitch.tv/" + twitchLive.get(pid)[0]));
-            menu.add(tw);
-        }
-        menu.addSeparator();
-        // ---- 3. watchlist
-        if (modoTop()) {
-            boolean yaSeguido = todosJugadores.stream().anyMatch(x -> x.id() == pid);
-            if (yaSeguido) {
-                JMenuItem quitarW = new JMenuItem(t("Quitar de mi watchlist", "Remove from my watchlist"));
-                quitarW.addActionListener(a -> quitarDeWatchlist(pid));
-                menu.add(quitarW);
-            } else {
-                JMenu anadir = new JMenu(t("Añadir a mi watchlist", "Add to my watchlist"));
-                Set<String> gsTop = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-                gsTop.add(GRUPO_GENERAL);
-                for (Player x : todosJugadores) gsTop.add(x.grupo());
-                gsTop.addAll(gruposConfig());
-                for (String g : gsTop) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> ficharDesdeTop(p, g)); anadir.add(it); }
-                anadir.addSeparator();
-                JMenuItem nuevoGT = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
-                nuevoGT.addActionListener(a -> { String g = elegirGrupoDialog(p.name()); if (g != null) ficharDesdeTop(p, g); });
-                anadir.add(nuevoGT);
-                menu.add(anadir);
-                List<Player> selTop = playersList.getSelectedValuesList();
-                if (selTop.size() > 1 && selTop.contains(p)) {   // varios seleccionados: ficharlos todos de golpe
-                    JMenu anadirVarios = new JMenu(t("Añadir los ", "Add the ") + selTop.size() + t(" seleccionados a", " selected to"));
-                    for (String g : gsTop) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> ficharVarios(selTop, g)); anadirVarios.add(it); }
-                    anadirVarios.addSeparator();
-                    JMenuItem nuevoGV = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
-                    nuevoGV.addActionListener(a -> { String g = elegirGrupoDialog(selTop.size() + t(" jugadores", " players")); if (g != null) ficharVarios(selTop, g); });
-                    anadirVarios.add(nuevoGV);
-                    menu.add(anadirVarios);
-                }
-            }
-        } else {
-            JMenu mover = new JMenu(t("Mover a grupo", "Move to group"));
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            gs.add(GRUPO_GENERAL);
-            gs.addAll(gruposConfig());
-            for (Player x : todosJugadores) gs.add(x.grupo());
-            for (String g : gs) { if (g.equalsIgnoreCase(p.grupo())) continue; JMenuItem it = new JMenuItem(g); it.addActionListener(a -> moverJugador(p, g)); mover.add(it); }
-            JMenuItem nuevoG = new JMenuItem(t("Nuevo grupo…", "New group…"));
-            nuevoG.addActionListener(a -> {
-                String nombreG = JOptionPane.showInputDialog(ventana, t("Nombre del grupo nuevo:", "New group name:"), t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-                if (nombreG != null && !nombreG.isBlank()) { String limpio = limpiarGrupo(nombreG); registrarGrupo(limpio); moverJugador(p, limpio); }
-            });
-            if (mover.getItemCount() > 0) mover.addSeparator();
-            mover.add(nuevoG);
-            menu.add(mover);
-            JMenuItem quitar = new JMenuItem(t("Quitar de la Watchlist", "Remove from Watchlist"));
-            quitar.addActionListener(a -> { playersModel.removeElement(p); todosJugadores.removeIf(x -> x.id() == pid); savePlayers(); rebuildGrupos(); actualizarIndicadoresVivos(); });
-            menu.add(quitar);
-            List<Player> selW = playersList.getSelectedValuesList();
-            if (selW.size() > 1 && selW.contains(p)) {   // varios seleccionados: mover o quitar de golpe
-                JMenu moverVarios = new JMenu(t("Mover los ", "Move the ") + selW.size() + t(" seleccionados a", " selected to"));
-                for (String g : gruposExistentes()) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> moverVarios(selW, g)); moverVarios.add(it); }
-                moverVarios.addSeparator();
-                JMenuItem nuevoGM = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
-                nuevoGM.addActionListener(a -> { String g = elegirGrupoDialog(selW.size() + t(" jugadores", " players")); if (g != null) moverVarios(selW, g); });
-                moverVarios.add(nuevoGM);
-                menu.add(moverVarios);
-                JMenuItem quitarVarios = new JMenuItem(t("Quitar los ", "Remove the ") + selW.size() + t(" seleccionados del grupo", " selected from the group"));
-                quitarVarios.addActionListener(a -> {
-                    Set<Long> ids = new HashSet<>(); for (Player x : selW) ids.add(x.id());
-                    todosJugadores.removeIf(x -> ids.contains(x.id()));
-                    savePlayers(); rebuildGrupos(); aplicarFiltroGrupo();
-                    status.setText(ids.size() + t(" jugadores quitados.", " players removed."));
-                });
-                menu.add(quitarVarios);
-            }
-        }
-        JMenuItem vinc = new JMenuItem(t("Cuentas vinculadas…", "Linked accounts…"));
-        vinc.addActionListener(a -> dialogos.mostrarVinculadas(pid, p.name()));
-        menu.add(vinc);
-        menu.addSeparator();
-        // ---- 4. edición
-        JMenuItem alias = new JMenuItem(t("Mostrar como…", "Show as…"));
-        alias.addActionListener(a -> dialogos.pedirAlias(pid, p.name()));
-        menu.add(alias);
-        JMenuItem nota = new JMenuItem(t("Nota…", "Note…"));
-        nota.addActionListener(a -> dialogos.pedirNota(pid, p.name()));
-        menu.add(nota);
-        if (dialogos.notaDe(pid) != null) { JMenuItem bn = new JMenuItem(t("Borrar nota", "Delete note")); bn.addActionListener(a -> dialogos.borrarNota(pid, p.name())); menu.add(bn); }
-        JMenuItem nicks = new JMenuItem(t("Nicks anteriores…", "Previous names…"));
-        nicks.addActionListener(a -> dialogos.nicksAnteriores(pid, p.name()));
-        menu.add(nicks);
-        menu.show(playersList, e.getX(), e.getY());
-    }
-
-    /** Un jugador de la partida en curso, como submenú: perfil, pestaña nueva, añadir a la watchlist. */
-    private JMenu submenuJugadorPartida(MatchPlayer mp, String prefijo) {
-        String nombre = anfitrion.nombreVisible(mp.id, mp.name);
-        Integer e1 = menus.elo1v1Conocido(mp.id);
-        JMenu sub = new JMenu(prefijo + nombre + (e1 != null ? "  1v1 " + e1 : "") + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""));
-        sub.setIcon(iconoBandera(anfitrion.paisDe(mp.id)));
-        if (((e1 == null && eloSesion.conocido(mp.id) == null) || eloSesion.caducado(mp.id)) && eloSesion.reservar(mp.id)) new Thread(() -> { long pedido = eloSesion.ahora(); Integer e = perfiles.elo1v1(mp.id); eloSesion.apuntar(mp.id, e, pedido); if (e != null && e > 0) SwingUtilities.invokeLater(() -> sub.setText(prefijo + nombre + "  1v1 " + e + (mp.civ != null && !mp.civ.isBlank() ? "  ·  " + mp.civ : ""))); }, "elo-1v1").start();
-        JMenuItem perf = new JMenuItem(t("Perfil", "Profile")); perf.addActionListener(a -> navegacion.abrirPerfil(mp.id, nombre)); sub.add(perf);
-        JMenuItem perfN = new JMenuItem(t("Perfil en pestaña nueva", "Profile in a new tab")); perfN.addActionListener(a -> navegacion.abrirPerfilEnPestana(mp.id, nombre)); sub.add(perfN);
-        if (!containsPlayerId(mp.id)) {
-            JMenu anadir = new JMenu(t("Añadir a mi watchlist", "Add to my watchlist"));
-            Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER); gs.add(GRUPO_GENERAL); for (Player x : todosJugadores) gs.add(x.grupo()); gs.addAll(gruposConfig());
-            for (String g : gs) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> ficharDesdeTop(new Player(mp.id, mp.name, g), g)); anadir.add(it); }
-            sub.add(anadir);
-        }
-        return sub;
-    }
+    public void menuContextualWatchlist(Player p, MouseEvent e) { menuLista.menuContextualWatchlist(p, e); }
 
     // ===== Tarjeta de perfil flotante (hoy inerte: el hover-timer nunca dispara) ==========================
 
