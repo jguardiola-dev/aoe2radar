@@ -502,6 +502,17 @@ class PartidasViewTest {
         });
     }
 
+    /** «Descargar y enviar» con una ruta savegame rara en config: se descarga igual (sin copiar) y el semáforo
+     *  de la operación se apaga; antes la excepción salía tras deshabilitar los botones y los dejaba así. */
+    @Test void descargarYEnviar_conUnaRutaSavegameRara_descargaYNoSeQuedaTrabajando() throws Exception {
+        Match m = partida(8305, A, Instant.now().minusSeconds(600));
+        conConfig("savegame", "C:\\no<valida>|ruta", () -> {
+            enEdt(() -> vista.download(List.of(m), true));
+            esperar(() -> rec.procesadas.contains(8305L) && !anfitrion.progreso, "la descarga sin copia");
+            esperar(() -> vista.dlSel.isEnabled(), "los botones de descarga vuelven");
+        });
+    }
+
     @Test void enviarAlJuego_loQueFaltaSeDescargaDespuesDeCopiar() throws Exception {
         Path sg = java.nio.file.Files.createDirectories(recs.resolve("savegame"));
         Match sana = partida(8302, A, Instant.now().minusSeconds(600));

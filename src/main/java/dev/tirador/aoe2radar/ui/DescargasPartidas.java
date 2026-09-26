@@ -266,7 +266,14 @@ final class DescargasPartidas {
         for (int i = 0; i < vista.enlaceWatchlist.totalJugadores(); i++) trackedIds.add(vista.enlaceWatchlist.jugador(i).id());
         final boolean autoCopiar = vista.anfitrion.autoCopiarAlDescargar();
         final boolean autoCopiarFinal = autoCopiar || enviarSiempre;
-        final Path sgAuto = autoCopiarFinal ? obtenerSavegame(enviarSiempre) : null;
+        Path sgResuelta = null;
+        if (autoCopiarFinal) {
+            try { sgResuelta = obtenerSavegame(enviarSiempre); }
+            catch (RuntimeException ex) {   // p. ej. InvalidPathException con una ruta rara en config: se descarga sin copiar
+                log("savegame: ruta no válida (" + causa(ex) + "): se descarga sin copiar al juego");
+            }
+        }
+        final Path sgAuto = sgResuelta;
         if (autoCopiarFinal && sgAuto == null)
             log("copia automática a savegame activada pero sin carpeta resuelta: no se copiará");
 
