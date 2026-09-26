@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -13,6 +14,23 @@ public final class Log {
     private Log() {}
 
     public static final Path LOG_FILE = Path.of("descargas.log");
+
+    /** Tope de descargas.log: al arrancar, si lo pasa, se aparta a descargas.log.1 (sustituye al anterior) y se empieza otro. */
+    static final long LOG_MAX_BYTES = 5L * 1024 * 1024;
+
+    static { rotar(LOG_FILE, LOG_MAX_BYTES); }   // una vez por arranque, antes de la primera línea
+
+    /**
+     * Si log pasa de maxBytes, lo renombra a «log.1» (sustituyendo el que hubiera). Nunca lanza: se llama desde el
+     * inicializador estático y una excepción ahí sería un ExceptionInInitializerError que tumbaría la app; si no se
+     * puede rotar (archivo bloqueado…), se sigue escribiendo en el mismo, como antes.
+     */
+    static void rotar(Path log, long maxBytes) {
+        try {
+            if (Files.size(log) <= maxBytes) return;
+            Files.move(log, log.resolveSibling(log.getFileName() + ".1"), StandardCopyOption.REPLACE_EXISTING);
+        } catch (Exception ignored) { }   // no existe, bloqueado o sin permiso: se sigue sin rotar
+    }
 
     public static final DateTimeFormatter LOG_F =
             DateTimeFormatter.ofPattern("dd/MM HH:mm:ss").withZone(ZoneId.systemDefault());
