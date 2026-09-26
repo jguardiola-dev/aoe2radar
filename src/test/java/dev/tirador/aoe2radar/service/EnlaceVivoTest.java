@@ -305,6 +305,14 @@ class EnlaceVivoTest {
         assertEquals(List.of(555L), vistas.idsTerminadaLive, "pero con el id: Live now solo quita esa");
     }
 
+    /** Menor del revisor: dos matchRemoved seguidos de una partida que solo vio Live now programan una sola espera. */
+    @Test void dosQuitadasDeUnaPartidaSoloDeLiveNowProgramanUnaSolaComprobacion() {
+        vistas.liveNow.put(555L, List.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(8L));
+        assertEquals(1, esperasQuitada().size());
+    }
+
     @Test void quitadaConMarcadosYDeLiveNowNoAvisaDosVecesAlMismo() {
         red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
         vivo.marcarJugando(7, 555);
