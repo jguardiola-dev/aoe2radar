@@ -337,8 +337,8 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         liveScroll = sp;
         sp.setBorder(null);
         ahoraPanel.add(sp, BorderLayout.CENTER);
-        JLabel pie = new JLabel(t("Barrido al abrir y cada 10 min; el socket del companion trae las novedades al instante. Doble clic en un nick: perfil · botón central: pestaña nueva · clic derecho: más. «Buscando partida» no lo publica ninguna API: solo se ven partidas ya empezadas.",
-                "Sweep on open and every 10 min; the companion's socket brings updates instantly. Double-click a nick: profile · middle button: new tab · right-click: more. \u201CIn queue\u201D is not published by any API: only started games are shown."));
+        JLabel pie = new JLabel(t("Barrido al abrir y al pulsar Actualizar (con el socket caído, también cada 30 min); el socket del companion trae las novedades al instante. Doble clic en un nick: perfil · botón central: pestaña nueva · clic derecho: más. «Buscando partida» no lo publica ninguna API: solo se ven partidas ya empezadas.",
+                "Sweep on open and on Refresh (also every 30 min while the socket is down); the companion's socket brings updates instantly. Double-click a nick: profile · middle button: new tab · right-click: more. \u201CIn queue\u201D is not published by any API: only started games are shown."));
         pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
         ahoraPanel.add(pie, BorderLayout.SOUTH);
         liveReloj = new javax.swing.Timer(1000, e -> { if (!ahoraAbierta) { liveReloj.stop(); return; } for (JLabel l : liveRelojes) { Object m = l.getClientProperty("match"); if (m instanceof Match mm && mm.started != null) l.setText(reloj(Duration.between(mm.started, Instant.now()))); } });
