@@ -57,6 +57,9 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
     public interface Anfitrion {
         /** Los jugadores visibles de la watchlist ahora mismo (playersModel de la 1.1): a quién cruzar contra Twitch. */
         List<Player> visibles();
+        /** Los demás vigilados (todos los grupos de la watchlist y la fuente de Live now): el TW de Live now y «Solo con
+         *  Twitch» no deben depender del grupo abierto (revisión 1.3, F10). Solo se cruzan con su canal conocido. */
+        List<Player> otrosVigilados();
         /** Repinta la lista de la watchlist (para que se vea el badge de Twitch tras un barrido). */
         void repintarLista();
         /** Mensaje de la barra de estado general de la ventana. */
@@ -125,7 +128,7 @@ public final class DirectosView implements DirectosPresenter.Pantalla {
     }
 
     /** Cruza el listado global de Twitch con la watchlist visible, respetando el ritmo de 170 s (al abrir, el río del top…). */
-    public void vigilarTwitch() { presenter.vigilarTwitch(anfitrion::visibles); }
+    public void vigilarTwitch() { presenter.vigilarTwitch(anfitrion::visibles, anfitrion::otrosVigilados); }
 
     /** El conjunto de jugadores vigilado cambió (nuevo top/país/clan): su barrido de Twitch se hace en el acto. */
     public void reiniciarThrottle() { presenter.reiniciarThrottle(); }

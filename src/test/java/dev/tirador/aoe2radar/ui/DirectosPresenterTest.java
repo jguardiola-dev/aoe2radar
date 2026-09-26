@@ -31,6 +31,11 @@ class DirectosPresenterTest {
         List<String> loginsPedidos = new ArrayList<>();
         Runnable alBarrer;   // para simular reentrada desde dentro de barrer()
 
+        List<Player> ultimosOtros;
+        @Override public Resultado barrer(List<Player> visibles, List<Player> otrosVigilados) {
+            ultimosOtros = otrosVigilados;
+            return barrer(visibles);
+        }
         @Override public Resultado barrer(List<Player> visibles) {
             barrerLlamadas++;
             ultimosVisibles = visibles;
@@ -108,6 +113,15 @@ class DirectosPresenterTest {
         List<Player> lista = List.of(new Player(1L, "Uno", ""), new Player(2L, "Dos", ""));
         presenter.vigilarTwitch(visibles(lista));
         assertSame(lista, servicio.ultimosVisibles);
+    }
+
+    /** Revisión 1.3, F10: los demás vigilados (otros grupos, fuente de Live now) llegan también al servicio. */
+    @Test void pasa_tambien_los_otros_vigilados_al_servicio() {
+        List<Player> lista = List.of(new Player(1L, "Uno", ""));
+        List<Player> otros = List.of(new Player(9L, "DelTop", ""));
+        presenter.vigilarTwitch(visibles(lista), () -> otros);
+        assertSame(lista, servicio.ultimosVisibles);
+        assertSame(otros, servicio.ultimosOtros);
     }
 
     @Test void los_visibles_se_leen_solo_si_pasan_las_guardas() {

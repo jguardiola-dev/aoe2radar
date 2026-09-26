@@ -24,6 +24,7 @@ class DirectosViewTest {
     final DirectosPresenterTest.ServicioFalso servicio = new DirectosPresenterTest.ServicioFalso();
     final DirectosView vista = new DirectosView(servicio, new HashMap<>(), Tareas.EN_LINEA, new DirectosView.Anfitrion() {
         @Override public List<Player> visibles() { return new ArrayList<>(); }
+        @Override public List<Player> otrosVigilados() { return new ArrayList<>(); }
         @Override public void repintarLista() { }
         @Override public void estado(String texto) { }
         @Override public void abrirUrl(String url) { }

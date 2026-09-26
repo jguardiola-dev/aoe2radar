@@ -43,7 +43,10 @@ public final class TwitchServiceCompanion implements TwitchService {
     }
 
     @Override
-    public Resultado barrer(List<Player> visibles) {
+    public Resultado barrer(List<Player> visibles) { return barrer(visibles, List.of()); }
+
+    @Override
+    public Resultado barrer(List<Player> visibles, List<Player> otrosVigilados) {
         Map<String, String[]> envivo = new HashMap<>();   // clave lower -> {canal, título, viewers}
         List<String[]> completos = new ArrayList<>();
         boolean fallo = false;
@@ -100,8 +103,18 @@ public final class TwitchServiceCompanion implements TwitchService {
             }
             pausa.accept(150L);
         }
-        log("twitch: " + envivo.size() / 2 + "+ directos AoE2; " + res.size()
-                + " de tu lista visible retransmitiendo");
+        int deVisibles = res.size();
+        // Los demás vigilados (otros grupos, fuente de Live now): solo con su canal ya conocido y contra el listado
+        // global. Sin adivinar por el nick (250 nicks contra los canales darían falsos TW) ni llamadas una a una (el
+        // tope de 12 es para la lista visible). Revisión 1.3, F10.
+        for (Player p : otrosVigilados) {
+            if (res.containsKey(p.id())) continue;
+            String canal = CANAL_DE.get(p.id());
+            String[] st = canal != null ? envivo.get(canal.toLowerCase()) : null;
+            if (st != null) res.put(p.id(), st);
+        }
+        log("twitch: " + envivo.size() / 2 + "+ directos AoE2; " + deVisibles
+                + " de tu lista visible retransmitiendo" + (res.size() > deVisibles ? " (+" + (res.size() - deVisibles) + " de otros vigilados)" : ""));
         return new Resultado(res, completos, fallo);
     }
 
