@@ -267,6 +267,41 @@ class EloNocturnoTest {
         assertEquals(1, enSegundoPlano.size(), "…y es un fallo: reintento a los 5 min en segundo plano");
     }
 
+    // ----- fila 73 de DEUDA: al refrescar, ayer/hace7 nunca se ven vacíos a medias -----
+
+    @Test void elMapaDeAyerNuncaSeVeVacioMientrasSeRefresca() throws Exception {
+        int n = 20_000;
+        StringBuilder j1 = new StringBuilder("{\"fecha\":\"2026-09-24\",\"j\":{");
+        for (int i = 1; i <= n; i++) { if (i > 1) j1.append(','); j1.append('"').append(i).append("\":[1,1,1,1,\"J").append(i).append("\",\"es\"]"); }
+        j1.append("}}");
+        red.archivos.put(AYER, gz(j1.toString()));
+        elo.cargar();                       // primera carga: fija los pids que se repetirán en el refresco
+        assertEquals(n, elo.ayer.size());
+
+        StringBuilder j2 = new StringBuilder("{\"fecha\":\"2026-09-25\",\"j\":{");
+        for (int i = 1; i <= n; i++) { if (i > 1) j2.append(','); j2.append('"').append(i).append("\":[2,2,2,2,\"J").append(i).append("\",\"es\"]"); }
+        j2.append("}}");
+        red.archivos.put(AYER, gz(j2.toString()));   // segunda noche: mismos pids, valores nuevos
+        reloj.avanzar(13 * HORA);           // caduca la copia de ayer: toca refrescar
+
+        java.util.concurrent.atomic.AtomicBoolean vistoVacio = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean sigueLeyendo = new java.util.concurrent.atomic.AtomicBoolean(true);
+        Thread lector = new Thread(() -> {
+            while (sigueLeyendo.get()) if (elo.ayer.isEmpty()) { vistoVacio.set(true); break; }
+        });
+        lector.setDaemon(true);   // si algo falla abajo, no se cuelga la JVM al final del test
+        lector.start();
+        try {
+            elo.cargar();                    // el refresco corre en este hilo mientras «lector» espía elo.ayer
+        } finally {
+            sigueLeyendo.set(false);
+            lector.join();
+        }
+
+        assertFalse(vistoVacio.get(), "quien lee ayer mientras se refresca (mismos jugadores) nunca lo ve vacío");
+        assertEquals(2, elo.ayer.get(1L)[0], "y al final tiene los valores de la noche nueva");
+    }
+
     @Test void siElSegundoPlanoNoArrancaNoSeQuedaCargando() {
         EloNocturno rechaza = new EloNocturno(sfr, new CacheService(reloj), t -> { throw new RejectedExecutionException("sin hilos"); }, HOY);
         red.archivos.remove(AYER);

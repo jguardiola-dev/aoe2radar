@@ -44,6 +44,9 @@ public final class Paises {
             StringBuilder b = new StringBuilder();
             for (Map.Entry<Long, String> en : PAIS_DE.entrySet()) b.append(en.getKey()).append('=').append(en.getValue()).append('\n');
             Files.writeString(PAISES_FILE, b.toString(), StandardCharsets.UTF_8);
-        } catch (Exception ex) { log("paises: no se pudo guardar: " + causa(ex)); }
+        } catch (Exception ex) {
+            paisesSucios = true;   // no se guardó: que el siguiente barrido lo vuelva a intentar (fila 26 de DEUDA)
+            log("paises: no se pudo guardar: " + causa(ex));
+        }
     }
 }

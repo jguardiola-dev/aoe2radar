@@ -3,6 +3,8 @@ package dev.tirador.aoe2radar.sfrdata;
 import dev.tirador.aoe2radar.cache.CacheService;
 import dev.tirador.aoe2radar.cache.Caducidad;
 
+import dev.tirador.aoe2radar.util.Archivos;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -88,7 +90,7 @@ public final class SfrDataClient {
         Path f = dirRelease.resolve(nombre);
         try { if (cache.archivoFresco(f, caducidad)) return Files.readAllBytes(f); } catch (IOException ignored) { }
         byte[] raw = red.bytes(baseRelease.get() + nombre, timeoutS);
-        try { Files.createDirectories(dirRelease); Files.write(f, raw); } catch (IOException ignored) { }
+        try { Archivos.escribirAtomico(f, raw); } catch (IOException ignored) { }
         return raw;
     }
 
@@ -98,6 +100,17 @@ public final class SfrDataClient {
      */
     public void olvidarDiario(String nombre) {
         try { Files.deleteIfExists(dirRelease.resolve(nombre)); } catch (IOException ex) { log("sfr-data: no se pudo borrar " + nombre + ": " + causa(ex)); }
+    }
+
+    /**
+     * Borra la copia en disco de un archivo de versionado() y su marca ".v": quien lo leyó no pudo entenderlo. Sin
+     * esto, un paquete roto valdría hasta que cambiara la versión, y cada intento releería la misma basura. Se borra
+     * primero la marca: así, si algo corta a mitad de este método, nadie puede leer «marca vigente + contenido
+     * viejo» como si fuera válido (versionado() exige las dos cosas a la vez).
+     */
+    public void olvidarVersionado(String nombre) {
+        try { Files.deleteIfExists(dirRelease.resolve(nombre + ".v")); Files.deleteIfExists(dirRelease.resolve(nombre)); }
+        catch (IOException ex) { log("sfr-data: no se pudo borrar " + nombre + ": " + causa(ex)); }
     }
 
     /** Hora (ms) de la copia en disco de un archivo de diario(), o ahora si no se puede leer (no se llegó a guardar). */
@@ -116,7 +129,7 @@ public final class SfrDataClient {
         Path f = dirRelease.resolve(nombre), marca = dirRelease.resolve(nombre + ".v");
         try { if (Files.exists(f) && Files.exists(marca) && version.equals(Files.readString(marca).trim())) return Files.readAllBytes(f); } catch (IOException ignored) { }
         byte[] raw = red.bytes(base + nombre, timeoutS);
-        try { Files.createDirectories(dirRelease); Files.write(f, raw); Files.writeString(marca, version); } catch (IOException ex) { log("perfiles: caché: " + causa(ex)); }
+        try { Archivos.escribirAtomico(f, raw); Archivos.escribirAtomico(marca, version.getBytes(java.nio.charset.StandardCharsets.UTF_8)); } catch (IOException ex) { log("perfiles: caché: " + causa(ex)); }
         return raw;
     }
 }

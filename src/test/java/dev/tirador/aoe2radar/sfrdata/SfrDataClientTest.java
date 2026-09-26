@@ -177,4 +177,25 @@ class SfrDataClientTest {
         sfr.versionado("https://otra/", "shard-0002.json.gz", "base-1", 120);
         assertEquals("https://otra/shard-0002.json.gz", red.pedidas.get(0).url());
     }
+
+    // ----- escritura atómica (fila 70 de DEUDA): util.Archivos.escribirAtomico, a un ".tmp" con nombre único y
+    // luego Files.move. Como el sufijo es único por llamada (Files.createTempFile), se comprueba por carpeta
+    // (¿queda algún ".tmp"?) en vez de por un nombre fijo.
+
+    static boolean noHayNingunTmpEn(Path carpeta) throws Exception {
+        if (!Files.exists(carpeta)) return true;
+        try (var listado = Files.list(carpeta)) { return listado.noneMatch(p -> p.getFileName().toString().endsWith(".tmp")); }
+    }
+
+    @Test void diarioNoDejaNingunTmpTrasGuardar() throws Exception {
+        assertEquals("release", txt(sfr.diario("elo_ayer.json.gz", 45)));
+        assertEquals("release", Files.readString(dir.resolve("perfiles_shards/elo_ayer.json.gz")));
+        assertTrue(noHayNingunTmpEn(dir.resolve("perfiles_shards")), "la escritura atomica no deja su .tmp detrás");
+    }
+
+    @Test void versionadoNoDejaNingunTmpTrasGuardar() throws Exception {
+        assertEquals("release", txt(sfr.versionado("shard-0009.json.gz", "2026-09-24", 120)));
+        assertTrue(noHayNingunTmpEn(dir.resolve("perfiles_shards")), "la escritura atomica no deja su .tmp detrás");
+        assertEquals("2026-09-24", Files.readString(dir.resolve("perfiles_shards/shard-0009.json.gz.v")));
+    }
 }

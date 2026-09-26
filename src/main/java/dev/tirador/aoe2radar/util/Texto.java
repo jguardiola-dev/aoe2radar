@@ -26,11 +26,6 @@ public final class Texto {
         return n.isEmpty() || n.equals("cualquiera") || n.equals("any") || n.equals("null");
     }
 
-    public static String truncar(String s, int max) {
-        if (s == null) return "";
-        return s.length() > max ? s.substring(0, Math.max(1, max - 1)) + "\u2026" : s;
-    }
-
     /** ¿«1.2.3» es mayor que «1.0»? Comparación numérica por tramos. */
     public static boolean versionMayor(String nueva, String actual) {
         String[] a = nueva.replaceAll("[^0-9.]", "").split("\\."), b = actual.replaceAll("[^0-9.]", "").split("\\.");

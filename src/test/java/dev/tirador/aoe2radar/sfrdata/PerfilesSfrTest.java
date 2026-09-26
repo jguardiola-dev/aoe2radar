@@ -175,4 +175,34 @@ class PerfilesSfrTest {
         nuevo().shard(7L);
         assertEquals("2026-09-20", Files.readString(dir.resolve("perfiles_shards/shard-0007.json.gz.v")), "versión = «base_hasta»");
     }
+
+    // ----- fila 66 de DEUDA: un paquete roto en disco se borra (con su marca), no vale hasta que cambie la versión -----
+
+    @Test void unShardRotoSeBorraYElSiguienteIntentoVuelveALaRed() throws Exception {
+        indice("{\"v\":1,\"shards\":256,\"hasta\":\"2026-09-24\"}");
+        Path f = dir.resolve("perfiles_shards/shard-044.json.gz");
+        Path marca = dir.resolve("perfiles_shards/shard-044.json.gz.v");
+        Files.createDirectories(f.getParent());
+        Files.writeString(f, "no es gzip");
+        Files.writeString(marca, "2026-09-24");   // misma versión: versionado() lo serviría de la caché sin ir a la red
+        PerfilesSfr p = nuevo();
+
+        assertThrows(Exception.class, () -> p.shard(300L), "el contenido roto no se traga en silencio");
+        assertFalse(Files.exists(f), "se borra para que el siguiente intento vuelva a la red");
+        assertFalse(Files.exists(marca));
+
+        red.urls.put(BASE + "shard-044.json.gz", gz("{\"j\":{\"300\":[[7]]}}"));   // segundo intento: ya no hay marca, va a la red
+        Map<String, Object> m = p.shard(300L);
+        assertEquals(1L, m.get("v"));
+    }
+
+    @Test void unShardConNullSeTrataComoRotoYSeBorra() throws Exception {
+        indice("{\"v\":1,\"shards\":256,\"hasta\":\"2026-09-24\"}");
+        red.urls.put(BASE + "shard-044.json.gz", gz("null"));   // 300 % 256 = 44; JSON válido pero sin contenido
+        PerfilesSfr p = nuevo();
+
+        assertThrows(Exception.class, () -> p.shard(300L), "un paquete 'null' no se traga en silencio");
+        assertFalse(Files.exists(dir.resolve("perfiles_shards/shard-044.json.gz")), "se borra como un paquete roto");
+        assertFalse(Files.exists(dir.resolve("perfiles_shards/shard-044.json.gz.v")));
+    }
 }

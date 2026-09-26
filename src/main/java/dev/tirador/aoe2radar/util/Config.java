@@ -7,12 +7,18 @@ import java.util.Properties;
 
 import static dev.tirador.aoe2radar.util.Identidad.NOMBRE;
 
+/**
+ * config.properties, leído y guardado por clave. Dos reglas de la fila 11 de DEUDA: {@code synchronized} en los
+ * dos métodos (dos hilos guardando a la vez no se pisan: uno espera al otro y lee lo que el otro acaba de escribir)
+ * y escritura atómica vía {@link Archivos#escribirAtomico}: si la app se cierra a mitad de un guardado, el archivo
+ * real nunca queda a medio escribir, como mucho se pierde el último cambio.
+ */
 public final class Config {
     private Config() {}
 
     public static final Path CONFIG_FILE = Path.of("config.properties");
 
-    public static String leerConfig(String clave, String porDefecto) {
+    public static synchronized String leerConfig(String clave, String porDefecto) {
         try (var in = Files.newInputStream(CONFIG_FILE)) {
             var p = new Properties();
             p.load(in);
@@ -23,13 +29,13 @@ public final class Config {
         }
     }
 
-    public static void guardarConfig(String clave, String valor) {
+    public static synchronized void guardarConfig(String clave, String valor) {
         try {
             var p = new Properties();
             if (Files.exists(CONFIG_FILE))
                 try (var in = Files.newInputStream(CONFIG_FILE)) { p.load(in); }
             p.setProperty(clave, valor);
-            try (var out = Files.newOutputStream(CONFIG_FILE)) { p.store(out, NOMBRE); }
+            Archivos.escribirAtomico(CONFIG_FILE, out -> p.store(out, NOMBRE));
         } catch (IOException ignored) {}
     }
 }

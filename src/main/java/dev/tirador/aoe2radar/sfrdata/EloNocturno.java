@@ -5,6 +5,7 @@ import dev.tirador.aoe2radar.cache.Caducidad;
 import dev.tirador.aoe2radar.cache.Sello;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -123,6 +124,10 @@ public final class EloNocturno {
      * false si no trae el mapa «j». Si el archivo está roto (no se descomprime o no trae «j»), borra la copia del
      * disco. Una fila rara en un archivo legible sale como excepción sin borrar nada (como en la 1.1): la release no va
      * a cambiar por volver a bajarla.
+     * <p>El parseo se hace en un mapa aparte y solo al final se vuelca en destino con {@code retainAll} + {@code
+     * putAll} (destino y nombres son públicos y compartidos: no se puede cambiar la referencia por una nueva). Así
+     * quien lee ayer/hace7 mientras se refresca nunca los ve vacíos a medias, como pasaba con destino.clear() antes
+     * del bucle (fila 73 de DEUDA); y si el parseo falla a mitad, destino conserva lo que ya tenía.
      */
     private boolean leer(String archivo, Map<Long, int[]> destino, String[] fecha) throws Exception {
         byte[] raw = sfr.diario(archivo, 60);   // un fallo de red sale tal cual: no hay copia que borrar
@@ -130,15 +135,21 @@ public final class EloNocturno {
         try { m = leerGzJson(raw); if (m == null) throw new java.io.IOException("vacío (null): " + archivo); }
         catch (Exception ex) { sfr.olvidarDiario(archivo); throw ex; }
         if (!(m.get("j") instanceof Map<?, ?> jm)) { sfr.olvidarDiario(archivo); return false; }
-        destino.clear();
-        if (fecha != null) nombres.clear();
+        Map<Long, int[]> nuevo = new HashMap<>();
+        Map<Long, String[]> nuevosNombres = fecha != null ? new HashMap<>() : null;
         for (Map.Entry<?, ?> en : jm.entrySet()) {
             List<Object> v = arr(en.getValue());
             long pid = Long.parseLong(String.valueOf(en.getKey()));
-            destino.put(pid, new int[]{ (int) lng(v.get(0)), (int) lng(v.get(1)), (int) lng(v.get(2)), (int) lng(v.get(3)) });
-            if (fecha != null) nombres.put(pid, new String[]{ String.valueOf(v.get(4)), String.valueOf(v.get(5)) });
+            nuevo.put(pid, new int[]{ (int) lng(v.get(0)), (int) lng(v.get(1)), (int) lng(v.get(2)), (int) lng(v.get(3)) });
+            if (fecha != null) nuevosNombres.put(pid, new String[]{ String.valueOf(v.get(4)), String.valueOf(v.get(5)) });
         }
-        if (fecha != null) fecha[0] = String.valueOf(m.get("fecha"));
+        destino.keySet().retainAll(nuevo.keySet());
+        destino.putAll(nuevo);
+        if (fecha != null) {
+            nombres.keySet().retainAll(nuevosNombres.keySet());
+            nombres.putAll(nuevosNombres);
+            fecha[0] = String.valueOf(m.get("fecha"));
+        }
         return true;
     }
 }
