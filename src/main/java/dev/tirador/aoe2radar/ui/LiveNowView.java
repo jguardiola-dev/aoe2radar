@@ -234,7 +234,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         if (soltarTimer == null) {
             soltarTimer = new javax.swing.Timer((int) LiveNowPresenter.GRACIA_SOCKET_MS, e -> {
                 long espera = presenter.soltarSiToca();   // llegó antes de tiempo: se vuelve a armar con lo que falta (C3)
-                if (espera > 0) { soltarTimer.setInitialDelay((int) espera); soltarTimer.restart(); }
+                if (espera > 0) { soltarTimer.setInitialDelay((int) Math.min(espera, Integer.MAX_VALUE)); soltarTimer.restart(); }
             });
             soltarTimer.setRepeats(false);
         }
