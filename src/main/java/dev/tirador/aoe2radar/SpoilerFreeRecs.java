@@ -610,7 +610,13 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // La red, la config y la deduplicacion de avisos viven en service.Campanas; aqui solo queda
     // Swing (boton, toast) y el estado compartido (campanaIds, socketExtra). Cableado junto al
     // propio Campanas, no al lado de COMPANION/LIVE/SERVICIO_PERFIL.
-    final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig);
+    // "watchlist" (más abajo) todavía no existe cuando se construye este campo: el método de abajo lo lee al
+    // llamarlo (no al crearse la referencia), y para entonces la ventana ya está montada del todo. Referencia
+    // de método en vez de lambda directa: leer "watchlist" (blank final) desde la propia expresión del
+    // inicializador no compila («might not have been initialized»), aunque solo se fuera a usar más tarde.
+    final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig, this::esGrupoDeUsuarioWatchlist);
+    /** Ver el comentario de "campanas": separado en un método para poder pasarlo como Predicate ahí mismo. */
+    private boolean esGrupoDeUsuarioWatchlist(String nombre) { return watchlist != null && watchlist.esGrupoDeUsuario(nombre); }
     javax.swing.Timer campanasTimer; JPanel toast; javax.swing.Timer toastTimer;
 
     void mostrarToast(String texto, long matchId) {

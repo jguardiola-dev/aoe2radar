@@ -1721,6 +1721,7 @@ public final class WatchlistView {
         }.execute();
     }
 
+    // visible para esGrupoDeUsuario (y para el menú "mover a grupo")
     private Set<String> gruposExistentes() {
         Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         gs.add(GRUPO_GENERAL);
@@ -1728,6 +1729,14 @@ public final class WatchlistView {
         gs.addAll(gruposConfig());
         return gs;
     }
+
+    /**
+     * ¿"nombre" es un grupo de verdad (General, uno con jugadores dentro o uno registrado en config), no un
+     * texto que solo coincide por casualidad con "Todos"/"All"? Lo usa Campanas (inyectado desde
+     * SpoilerFreeRecs) para no traducir la campana de un grupo que el usuario llamó, por ejemplo, "All": esa
+     * campana es la de ESE grupo, no la del pseudogrupo "todos los jugadores".
+     */
+    public boolean esGrupoDeUsuario(String nombre) { return gruposExistentes().contains(nombre); }
 
     private void moverVarios(List<Player> lista, String g) {
         int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
@@ -1780,20 +1789,31 @@ public final class WatchlistView {
         grupoCombo.addItem(TOP_CLAN);
         for (String g : grupos) grupoCombo.addItem(g);
         grupoCombo.setSelectedItem(t("Todos", "All"));
+        // Dos pasadas, EN ESTE ORDEN: 1) coincidencia exacta, como hacía la 1.1 (equalsIgnoreCase a secas). 2)
+        // solo si no hubo, la equivalencia bilingüe (coincideGrupoGuardado). Si se hiciera al revés, un grupo
+        // de usuario que se llame igual que un texto bilingüe del combo (p.ej. un grupo llamado "All") nunca
+        // se podría seleccionar: siempre ganaría la traducción a "Todos" antes de llegar a él en la lista.
+        int idx = -1;
         for (int i = 0; i < grupoCombo.getItemCount(); i++)
-            if (coincideGrupoGuardado(grupoCombo.getItemAt(i), guardado)) { grupoCombo.setSelectedIndex(i); break; }
+            if (grupoCombo.getItemAt(i).equalsIgnoreCase(guardado)) { idx = i; break; }
+        if (idx < 0)
+            for (int i = 0; i < grupoCombo.getItemCount(); i++)
+                if (coincideGrupoGuardado(grupoCombo.getItemAt(i), guardado)) { idx = i; break; }
+        if (idx >= 0) grupoCombo.setSelectedIndex(idx);
         for (var l : listener) grupoCombo.addActionListener(l);
     }
 
     /**
-     * ¿"guardado" (el valor de config grupo_activo, escrito quizá en una sesión con otro idioma) corresponde a
-     * "itemActual" (un item del combo, en el idioma activo ahora mismo)? Los grupos del usuario son texto libre
-     * y comparan igual en cualquier idioma; "Todos"/"All", TOP_PAIS y TOP_CLAN son los tres textos bilingües del
-     * combo, así que si "itemActual" es uno de ellos también se acepta su variante en el otro idioma. Sin esto,
-     * cambiar el idioma de la app "perdía" el grupo activo guardado (bug resuelto en fase 4, ver docs/DEUDA.md).
+     * ¿Es "itemActual" (un item del combo, en el idioma activo ahora mismo) la variante bilingüe de "guardado"
+     * (el valor de config grupo_activo, escrito quizá en una sesión con otro idioma)? Solo se llama cuando
+     * rebuildGrupos() ya comprobó que NO hay ninguna coincidencia EXACTA con ningún item (ver el comentario de
+     * la llamada): así, un grupo de usuario con ese mismo nombre por casualidad siempre gana a la traducción,
+     * que es solo una red de seguridad. Los grupos del usuario son texto libre, no bilingüe: aquí solo se
+     * traducen "Todos"/"All", TOP_PAIS y TOP_CLAN, los tres textos fijos del combo que sí cambian con el
+     * idioma. Sin esto, cambiar el idioma de la app "perdía" el grupo activo guardado (bug resuelto en fase 4,
+     * ver docs/DEUDA.md).
      */
     private boolean coincideGrupoGuardado(String itemActual, String guardado) {
-        if (itemActual.equalsIgnoreCase(guardado)) return true;
         if (itemActual.equals(t("Todos", "All"))) return guardado.equalsIgnoreCase("Todos") || guardado.equalsIgnoreCase("All");
         if (itemActual.equals(TOP_PAIS)) return guardado.equalsIgnoreCase("\u2605 Top pa\u00eds") || guardado.equalsIgnoreCase("\u2605 Country top");
         if (itemActual.equals(TOP_CLAN)) return guardado.equalsIgnoreCase("\u2605 Top clan") || guardado.equalsIgnoreCase("\u2605 Clan top");

@@ -199,7 +199,7 @@ class WatchlistViewTest {
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
         TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
-        campanas = new Campanas(companion, (k, def) -> def, (k, v) -> { });
+        campanas = new Campanas(companion, (k, def) -> def, (k, v) -> { }, nombre -> false);
         BarridoVivos barridoVivos = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 300, 50);
         EloSesion eloSesion = new EloSesion(EstadoVivo.SISTEMA, new RelojFalso(), Duration.ofMinutes(6));
         AnotacionesService anotaciones = new AnotacionesService(new HashMap<>(), new HashMap<>(), (k, v) -> { });
@@ -259,11 +259,13 @@ class WatchlistViewTest {
      * (arreglo de fase 4, ver docs/DEUDA.md), así que reutilizar "watchlist" no serviría para probar el otro
      * idioma. Dobles nuevos y ficheros de test distintos: no comparte estado con "watchlist".
      */
-    private WatchlistView nuevaInstancia() {
+    private WatchlistView nuevaInstancia() { return nuevaInstancia(new ArrayList<>()); }
+
+    private WatchlistView nuevaInstancia(List<Player> jugadores) {
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
         TopLadderService topLadderService = new TopLadderService(companion, new RelojFalso(), ms -> { }, 300);
-        Campanas camp = new Campanas(companion, (k, def) -> def, (k, v) -> { });
+        Campanas camp = new Campanas(companion, (k, def) -> def, (k, v) -> { }, nombre -> false);
         BarridoVivos barridoVivos = new BarridoVivos(companion, new RelojFalso(), (m, pid) -> "r", new HashMap<>(), ms -> { }, 300, 50);
         EloSesion eloSesion = new EloSesion(EstadoVivo.SISTEMA, new RelojFalso(), Duration.ofMinutes(6));
         AnotacionesService anotaciones = new AnotacionesService(new HashMap<>(), new HashMap<>(), (k, v) -> { });
@@ -296,7 +298,7 @@ class WatchlistViewTest {
                 new FormServiceFalso(), camp, barridoVivos, eloSesion,
                 new MenusFalso(), dialogos, new NavegacionFalsa(),
                 Tareas.SWING, new EnlaceFalso(), new AnfitrionFalso(),
-                new ArrayList<>(), new DefaultListModel<>(), new JList<>(new DefaultListModel<>()),
+                jugadores, new DefaultListModel<>(), new JList<>(new DefaultListModel<>()),
                 new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
                 java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50);
@@ -363,12 +365,43 @@ class WatchlistViewTest {
         assertTrue(w.modoClan(), "el \"★ Clan top\" guardado en inglés debe reconocerse con la app en español");
     }
 
-    @Test void grupoActivoGuardadoComoAll_appEnEspanol_esTodos() {
-        Config.guardarConfig("grupo_activo", "All");
+    /**
+     * El test anterior guardaba grupo_activo="All" con IDIOMA=es y comprobaba grupoActivo()==null. Eso no
+     * probaba nada de verdad: "Todos" YA es la selección por defecto del combo (rebuildGrupos la pone antes de
+     * buscar ninguna coincidencia), así que el resultado habría sido el mismo aunque coincideGrupoGuardado no
+     * existiera. Aquí, en cambio, el valor por defecto ("Todos") NO es el esperado (modoClan()==false por
+     * defecto): solo pasa si la equivalencia bilingüe encontró de verdad el TOP_CLAN.
+     */
+    @Test void grupoActivoBilingue_cambiaLaSeleccionDeVerdad() {
+        Config.guardarConfig("grupo_activo", "★ Clan top");
         IDIOMA = "es";
         WatchlistView w = nuevaInstancia();
+        assertFalse(w.modoClan(), "antes de rebuildGrupos, el combo está en blanco: de fábrica no es modoClan");
         w.rebuildGrupos();
-        assertNull(w.grupoActivo(), "\"All\" guardado en inglés debe reconocerse como \"Todos\" en español");
+        assertTrue(w.modoClan(), "\"★ Clan top\" (en) guardado debe cambiar la selección, no quedarse en el \"Todos\" por defecto");
+    }
+
+    /**
+     * BLOQUEANTE resuelto: rebuildGrupos() probaba primero la equivalencia bilingüe, así que un grupo de
+     * usuario llamado igual que "Todos"/"All" (coincidencia por casualidad, en el idioma que no es el activo)
+     * nunca se podía seleccionar: "Todos"/TOP_LADDER/TOP_PAIS/TOP_CLAN van antes que los grupos de usuario en
+     * el combo, y "Todos" ya "ganaba" la comparación bilingüe antes de llegar al grupo real. Ahora la
+     * coincidencia EXACTA (como en la 1.1) se prueba primero, así que el grupo real gana siempre.
+     */
+    @Test void grupoDeUsuarioLlamadoAll_ganaALaEquivalenciaBilingue() {
+        Config.guardarConfig("grupo_activo", "All");
+        IDIOMA = "es";
+        WatchlistView w = nuevaInstancia(new ArrayList<>(List.of(new Player(1L, "Uno", "All"))));
+        w.rebuildGrupos();
+        assertEquals("All", w.grupoActivo(), "hay un grupo de verdad llamado \"All\": debe ganar a la traducción de \"Todos\"");
+    }
+
+    @Test void grupoDeUsuarioLlamadoTodos_ganaALaEquivalenciaBilingueEnIngles() {
+        Config.guardarConfig("grupo_activo", "Todos");
+        IDIOMA = "en";
+        WatchlistView w = nuevaInstancia(new ArrayList<>(List.of(new Player(1L, "Uno", "Todos"))));
+        w.rebuildGrupos();
+        assertEquals("Todos", w.grupoActivo(), "hay un grupo de verdad llamado \"Todos\": debe ganar a la traducción de \"All\"");
     }
 
     // ===== grupos / filtro =====================================================================================

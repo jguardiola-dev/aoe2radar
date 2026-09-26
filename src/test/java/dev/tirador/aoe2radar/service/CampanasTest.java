@@ -55,7 +55,10 @@ class CampanasTest {
     final Map<String, String> config = new HashMap<>();
     final BiFunction<String, String, String> leer = (clave, porDefecto) -> config.getOrDefault(clave, porDefecto);
     final BiConsumer<String, String> guardar = config::put;
-    final Campanas campanas = new Campanas(api, leer, guardar);
+    /** Vacío por defecto: ningún test existente tiene un grupo llamado "Todos"/"All", así que
+     *  normalizarVistaTodos actúa como antes salvo en los tests que llenan este set a propósito. */
+    final Set<String> gruposDeUsuario = new java.util.TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+    final Campanas campanas = new Campanas(api, leer, guardar, gruposDeUsuario::contains);
 
     String idiomaPrevio;
     @BeforeEach void fijarIdioma() { idiomaPrevio = IDIOMA; IDIOMA = "es"; }
@@ -110,7 +113,7 @@ class CampanasTest {
     @Test void elSeparadorSobreviveAUnPropertiesStoreYLoad() throws IOException {
         Set<String> tres = new LinkedHashSet<>(List.of("grupo|A", "grupo|B", "★ladder"));
         Map<String, String> escrito = new HashMap<>();
-        new Campanas(api, leer, escrito::put).guardarCampanas(tres);
+        new Campanas(api, leer, escrito::put, nombre -> false).guardarCampanas(tres);
 
         Properties paraGuardar = new Properties();
         paraGuardar.setProperty("campanas", escrito.get("campanas"));
@@ -120,7 +123,7 @@ class CampanasTest {
         Properties releidas = new Properties();
         releidas.load(new StringReader(sw.toString()));
 
-        Campanas lector = new Campanas(api, (clave, porDefecto) -> releidas.getProperty(clave, porDefecto), guardar);
+        Campanas lector = new Campanas(api, (clave, porDefecto) -> releidas.getProperty(clave, porDefecto), guardar, nombre -> false);
         assertEquals(tres, lector.campanas());
     }
 
@@ -188,6 +191,27 @@ class CampanasTest {
         List<Player> todos = List.of(new Player(101, "Ana", "A"), new Player(102, "Bea", "B"));
         Map<String, Set<Long>> ids = campanas.calcularCampanaIds(campanas.campanas(), todos);
         assertEquals(Set.of(101L, 102L), ids.get("grupo|All"), "tras normalizar el id, calcularCampanaIds sigue reconociendo \"Todos\"");
+    }
+
+    /**
+     * Decisión de Opus (fase 4): si el usuario tiene un grupo de verdad llamado "All" (coincidencia con el
+     * texto bilingüe por casualidad), su campana NO se traduce a "Todos": es la campana de ESE grupo. Sin
+     * gruposDeUsuario.add("All") (los demás tests de esta clase), "grupo|All" sigue siendo el pseudogrupo.
+     */
+    @Test void campanaDeGrupoDeUsuarioLlamadoAllNoSeTraduce() {
+        gruposDeUsuario.add("All");
+        config.put("campanas", "grupo|All");
+        IDIOMA = "es";
+        assertEquals(Set.of("grupo|All"), campanas.campanas(), "\"All\" es un grupo de verdad: no se traduce a \"Todos\"");
+    }
+
+    @Test void campanaDeGrupoDeUsuarioLlamadoAllEsSoloDeEseGrupoNoDeTodosLosJugadores() {
+        gruposDeUsuario.add("All");
+        config.put("campanas", "grupo|All");
+        IDIOMA = "es";
+        List<Player> todos = List.of(new Player(101, "Ana", "All"), new Player(102, "Bea", "Otro"));
+        Map<String, Set<Long>> ids = campanas.calcularCampanaIds(campanas.campanas(), todos);
+        assertEquals(Set.of(101L), ids.get("grupo|All"), "la campana es la de ese grupo, no la del pseudogrupo \"todos los jugadores\"");
     }
 
     @Test void calcularCampanaIdsDeLadderPideElTopNYCorta() {
