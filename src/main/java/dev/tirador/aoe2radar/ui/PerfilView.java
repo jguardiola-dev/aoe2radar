@@ -1124,6 +1124,13 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar) { pintarListaAgg(panel, titulo, datos, tope, nombre, alClicar, null); }
 
     void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar, java.util.function.Function<String, Icon> icono) {
+        pintarListaAgg(panel, titulo, datos, tope, nombre, alClicar, icono, this::actPintar);
+    }
+
+    /** F7 (1.3): alReordenar es lo que se repinta al pulsar el título para cambiar el orden. En el perfil es
+     *  actPintar; el diálogo Cara a cara pasa su propio repintado (antes repintaba el perfil de detrás y el
+     *  diálogo no cambiaba hasta el siguiente cruce). */
+    void pintarListaAgg(JPanel panel, String titulo, Map<String, int[]> datos, int tope, java.util.function.Function<String, String> nombre, Map<String, Runnable> alClicar, java.util.function.Function<String, Icon> icono, Runnable alReordenar) {
         panel.removeAll();
         boolean ordenado = datos instanceof LinkedHashMap;
         int modo = ordenado ? -1 : ordenListas.getOrDefault(titulo, 0);
@@ -1131,7 +1138,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
                 ordenado ? null : t("Clic para cambiar el orden: partidas → winrate → A-Z", "Click to change the order: games → win rate → A-Z"));
         if (!ordenado) {
             cab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            cab.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ordenListas.put(titulo, (ordenListas.getOrDefault(titulo, 0) + 1) % 3); actPintar(); } });
+            cab.addMouseListener(new MouseAdapter() { @Override public void mouseClicked(MouseEvent e) { ordenListas.put(titulo, (ordenListas.getOrDefault(titulo, 0) + 1) % 3); alReordenar.run(); } });
         }
         panel.add(cab);
         List<Map.Entry<String, int[]>> l = new ArrayList<>();

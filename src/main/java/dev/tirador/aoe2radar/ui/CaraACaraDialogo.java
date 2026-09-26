@@ -413,17 +413,18 @@ public final class CaraACaraDialogo {
         JPanel columnas = new JPanel(new GridLayout(1, 2, 16, 0)); columnas.setOpaque(false); columnas.setAlignmentX(0f);
         JPanel c1 = new JPanel(); c1.setLayout(new BoxLayout(c1, BoxLayout.Y_AXIS)); c1.setOpaque(false);
         JPanel c2 = new JPanel(); c2.setLayout(new BoxLayout(c2, BoxLayout.Y_AXIS)); c2.setOpaque(false);
+        Runnable reordenar = () -> fijar(rivalPid, rivalNombre);   // F7: cambiar el orden de una lista repinta el diálogo (mismo cruce, mismo mapa y modo: registrar() no duplica el historial)
         Map<String, Runnable> clicMapa = new HashMap<>(); for (String k : porMapa.keySet()) clicMapa.put(k, () -> { mapaFiltro = k; fijar(rivalPid, rivalNombre); });
-        view.pintarListaAgg(c1, t("Winrate por mapa · ", "Win rate by map · ") + nombreAbierto + t(" · clic: filtrar", " · click: filter"), porMapa, 10, k -> k, mapaFiltro == null ? clicMapa : null, k -> iconoMapa(k, 18));
-        view.pintarListaAgg(c2, t("Civ contra civ", "Civ vs civ"), porCivs, 10, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k.substring(0, k.indexOf(" vs "))), 18));
+        view.pintarListaAgg(c1, t("Winrate por mapa · ", "Win rate by map · ") + nombreAbierto + t(" · clic: filtrar", " · click: filter"), porMapa, 10, k -> k, mapaFiltro == null ? clicMapa : null, k -> iconoMapa(k, 18), reordenar);
+        view.pintarListaAgg(c2, t("Civ contra civ", "Civ vs civ"), porCivs, 10, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k.substring(0, k.indexOf(" vs "))), 18), reordenar);
         columnas.add(c1); columnas.add(c2);
         cuerpo.add(columnas);
         cuerpo.add(Box.createVerticalStrut(8));
         JPanel columnas2 = new JPanel(new GridLayout(1, 2, 16, 0)); columnas2.setOpaque(false); columnas2.setAlignmentX(0f);
         JPanel c3 = new JPanel(); c3.setLayout(new BoxLayout(c3, BoxLayout.Y_AXIS)); c3.setOpaque(false);
         JPanel c4 = new JPanel(); c4.setLayout(new BoxLayout(c4, BoxLayout.Y_AXIS)); c4.setOpaque(false);
-        view.pintarListaAgg(c3, t("Mejores civs · ", "Best civs · ") + nombreAbierto, civYo, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18));
-        view.pintarListaAgg(c4, t("Mejores civs · ", "Best civs · ") + rivalNombre, civEl, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18));
+        view.pintarListaAgg(c3, t("Mejores civs · ", "Best civs · ") + nombreAbierto, civYo, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18), reordenar);
+        view.pintarListaAgg(c4, t("Mejores civs · ", "Best civs · ") + rivalNombre, civEl, 5, k -> k, null, k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18), reordenar);
         columnas2.add(c3); columnas2.add(c4);
         cuerpo.add(columnas2);
         cuerpo.add(Box.createVerticalStrut(10));
@@ -444,8 +445,8 @@ public final class CaraACaraDialogo {
                     JPanel l1 = new JPanel(); l1.setLayout(new BoxLayout(l1, BoxLayout.Y_AXIS)); l1.setOpaque(false);
                     JPanel l2 = new JPanel(); l2.setLayout(new BoxLayout(l2, BoxLayout.Y_AXIS)); l2.setOpaque(false);
                     java.util.function.Function<String, Icon> ic = "mapas".equals(sec[0]) ? k -> iconoMapa(k, 18) : "civs".equals(sec[0]) ? k -> iconoCiv(view.techTree.claveCivDeNombre(k), 18) : null;
-                    view.pintarListaAgg(l1, sec[1] + " \u00B7 " + nombreAbierto, mio.get(sec[0]), 5, k -> k, null, ic);
-                    view.pintarListaAgg(l2, sec[1] + " \u00B7 " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic);
+                    view.pintarListaAgg(l1, sec[1] + " \u00B7 " + nombreAbierto, mio.get(sec[0]), 5, k -> k, null, ic, reordenar);
+                    view.pintarListaAgg(l2, sec[1] + " \u00B7 " + rivalNombre, suyo.get(sec[0]), 5, k -> k, null, ic, reordenar);
                     par.add(l1); par.add(l2);
                     comparacion.add(par); comparacion.add(Box.createVerticalStrut(6));
                 }

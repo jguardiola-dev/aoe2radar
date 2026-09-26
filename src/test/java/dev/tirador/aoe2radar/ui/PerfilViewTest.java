@@ -230,6 +230,24 @@ class PerfilViewTest {
         assertEquals(null, PerfilView.ladderDeModo(null));
     }
 
+    /** F7 (1.3): pulsar el título de una lista para cambiar el orden repinta a quien la pintó (el diálogo Cara a
+     *  cara pasa su propio repintado); antes llamaba siempre a actPintar, el perfil de detrás. */
+    @Test void cambiarElOrdenDeUnaListaRepintaAQuienLaPinto() throws Exception {
+        int[] repintados = new int[1]; String[] orden = new String[1];
+        SwingUtilities.invokeAndWait(() -> {
+            PerfilView v = vista();
+            javax.swing.JPanel panel = new javax.swing.JPanel();
+            Map<String, int[]> datos = new HashMap<>(Map.of("Arabia", new int[]{ 5, 3 }, "Arena", new int[]{ 4, 1 }));
+            v.pintarListaAgg(panel, "Winrate por mapa · prueba", datos, 5, k -> k, null, null, () -> repintados[0]++);
+            javax.swing.JLabel cab = (javax.swing.JLabel) panel.getComponent(0);
+            java.awt.event.MouseEvent clic = new java.awt.event.MouseEvent(cab, java.awt.event.MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, 5, 5, 1, false);
+            for (java.awt.event.MouseListener ml : cab.getMouseListeners()) ml.mouseClicked(clic);
+            orden[0] = String.valueOf(v.ordenListas.get("Winrate por mapa · prueba"));
+        });
+        assertEquals(1, repintados[0], "se repinta la lista de quien la pintó");
+        assertEquals("1", orden[0], "y el orden pasa a «por winrate»");
+    }
+
     /** F9 (1.3): «Actualizar hoy» termina sin ficha (la API de la ficha falló y no había ninguna conocida): la
      *  cabecera que ya estaba pintada no se sustituye por «Sin datos de perfil». */
     @Test void actualizarHoySinFichaNoBorraLaCabecera() throws Exception {
