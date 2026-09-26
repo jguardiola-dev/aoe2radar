@@ -579,7 +579,7 @@ class WatchlistViewTest {
         todosJugadores.add(new Player(2L, "Dos", "Pros"));
         watchlist.rebuildGrupos();
         assertEquals(List.of("Amigos", "Pros"), watchlist.gruposDelCombo());
-        watchlist.watchBarridos.add(2L);   // ya barrido: refrescarWatchlist no lanza nada (el test no tiene red)
+        watchlist.presenter.watchBarridos.add(2L);   // ya barrido: refrescarWatchlist no lanza nada (el test no tiene red)
         watchlist.grupoCombo.setSelectedItem("Pros");   // con listeners: onGrupoElegido
         assertEquals("Pros", cfg.get("grupo_activo"));
         assertEquals(1, playersModel.size());
@@ -594,7 +594,7 @@ class WatchlistViewTest {
     private WatchlistView conTresJugadores() {
         List<Player> js = new ArrayList<>(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos"), new Player(3L, "Tres", "Pros")));
         WatchlistView w = nuevaInstancia(js, tmp.resolve("players.txt"));
-        w.watchBarridos.addAll(List.of(1L, 2L, 3L));
+        w.presenter.watchBarridos.addAll(List.of(1L, 2L, 3L));
         w.rebuildGrupos();
         sinListeners(() -> w.grupoCombo.setSelectedItem("Todos"), w.grupoCombo);
         w.aplicarFiltroGrupo();
@@ -639,6 +639,49 @@ class WatchlistViewTest {
         w.ficharDesdeTop(new Player(9L, "Nueve", WatchlistView.TOP_LADDER), "Pros");
         assertEquals("Pros", w.grupoDeJugador(9L));
         assertEquals("Nueve añadido a «Pros» de tu watchlist.", w.status.getText());
+    }
+
+    /** Caracterización (antes de pasar filtro y conteos a WatchlistPresenter): título, resumen y chip cuentan a los que
+     *  juegan en toda la lista y en el grupo elegido; el combo marca los grupos con alguien jugando. */
+    @Test void indicadoresVivos_cuentanEnLaListaYEnElGrupo() {
+        WatchlistView w = conTresJugadores();
+        sinListeners(() -> w.grupoCombo.setSelectedItem("Amigos"), w.grupoCombo);
+        w.aplicarFiltroGrupo();
+        try {
+            EstadoVivo.SISTEMA.marcarJugando(1L, 111L);
+            EstadoVivo.SISTEMA.marcarJugando(3L, 333L);
+            w.actualizarIndicadoresVivos();
+            assertEquals("Watchlist — 2 jugando", w.tituloWatch.getTitle());
+            assertEquals("2 jugadores · 1 jugando", w.resumenWatch.getText());
+            assertEquals("● Jugando (1)", w.soloVivosBtn.getText());
+            assertTrue(w.presenter.grupoTieneVivo("amigos"));
+            assertTrue(w.presenter.grupoTieneVivo(null));
+            EstadoVivo.SISTEMA.marcarFuera(1L);
+            assertFalse(w.presenter.grupoTieneVivo("Amigos"));
+            w.actualizarIndicadoresVivos();
+            assertEquals("● Jugando", w.soloVivosBtn.getText());
+        } finally { EstadoVivo.SISTEMA.marcarFuera(1L); EstadoVivo.SISTEMA.marcarFuera(3L); }
+    }
+
+    /** Caracterización: la cuenta hermana de una familia dice de quién es (la de más ELO); vincular guarda y refiltra. */
+    @Test void familias_tipCuentaVinculadaYMarcarVinculo() {
+        todosJugadores.add(new Player(1L, "Uno", "G", 42L));
+        todosJugadores.add(new Player(2L, "Otro", "G", 42L));
+        todosJugadores.add(new Player(3L, "Tres", "G"));
+        eloWatch.put(1L, 1500); eloWatch.put(2L, 1800);
+        Match m = new Match();
+        m.refId = 1L;   // EnlaceFalso.refNombre: «Uno»
+        assertEquals("Cuenta vinculada de Otro", watchlist.tipCuentaVinculada(m));
+        m.refId = 2L;   // «Otro»: la matriz es ella misma
+        assertNull(watchlist.tipCuentaVinculada(m));
+        watchlist.marcarVinculo(Set.of(2L, 3L));
+        assertEquals(todosJugadores.get(1).vinculo(), todosJugadores.get(2).vinculo(), "Tres entra en la familia");
+        assertEquals((Character) 'P', watchlist.presenter.marcaFila.get(2L), "marcarVinculo refiltra: Otro encabeza (más ELO)");
+        assertEquals(2, watchlist.conFamilias(List.of(todosJugadores.get(1))).size(), "la cabeza arrastra a su familia");
+        watchlist.presenter.vinculosExpandidos.add(2L);
+        watchlist.aplicarFiltroGrupo();
+        assertEquals((Character) 'H', watchlist.presenter.marcaFila.get(3L));
+        assertEquals(1, watchlist.conFamilias(List.of(todosJugadores.get(2))).size(), "una hija elegida va sola");
     }
 
     @Test void containsPlayerId_reflejaTodosJugadores() {
@@ -855,10 +898,10 @@ class WatchlistViewTest {
         long pid = 42L;
         watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 30));   // del snapshot
         assertEquals(1500, eloWatch.get(pid), "la lista sigue enseñando el ELO del snapshot");
-        assertNull(WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "restar anoche de anoche da 0: no vale");
+        assertNull(WatchlistPresenter.eloParaResta(pid, eloWatch, watchlist.presenter.eloDelSnapshot), "restar anoche de anoche da 0: no vale");
 
         watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1523, null));   // de la API
-        assertEquals(1523, WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "un ELO fresco sí vale para la resta");
+        assertEquals(1523, WatchlistPresenter.eloParaResta(pid, eloWatch, watchlist.presenter.eloDelSnapshot), "un ELO fresco sí vale para la resta");
         EstadoVivo.SISTEMA.marcarFuera(pid);
     }
 
@@ -957,25 +1000,25 @@ class WatchlistViewTest {
 
     /** Revisor 1.3: un ELO fresco escrito desde fuera (ponerEloWatch de las vinculadas) quita la marca de «de anoche». */
     @Test void ponerEloFresco_quitaLaMarcaDeAnoche() {
-        watchlist.ponerEloDeAnoche(8L, 1400);
-        assertNull(WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+        watchlist.presenter.ponerEloDeAnoche(8L, 1400);
+        assertNull(WatchlistPresenter.eloParaResta(8L, eloWatch, watchlist.presenter.eloDelSnapshot));
         watchlist.ponerEloFresco(8L, 1450);
-        assertEquals(1450, WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+        assertEquals(1450, WatchlistPresenter.eloParaResta(8L, eloWatch, watchlist.presenter.eloDelSnapshot));
     }
 
     /** Revisor 1.3: la marca no se acumula: quien sale de la Watchlist y del top la pierde (y se volverá a barrer si
      *  vuelve); quien sigue en la lista la conserva. */
     @Test void podarEloDelSnapshot_soloQuedanLosPresentes() {
         todosJugadores.add(new Player(1L, "Uno", "Amigos"));
-        watchlist.ponerEloDeAnoche(1L, 1500);
-        watchlist.ponerEloDeAnoche(2L, 1600);   // ya no está en ninguna lista
-        watchlist.watchBarridos.add(1L); watchlist.watchBarridos.add(2L);
+        watchlist.presenter.ponerEloDeAnoche(1L, 1500);
+        watchlist.presenter.ponerEloDeAnoche(2L, 1600);   // ya no está en ninguna lista
+        watchlist.presenter.watchBarridos.add(1L); watchlist.presenter.watchBarridos.add(2L);
 
         watchlist.aplicarFiltroGrupo();
 
-        assertEquals(Set.of(1L), watchlist.eloDelSnapshot);
-        assertTrue(watchlist.watchBarridos.contains(1L));
-        assertFalse(watchlist.watchBarridos.contains(2L), "si vuelve a la Watchlist, se barre y se vuelve a marcar");
+        assertEquals(Set.of(1L), watchlist.presenter.eloDelSnapshot);
+        assertTrue(watchlist.presenter.watchBarridos.contains(1L));
+        assertFalse(watchlist.presenter.watchBarridos.contains(2L), "si vuelve a la Watchlist, se barre y se vuelve a marcar");
     }
 
     @Test void sugerenciaCaducada_siElTextoCambio() {

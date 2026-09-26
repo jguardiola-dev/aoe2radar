@@ -46,7 +46,7 @@ final class WatchlistDialogos {
             @Override protected void done() {
                 List<Perfil.Vinculada> vinc;
                 try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
-                Set<Long> familia = wv.familiaSvc.vincularExistentes(p.id(), vinc, wv::containsPlayerId);
+                Set<Long> familia = wv.presenter.familiaSvc.vincularExistentes(p.id(), vinc, wv::containsPlayerId);
                 if (familia.size() < 2) {
                     wv.status.setText(t("No sigues ninguna otra cuenta vinculada de ", "You don't follow any other linked account of ")
                             + p.name() + t(". Usa «Cuentas vinculadas…» para añadirlas.", ". Use “Linked accounts…” to add them."));

@@ -76,9 +76,9 @@ final class WatchlistLista {
                                                                     boolean isSelected, boolean cellHasFocus) {
                 JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 if (value instanceof Player p) {
-                    char marca = wv.marcaFila.getOrDefault(p.id(), ' ');
+                    char marca = wv.presenter.marcaFila.getOrDefault(p.id(), ' ');
                     boolean vivo = WatchlistView.VIVO.jugando(p.id())
-                            || (marca != 'H' && wv.vivoFamilia.getOrDefault(p.id(), false));
+                            || (marca != 'H' && wv.presenter.vivoFamilia.getOrDefault(p.id(), false));
                     Integer elo = wv.eloWatch.get(p.id());
                     Integer rank = wv.modoTop() ? wv.rankTop.get(p.id()) : null;
                     String punto = vivo ? "<font color='#" + colorVivoHex() + "'>\u25CF</font>" : "";
@@ -113,7 +113,7 @@ final class WatchlistLista {
                     if (marca == 'H')   // hija: sangría fija y un punto menos, legible
                         nick = "&nbsp;&nbsp;&nbsp;<span style='font-size:0.92em'>" + nick + "</span>";
                     l.setBorder(null);   // renderer compartido: se fija SIEMPRE
-                    String[] alt = marca == 'H' ? null : wv.mejorAlt(p.id());
+                    String[] alt = marca == 'H' ? null : wv.presenter.mejorAlt(p.id());
                     if (alt != null) {
                         eloTxt = eloTxt + " <font color='#8a8a8a'>\u21A5" + alt[1] + "</font>";
                         tip = (tip == null ? "" : tip + " \u2014 ")
@@ -168,8 +168,8 @@ final class WatchlistLista {
                             String[] stT = wv.twitchLive.get(ph.id());
                             if (stT != null) { wv.anfitrion.abrirUrl("https://twitch.tv/" + stT[0]); return; }
                         }
-                        if (bajo.contains("\u21A5") && wv.marcaFila.getOrDefault(ph.id(), ' ') != 'H') {
-                            String[] altA = wv.mejorAlt(ph.id());
+                        if (bajo.contains("\u21A5") && wv.presenter.marcaFila.getOrDefault(ph.id(), ' ') != 'H') {
+                            String[] altA = wv.presenter.mejorAlt(ph.id());
                             if (altA != null && altA.length > 2) {
                                 try { wv.navegacion.abrirPerfil(Long.parseLong(altA[2]), altA[0]); return; }
                                 catch (NumberFormatException ignored) { }
@@ -183,9 +183,9 @@ final class WatchlistLista {
                     int idx = wv.playersList.locationToIndex(e.getPoint());
                     if (idx >= 0 && wv.playersList.getCellBounds(idx, idx).contains(e.getPoint())) {
                         Player p = wv.playersModel.get(idx);
-                        char m = wv.marcaFila.getOrDefault(p.id(), ' ');
+                        char m = wv.presenter.marcaFila.getOrDefault(p.id(), ' ');
                         if (m == 'P' || m == 'E') {
-                            if (!wv.vinculosExpandidos.remove(p.vinculo())) wv.vinculosExpandidos.add(p.vinculo());
+                            if (!wv.presenter.vinculosExpandidos.remove(p.vinculo())) wv.presenter.vinculosExpandidos.add(p.vinculo());
                             wv.aplicarFiltroGrupo();
                             return;
                         }

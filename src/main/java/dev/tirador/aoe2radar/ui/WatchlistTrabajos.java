@@ -58,7 +58,7 @@ final class WatchlistTrabajos {
             @Override protected Void doInBackground() {
                 wv.anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
                 wv.anfitrion.cargarEloAyer();
-                wv.presenter.consultarForma(pendientes, horas, pid -> WatchlistView.eloParaResta(pid, wv.eloWatch, wv.eloDelSnapshot),
+                wv.presenter.consultarForma(pendientes, horas, wv.presenter::eloParaResta,
                         this::publish, wv.anfitrion::detenerOperacion);
                 return null;
             }
@@ -117,7 +117,7 @@ final class WatchlistTrabajos {
         wv.lastTop.clear(); wv.rankTop.clear();
         for (TopLadderService.FilaClan f : res.miembros()) {
             wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
-            wv.ponerEloDeAnoche(f.pid(), f.rating());   // resumen diario de sfr-data: ELO de anoche (F5)
+            wv.presenter.ponerEloDeAnoche(f.pid(), f.rating());   // resumen diario de sfr-data: ELO de anoche (F5)
             wv.rankTop.put(f.pid(), wv.topLadder.size());
         }
         guardarConfig("clan_tag", tag);
@@ -192,7 +192,7 @@ final class WatchlistTrabajos {
                     wv.rankTop.clear();
                     for (TopLadderService.FilaTop f : res.filas()) {
                         wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-                        wv.ponerEloFresco(f.pid(), f.rating());   // del leaderboard: fresco (F5)
+                        wv.presenter.ponerEloFresco(f.pid(), f.rating());   // del leaderboard: fresco (F5)
                         wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
                         wv.rankTop.put(f.pid(), wv.topLadder.size());
                     }
@@ -234,7 +234,7 @@ final class WatchlistTrabajos {
         wv.rankTop.clear();
         for (TopLadderService.FilaCache f : cache.filas()) {
             wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-            if (f.elo() > 0) wv.ponerEloFresco(f.pid(), f.elo());   // del leaderboard, aunque de caché (F5)
+            if (f.elo() > 0) wv.presenter.ponerEloFresco(f.pid(), f.elo());   // del leaderboard, aunque de caché (F5)
             wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
             wv.rankTop.put(f.pid(), wv.topLadder.size());
         }
@@ -293,7 +293,7 @@ final class WatchlistTrabajos {
         List<Player> objetivo = new ArrayList<>();
         for (int i = 0; i < wv.playersModel.size(); i++) {
             Player p = wv.playersModel.get(i);
-            if (wv.watchBarridos.add(p.id())) objetivo.add(p);
+            if (wv.presenter.watchBarridos.add(p.id())) objetivo.add(p);
         }
         if (objetivo.isEmpty()) return;
         new SwingWorker<Void, BarridoVivos.Refresco>() {
@@ -331,7 +331,7 @@ final class WatchlistTrabajos {
             } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
         }
         if (r.elo() != null) {
-            if (r.sabeSiJuega()) wv.ponerEloFresco(r.pid(), r.elo()); else wv.ponerEloDeAnoche(r.pid(), r.elo());   // F5: ¿fresco o de anoche?
+            if (r.sabeSiJuega()) wv.presenter.ponerEloFresco(r.pid(), r.elo()); else wv.presenter.ponerEloDeAnoche(r.pid(), r.elo());   // F5: ¿fresco o de anoche?
         }
     }
 

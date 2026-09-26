@@ -1,10 +1,13 @@
 package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Forma;
+import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.VistaInicial;
 import dev.tirador.aoe2radar.util.Config;
+import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static org.junit.jupiter.api.Assertions.*;
@@ -34,7 +38,12 @@ class WatchlistPresenterTest {
         String grupo;
         List<String> items = new ArrayList<>();
         String clan;
+        boolean soloVivos, mostrarElo = true;
+        WatchlistView.EnlacePartidas enlace = new WatchlistViewTest.EnlaceFalso();
         final List<String> llamadas = new ArrayList<>();
+        @Override public boolean soloVivosMarcado() { return soloVivos; }
+        @Override public boolean mostrarEloWatch() { return mostrarElo; }
+        @Override public WatchlistView.EnlacePartidas enlace() { return enlace; }
         @Override public String grupoSeleccionado() { return grupo; }
         @Override public List<String> itemsCombo() { return items; }
         @Override public String clanEscrito() { return clan; }
@@ -69,6 +78,10 @@ class WatchlistPresenterTest {
 
     FormaFalsa forma;
     Map<Long, Integer> gamesWatch;
+    Map<Long, Integer> eloWatch;
+    List<Player> topLadder;
+    /** Un EstadoVivo propio (no el del sistema): quién juega, sin compartir estado con otros tests. */
+    EstadoVivo vivo;
     PantallaFalsa pantalla;
     List<Player> jugadores;
     Map<String, String> cfg;
@@ -90,12 +103,16 @@ class WatchlistPresenterTest {
         cfg = new HashMap<>();
         forma = new FormaFalsa();
         gamesWatch = new HashMap<>();
+        eloWatch = new HashMap<>();
+        topLadder = new ArrayList<>();
+        vivo = new EstadoVivo(new RelojFalso());
         p = nuevo(tmp.resolve("players.txt"));
     }
 
     private WatchlistPresenter nuevo(Path playersFile) {
         return new WatchlistPresenter(pantalla, jugadores, playersFile, TOP_PAIS, TOP_CLAN, paises,
-                (k, def) -> cfg.getOrDefault(k, def), cfg::put, forma, gamesWatch);
+                (k, def) -> cfg.getOrDefault(k, def), cfg::put, forma, gamesWatch,
+                new WatchlistViewTest.ProfileServiceFalso(), vivo, eloWatch, topLadder);
     }
 
     @AfterEach void restaurar() throws Exception {
@@ -335,6 +352,97 @@ class WatchlistPresenterTest {
         pantalla.llamadas.clear();
         p.guardarJugadores();
         assertEquals(List.of(), pantalla.llamadas, "guardado bien: sin mensaje");
+    }
+
+    // ===== lista visible, familias y conteos ============================================================================
+
+    private List<Long> ids(List<Player> l) { return l.stream().map(Player::id).toList(); }
+
+    @Test void filasVisibles_grupoOrdenYSoloJugando() {
+        Config.guardarConfig("orden_watch", "elo");
+        jugadores.addAll(List.of(new Player(1L, "Ana", "Amigos"), new Player(2L, "Bea", "Amigos"), new Player(3L, "Cris", "Pros")));
+        eloWatch.put(1L, 1400); eloWatch.put(2L, 1900);
+        pantalla.grupo = "Amigos";
+        assertEquals(List.of(2L, 1L), ids(p.filasVisibles()), "por ELO, de más a menos");
+        pantalla.mostrarElo = false;
+        assertEquals(List.of(1L, 2L), ids(p.filasVisibles()), "sin ELO a la vista: por nombre");
+        pantalla.grupo = "Todos";
+        vivo.marcarJugando(3L, 30L);
+        pantalla.soloVivos = true;
+        assertEquals(List.of(3L), ids(p.filasVisibles()));
+        topLadder.add(new Player(9L, "Top", WatchlistView.TOP_LADDER));
+        pantalla.soloVivos = false;
+        pantalla.grupo = WatchlistView.TOP_LADDER;
+        assertEquals(List.of(9L), ids(p.filasVisibles()), "en los tops, la lista es el top cargado");
+    }
+
+    @Test void filasVisibles_familiaPlegadaYDesplegada() {
+        jugadores.addAll(List.of(new Player(1L, "Uno", "G", 7L), new Player(2L, "Dos", "G", 7L)));
+        eloWatch.put(2L, 2000);
+        vivo.marcarJugando(1L, 10L);
+        pantalla.grupo = "Todos";
+        assertEquals(List.of(2L), ids(p.filasVisibles()), "plegada: solo la cabeza (la de más ELO)");
+        assertEquals((Character) 'P', p.marcaFila.get(2L));
+        assertEquals(Boolean.TRUE, p.vivoFamilia.get(2L), "una hija juega: la cabeza lo enseña");
+        p.vinculosExpandidos.add(7L);
+        assertEquals(List.of(2L, 1L), ids(p.filasVisibles()));
+        assertEquals((Character) 'H', p.marcaFila.get(1L));
+        assertEquals(1, p.conFamilias(List.of(jugadores.get(0))).size(), "la hija elegida va sola");
+        assertEquals(2, p.conFamilias(List.of(jugadores.get(1))).size());
+        assertArrayEquals(new String[]{ "Dos", "2000", "2" }, p.mejorAlt(1L));
+        assertNull(p.mejorAlt(2L), "la cabeza ya es la de más ELO");
+    }
+
+    @Test void conteosDeVivos_listaAmbitoYGrupos() {
+        jugadores.addAll(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Pros")));
+        topLadder.addAll(List.of(new Player(8L, "T8", WatchlistView.TOP_LADDER), new Player(9L, "T9", WatchlistView.TOP_LADDER)));
+        vivo.marcarJugando(1L, 1L); vivo.marcarJugando(8L, 8L); vivo.marcarJugando(9L, 9L);
+        pantalla.grupo = "Pros";
+        assertEquals(1, p.vivosEnLista(), "el título solo cuenta la Watchlist");
+        assertEquals(0, p.vivosEnAmbito());
+        pantalla.grupo = "Todos";
+        assertEquals(1, p.vivosEnAmbito());
+        pantalla.grupo = WatchlistView.TOP_LADDER;
+        assertEquals(2, p.vivosEnAmbito(), "en los tops, el ámbito es el top");
+        assertTrue(p.grupoTieneVivo("AMIGOS"));
+        assertFalse(p.grupoTieneVivo("Pros"));
+        assertTrue(p.grupoTieneVivo(null));
+    }
+
+    @Test void tipCuentaVinculada_porElNombreDeLaTabla() {
+        jugadores.addAll(List.of(new Player(1L, "Uno", "G", 5L), new Player(2L, "Otro", "G", 5L)));
+        eloWatch.put(2L, 1700);
+        Match m = new Match();
+        m.refId = 1L;   // EnlaceFalso: «Uno»
+        assertEquals("Cuenta vinculada de Otro", p.tipCuentaVinculada(m));
+        m.refId = 2L;
+        assertNull(p.tipCuentaVinculada(m));
+    }
+
+    @Test void marcarVinculoYSanear_guardanSoloSiCambia() throws Exception {
+        jugadores.addAll(List.of(new Player(1L, "Uno", "G"), new Player(2L, "Dos", "G"), new Player(3L, "Tres", "G", 99L)));
+        p.marcarVinculo(Set.of(1L));
+        assertEquals(List.of(), pantalla.llamadas, "una sola cuenta: nada que vincular");
+        p.marcarVinculo(Set.of(1L, 2L));
+        assertEquals(List.of("filtro"), pantalla.llamadas);
+        assertTrue(Files.readString(tmp.resolve("players.txt")).contains("2;Dos;G;1"), "guardado con la clave = menor id");
+        p.sanearVinculosHuerfanos();
+        assertEquals(0L, jugadores.get(2).vinculo(), "familia de una sola cuenta: fantasma fuera");
+        assertTrue(Files.readString(tmp.resolve("players.txt")).contains("3;Tres;G" + System.lineSeparator()));
+    }
+
+    @Test void eloDeAnoche_marcasYPoda() {
+        jugadores.add(new Player(1L, "Uno", "G"));
+        p.ponerEloDeAnoche(1L, 1500);
+        p.ponerEloDeAnoche(2L, 1600);
+        assertNull(p.eloParaResta(1L), "el de anoche no vale para restar");
+        p.watchBarridos.addAll(List.of(1L, 2L));
+        p.podarEloDelSnapshot();
+        assertEquals(Set.of(1L), p.eloDelSnapshot);
+        assertEquals(Set.of(1L), p.watchBarridos);
+        p.ponerEloFresco(1L, 1520);
+        assertEquals(1520, p.eloParaResta(1L));
+        assertTrue(p.eloDelSnapshot.isEmpty());
     }
 
     // ===== forma reciente ===============================================================================================

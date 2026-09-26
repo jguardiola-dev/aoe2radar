@@ -1,15 +1,21 @@
 package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Forma;
+import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.service.Familias;
+import dev.tirador.aoe2radar.service.FiltroLista;
 import dev.tirador.aoe2radar.service.FormService;
 import dev.tirador.aoe2radar.service.ListaSeguidos;
+import dev.tirador.aoe2radar.service.ProfileService;
 import dev.tirador.aoe2radar.service.VistaInicial;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -62,6 +68,12 @@ public final class WatchlistPresenter {
         void reconstruirGrupos();
         /** Tras fichar a alguien: ofrece añadir sus cuentas vinculadas (consulta y diálogo, en la vista). */
         void ofrecerVinculadasTrasAlta(long pid, String nombre, String grupo);
+        /** ¿Está pulsado el chip «● Jugando» (solo los que juegan)? false si aún no existe. */
+        boolean soloVivosMarcado();
+        /** ¿Se enseña el ELO en la lista? (Configuración; la vista guarda la preferencia). */
+        boolean mostrarEloWatch();
+        /** El enlace con Partidas, leído de la vista en CADA uso (los tests lo cambian después de construir). */
+        WatchlistView.EnlacePartidas enlace();
     }
 
     private final Pantalla pantalla;
@@ -90,13 +102,37 @@ public final class WatchlistPresenter {
     volatile boolean formaVisible;   // el chip: nace apagado, no se recuerda
     volatile int ventanaForma = 24;   // 24 h o 7 d (selector junto al chip)
 
+    // ----- lista visible, familias y ELO -----
+    private final ProfileService perfiles;
+    private final EstadoVivo vivo;
+    /** El ELO conocido de cada jugador: la MISMA instancia que la ventana (Ratings, Live now, Perfil la leen). */
+    private final Map<Long, Integer> eloWatch;
+    /** El top cargado (ladder, país o clan): lo crea la vista; misma instancia y mismo monitor (topLadderSnapshot). */
+    final List<Player> topLadder;
+    private final FiltroLista filtroLista;   // qué fila se ve y en qué orden (sin Swing)
+    final Set<Long> vinculosExpandidos = new HashSet<>();
+    final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
+    final Map<Long, Boolean> vivoFamilia = new HashMap<>();   // principal -> alguna cuenta viva
+    /** Familias: vínculos entre cuentas del mismo jugador (ver service.Familias). Un servicio sin red. */
+    final Familias familiaSvc = new Familias();
+    /** Jugadores cuyo ELO en eloWatch es el del snapshot nocturno (el barrido de un grupo sin red, o el resumen
+     *  diario de ★ Top clan), no uno fresco. Lo escriben el EDT y lo lee el hilo de «Ver forma»: concurrente. */
+    final Set<Long> eloDelSnapshot = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
+
     /** topPais/topClan/paises: los de la vista (calculados al construirla, con el idioma ya fijado), no otros. */
     WatchlistPresenter(Pantalla pantalla, List<Player> todosJugadores, Path playersFile,
                        String topPais, String topClan, PaisItem[] paises,
                        BiFunction<String, String, String> leerCfg, BiConsumer<String, String> guardarCfg,
-                       FormService formaService, Map<Long, Integer> gamesWatch) {
+                       FormService formaService, Map<Long, Integer> gamesWatch,
+                       ProfileService perfiles, EstadoVivo vivo, Map<Long, Integer> eloWatch, List<Player> topLadder) {
         this.pantalla = pantalla;
         this.todosJugadores = todosJugadores;
+        this.perfiles = perfiles;
+        this.vivo = vivo;
+        this.filtroLista = new FiltroLista(vivo);
+        this.eloWatch = eloWatch;
+        this.topLadder = topLadder;
         this.formaService = formaService;
         this.gamesWatch = gamesWatch;
         this.topPais = topPais; this.topClan = topClan; this.paises = paises;
@@ -183,6 +219,139 @@ public final class WatchlistPresenter {
         pantalla.refrescarFiltro();
         pantalla.refrescarWatchlist();
         pantalla.indicadoresVivos();
+    }
+
+    // ===== Lista visible: filtro, familias y conteos ======================================================
+
+    /** El cálculo de aplicarFiltroGrupo: qué filas se ven y en qué orden (grupo, «Jugando», orden por ELO/forma/
+     *  nombre, familias plegadas o no). Deja marcaFila y vivoFamilia al día; el invitado, los sujetos, el modelo y
+     *  la selección los resuelve la vista con la lista que devuelve (una lista nueva, suya). */
+    List<Player> filasVisibles() {
+        podarEloDelSnapshot();   // tras cambiar el top o quitar a alguien, la marca de «ELO de anoche» no se acumula
+        String g = grupoActivo();
+        boolean soloVivos = pantalla.soloVivosMarcado();
+        boolean porElo = pantalla.mostrarEloWatch() && "elo".equals(leerConfig("orden_watch", "elo"));
+        String ordenCfg = leerConfig("orden_watch", "elo");
+        boolean porForma = formaVisible && ordenCfg.startsWith("forma");
+        boolean formaAsc = "forma_asc".equals(ordenCfg);   // ascendente = los que más bajan, arriba
+        final Map<Long, Forma> fa = formaActiva();
+        FiltroLista.Resultado res = filtroLista.filtrar(todosJugadores, topLadder, modoTop(), g, soloVivos,
+                porForma, formaAsc, porElo, fa, eloWatch, vinculosExpandidos);
+        marcaFila.clear();
+        marcaFila.putAll(res.marcaFila());
+        vivoFamilia.clear();
+        vivoFamilia.putAll(res.vivoFamilia());
+        return res.filas();
+    }
+
+    /** Suma a la lista todas las cuentas vinculadas de cada jugador — salvo
+     *  las hijas seleccionadas explícitamente, que van solas (control fino). */
+    public List<Player> conFamilias(List<Player> base) {
+        Map<Long, Player> out = new java.util.LinkedHashMap<>();
+        for (Player p : base) out.putIfAbsent(p.id(), p);
+        for (Player p : base)
+            if (p.vinculo() != 0 && marcaFila.getOrDefault(p.id(), ' ') != 'H')
+                for (Player x : todosJugadores)
+                    if (x.vinculo() == p.vinculo()) out.putIfAbsent(x.id(), x);
+        return new ArrayList<>(out.values());
+    }
+
+    /** Tooltip de la columna Jugador: si la cuenta es hermana de una familia,
+     *  dice de quién. Null si no aplica. */
+    public String tipCuentaVinculada(Match m) {
+        String ref = pantalla.enlace().refNombre(m);
+        for (Player x : todosJugadores)
+            if (x.name().equals(ref) && x.vinculo() != 0) {
+                Player matriz = null;
+                Integer mejor = null;
+                for (Player y : todosJugadores)
+                    if (y.vinculo() == x.vinculo()) {
+                        Integer e = eloWatch.get(y.id());
+                        if (matriz == null || (e != null && (mejor == null || e > mejor))) { matriz = y; mejor = e; }
+                    }
+                if (matriz != null && matriz.id() != x.id())
+                    return t("Cuenta vinculada de ", "Linked account of ") + matriz.name();
+                return null;
+            }
+        return null;
+    }
+
+    /** La cuenta hermana con MÁS ELO conocido que la propia, o null.
+     *  Bebe de los vínculos guardados y de las familias consultadas. */
+    String[] mejorAlt(long pid) {
+        return familiaSvc.mejorAlt(pid, todosJugadores, perfiles.familia(pid), eloWatch);
+    }
+
+    /** Un vinculo que agrupa a UNA sola cuenta es un fantasma (p. ej. de
+     *  cuando el companion devolvía al propio jugador como vinculada). */
+    public void sanearVinculosHuerfanos() { if (familiaSvc.sanearVinculosHuerfanos(todosJugadores)) guardarJugadores(); }
+
+    /** Casa un conjunto de cuentas bajo la misma familia (clave = menor id). */
+    public void marcarVinculo(Set<Long> ids) { if (familiaSvc.marcarVinculo(todosJugadores, ids)) { guardarJugadores(); pantalla.refrescarFiltro(); } }   // el vínculo sobrevive al cierre
+
+    /** ¿Hay alguien jugando ahora en el grupo? (null = en cualquiera). */
+    boolean grupoTieneVivo(String grupo) {
+        for (Player p : todosJugadores)
+            if ((grupo == null || p.grupo().equalsIgnoreCase(grupo)) && vivo.jugando(p.id()))
+                return true;
+        return false;
+    }
+
+    /** Cuántos de toda la Watchlist juegan ahora (el título «Watchlist — N jugando»). */
+    int vivosEnLista() {
+        int nVivos = 0;
+        for (Player p : todosJugadores) if (vivo.jugando(p.id())) nVivos++;
+        return nVivos;
+    }
+
+    /** Cuántos juegan ahora en lo que se mira: el top cargado en los modos ★, o el grupo elegido (todos si «Todos»). */
+    int vivosEnAmbito() {
+        String g = grupoActivo();
+        int nAmbito = 0;
+        for (Player p : (modoTop() ? topLadder : todosJugadores))
+            if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && vivo.jugando(p.id())) nAmbito++;
+        return nAmbito;
+    }
+
+    // ===== ELO de anoche frente a ELO fresco (F5 de la revisión 1.3) ======================================
+
+    /** El «ELO actual» que «Ver forma» resta al de anoche (FormService.porResta): null si el que se conoce ES el de
+     *  anoche, porque la resta daría 0 y «sin partidas» (F5 de la revisión 1.3). Con null, porResta no sirve y la
+     *  forma va por la vía exacta (porSerie, una llamada). */
+    static Integer eloParaResta(long pid, Map<Long, Integer> eloWatch, Set<Long> delSnapshot) {
+        return delSnapshot.contains(pid) ? null : eloWatch.get(pid);
+    }
+
+    /** eloParaResta con el ELO y las marcas de esta Watchlist (lo que «Ver forma» le pasa a la resta). */
+    Integer eloParaResta(long pid) { return eloParaResta(pid, eloWatch, eloDelSnapshot); }
+
+    // Orden de escritura (revisor 1.3): el hilo de «Ver forma» lee primero la marca y luego el ELO (eloParaResta). Para
+    // que nunca vea «sin marca + ELO de anoche» (resta 0, el fallo F5), todo cambio pasa por «marcado»: un ELO de anoche
+    // se marca ANTES de escribirlo; uno fresco se escribe ANTES de quitar la marca. En la ventana intermedia, como mucho,
+    // la forma va por la vía exacta (una llamada de más), nunca por una resta falsa.
+
+    /** Un ELO fresco (API, leaderboard): primero el valor, después se quita la marca de «de anoche». */
+    public void ponerEloFresco(long pid, int elo) {
+        eloWatch.put(pid, elo);
+        eloDelSnapshot.remove(pid);
+    }
+
+    /** Un ELO de anoche (snapshot nocturno, resumen diario del clan): primero la marca, después el valor. */
+    void ponerEloDeAnoche(long pid, int elo) {
+        eloDelSnapshot.add(pid);
+        eloWatch.put(pid, elo);
+    }
+
+    /** Poda de eloDelSnapshot (revisor 1.3): quien ya no está ni en la Watchlist ni en el top/clan cargado pierde la
+     *  marca, y también su «ya barrido» (watchBarridos): su ELO de anoche sigue en eloWatch (lo comparten otras
+     *  vistas), así que si vuelve a la Watchlist se barre otra vez y la marca se pone de nuevo. En el EDT. */
+    void podarEloDelSnapshot() {
+        if (eloDelSnapshot.isEmpty()) return;
+        Set<Long> presentes = new HashSet<>();
+        for (Player p : todosJugadores) presentes.add(p.id());
+        for (Player p : topLadder) presentes.add(p.id());
+        for (Long pid : new ArrayList<>(eloDelSnapshot))
+            if (!presentes.contains(pid)) { eloDelSnapshot.remove(pid); watchBarridos.remove(pid); }
     }
 
     // ===== Forma reciente (±ELO en una ventana de horas; 1v1 ranked) ======================================

@@ -101,7 +101,7 @@ final class WatchlistControles {
                 boolean esNuevo = s.equals(t("+ Nuevo grupo…", "+ New group…"));
                 boolean esTodos = s.equals(t("Todos", "All"));
                 boolean esGestion = s.equals(t("Gestionar grupos…", "Manage groups…"));
-                if (!esNuevo && !esGestion && wv.grupoTieneVivo(esTodos ? null : s)) {
+                if (!esNuevo && !esGestion && wv.presenter.grupoTieneVivo(esTodos ? null : s)) {
                     l.setText("<html><font color='#" + colorVivoHex() + "'>\u25CF</font> "
                             + escapeHtml(s) + "</html>");
                 }
