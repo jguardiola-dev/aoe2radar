@@ -32,13 +32,14 @@ class TechTreeViewTest {
     /** Como el de TechTreePresenterTest: lo justo para que TechTreeView pinte sin red ni catálogo real. */
     static class TechTreeServiceFake implements TechTreeService {
         Map<String, Object> datos = Map.of();
+        Map<String, Object> arbolCiv = Map.of();
         Path iconoFijo;
         @Override public Map<String, Object> datos() { return datos; }
         @Override public boolean arbolEnCache(String civ) { return false; }
         @Override public Map<String, Object> arbolCacheado(String civ) { return null; }
         @Override public Path dir() { return Path.of("techtree-test-no-existe"); }
         @Override public Path rutaIcono(String tipo, long id) { return iconoFijo; }
-        @Override public Map<String, Object> arbol(String civ) { return Map.of(); }
+        @Override public Map<String, Object> arbol(String civ) { return arbolCiv; }
         @Override public String asegurarDatos() { return null; }
         @Override public void comprobarActualizacion() { }
         @Override public String clase(int id) { return "clase" + id; }
@@ -119,5 +120,106 @@ class TechTreeViewTest {
         for (Runnable trabajo : new ArrayList<>(tareas.pendientesFondo)) trabajo.run();
 
         assertFalse(v.ttIconos.isEmpty(), "tras la carga en fondo, el icono ya está en caché");
+    }
+
+    /** Tareas que ejecuta enFondo EN EL ACTO (como techtree-icono-disco de verdad, en un hilo que ya terminó) y
+     *  cuenta cuántas veces se pidió cada nombre de hilo: sirve para ver si ttIconoPintado reencola sin fin. */
+    static final class TareasContadas implements Tareas {
+        final List<String> lanzados = new ArrayList<>();
+        @Override public void enFondo(String nombre, Runnable trabajo) { lanzados.add(nombre); trabajo.run(); }
+        @Override public void enFondoDemonio(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enFondoDemonioMinima(String nombre, Runnable trabajo) { trabajo.run(); }
+        @Override public void enUi(Runnable trabajo) { trabajo.run(); }
+        long veces(String nombre) { return lanzados.stream().filter(nombre::equals).count(); }
+    }
+
+    /**
+     * Hallazgo del revisor sobre 5ca5f49: si el icono no está NI en disco, ttIcono devuelve null, pero el código
+     * repintaba siempre (ttPintarDeNuevo reconstruye el árbol entero), lo que volvía a llamar a ttIconoPintado
+     * con la misma clave, que volvía a pedir OTRO hilo de fondo, sin fin, mientras la pestaña estuviera visible.
+     * Aquí se simula ese "repintado siguiente" llamando a ttIconoPintado varias veces seguidas para la misma
+     * clave (cada llamada real a ttPintarArbol vuelve a pedir el mismo tipo/id/px): con el arreglo, de las tres
+     * llamadas solo la primera pide un hilo de fondo.
+     */
+    @Test void iconoAusenteEnDiscoNoSeReencolaEnCadaPintado() throws Exception {
+        TechTreeServiceFake tt = new TechTreeServiceFake();
+        tt.iconoFijo = Path.of(System.getProperty("java.io.tmpdir"), "techtree-nunca-existe-" + System.nanoTime() + ".png");
+        assertFalse(Files.exists(tt.iconoFijo));
+        TareasContadas tareas = new TareasContadas();
+
+        JFrame marco = new JFrame();
+        TechTreeView[] out = new TechTreeView[1];
+        SwingUtilities.invokeAndWait(() -> out[0] = new TechTreeView(marco, tt, new StatsServiceFake(),
+                new FiltroStats("rm_1v1", "30", "*", "*"), new Listas(marco, b -> { }), null, tareas,
+                new AnfitrionFake(), new EnlaceCivStatsFake()));
+        TechTreeView v = out[0];
+
+        // tres "pintados" seguidos pidiendo el mismo icono, ausente de verdad en disco: como el árbol repintándose
+        // solo una y otra vez porque el anterior repintado dejó el icono sin cachear.
+        for (int i = 0; i < 3; i++) SwingUtilities.invokeAndWait(() -> v.ttIconoPintado("Unit", 42, 40));
+
+        assertEquals(1, tareas.veces("techtree-icono-disco"),
+                "un icono confirmado ausente en disco no debe pedir un hilo nuevo en cada pintado (bucle sin fin)");
+    }
+
+    /** Cuando la cola de red SÍ trae algo nuevo (iconosActualizados), sí merece la pena reintentar los que se
+     *  habían marcado ausentes: si no, un icono que tardó en descargarse se quedaría sin dibujar para siempre. */
+    @Test void iconosActualizadosPermiteReintentarUnIconoQueEstabaAusente() throws Exception {
+        TechTreeServiceFake tt = new TechTreeServiceFake();
+        tt.iconoFijo = Path.of(System.getProperty("java.io.tmpdir"), "techtree-nunca-existe-" + System.nanoTime() + ".png");
+        TareasContadas tareas = new TareasContadas();
+
+        JFrame marco = new JFrame();
+        TechTreeView[] out = new TechTreeView[1];
+        SwingUtilities.invokeAndWait(() -> out[0] = new TechTreeView(marco, tt, new StatsServiceFake(),
+                new FiltroStats("rm_1v1", "30", "*", "*"), new Listas(marco, b -> { }), null, tareas,
+                new AnfitrionFake(), new EnlaceCivStatsFake()));
+        TechTreeView v = out[0];
+
+        SwingUtilities.invokeAndWait(() -> v.ttIconoPintado("Unit", 42, 40));
+        SwingUtilities.invokeAndWait(() -> v.ttIconoPintado("Unit", 42, 40));
+        assertEquals(1, tareas.veces("techtree-icono-disco"), "todavía sin novedades: no se reintenta solo");
+
+        SwingUtilities.invokeAndWait(v::iconosActualizados);   // la cola de red avisó (aunque no trajera este icono)
+        SwingUtilities.invokeAndWait(() -> v.ttIconoPintado("Unit", 42, 40));
+
+        assertEquals(2, tareas.veces("techtree-icono-disco"), "tras iconosActualizados sí se reintenta una vez más");
+    }
+
+    /**
+     * Revisor, bullet 2: la precarga (TechTreePresenter.pedirArbol, precalentarIcono) y el pintado
+     * (TechTreeView.ttPintarArbol) pedían tamaños distintos (px-4/26 la precarga, celda-6/34 el pintado), así
+     * que la caché de precalentarIcono nunca acertaba y el respaldo de disco (ttIconoPintado, con su hilo de
+     * fondo) era el camino normal en vez de la excepción. De punta a punta, con el icono de verdad en disco:
+     * tras pedirArbol (que precalienta y pinta), no debe hacer falta NINGÚN hilo "techtree-icono-disco".
+     */
+    @Test void laPrecargaYElPintadoPidenElMismoTamanoDeIconoYNoHaceFaltaElRespaldoDeDisco() throws Exception {
+        Path dir = Files.createTempDirectory("techtree-icono-alineado");
+        Path icono = dir.resolve("42.png");
+        ImageIO.write(new BufferedImage(4, 4, BufferedImage.TYPE_INT_ARGB), "png", icono.toFile());
+
+        TechTreeServiceFake tt = new TechTreeServiceFake();
+        tt.iconoFijo = icono;
+        Map<String, Object> nodo = Map.of("id", "1", "use_type", "Unit", "node_id", 1L, "picture_index", 42L,
+                "node_status", "Available", "name_string_id", "nodo");
+        Map<String, Object> edificio = Map.of("picture_index", 42L, "building_id", 5L, "name_string_id", "edificio",
+                "node_status", "Available", "age_id", 1L, "grid", List.of(List.of("1")));
+        tt.arbolCiv = Map.of("units_techs", List.of(nodo), "buildings", List.of(edificio));
+
+        TareasContadas tareas = new TareasContadas();
+        JFrame marco = new JFrame();
+        TechTreeView[] out = new TechTreeView[1];
+        SwingUtilities.invokeAndWait(() -> out[0] = new TechTreeView(marco, tt, new StatsServiceFake(),
+                new FiltroStats("rm_1v1", "30", "*", "*"), new Listas(marco, b -> { }), null, tareas,
+                new AnfitrionFake(), new EnlaceCivStatsFake()));
+        TechTreeView v = out[0];
+
+        // ttMostrarCiv encadena presenter.pedirArbol: con TareasContadas (todo en el acto) precalienta y pinta
+        // en la misma llamada, como si el hilo techtree-civ ya hubiera terminado.
+        SwingUtilities.invokeAndWait(() -> v.ttMostrarCiv("aztecs"));
+
+        assertEquals(0, tareas.veces("techtree-icono-disco"),
+                "con los tamaños alineados, la precarga ya deja el icono en caché: el pintado no debe pedir el respaldo de disco");
+        assertFalse(v.ttIconos.isEmpty(), "y el árbol sí pinta con icono: la precarga cacheó algo de verdad");
     }
 }
