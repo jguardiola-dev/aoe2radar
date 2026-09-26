@@ -59,6 +59,7 @@ public final class BarraEstado {
 
     private final RootPaneContainer ventana;
     private final Anfitrion anfitrion;
+    private final String donarUrl;
 
     /** visible para SpoilerFreeRecs (alias de campo: decenas de sitios de otras zonas llaman status.setText(...)) */
     public final JLabel status = new JLabel(t("Listo.", "Ready.")) {
@@ -79,8 +80,15 @@ public final class BarraEstado {
     private JPanel toast;
     /** visible para RegresionCapturas */
     public javax.swing.Timer toastTimer;
-    /** El watchdog del botón «Detener»: campo (no variable local) solo para que los tests puedan simularlo sin
-     *  esperar los 5 s reales; el comportamiento en producción es idéntico. */
+    /** El watchdog del botón «Detener»: campo (no variable local, como en la 1.1) solo para que los tests puedan
+     *  simularlo sin esperar los 5 s reales (disparando su ActionListener a mano); el comportamiento en
+     *  producción es idéntico. Cada clic en «Detener» SUSTITUYE esta referencia por un Timer nuevo, pero eso no
+     *  cambia nada: el Timer anterior (si lo hubiera) no se cancela, sigue vivo en la cola de Swing con su
+     *  propio {@code serialDetenido} capturado por el lambda, y comparará ese número cuando le toque disparar,
+     *  sea cual sea el valor de este campo en ese momento. Además, en la práctica nunca hay dos a la vez:
+     *  {@code detenerDescBtn} queda deshabilitado justo tras el primer clic y no vuelve a habilitarse hasta que
+     *  {@link #trabajando(boolean)} termina la operación, así que no puede haber un segundo clic (y por tanto un
+     *  segundo watchdog) mientras el primero sigue pendiente. */
     javax.swing.Timer watchdogDetener;
 
     /** cada operación tiene su número: el watchdog del Detener solo cierra la suya */
@@ -89,9 +97,8 @@ public final class BarraEstado {
     public BarraEstado(RootPaneContainer ventana, Anfitrion anfitrion, String donarUrl) {
         this.ventana = ventana;
         this.anfitrion = anfitrion;
-        cafeBtn = new JButton("☕ " + t("Invítame a un café", "Buy me a coffee"));
-        cafeBtn.setToolTipText(donarUrl);
-        cafeBtn.addActionListener(e -> anfitrion.abrirDonacion());
+        this.donarUrl = donarUrl;
+        cafeBtn = new JButton("\u2615 " + t("Invítame a un café", "Buy me a coffee"));
     }
 
     public long opSerial() { return opSerial; }
@@ -128,6 +135,8 @@ public final class BarraEstado {
             @Override public void mouseClicked(MouseEvent e) { anfitrion.abrirTwitch(); }
         });
         firma = f;
+        cafeBtn.setToolTipText(donarUrl);
+        cafeBtn.addActionListener(e -> anfitrion.abrirDonacion());
         JPanel este = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         actualizarBtn = new JButton();
         actualizarBtn.setVisible(false);
@@ -187,7 +196,7 @@ public final class BarraEstado {
         toast.add(l, BorderLayout.CENTER);
         JPanel botones = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0)); botones.setOpaque(false);
         if (matchId > 0) { JButton esp = new JButton(t("Espectar", "Spectate")); esp.setFocusable(false); esp.setMargin(new Insets(1, 8, 1, 8)); esp.addActionListener(e -> { anfitrion.espectarPartida(matchId); ocultarToast(); }); botones.add(esp); }
-        JButton x = new JButton("×"); x.setFocusable(false); x.setMargin(new Insets(1, 6, 1, 6)); x.addActionListener(e -> ocultarToast()); botones.add(x);
+        JButton x = new JButton("\u00D7"); x.setFocusable(false); x.setMargin(new Insets(1, 6, 1, 6)); x.addActionListener(e -> ocultarToast()); botones.add(x);
         toast.add(botones, BorderLayout.EAST);
         Dimension d = toast.getPreferredSize();
         toast.setBounds(ventana.getRootPane().getWidth() - d.width - 24, ventana.getRootPane().getHeight() - d.height - 56, d.width, d.height);

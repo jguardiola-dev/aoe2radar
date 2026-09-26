@@ -621,9 +621,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // Swing (boton, toast) y el estado compartido (campanaIds, socketExtra). Cableado junto al
     // propio Campanas, no al lado de COMPANION/LIVE/SERVICIO_PERFIL.
     final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig);
-    javax.swing.Timer campanasTimer;   // barrido de campanas (Watchlist): el toast que dispara se sac\u00F3 a ui.BarraEstado (T4-Z3)
+    javax.swing.Timer campanasTimer;   // barrido de campanas (Watchlist): el toast que dispara se sacó a ui.BarraEstado (T4-Z3)
 
-    /** El aviso flotante (\u00ABX ha empezado una partida\u00BB): ver ui.BarraEstado. */
+    /** El aviso flotante («X ha empezado una partida»): ver ui.BarraEstado. */
     void mostrarToast(String texto, long matchId) { barraEstado.mostrarToast(texto, matchId); }
     void ocultarToast() { barraEstado.ocultarToast(); }
 

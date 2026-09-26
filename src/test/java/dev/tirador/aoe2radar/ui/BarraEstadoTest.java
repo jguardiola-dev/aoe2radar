@@ -16,27 +16,30 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * BarraEstado: el semáforo de la operación en curso (trabajando/opSerial, el vigilante del botón «Detener»)
  * y el toast flotante. Con componentes Swing reales (dentro de invokeAndWait, como en la app), pero sin red
- * ni pantalla visible: el Anfitrion es un doble que solo cuenta llamadas.
+ * ni pantalla visible: el Anfitrion es un doble que registra, en orden, cada llamada que recibe.
  */
 class BarraEstadoTest {
 
-    /** Cuenta cada llamada: así los tests comprueban «se llamó» y «con qué», sin tocar api.Cancelacion/api.Http de verdad. */
+    /** Registra cada llamada, en el orden en que llega: así los tests comprueban no solo «se llamó» sino
+     *  «en qué orden», sin tocar api.Cancelacion/api.Http de verdad. */
     static final class AnfitrionFalso implements BarraEstado.Anfitrion {
-        int iniciarOperacion, operacionTerminada, pararOperacion, renovarHttp, continuarBuscando, abrirTwitch, abrirDonacion;
+        final List<String> secuencia = new ArrayList<>();
         boolean operacionEnCurso;
         String ultimaUrl;
         long ultimoMatchIdEspectado = -1;
 
-        @Override public void iniciarOperacion() { iniciarOperacion++; }
-        @Override public void marcarOperacionEnCurso(boolean on) { operacionEnCurso = on; }
-        @Override public void operacionTerminada() { operacionTerminada++; }
-        @Override public void pararOperacion() { pararOperacion++; }
-        @Override public void renovarHttp() { renovarHttp++; }
-        @Override public void continuarBuscando() { continuarBuscando++; }
-        @Override public void abrirTwitch() { abrirTwitch++; }
-        @Override public void abrirDonacion() { abrirDonacion++; }
-        @Override public void abrirUrl(String url) { ultimaUrl = url; }
-        @Override public void espectarPartida(long matchId) { ultimoMatchIdEspectado = matchId; }
+        @Override public void iniciarOperacion() { secuencia.add("iniciar"); }
+        @Override public void marcarOperacionEnCurso(boolean on) { operacionEnCurso = on; secuencia.add("enCurso(" + on + ")"); }
+        @Override public void operacionTerminada() { secuencia.add("terminada"); }
+        @Override public void pararOperacion() { secuencia.add("pararOperacion"); }
+        @Override public void renovarHttp() { secuencia.add("renovarHttp"); }
+        @Override public void continuarBuscando() { secuencia.add("continuarBuscando"); }
+        @Override public void abrirTwitch() { secuencia.add("abrirTwitch"); }
+        @Override public void abrirDonacion() { secuencia.add("abrirDonacion"); }
+        @Override public void abrirUrl(String url) { ultimaUrl = url; secuencia.add("abrirUrl"); }
+        @Override public void espectarPartida(long matchId) { ultimoMatchIdEspectado = matchId; secuencia.add("espectarPartida"); }
+
+        long veces(String evento) { return secuencia.stream().filter(evento::equals).count(); }
     }
 
     private BarraEstado nuevo(AnfitrionFalso anfitrion, JFrame ventana) throws Exception {
@@ -48,37 +51,53 @@ class BarraEstadoTest {
         return out[0];
     }
 
+    /** Detiene los Timer que el propio test pudiera haber armado (watchdog de "Detener", toast) y cierra la
+     *  ventana de prueba: cada test crea la suya, y ninguna llega a mostrarse (sin pantalla). */
+    private static void cerrar(BarraEstado b, JFrame ventana) {
+        if (b.watchdogDetener != null) b.watchdogDetener.stop();
+        if (b.toastTimer != null) b.toastTimer.stop();
+        ventana.dispose();
+    }
+
     @Test void trabajandoTrueMuestraProgresoYArmaElSemaforo() throws Exception {
         AnfitrionFalso anf = new AnfitrionFalso();
-        BarraEstado b = nuevo(anf, new JFrame());
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
         SwingUtilities.invokeAndWait(() -> {
             b.trabajando(true);
             assertTrue(b.progreso.isVisible(), "la barra de progreso se muestra al empezar");
-            assertEquals(1, anf.iniciarOperacion, "una operación nueva limpia el freno de cancelación");
+            // primero se limpia el freno de cancelación, luego se marca la operación en curso: en ese orden.
+            assertEquals(List.of("iniciar", "enCurso(true)"), anf.secuencia);
             assertTrue(anf.operacionEnCurso, "opEnCurso pasa a true");
             assertFalse(b.continuarBtn.isVisible(), "\"Continuar buscando\" se oculta al empezar una operación");
             assertTrue(b.detenerDescBtn.isVisible(), "\"Detener\" aparece mientras hay una operación en curso");
         });
+        cerrar(b, ventana);
     }
 
     @Test void trabajandoFalseOcultaProgresoYReactivaBotones() throws Exception {
         AnfitrionFalso anf = new AnfitrionFalso();
-        BarraEstado b = nuevo(anf, new JFrame());
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
         SwingUtilities.invokeAndWait(() -> {
             b.trabajando(true);
             b.detenerDescBtn.setEnabled(false);   // como si el usuario hubiera pulsado "Detener"
+            anf.secuencia.clear();   // solo interesa la secuencia que dispara ESTE trabajando(false)
             b.trabajando(false);
+            // primero se marca opEnCurso=false, luego cada vista reactiva sus propios botones: en ese orden.
+            assertEquals(List.of("enCurso(false)", "terminada"), anf.secuencia);
             assertFalse(b.progreso.isVisible(), "la barra de progreso se oculta al terminar");
-            assertEquals(1, anf.operacionTerminada, "al terminar, las otras vistas reactivan sus propios botones");
             assertFalse(anf.operacionEnCurso, "opEnCurso vuelve a false");
             assertFalse(b.detenerDescBtn.isVisible(), "\"Detener\" se oculta al terminar");
             assertTrue(b.detenerDescBtn.isEnabled(), "\"Detener\" queda listo para la próxima operación");
         });
+        cerrar(b, ventana);
     }
 
     @Test void opSerialCreceSoloConCadaOperacionNueva() throws Exception {
         AnfitrionFalso anf = new AnfitrionFalso();
-        BarraEstado b = nuevo(anf, new JFrame());
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
         SwingUtilities.invokeAndWait(() -> {
             long inicial = b.opSerial();
             b.trabajando(true);
@@ -88,35 +107,45 @@ class BarraEstadoTest {
             b.trabajando(true);
             assertEquals(inicial + 2, b.opSerial(), "la siguiente operación tiene un número distinto");
         });
+        cerrar(b, ventana);
     }
 
     @Test void elVigilanteDeDetenerSoloActuaSobreLaMismaOperacion() throws Exception {
         AnfitrionFalso anf = new AnfitrionFalso();
-        BarraEstado b = nuevo(anf, new JFrame());
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
         SwingUtilities.invokeAndWait(() -> {
             b.trabajando(true);   // operación #1
             b.detenerDescBtn.doClick();   // arma el vigilante para la operación #1 (serialDetenido = 1)
-            assertEquals(1, anf.pararOperacion, "\"Detener\" pide parar la operación en curso");
-            assertEquals(1, anf.renovarHttp, "\"Detener\" renueva el cliente HTTP para las peticiones siguientes");
+            assertEquals(1, anf.veces("pararOperacion"), "\"Detener\" pide parar la operación en curso");
+            assertEquals(1, anf.veces("renovarHttp"), "\"Detener\" renueva el cliente HTTP para las peticiones siguientes");
             b.trabajando(true);   // una operación NUEVA empieza antes de que el vigilante dispare (op #2)
             dispararVigilante(b);
             assertTrue(b.progreso.isVisible(), "el vigilante de la operación #1 no debe apagar la #2");
         });
+        cerrar(b, ventana);
     }
 
     @Test void elVigilanteDeDetenerActuaSiSigueSiendoLaMismaOperacion() throws Exception {
         AnfitrionFalso anf = new AnfitrionFalso();
-        BarraEstado b = nuevo(anf, new JFrame());
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
         SwingUtilities.invokeAndWait(() -> {
             b.trabajando(true);
             b.detenerDescBtn.doClick();
             dispararVigilante(b);   // nadie empezó una operación nueva mientras tanto
             assertFalse(b.progreso.isVisible(), "sin operación nueva, el vigilante cierra la que se detuvo");
-            assertEquals(1, anf.operacionTerminada, "el vigilante llama a trabajando(false), que avisa de fin de operación");
+            assertEquals(1, anf.veces("terminada"), "el vigilante llama a trabajando(false), que avisa de fin de operación");
         });
+        cerrar(b, ventana);
     }
 
-    /** Simula que pasaron los 5 s del Timer de "Detener" sin esperarlos de verdad: dispara su ActionListener a mano. */
+    /** Simula que pasaron los 5 s del Timer de "Detener" sin esperarlos de verdad: dispara su ActionListener a
+     *  mano. Cada clic en "Detener" SUSTITUYE la referencia {@code watchdogDetener} por un Timer nuevo, pero
+     *  eso no cambia nada en producción: el Timer anterior (si lo hubiera) sigue vivo en la cola de Swing con
+     *  su propio {@code serialDetenido} capturado por el lambda, y el botón queda deshabilitado justo tras el
+     *  primer clic (hasta que trabajando(false) lo reactiva), así que no puede haber un segundo clic —y por
+     *  tanto un segundo Timer «huérfano»— mientras el primero sigue pendiente. */
     private static void dispararVigilante(BarraEstado b) {
         List<ActionListener> oyentes = new ArrayList<>(List.of(b.watchdogDetener.getActionListeners()));
         for (ActionListener al : oyentes) al.actionPerformed(null);
@@ -135,6 +164,7 @@ class BarraEstadoTest {
             assertNull(b.toast(), "ocultarToast lo quita");
             assertEquals(base, ventana.getLayeredPane().getComponentCount());
         });
+        cerrar(b, ventana);
     }
 
     @Test void mostrarToastConMatchIdOfreceEspectarYLoCierra() throws Exception {
@@ -149,6 +179,7 @@ class BarraEstadoTest {
             assertEquals(555L, anf.ultimoMatchIdEspectado, "el botón espectar pasa el matchId al Anfitrion");
             assertNull(b.toast(), "espectar también cierra el toast");
         });
+        cerrar(b, ventana);
     }
 
     private static List<javax.swing.JButton> botonesDe(javax.swing.JPanel toast) {
