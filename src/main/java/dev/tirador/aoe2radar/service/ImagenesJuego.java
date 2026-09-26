@@ -1,6 +1,9 @@
 package dev.tirador.aoe2radar.service;
 
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.net.URL;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.file.Files;
@@ -38,6 +41,39 @@ public final class ImagenesJuego {
         if (!Files.exists(p)) p = BANDERAS_DIR.resolve("banderas").resolve(k + ".png");   // «Extraer todo» de Windows anida la carpeta
         if (!Files.exists(p)) return null;
         return p;
+    }
+
+    /** Dentro del jar van las mismas banderas (src/main/resources/banderas): el exe de jpackage no deja la carpeta
+     *  «banderas» junto al exe como hacía el bat de la 1.1, y sin esto no salía ninguna (visto al probar la 1.2). */
+    private static final String BANDERAS_JAR = "/banderas/";
+
+    /** El png de la bandera: de la carpeta banderas si está (como en la 1.1), si no el que va dentro del jar; null si no hay. */
+    public static byte[] bytesBandera(String k) {
+        try {
+            Path p = rutaBandera(k);
+            return p != null ? Files.readAllBytes(p) : bytesBanderaJar(k);
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    /** Solo la del jar (visible para tests: en el directorio de los tests el harness deja la carpeta banderas). */
+    static byte[] bytesBanderaJar(String k) throws IOException {
+        try (InputStream in = ImagenesJuego.class.getResourceAsStream(BANDERAS_JAR + k + ".png")) {
+            return in == null ? null : in.readAllBytes();
+        }
+    }
+
+    /** La misma bandera como dirección en texto, para un <img src> en HTML (file: o jar:); null si no hay. */
+    public static String urlBandera(String k) {
+        Path p = rutaBandera(k);
+        return p != null ? p.toUri().toString() : urlBanderaJar(k);
+    }
+
+    /** Solo la del jar (visible para tests). */
+    static String urlBanderaJar(String k) {
+        URL u = ImagenesJuego.class.getResource(BANDERAS_JAR + k + ".png");
+        return u == null ? null : u.toString();
     }
 
     /** Ruta del icono de civ en el tech tree (clave ya en minúsculas); no comprueba si existe, como hoy. */
