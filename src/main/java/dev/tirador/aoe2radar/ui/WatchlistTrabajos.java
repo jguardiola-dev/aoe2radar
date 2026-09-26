@@ -326,15 +326,21 @@ final class WatchlistTrabajos {
                 return null;
             }
             @Override protected void process(List<BarridoVivos.Refresco> chunks) {
-                for (BarridoVivos.Refresco r : chunks) {
-                    if (r.vivo() != null) {
-                        if (WatchlistView.VIVO.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) WatchlistView.VIVO.ponerInfo(r.pid(), r.resumen());
-                    } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
-                    if (r.elo() != null) wv.eloWatch.put(r.pid(), r.elo());
-                }
+                for (BarridoVivos.Refresco r : chunks) aplicarRefresco(r);
                 wv.actualizarIndicadoresVivos();
             }
         }.execute();
+    }
+
+    /** Un refresco de refrescarWatchlist, ya en el EDT: vivo y ELO. Con el ELO del snapshot nocturno no se sabe si
+     *  juega (sabeSiJuega() false): el estado en vivo no se toca, lo lleva el socket (F4 de la revisión 1.3). */
+    void aplicarRefresco(BarridoVivos.Refresco r) {
+        if (r.sabeSiJuega()) {
+            if (r.vivo() != null) {
+                if (WatchlistView.VIVO.marcarJugando(r.pid(), r.vivo()) && r.resumen() != null) WatchlistView.VIVO.ponerInfo(r.pid(), r.resumen());
+            } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
+        }
+        if (r.elo() != null) wv.eloWatch.put(r.pid(), r.elo());
     }
 
     /** Vigilancia periódica de TODA la watchlist: solo detecta quién está jugando ahora. Se salta el tick si

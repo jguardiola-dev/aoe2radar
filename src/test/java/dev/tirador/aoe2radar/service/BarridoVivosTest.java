@@ -131,6 +131,7 @@ class BarridoVivosTest {
         eloAyer.put(7L, new int[]{ 1500, 42, 1600, 10 });   // {elo1v1, partidas1v1, eloEq, partidasEq}
         BarridoVivos.Refresco r = nuevo().refrescar(7L);
         assertEquals(new BarridoVivos.Refresco(7L, null, null, 1500, 42), r);
+        assertFalse(r.sabeSiJuega(), "F4 1.3: del snapshot no se sabe si juega: vivo null es «sin dato», no «fuera»");
         assertTrue(red.urls.isEmpty(), "el snapshot de ayer ya lo dice: ni una llamada (el socket avisará si juega)");
         assertTrue(pausas.isEmpty(), "sin llamada de red, tampoco la pausa de la segunda vuelta (esa pausa es del servicio; "
                 + "la pausa de cortesía ENTRE jugadores de refrescarWatchlist es de la app: dormir(PAUSA_MS/2) en su doInBackground, "
@@ -143,6 +144,7 @@ class BarridoVivosTest {
         BarridoVivos.Refresco r = nuevo().refrescar(7L);
         assertEquals(305L, r.vivo(), "snap[0] == 0 no vale como snapshot: se va a la red igual que sin snapshot");
         assertNull(r.juegosNocturno(), "el snapshot no se usó: gamesWatch no se toca");
+        assertTrue(r.sabeSiJuega(), "fue a la API: su vivo sí dice si juega");
         assertFalse(red.urls.isEmpty());
     }
 

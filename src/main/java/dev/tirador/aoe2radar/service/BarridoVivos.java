@@ -35,7 +35,13 @@ public final class BarridoVivos {
 
     /** El resultado de refrescar a UN jugador: vivo (matchId o null), su ELO 1v1 (o null) y el resumen de su
      *  partida en curso (o null). juegosNocturno solo viene puesto cuando salió del snapshot de ayer (sin red). */
-    public record Refresco(long pid, Long vivo, String resumen, Integer elo, Integer juegosNocturno) { }
+    public record Refresco(long pid, Long vivo, String resumen, Integer elo, Integer juegosNocturno) {
+        /** ¿Este refresco miró de verdad si el jugador está en partida? Solo el que fue a la API. El del snapshot
+         *  nocturno (juegosNocturno puesto) no mira nada: su vivo null significa «sin dato», no «no juega», y quien
+         *  lo aplica no debe tocar el estado en vivo (F4 de la revisión 1.3: apagaba el punto que ya había puesto
+         *  el socket y apuntaba un fin de partida falso). */
+        public boolean sabeSiJuega() { return juegosNocturno == null; }
+    }
 
     /** La decisión de «Buscar partidas»: quién de `res` está vivo (pid→matchId, con su texto) y, de los seguidos
      *  consultados con éxito, quién no apareció vivo (por tanto, fuera). */
