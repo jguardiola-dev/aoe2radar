@@ -1270,8 +1270,12 @@ public final class WatchlistView {
     public void refrescarCampanas() {
         Set<String> s = campanas.campanas();
         if (s.isEmpty()) { campanaIds.clear(); SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket); return; }
+        // Copia de todosJugadores AQUÍ, en el EDT (refrescarCampanas siempre se llama desde él: botón de campana,
+        // Timer de Swing, arranque): mismo riesgo que la fila 106 si el hilo de fondo recorriera la lista de
+        // verdad mientras el EDT la muta (altas, bajas, rebuildGrupos...).
+        List<Player> jugadoresAhora = new ArrayList<>(todosJugadores);
         new Thread(() -> {
-            Map<String, Set<Long>> nuevo = campanas.calcularCampanaIds(s, todosJugadores);
+            Map<String, Set<Long>> nuevo = campanas.calcularCampanaIds(s, jugadoresAhora);
             // fila 107 de DEUDA: retainAll+putAll en vez de clear+putAll, para que campanaIds nunca quede vacio
             // a medias mientras otro hilo (el socket) lo lee con tocaAvisar/campanaContiene.
             campanaIds.keySet().retainAll(nuevo.keySet());
@@ -1494,7 +1498,8 @@ public final class WatchlistView {
         new SwingWorker<TopLadderService.ResultadoVigilancia, Void>() {
             @Override protected TopLadderService.ResultadoVigilancia doInBackground() {
                 return topLadderService.vigilarTop(top, VIVO::jugando, VIVO::matchDe,
-                        (pid, m) -> {   // el lote: alguien aparece en curso (ver DEUDA: avisarSiCampana sigue en el hilo de fondo, como en la 1.1)
+                        (pid, m) -> {   // el lote: alguien aparece en curso. avisarSiCampana se llama desde este hilo de
+                            // fondo, pero ya es segura (fila 106 de DEUDA): construye nombre/texto dentro de un invokeLater.
                             VIVO.ponerInfo(pid, enlacePartidas.resumenVivo(m, pid));
                             if (!VIVO.jugando(pid)) avisarSiCampana(pid, m);   // nuevo en partida desde el último barrido
                             VIVO.guardarPartida(pid, m);
@@ -1769,11 +1774,11 @@ public final class WatchlistView {
         if (sel.equals(nuevoO)) {
             String nombre = JOptionPane.showInputDialog(ventana, t("Nombre del nuevo grupo:", "New group name:"), "");
             if (nombre == null || nombre.trim().isEmpty()) return null;
-            nombre = nombre.trim();
-            Set<String> cfg = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
-            cfg.addAll(gruposConfig()); cfg.add(nombre);
-            guardarConfig("grupos", String.join(",", cfg));   // fila 102 de DEUDA: "," como el resto de la escritura de grupos (ver ListaSeguidos)
-            return nombre;
+            // fila 102 de DEUDA: mismo camino que el resto de altas de grupo (limpiarGrupo + registrarGrupo, que
+            // llama a listaSeguidos.registrarGrupo y escribe con ","), en vez de repetir aquí esa lógica a mano.
+            String limpio = limpiarGrupo(nombre);
+            registrarGrupo(limpio);
+            return limpio;
         }
         return sel;
     }
@@ -2199,6 +2204,18 @@ public final class WatchlistView {
         return !q.equals(textoActualDelCampo.trim());
     }
 
+    /** El jugador de la fila elegida en el combo de resultados de addPlayerDialog, por ÍNDICE, no por texto:
+     *  dos jugadores distintos pueden compartir el mismo texto de fila (nombre + país + ELO iguales, sobre todo
+     *  en las filas que vienen del índice local, que no llevan el id pegado al texto como sí hacen las de la
+     *  API). Buscar "cuál r[2] es igual al texto seleccionado" se queda siempre con el primero que empate y,
+     *  peor aún, en la rama de «Añadir al grupo» los añadía a TODOS los que empataran. null si el índice no
+     *  corresponde a ninguna fila (nada elegido). */
+    static Player jugadorDeFila(List<String[]> res, int indiceSeleccionado, String grupo) {
+        if (indiceSeleccionado < 0 || indiceSeleccionado >= res.size()) return null;
+        String[] r = res.get(indiceSeleccionado);
+        return new Player(Long.parseLong(r[0]), r[1], grupo);
+    }
+
     public void addPlayerDialog(boolean soloVer) { addPlayerDialog(soloVer, null); }
 
     public void addPlayerDialog(boolean soloVer, String nickInicial) {
@@ -2235,38 +2252,37 @@ public final class WatchlistView {
                             perfilAbierto ? new Object[]{ perfO, canO } : new Object[]{ perfO, verO, addO, canO }, perfO);
                     if (perfilAbierto && r0 != 0) { status.setText(t("Listo.", "Ready.")); return; }
                     if (r0 != 0 && r0 != 1 && r0 != 2) { status.setText(t("Listo.", "Ready.")); return; }
-                    String sel = (String) cbSel.getSelectedItem();
                     final boolean verPerfil = r0 == 0, verAhora = r0 == 1;
-                    for (String[] r : res) if (r[2].equals(sel)) {
-                        Player p = new Player(Long.parseLong(r[0]), r[1], grupoDestino());
-                        if (verPerfil) { status.setText(t("Listo.", "Ready.")); navegacion.abrirPerfil(p.id(), p.name()); return; }
-                        if (verAhora) {
-                            enlacePartidas.fijarObjetivo(p, vistaActualId());
-                            playersList.clearSelection();   // la selección vieja no debe filtrar al invitado
-                            aplicarFiltroGrupo();   // la fila flotante, visible EN EL ACTO (también en los tops)
-                            new Thread(() -> {   // ELO del invitado para su fila flotante
-                                Integer ei = perfiles.elo1v1(p.id());
-                                if (ei != null) SwingUtilities.invokeLater(() -> {
-                                    eloWatch.put(p.id(), ei);
-                                    playersList.repaint();
-                                    enlacePartidas.refrescarSujetos(enlacePartidas.ultimosSujetos(), enlacePartidas.invitado() != null);   // el ELO recién llegado, a la cabecera
-                                });
-                            }).start();
-                            enlacePartidas.fetchMatches();
-                            return;
-                        }
-                        String gElegido = elegirGrupoDialog(p.name());
-                        if (gElegido == null) { status.setText(t("Listo.", "Ready.")); return; }
-                        final Player pAdd = new Player(p.id(), p.name(), gElegido);
-                        if (!containsPlayerId(pAdd.id())) {
-                            todosJugadores.add(pAdd);
-                            savePlayers();
-                            rebuildGrupos();
-                            aplicarFiltroGrupo();
-                            refrescarWatchlist();
-                        }
-                        ofrecerVinculadasTrasAlta(pAdd.id(), pAdd.name(), pAdd.grupo());
+                    // Por ÍNDICE, no por texto (ver jugadorDeFila): dos filas locales pueden compartir texto.
+                    Player p = jugadorDeFila(res, cbSel.getSelectedIndex(), grupoDestino());
+                    if (p == null) { status.setText(t("Listo.", "Ready.")); return; }
+                    if (verPerfil) { status.setText(t("Listo.", "Ready.")); navegacion.abrirPerfil(p.id(), p.name()); return; }
+                    if (verAhora) {
+                        enlacePartidas.fijarObjetivo(p, vistaActualId());
+                        playersList.clearSelection();   // la selección vieja no debe filtrar al invitado
+                        aplicarFiltroGrupo();   // la fila flotante, visible EN EL ACTO (también en los tops)
+                        new Thread(() -> {   // ELO del invitado para su fila flotante
+                            Integer ei = perfiles.elo1v1(p.id());
+                            if (ei != null) SwingUtilities.invokeLater(() -> {
+                                eloWatch.put(p.id(), ei);
+                                playersList.repaint();
+                                enlacePartidas.refrescarSujetos(enlacePartidas.ultimosSujetos(), enlacePartidas.invitado() != null);   // el ELO recién llegado, a la cabecera
+                            });
+                        }).start();
+                        enlacePartidas.fetchMatches();
+                        return;
                     }
+                    String gElegido = elegirGrupoDialog(p.name());
+                    if (gElegido == null) { status.setText(t("Listo.", "Ready.")); return; }
+                    final Player pAdd = new Player(p.id(), p.name(), gElegido);
+                    if (!containsPlayerId(pAdd.id())) {
+                        todosJugadores.add(pAdd);
+                        savePlayers();
+                        rebuildGrupos();
+                        aplicarFiltroGrupo();
+                        refrescarWatchlist();
+                    }
+                    ofrecerVinculadasTrasAlta(pAdd.id(), pAdd.name(), pAdd.grupo());
                     status.setText(t("Listo.", "Ready."));
                 } catch (Exception ex) {
                     status.setText(t("Error buscando: ", "Search error: ") + causa(ex));
