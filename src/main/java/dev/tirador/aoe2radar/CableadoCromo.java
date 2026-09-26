@@ -64,6 +64,9 @@ final class CableadoCromo {
         // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
         // barraEstado ya construido (es un inicializador de campo, corre antes que el cuerpo del constructor).
         Servicios.avisoPausa429 = v.barraEstado::mostrarPausaApi;
+        // El mensaje de control.json (arreglo F10 de la revisión 1.3): la barra lo enseña cuando la ventana está a
+        // la vista y solo entonces se marca como visto.
+        Servicios.avisoControl = v.barraEstado::mostrarAvisoCuandoSeVea;
     }
 
     // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,

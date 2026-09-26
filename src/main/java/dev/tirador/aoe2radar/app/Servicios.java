@@ -1,6 +1,5 @@
 package dev.tirador.aoe2radar.app;
 
-import dev.tirador.aoe2radar.SpoilerFreeRecs;
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Transporte;
@@ -25,7 +24,6 @@ import dev.tirador.aoe2radar.sfrdata.Snapshots;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import javax.swing.SwingUtilities;
-import java.awt.Frame;
 import java.net.URI;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -110,15 +108,20 @@ public class Servicios {
     static void avisarPausa429(long seg) {
         SwingUtilities.invokeLater(() -> avisoPausa429.accept(seg));
     }
+    /** Camino hacia la barra de estado para el mensaje de control.json (arreglo F10 de la revisión 1.3): la ventana
+     *  lo fija en el EDT al construirse (CableadoCromo.configurarVentana), como avisoPausa429. Recibe el texto y lo
+     *  que hay que hacer cuando ya se ha enseñado (marcarlo como visto). Sin ventana, no se enseña ni se marca. */
+    public static volatile java.util.function.BiConsumer<String, Runnable> avisoControl = (txt, alMostrarse) -> {};
+
     /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
-     *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pintar en Swing. */
+     *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pasar el mensaje
+     *  a la ventana. Se marca visto solo cuando la barra lo ha enseñado con la ventana a la vista (F10), y en un
+     *  hilo aparte: el disco, fuera del EDT. Mientras no se enseñe, la recarga de cada hora lo vuelve a traer. */
     public static void cargarControl() {
-        String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""), txt -> guardarConfig("control_msg_visto", txt));
-        if (msg != null) {
-            SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
-            final SpoilerFreeRecs appF = app;
-            if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(msg));
-        }
+        String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""));
+        if (msg != null)
+            SwingUtilities.invokeLater(() -> avisoControl.accept(msg,
+                    () -> new Thread(() -> guardarConfig("control_msg_visto", msg), "control-visto").start()));
     }
     /** Transporte con el timeout de 20 s de control.json (distinto del normal, ya en la 1.1). El de la comprobación
      *  de versión reutiliza TRANSPORTE (mismo timeout que httpText). Cableado junto al propio ControlService, no al

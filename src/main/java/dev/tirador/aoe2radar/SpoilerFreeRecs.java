@@ -113,7 +113,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     /** Barra de estado, semáforo de operación en curso y toast: ver ui.BarraEstado. */
     final BarraEstado barraEstado = new BarraEstado(this, CableadoCromo.barraEstadoAnfitrion(this), DONAR_URL);
     // status/progreso/cafeBtn: alias al mismo objeto de ui.BarraEstado (medio fichero los usa por su nombre).
-    public final JLabel status = barraEstado.status;   // public: lo pinta app.Servicios (cargarControl) desde fuera del paquete; avisarPausa429 ya no lo toca (limpieza 1, ver Servicios.avisoPausa429)
+    public final JLabel status = barraEstado.status;   // public: lo pintaba app.Servicios (cargarControl) desde fuera del paquete; hoy ni cargarControl (F10 de la 1.3, ver Servicios.avisoControl) ni avisarPausa429 (limpieza 1, ver Servicios.avisoPausa429) lo tocan
     final JButton cafeBtn = barraEstado.cafeBtn;
     final JProgressBar progreso = barraEstado.progreso;
     final Image logo = AcercaDe.cargarLogo();
