@@ -11,7 +11,6 @@ import dev.tirador.aoe2radar.service.RecService;
 import javax.swing.BorderFactory;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
-import javax.swing.JFileChooser;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JMenuItem;
@@ -162,10 +161,10 @@ public final class PartidasView {
     final DialogosJugador dialogos;
     final Navegacion navegacion;
     private final AzarService azarService;
-    private final RecService recService;
+    final RecService recService;
     private final BarridoVivos barridoVivos;
     private final int perPage;
-    private final long pausaMs;
+    final long pausaMs;
     final EnlaceWatchlist enlaceWatchlist;
     final Anfitrion anfitrion;
     final PartidasTexto texto;
@@ -173,6 +172,7 @@ public final class PartidasView {
     final PartidasTabla tabla;
     final MenuPartida menuPartida;
     final CabeceraSujetos cabecera;
+    final DescargasPartidas descargas;
 
     /** Los buscados actuales: negrita en la tabla y cabecera «Partidas de:». Estático porque azar/GTE y
      *  {@code enfrentamiento()} lo comparten, igual que en la 1.1 (antes vivía en SpoilerFreeRecs). */
@@ -217,9 +217,6 @@ public final class PartidasView {
     volatile int fallosFetch;
     public volatile SwingWorker<?, ?> fetchWorker;
 
-    public boolean descargaSinCambiarVista;
-    public Runnable alTerminarDescarga;
-
     public PartidasView(JFrame ventana, MenusJugador menus, DialogosJugador dialogos, Navegacion navegacion,
                          AzarService azarService, RecService recService, BarridoVivos barridoVivos,
                          int perPage, long pausaMs, EnlaceWatchlist enlaceWatchlist, Anfitrion anfitrion) {
@@ -238,6 +235,7 @@ public final class PartidasView {
         this.tabla = new PartidasTabla(this);
         this.menuPartida = new MenuPartida(this);
         this.cabecera = new CabeceraSujetos(this);
+        this.descargas = new DescargasPartidas(this);
     }
 
     static String todosModos() { return t("Todos los modos", "All modes"); }
@@ -474,123 +472,32 @@ public final class PartidasView {
     }
 
     // ======================================================================
-    // Carpeta de recs, savegame
+    // Carpeta de recs, savegame, descargas y enviar al juego
     // ======================================================================
 
-    public void abrirCarpeta() {
-        try {
-            Files.createDirectories(anfitrion.recsDir());
-            java.awt.Desktop.getDesktop().open(anfitrion.recsDir().toFile());
-        } catch (Exception ex) {
-            anfitrion.estado(t("No se pudo abrir la carpeta: ", "Couldn't open the folder: ") + causa(ex));
-        }
-    }
+    // Viven en {@link DescargasPartidas}; la fachada conserva la API que usan la ventana y las piezas.
+    public void abrirCarpeta() { descargas.abrirCarpeta(); }
 
-    public void vaciarRecs() {
-        List<Path> files = new ArrayList<>();
-        try {
-            if (Files.isDirectory(anfitrion.recsDir()))
-                try (var st = Files.list(anfitrion.recsDir())) {
-                    st.filter(f -> f.getFileName().toString().endsWith(".aoe2record")).forEach(files::add);
-                }
-        } catch (IOException ex) {
-            anfitrion.estado(t("Error leyendo la carpeta: ", "Error reading the folder: ") + causa(ex));
-            return;
-        }
-        if (files.isEmpty()) { anfitrion.estado(t("La carpeta recs ya está vacía.", "The recs folder is already empty.")); return; }
-        int r = JOptionPane.showConfirmDialog(ventana,
-                t("Se borrarán ", "This will delete ") + files.size()
-                        + t(" recs de la carpeta recs.\n¿Continuar?", " recs from the recs folder.\nContinue?"),
-                t("Vaciar recs", "Empty recs"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-        if (r != JOptionPane.YES_OPTION) return;
-        int ok = 0;
-        for (Path f : files) { try { Files.delete(f); ok++; } catch (IOException ignored) {} }
-        for (Match m : all) { m.enDisco = false; if (m.estado.startsWith("✓")) m.estado = ""; }
-        tableModel.fireTableDataChanged();
-        anfitrion.estado(ok + " recs borradas.");
-    }
+    public void vaciarRecs() { descargas.vaciarRecs(); }
 
-    /** Carpeta savegame activa: la de config si sigue existiendo; si no, la detectada. */
-    public Path obtenerSavegame(boolean interactivo) {
-        String cfg = leerConfig("savegame", null);
-        if (cfg != null && Files.isDirectory(Path.of(cfg))) return Path.of(cfg);
-        List<Path> dets = dev.tirador.aoe2radar.service.Juego.detectarSavegames();
-        if (dets.size() == 1) {
-            guardarConfig("savegame", dets.get(0).toString());
-            return dets.get(0);
-        }
-        if (!interactivo) return null;
-        if (dets.size() > 1) {
-            Object sel = JOptionPane.showInputDialog(ventana,
-                    t("Hay varios perfiles del juego. Elige tu carpeta savegame:",
-                      "There are several game profiles. Pick your savegame folder:"),
-                    t("Carpeta savegame", "Savegame folder"), JOptionPane.PLAIN_MESSAGE, null, dets.toArray(), dets.get(0));
-            if (sel == null) return null;
-            guardarConfig("savegame", sel.toString());
-            return (Path) sel;
-        }
-        JOptionPane.showMessageDialog(ventana,
-                t("No encuentro la carpeta savegame del juego.\nElígela a mano:\n…\\Games\\Age of Empires 2 DE\\<perfil>\\savegame",
-                  "Couldn't find the game's savegame folder.\nPick it manually:\n…\\Games\\Age of Empires 2 DE\\<profile>\\savegame"));
-        return elegirSavegameManual();
-    }
+    public Path obtenerSavegame(boolean interactivo) { return descargas.obtenerSavegame(interactivo); }
 
-    public Path elegirSavegameManual() {
-        JFileChooser fc = new JFileChooser();
-        fc.setDialogTitle(t("Elige la carpeta savegame de AoE2 DE", "Pick the AoE2 DE savegame folder"));
-        fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        String actual = leerConfig("savegame", null);
-        Path base = actual != null ? Path.of(actual)
-                : Path.of(System.getProperty("user.home", "."), "Games", "Age of Empires 2 DE");
-        if (Files.isDirectory(base)) fc.setCurrentDirectory(base.toFile());
-        if (fc.showOpenDialog(ventana) != JFileChooser.APPROVE_OPTION) return null;
-        Path p = fc.getSelectedFile().toPath();
-        guardarConfig("savegame", p.toString());
-        return p;
-    }
+    public Path elegirSavegameManual() { return descargas.elegirSavegameManual(); }
 
-    /** Enviar al juego: copia lo que ya está sano en disco y descarga+envía lo que falte (decisión de Jorge,
-     *  DEUDA 94/95: «sana» es la misma regla que usa RecService.procesar, no un Files.exists propio). */
-    public void enviarInteligente(List<Match> objetivo) {
-        if (objetivo.isEmpty()) { anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        List<Match> enDisco = new ArrayList<>(), faltan = new ArrayList<>();
-        for (Match m : objetivo) (RecService.recSana(anfitrion.destino(m)) ? enDisco : faltan).add(m);
-        if (!enDisco.isEmpty()) enviarASavegame(enDisco);
-        if (!faltan.isEmpty()) download(faltan, true);
-    }
+    public void enviarInteligente(List<Match> objetivo) { descargas.enviarInteligente(objetivo); }
 
-    /** Copia al savegame lo que le llegue en `objetivo`: NO vuelve a comprobar RecService.recSana (su único
-     *  llamador, enviarInteligente, ya leyó la cabecera de cada archivo para armar esta lista); así es una sola
-     *  lectura de cabecera por partida, no dos. */
-    public void enviarASavegame(List<Match> objetivo) {
-        if (objetivo.isEmpty()) { anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        Path sg = obtenerSavegame(true);
-        if (sg == null) { anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        int ok = 0, yaEstaban = 0;
-        for (Match m : objetivo) {
-            boolean ya = Files.exists(sg.resolve(anfitrion.destino(m).getFileName().toString()));
-            if (dev.tirador.aoe2radar.service.Juego.copiarASavegame(m, sg)) {
-                ok++;
-                if (ya) yaEstaban++;
-                try {
-                    Files.setLastModifiedTime(sg.resolve(anfitrion.destino(m).getFileName().toString()),
-                            java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
-                } catch (Exception ignored) {}
-                m.enJuego = true;
-                setEstado(m, t("✓✓ en juego", "✓✓ in game"));
-            }
-        }
-        anfitrion.estado(ok + t(" recs enviadas al juego", " recs sent to the game") +
-                (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".");
-    }
+    public void enviarASavegame(List<Match> objetivo) { descargas.enviarASavegame(objetivo); }
 
-    String abrirSgTxt() { return t("Abrir carpeta savegame del juego", "Open game savegame folder"); }
+    String abrirSgTxt() { return descargas.abrirSgTxt(); }
 
-    public void abrirSavegame() {
-        Path sg = obtenerSavegame(true);
-        if (sg == null) { anfitrion.estado(t("Sin carpeta savegame configurada.", "No savegame folder configured.")); return; }
-        try { java.awt.Desktop.getDesktop().open(sg.toFile()); }
-        catch (Exception ex) { anfitrion.estado(t("No se pudo abrir la carpeta: ", "Couldn't open the folder: ") + causa(ex)); }
+    public void abrirSavegame() { descargas.abrirSavegame(); }
+
+    public void download(List<Match> objetivoIn) { descargas.download(objetivoIn); }
+
+    public void download(List<Match> objetivoIn, boolean enviarSiempre) { descargas.download(objetivoIn, enviarSiempre); }
+
+    public void descargarSinCambiarVista(List<Match> partidas, boolean enviarAlJuego, Runnable alTerminar) {
+        descargas.descargarSinCambiarVista(partidas, enviarAlJuego, alTerminar);
     }
 
     // ======================================================================
@@ -1085,77 +992,6 @@ public final class PartidasView {
      *  «tipCuentaVinculada» (tooltip de cuenta hermana). */
     public String refNombre(Match m) { return texto.refNombre(m); }
 
-    public void download(List<Match> objetivoIn) { download(objetivoIn, false); }
-
-    public void download(List<Match> objetivoIn, boolean enviarSiempre) {
-        List<Match> objetivo = new ArrayList<>();
-        List<Match> vivas = new ArrayList<>();
-        for (Match m : objetivoIn) (m.finished == null ? vivas : objetivo).add(m);
-        if (!vivas.isEmpty() && objetivo.isEmpty()) {
-            if (vivas.size() == 1) anfitrion.espectarPartida(vivas.get(0).id);
-            else anfitrion.estado(t("Esas partidas están EN DIRECTO: doble clic en una para espectarla.",
-                    "Those games are LIVE: double-click one to spectate."));
-            return;
-        }
-        if (!vivas.isEmpty())
-            anfitrion.estado(t("Las partidas EN DIRECTO no se descargan; se saltan.",
-                    "LIVE games can't be downloaded; skipping them."));
-        if (objetivo.isEmpty()) { anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
-        if (!descargaSinCambiarVista) anfitrion.mostrarDirectos(false);
-        descargaSinCambiarVista = false;
-        dlSel.setEnabled(false); dlAll.setEnabled(false);
-        anfitrion.trabajando(true);
-        final long miSerial = anfitrion.operacionActual();
-        Set<Long> trackedIds = new HashSet<>();
-        for (int i = 0; i < enlaceWatchlist.totalJugadores(); i++) trackedIds.add(enlaceWatchlist.jugador(i).id());
-        final boolean autoCopiar = anfitrion.autoCopiarAlDescargar();
-        final boolean autoCopiarFinal = autoCopiar || enviarSiempre;
-        final Path sgAuto = autoCopiarFinal ? obtenerSavegame(enviarSiempre) : null;
-        if (autoCopiarFinal && sgAuto == null)
-            log("copia automática a savegame activada pero sin carpeta resuelta: no se copiará");
-
-        new SwingWorker<Void, Void>() {
-            @Override protected Void doInBackground() {
-                anfitrion.anotarHiloOperacion();
-                try { Files.createDirectories(anfitrion.recsDir()); } catch (IOException ignored) {}
-                int ok = 0, copiadas = 0;
-                for (Match m : objetivo) {
-                    if (anfitrion.detenido()) break;
-                    setEstado(m, "descargando…");
-                    RecService.Resultado r = recService.procesar(m, trackedIds, autoCopiarFinal, sgAuto, anfitrion::detenido);
-                    boolean hecho = r.estado() != RecService.Estado.FALLO;
-                    if (hecho) {
-                        m.enDisco = true;
-                        ok++;
-                        if (r.enJuego()) {
-                            copiadas++;
-                            m.enJuego = true;
-                        }
-                    }
-                    setEstado(m, hecho ? (r.enJuego() ? t("✓✓ en juego", "✓✓ in game") : "✓ guardada") : "✗ no disponible");
-                    // La pausa de cortesía es para espaciar peticiones a la API: si la rec se reutilizó del
-                    // disco (RecService.Resultado.reutilizada), no hubo ninguna que espaciar.
-                    if (!r.reutilizada()) anfitrion.dormir(pausaMs);
-                }
-                final int n = ok, tot = objetivo.size(), cop = copiadas;
-                final boolean parada = anfitrion.detenido();
-                SwingUtilities.invokeLater(() ->
-                        anfitrion.estado((parada ? t("Detenido. ", "Stopped. ") : "")
-                                + n + "/" + tot + t(" recs guardadas en ./", " recs saved to ./") + anfitrion.recsDir()
-                                + (cop > 0 ? "  ·  " + cop + t(" al juego", " to the game") : "")
-                                + (n < tot ? t("  ·  detalle en descargas.log", "  ·  details in descargas.log") : "")));
-                return null;
-            }
-            @Override protected void done() {
-                if (!PartidasPresenter.vigente(miSerial, anfitrion.operacionActual())) { log("descargas #" + miSerial + ": terminó superada por la op #" + anfitrion.operacionActual()); return; }
-                dlSel.setEnabled(true);
-                dlAll.setEnabled(true);
-                anfitrion.trabajando(false);
-                if (alTerminarDescarga != null) { Runnable r = alTerminarDescarga; alTerminarDescarga = null; r.run(); }
-            }
-        }.execute();
-    }
-
     void setEstado(Match m, String txt) { tabla.setEstado(m, txt); }
 
     /** Llamado por Perfil (vía el Anfitrion de la ventana) cuando trae partidas ya cargadas a la tabla: mismo
@@ -1170,12 +1006,5 @@ public final class PartidasView {
         refreshModeCombo();
         applyFilters();
         mostrarGuiaVacia(false);
-    }
-
-    /** Descarga sin cambiar de pestaña (Perfil/Live now la piden desde su propia vista). */
-    public void descargarSinCambiarVista(List<Match> partidas, boolean enviarAlJuego, Runnable alTerminar) {
-        descargaSinCambiarVista = true;
-        alTerminarDescarga = alTerminar;
-        download(partidas, enviarAlJuego);
     }
 }
