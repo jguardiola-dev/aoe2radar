@@ -68,17 +68,19 @@ Qué guarda en disco, junto al `.exe`:
 - Si pides «Enviar al juego», copia la rec a la carpeta `savegame` de tu perfil de Age of Empires II DE.
 
 A qué servicios se conecta automáticamente:
-- **aoe2companion** (`data.aoe2companion.com`, el socket `socket.aoe2companion.com` y
-  `api.aoe2companion.com/twitch/live`): partidas, Live now, perfiles y el listado de canales de Twitch.
+- **aoe2companion** (`data.aoe2companion.com`, el socket `socket.aoe2companion.com`,
+  `api.aoe2companion.com/twitch/live` y `cdn.aoe2companion.com`): partidas, Live now, perfiles, el listado
+  de canales de Twitch y las imágenes de mapas.
 - **aoe.ms**, del propio Age of Empires II, para descargar las recs.
 - **aoe-api.worldsedgelink.com** (World's Edge/Microsoft), para saber si tienes una partida propia en curso.
 - **steamcommunity.com**, para el historial de nombres anteriores de un jugador (solo su Steam ID, ya
   público).
+- **Twitch** (`static-cdn.jtvnw.net`), para las miniaturas de los canales en directo.
 - **GitHub** (`raw.githubusercontent.com`, `api.github.com`): los resúmenes nocturnos de `sfr-data`, el
   árbol tecnológico de `aoe2techtree` y el aviso de versión nueva.
 
 Algunos menús abren enlaces en tu navegador solo si haces clic (perfil en aoe2companion o en aoe2insights,
-tu canal de Twitch, el enlace de «Invítame un café»): esos no los abre la app por su cuenta.
+tu canal de Twitch, el enlace de «Invítame a un café»): esos no los abre la app por su cuenta.
 
 aoe2radar no pide cuenta de usuario, no tiene analítica ni telemetría y no envía datos personales a nadie.
 
@@ -182,12 +184,14 @@ What it stores on disk, next to the `.exe`:
 - If you use "Send to game", it copies the rec into the `savegame` folder of your Age of Empires II DE profile.
 
 What it connects to automatically:
-- **aoe2companion** (`data.aoe2companion.com`, the `socket.aoe2companion.com` socket, and
-  `api.aoe2companion.com/twitch/live`): matches, Live now, profiles and the list of Twitch channels.
+- **aoe2companion** (`data.aoe2companion.com`, the `socket.aoe2companion.com` socket,
+  `api.aoe2companion.com/twitch/live` and `cdn.aoe2companion.com`): matches, Live now, profiles, the list
+  of Twitch channels and map images.
 - **aoe.ms**, Age of Empires II's own service, to download recs.
 - **aoe-api.worldsedgelink.com** (World's Edge/Microsoft), to tell whether you have a match of your own
   running.
 - **steamcommunity.com**, for a player's previous nickname history (using their already-public Steam ID).
+- **Twitch** (`static-cdn.jtvnw.net`), for live-channel thumbnail images.
 - **GitHub** (`raw.githubusercontent.com`, `api.github.com`): the nightly `sfr-data` summaries, the
   `aoe2techtree` data, and the new-version check.
 
