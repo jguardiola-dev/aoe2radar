@@ -108,9 +108,12 @@ Maven, release 1.2. Almost all the debt in `DEUDA.md` was resolved or discarded 
 2026-09-26). Packaging with `jpackage` is a Maven profile (`-Pempaquetar`, see README_TECNICO.md).
 **Closed:** 1.2 is released (tag `v1.2`, GitHub release).
 
-**Version 1.3 (in progress).** Split `WatchlistView`/`PartidasView` (DEUDA row 137, postponed from 1.2), the
-remaining low-risk debt rows (priority `baja`/`media`), the user README and the move of the public docs to
-English.
+**Version 1.3.** `WatchlistView` and `PartidasView` split into a facade plus focused pieces (DEUDA row 137); a
+full functional review of the app with its fixes (startup, persistence, live data and socket, Watchlist, Partidas,
+Profile/Civ Stats/Tech tree); «Open in» startup option; per-map matchups matrix (needs sfr-data 1.5.4); fewer live
+API calls (URL cache, Live now releases its socket ids, lighter Twitch, per-endpoint call counter); the
+`FuentePartidas`/`FuenteLadder` seam for a future fallback source; user README and public docs in English. What is
+left, and the plan for 1.4, is in `docs/DEUDA.md`.
 
 ## Development rules (Reglas de desarrollo)
 

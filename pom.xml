@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.tirador</groupId>
   <artifactId>aoe2radar</artifactId>
-  <version>1.2.0-SNAPSHOT</version>
+  <version>1.3.0</version>
   <packaging>jar</packaging>
   <name>aoe2radar</name>
 
@@ -90,7 +90,7 @@
       <id>empaquetar</id>
       <properties>
         <!-- Se fija a mano: cambiarlo a la vez que util.Identidad.VERSION. -->
-        <jpackage.appVersion>1.2</jpackage.appVersion>
+        <jpackage.appVersion>1.3</jpackage.appVersion>
         <jpackage.vendor>12Tirador</jpackage.vendor>
         <jpackage.entrada>${project.build.directory}/jpackage-input</jpackage.entrada>
       </properties>
