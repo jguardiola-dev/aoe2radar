@@ -7,6 +7,8 @@ import dev.tirador.aoe2radar.model.Rejilla;
 import java.util.List;
 import java.util.Map;
 
+import static dev.tirador.aoe2radar.util.I18n.t;
+
 /**
  * Lo que la vista Ratings necesita de los resúmenes del ladder (campanas, dispersión y clanes de sfr-data), sin
  * leer directamente los campos estáticos de sfrdata.Ladder. Hoy la vista los lee por import static; este contrato
@@ -48,11 +50,21 @@ public interface RatingsService {
     /** Los clanes del ladder 1v1 (tag → miembros), en el orden que publica sfr-data (por rating), ya cargados por asegurar(). Sin red. */
     Map<String, List<LadderRow>> clanes();
 
-    /** Mínimo de partidas para contar como «activo» (definido por sfr-data; por defecto 10). Sin red. */
+    /** Mínimo de partidas para contar como «activo» (definido por sfr-data en ladder.json, activos_def; por defecto 10). Sin red. */
     int activosMinPartidas();
 
-    /** Días para contar como «activo» (definido por sfr-data; por defecto 28). Sin red. */
+    /** Días para contar como «activo» (definido por sfr-data en ladder.json, activos_def; por defecto 28). Sin red. */
     int activosDias();
+
+    /**
+     * El criterio de «activo» dicho en una frase, para tooltips: con min_partidas 1 (lo que publica sfr-data hoy) no
+     * tiene sentido «1 o más partidas y una en los últimos 28 días». Sin mayúscula ni punto final. Pura.
+     */
+    static String criterioActivos(int minPartidas, int dias) {
+        return minPartidas <= 1
+                ? t("al menos una partida en ese ladder en los últimos ", "at least one game on that ladder in the last ") + dias + t(" días", " days")
+                : minPartidas + t(" o más partidas en ese ladder y una en los últimos ", " games or more on that ladder and one in the last ") + dias + t(" días", " days");
+    }
 
     /** Fecha (ISO) de generación de los resúmenes ya cargados, o "" si aún no se cargaron. Sin red. */
     String generado();

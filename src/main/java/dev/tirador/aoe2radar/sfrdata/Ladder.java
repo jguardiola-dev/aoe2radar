@@ -34,12 +34,12 @@ public final class Ladder {
     // rating 1v1 × equipos, y clanes con sus miembros
     // =====================================================================================
     public static volatile Map<String, LadderHist> ladderHists = Map.of();          // todos los jugadores del ladder
-    public static volatile Map<String, LadderHist> ladderHistsActivos = Map.of();   // activos: 10+ partidas y una en 28 días
+    public static volatile Map<String, LadderHist> ladderHistsActivos = Map.of();   // activos: el criterio de activos_def (ladder.json)
     public static volatile Map<String, Rejilla> dispersionTodos = Map.of();         // «rm» / «ew» → rejilla 1v1 × equipos
     public static volatile Map<String, Rejilla> dispersionActivos = Map.of();
     public static volatile Map<String, List<LadderRow>> clanes = Map.of();          // tag → miembros (1v1 RM), ordenados por rating
     public static volatile String ladderGenerado = "";
-    public static volatile int activosMinPartidas = 10, activosDias = 28;
+    public static volatile int activosMinPartidas = 10, activosDias = 28;   // hasta leer activos_def de ladder.json (hoy publica 1 y 28)
     private static final Sello LADDER_SELLO = CacheService.SISTEMA.sello(Caducidad.NOCTURNO);   // cuándo se cargaron bien los resúmenes
     public static volatile boolean ladderCargando;
     public static volatile String ladderProgreso = "";
@@ -84,6 +84,16 @@ public final class Ladder {
         return new Rejilla((int) lng(d.get("n")), (int) lng(d.get("min_x")), (int) lng(d.get("min_y")), celdas, dblNum(rec.get("a")), dblNum(rec.get("b")), dblNum(rec.get("r")));
     }
 
+    /**
+     * El criterio de «activo» que publica sfr-data en ladder.json: {"min_partidas": N, "dias": D} → {N, D}. Si falta
+     * el bloque o uno de sus campos (o no es un número positivo), se queda el valor que había (por defecto 10 y 28).
+     */
+    public static int[] activosDef(Object activosDef, int minPartidas, int dias) {
+        Map<String, Object> def = obj(activosDef);
+        long n = def.get("min_partidas") instanceof Number x ? x.longValue() : 0, d = def.get("dias") instanceof Number y ? y.longValue() : 0;
+        return new int[]{ n > 0 ? (int) n : minPartidas, d > 0 ? (int) d : dias };
+    }
+
     /** Carga (o refresca) campanas, dispersión y clanes. null si va bien; si no, el motivo. */
     public static String ladderAsegurar(boolean forzar) {
         synchronized (LADDER_LOCK) {
@@ -93,8 +103,8 @@ public final class Ladder {
                 Map<String, Object> lj = obj(Json.parse(new String(sfrDataArchivo("ladder.json"), StandardCharsets.UTF_8)));
                 Map<String, LadderHist> h = parsearHists(lj.get("ladders"));
                 Map<String, LadderHist> ha = parsearHists(lj.get("activos"));
-                Map<String, Object> def = obj(lj.get("activos_def"));
-                if (!def.isEmpty()) { activosMinPartidas = (int) lng(def.get("min_partidas")); activosDias = (int) lng(def.get("dias")); }
+                int[] def = activosDef(lj.get("activos_def"), activosMinPartidas, activosDias);
+                activosMinPartidas = def[0]; activosDias = def[1];
                 ladderGenerado = String.valueOf(firstNonNull(lj.get("generado"), ""));
                 Map<String, Rejilla> dt = new HashMap<>(), da = new HashMap<>();
                 try {

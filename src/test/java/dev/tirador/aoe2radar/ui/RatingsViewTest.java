@@ -45,8 +45,9 @@ class RatingsViewTest {
         @Override public Rejilla dispersion(String familia, boolean activos) { return null; }
         @Override public boolean dispersionTieneActivos(String familia) { return false; }
         @Override public Map<String, List<LadderRow>> clanes() { return Map.of(); }
-        @Override public int activosMinPartidas() { return 10; }
-        @Override public int activosDias() { return 28; }
+        int minPartidas = 10, dias = 28;
+        @Override public int activosMinPartidas() { return minPartidas; }
+        @Override public int activosDias() { return dias; }
         @Override public String generado() { return ""; }
     }
 
@@ -83,10 +84,25 @@ class RatingsViewTest {
     @AfterEach
     void limpiarConfig() throws Exception { Files.deleteIfExists(CONFIG_FILE); }
 
-    private RatingsView nueva() throws Exception {
+    private RatingsView nueva() throws Exception { return nueva(new RatingsServiceFalso()); }
+
+    private RatingsView nueva(RatingsServiceFalso ratings) throws Exception {
         RatingsView[] out = new RatingsView[1];
-        SwingUtilities.invokeAndWait(() -> out[0] = new RatingsView(new RatingsServiceFalso(), new BusquedaFalsa(), new PerfilesFalso(), Tareas.EN_LINEA, new AnfitrionFalso()));
+        SwingUtilities.invokeAndWait(() -> out[0] = new RatingsView(ratings, new BusquedaFalsa(), new PerfilesFalso(), Tareas.EN_LINEA, new AnfitrionFalso()));
         return out[0];
+    }
+
+    /** «Solo activos» dice el criterio que publica sfr-data (activos_def de ladder.json), no un 10 supuesto. */
+    @Test void elTooltipDeSoloActivosDiceElCriterioDeSfrData() throws Exception {
+        RatingsServiceFalso ratings = new RatingsServiceFalso();
+        ratings.minPartidas = 1; ratings.dias = 28;
+        RatingsView v = nueva(ratings);
+        String[] tip = new String[2];
+        SwingUtilities.invokeAndWait(() -> { v.ladderRefrescar(); tip[0] = v.activosCheck.getToolTipText(); });
+        ratings.minPartidas = 10; ratings.dias = 14;
+        SwingUtilities.invokeAndWait(() -> { v.ladderRefrescar(); tip[1] = v.activosCheck.getToolTipText(); });
+        assertEquals("Solo jugadores con al menos una partida en ese ladder en los últimos 28 días. Sin marcar: todos los que tienen rating.", tip[0]);
+        assertEquals("Solo jugadores con 10 o más partidas en ese ladder y una en los últimos 14 días. Sin marcar: todos los que tienen rating.", tip[1]);
     }
 
     /** invokeLater necesita un pase por el EDT para ejecutarse; un invokeAndWait vacío, encolado detrás, sirve

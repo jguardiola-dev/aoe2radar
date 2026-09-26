@@ -965,7 +965,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
                 if (top != null) val.append(" <span style='color:gray;font-weight:normal'>").append(escapeHtml(top)).append("</span>");
                 if (v.length > 2 && v[2] > 0) val.append("<br><span style='font-weight:normal;font-size:10px;color:gray'>").append(t("máx ", "peak ")).append("</span><span style='font-weight:normal;font-size:10px'>").append(v[2]).append("</span>");
                 String tip = (v.length > 2 && v[2] > 0 ? t("Máximo ", "Peak ") + v[2] : "") + (v.length > 4 && v[3] + v[4] > 0 ? (v.length > 2 && v[2] > 0 ? " · " : "") + v[3] + "-" + v[4] + t(" en total (", " in total (") + pct1(100.0 * v[3] / (v[3] + v[4])) + ")" : "");
-                if (top != null) tip = (tip.isBlank() ? "" : tip + " · ") + t("Top % entre los jugadores activos (al menos una partida en los últimos 28 días); el # es el puesto en el ladder completo", "Top % among active players (at least one game in the last 28 days); # is the rank in the full ladder");
+                if (top != null) tip = (tip.isBlank() ? "" : tip + " · ") + t("Top % entre los jugadores activos (", "Top % among active players (") + RatingsService.criterioActivos(ratings.activosMinPartidas(), ratings.activosDias()) + t("); el # es el puesto en el ladder completo", "); # is the rank in the full ladder");
                 actChips.add(chipPerfil(ladderNombre(lb), val.toString(), tip.isBlank() ? null : tip));
             }
             for (String lbTot : new String[]{ "rm_1v1", "rm_team" }) {
