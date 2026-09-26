@@ -54,14 +54,27 @@ cleans the packaging):
 2. Copies the app jar there, already built by `maven-jar-plugin`.
 3. Generates `target/logo.ico` (multi-size) by calling `dev.tirador.aoe2radar.SpoilerFreeRecs --make-ico`,
    the same mechanism `crear_exe.bat` used in 1.1 (see the note in `pom.xml` itself: that script is not in
-   the repo or in the Git history; its parameters are deduced from the code — name and version from
-   `util.Identidad`, main class from the manifest, `--make-ico` documented in `AcercaDe.generarIco()`).
+   the repo or in the Git history; its parameters are deduced from the code — name from `util.Identidad`,
+   main class from the manifest, `--make-ico` documented in `AcercaDe.generarIco()`).
 4. Calls the JDK's `jpackage` with `--type app-image`: a `target/dist/aoe2radar/` folder with
    `aoe2radar.exe`, its own runtime (implicit jlink, nothing to install separately) and the jars in `app/`.
    WiX Toolset is not needed because no installer is generated, only the app folder.
 
-The version is set by hand in two places: `util.Identidad.VERSION` (what the app shows) and
-`jpackage.appVersion` in the profile (the `.exe` version). Change both together.
+## Version: one single place
+The version lives only in `<version>` in `pom.xml` (today `1.3.0`). To release a new one, change that line
+and nothing else. From it:
+- `build-helper-maven-plugin` (`regex-property`, phase `initialize`) computes the property `version.app`:
+  the `-qualifier` suffix and a third `.0` part are dropped (`1.3.0` → `1.3`, `1.3.1` → `1.3.1`,
+  `1.4.0-SNAPSHOT` → `1.4`). That is the version the app shows (window title, About) and compares with the
+  GitHub tags `vX.Y` when checking for updates, and also jpackage's `--app-version`.
+- `src/main/resources-filtradas/dev/tirador/aoe2radar/util/version.properties` is the only filtered resource
+  (`src/main/resources` is not filtered: flags and tech-tree data must go byte for byte). Maven writes
+  `version.pom` and `version.app` into it, and `util.Identidad` reads it when the class loads:
+  `VERSION_POM` (`1.3.0`) and `VERSION` (`1.3`, via `Identidad.versionCorta`, the same rule as the pom).
+- If the class was compiled outside Maven (no filtered resource), `VERSION` is `0.0`: harmless, the update
+  checker just sees any tag as newer.
+- `util/IdentidadTest` checks, on every `mvn test`, that the resource arrived filtered, that it matches the
+  `<version>` in `pom.xml`, and that the Java rule and the pom rule give the same result.
 
 ## Layered architecture
 Summary table; the details of what each layer knows and the key contracts are in
