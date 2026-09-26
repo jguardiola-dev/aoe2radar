@@ -106,6 +106,7 @@ import dev.tirador.aoe2radar.ui.SelectorRangoElo;
 import dev.tirador.aoe2radar.ui.Tareas;
 import dev.tirador.aoe2radar.ui.TechTreeView;
 import dev.tirador.aoe2radar.ui.TemaApp;
+import dev.tirador.aoe2radar.ui.MenuConfiguracion;
 import dev.tirador.aoe2radar.ui.WrapLayout;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Reloj;
@@ -202,7 +203,6 @@ import static dev.tirador.aoe2radar.util.Identidad.AUTOR;
 import static dev.tirador.aoe2radar.util.Identidad.AUTOR_COMPLETO;
 import static dev.tirador.aoe2radar.util.Identidad.CLAN;
 import static dev.tirador.aoe2radar.util.Identidad.NOMBRE;
-import static dev.tirador.aoe2radar.util.Identidad.RELEASES_API;
 import static dev.tirador.aoe2radar.util.Identidad.RELEASES_URL;
 import static dev.tirador.aoe2radar.util.Identidad.TWITCH;
 import static dev.tirador.aoe2radar.util.Identidad.VERSION;
@@ -213,13 +213,11 @@ import static dev.tirador.aoe2radar.util.Json.val;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 import static dev.tirador.aoe2radar.util.Sistema.fijarAutoArranque;
-import static dev.tirador.aoe2radar.util.Sistema.rutaExePropia;
 import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
 import static dev.tirador.aoe2radar.util.Texto.normalizarNick;
 import static dev.tirador.aoe2radar.util.Texto.recorta;
 import static dev.tirador.aoe2radar.util.Texto.sinTildes;
 import static dev.tirador.aoe2radar.util.Texto.variantesNick;
-import static dev.tirador.aoe2radar.util.Texto.versionMayor;
 import static dev.tirador.aoe2radar.ui.Componentes.PALETA_LADDER;
 import static dev.tirador.aoe2radar.ui.Componentes.colorHex;
 import static dev.tirador.aoe2radar.ui.Componentes.colorSecundario;
@@ -238,8 +236,6 @@ import static dev.tirador.aoe2radar.ui.Iconos.iconoMapa;
 import static dev.tirador.aoe2radar.ui.Listas.Celda;
 import static dev.tirador.aoe2radar.ui.Listas.Pct;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
-import static dev.tirador.aoe2radar.ui.TemaApp.TEMA_CLARO;
-import static dev.tirador.aoe2radar.ui.TemaApp.TEMA_OSCURO;
 import static dev.tirador.aoe2radar.ui.TemaApp.TEMA_SISTEMA;
 import static dev.tirador.aoe2radar.ui.TemaApp.flatLafDisponible;
 
@@ -411,7 +407,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final Image logo = cargarLogo();
     final JCheckBoxMenuItem autoSgItem = new JCheckBoxMenuItem(t("Enviar al juego al descargar", "Send to game after download"),
             Boolean.parseBoolean(leerConfig("autosavegame", "false")));
-    JPopupMenu configMenu;
+    MenuConfiguracion menuConfiguracion;   // ver ui.MenuConfiguracion: botón "Configuración ▾" + esquina "Mi perfil"
     Player invitado;
     String vistaDelInvitado = "";
     final CacheMemoria<Long, Object[]> perfilCardCache = CacheService.SISTEMA.memoria(Caducidad.TARJETA);   // pid -> { htmlDatos, int[] spark }
@@ -869,32 +865,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // truncarPx: ver util.Formato (recorte con puntos suspensivos, compartido por Live now y la watchlist).
 
-    /** Consulta GitHub Releases (una llamada, sin claves) y enseña el botón si hay versión nueva. La red y la lectura
-     *  del JSON viven en service.ControlService#ultimaVersion; aquí solo quedan la UI y los diálogos. */
-    void comprobarActualizacion(boolean manual) {
-        new Thread(() -> {
-            final String tagF = CONTROL_SERVICE.ultimaVersion(RELEASES_API);
-            SwingUtilities.invokeLater(() -> {
-                if (tagF != null && versionMayor(tagF, VERSION)) {
-                    String limpia = tagF.replaceFirst("^[vV]", "");
-                    if (actualizarBtn != null) {
-                        actualizarBtn.setText(t("Nueva versión ", "New version ") + limpia + t(" \u2014 Descargar", " \u2014 Download"));
-                        actualizarBtn.setVisible(true);
-                    }
-                    if (manual) JOptionPane.showMessageDialog(this,
-                            t("Hay una versión nueva: ", "There is a new version: ") + limpia
-                                    + t("\nSe abrirá la página de descarga.", "\nThe download page will open."),
-                            t("Actualización", "Update"), JOptionPane.INFORMATION_MESSAGE);
-                    if (manual) abrirUrl(RELEASES_URL);
-                } else if (manual) {
-                    JOptionPane.showMessageDialog(this,
-                            tagF == null ? t("No se pudo comprobar (¿sin red?).", "Couldn't check (no network?).")
-                                         : t("Tienes la última versión (", "You have the latest version (") + VERSION + ").",
-                            t("Actualización", "Update"), JOptionPane.INFORMATION_MESSAGE);
-                }
-            });
-        }, "actualizaciones").start();
-    }
+    /** Delegado: la construccion de la UI y el hilo "actualizaciones" viven en ui.MenuConfiguracion (comparten
+     *  el boton "Configuracion" con el item "Buscar actualizaciones..."). Nombre conservado: arrancar() la llama al arranque. */
+    void comprobarActualizacion(boolean manual) { menuConfiguracion.comprobarActualizacion(manual); }
 
     static int tickMs() {
         try { return Math.max(1, Integer.parseInt(leerConfig("tick_min", "1"))) * 60_000; }
@@ -1169,198 +1142,34 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         filaVistas.add(techTreeBtn);
         filaVistas.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(128, 128, 128, 70)));
 
-        JButton configBtn = new JButton(t("Configuración ▾", "Settings ▾"));
-        configMenu = new JPopupMenu();
-
-        JMenu idiomaMenu = new JMenu(t("Idioma", "Language"));
-        ButtonGroup gIdioma = new ButtonGroup();
-        for (String[] par : new String[][]{ { "Español", "es" }, { "English", "en" } }) {
-            String valor = par[1];
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(IDIOMA));
-            it.addActionListener(e -> {
-                guardarConfig("idioma", valor);
-                JOptionPane.showMessageDialog(this,
-                        valor.equals("es") ? "El idioma se aplicará la próxima vez que abras la aplicación."
-                                           : "The language will apply the next time you open the app.",
-                        valor.equals("es") ? "Idioma" : "Language", JOptionPane.INFORMATION_MESSAGE);
-            });
-            gIdioma.add(it);
-            idiomaMenu.add(it);
-        }
-
-        JMenu temaMenu = new JMenu(t("Tema", "Theme"));
-        ButtonGroup gTema = new ButtonGroup();
-        for (String[] par : new String[][]{ { t("Sistema", "System"), TEMA_SISTEMA }, { t("Claro", "Light"), TEMA_CLARO }, { t("Oscuro", "Dark"), TEMA_OSCURO } }) {
-            String valor = par[1];
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(temaInicial));
-            it.addActionListener(e -> { guardarConfig("tema", valor); aplicarTema(valor, this); });
-            gTema.add(it);
-            temaMenu.add(it);
-        }
-        temaMenu.setEnabled(flatLafDisponible);
-
-        JMenu letraMenu = new JMenu(t("Letra", "Font size"));
-        ButtonGroup gLetra = new ButtonGroup();
-        String letraSel = leerConfig("letra", "grande");
-        for (String[] par : new String[][]{ { t("Pequeño", "Small"), "normal" }, { t("Normal", "Normal"), "grande" }, { t("Grande", "Large"), "muygrande" } }) {
-            String valor = par[1];
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(par[0], valor.equals(letraSel));
-            it.addActionListener(e -> {
-                guardarConfig("letra", valor);
-                aplicarTema(temaValido(leerConfig("tema", TEMA_SISTEMA)), this);
-            });
-            gLetra.add(it);
-            letraMenu.add(it);
-        }
-        letraMenu.setEnabled(flatLafDisponible);
-
-        JCheckBoxMenuItem buscarAbrirItem = new JCheckBoxMenuItem(t("Buscar al abrir", "Search on startup"),
-                Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")));
-        buscarAbrirItem.setToolTipText(t("Al abrir la app, busca partidas de tus seguidos automáticamente", "Search your watchlist automatically when the app opens"));
-        buscarAbrirItem.addActionListener(e ->
-                guardarConfig("buscar_al_abrir", String.valueOf(buscarAbrirItem.isSelected())));
-
-        JCheckBoxMenuItem autoWinItem = new JCheckBoxMenuItem(t("Ejecutar al iniciar Windows", "Run at Windows startup"),
-                Boolean.parseBoolean(leerConfig("autoarranque", "false")));
-        if (rutaExePropia() == null) {
-            autoWinItem.setEnabled(false);
-            autoWinItem.setSelected(false);
-            autoWinItem.setToolTipText(t("Disponible solo ejecutando el " + NOMBRE + ".exe empaquetado",
-                    "Only available when running the packaged " + NOMBRE + ".exe"));
-        } else {
-            autoWinItem.setToolTipText(t("Añade la app al arranque de tu usuario de Windows (sin permisos especiales)",
-                    "Adds the app to your Windows user startup (no special permissions)"));
-            autoWinItem.addActionListener(e -> {
-                boolean ok = fijarAutoArranque(autoWinItem.isSelected());
-                if (!ok) {
-                    autoWinItem.setSelected(false);
-                    status.setText(t("No se pudo cambiar el autoarranque (¿antivirus?).",
-                            "Could not change startup entry (antivirus?)."));
-                }
-                guardarConfig("autoarranque", String.valueOf(autoWinItem.isSelected()));
-            });
-        }
-
-        JCheckBoxMenuItem iniMinItem = new JCheckBoxMenuItem(t("Iniciar minimizada", "Start minimized"),
-                Boolean.parseBoolean(leerConfig("inicio_min", "false")));
-        iniMinItem.setToolTipText(t("La ventana arranca minimizada en la barra de tareas",
-                "The window starts minimized to the taskbar"));
-        iniMinItem.addActionListener(e ->
-                guardarConfig("inicio_min", String.valueOf(iniMinItem.isSelected())));
-
-        autoSgItem.setToolTipText(t("Tras cada descarga, copia también la rec a la carpeta savegame del juego", "After each download, also copy the rec to the game savegame folder"));
-        autoSgItem.addActionListener(e -> {
-            if (autoSgItem.isSelected() && partidas.obtenerSavegame(true) == null) {
-                autoSgItem.setSelected(false);
-                return;
+        // El boton "Configuracion (V)", todos sus items y la esquina "Mi perfil": ver ui.MenuConfiguracion. Lo
+        // que sus items necesitan de otras zonas (tema, watchlist, vigilancia, CaptureAge, mi perfil, acerca
+        // de, carpeta savegame...) llega por MenuConfiguracion.Anfitrion, implementado aqui con lambdas.
+        menuConfiguracion = new MenuConfiguracion(temaInicial, autoSgItem, CONTROL_SERVICE, DONAR_URL, new MenuConfiguracion.Anfitrion() {
+            @Override public Component padre() { return SpoilerFreeRecs.this; }
+            @Override public void estado(String texto) { status.setText(texto); }
+            @Override public void aplicarTema(String tema) { SpoilerFreeRecs.aplicarTema(tema, SpoilerFreeRecs.this); }
+            @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
+            @Override public void mostrarNuevaVersion(String etiqueta) {
+                if (actualizarBtn != null) { actualizarBtn.setText(etiqueta); actualizarBtn.setVisible(true); }
             }
-            guardarConfig("autosavegame", String.valueOf(autoSgItem.isSelected()));
-        });
-
-        JMenuItem carpetaItem = new JMenuItem(t("Cambiar carpeta savegame…", "Change savegame folder…"));
-        carpetaItem.addActionListener(e -> {
-            Path p = partidas.elegirSavegameManual();
-            if (p != null) { status.setText(t("Carpeta savegame: ", "Savegame folder: ") + p); partidas.applyFilters(); }
-        });
-
-        JMenuItem aboutItem = new JMenuItem(t("Acerca de…", "About…"));
-        aboutItem.addActionListener(e -> showAbout());
-
-        configMenu.add(idiomaMenu);
-        configMenu.add(temaMenu);
-        configMenu.add(letraMenu);
-        configMenu.addSeparator();
-        JCheckBoxMenuItem eloWatchItem = new JCheckBoxMenuItem(
-                t("Mostrar ELO en la Watchlist", "Show ELO in the Watchlist"), watchlist.mostrarEloWatch);
-        eloWatchItem.setToolTipText(t("El ELO se actualiza solo al abrir la app, nunca al buscar, para no chivar resultados",
-                "ELO refreshes only when the app opens, never on search, so results are never given away"));
-        eloWatchItem.addActionListener(e -> {
-            watchlist.mostrarEloWatch = eloWatchItem.isSelected();
-            guardarConfig("elo_watchlist", String.valueOf(watchlist.mostrarEloWatch));
-            playersList.repaint();
-        });
-        configMenu.add(buscarAbrirItem);
-        configMenu.add(autoWinItem);
-        configMenu.add(iniMinItem);
-        configMenu.add(eloWatchItem);
-        configMenu.add(autoSgItem);
-        JCheckBoxMenuItem usarCaItem = new JCheckBoxMenuItem(t("Usar CaptureAge", "Use CaptureAge"),
-                Boolean.parseBoolean(leerConfig("usar_ca", "false")));
-        usarCaItem.setToolTipText(t("Al espectar un directo, lanza también CaptureAge (se engancha solo al juego).",
-                "When spectating, also launches CaptureAge (it hooks onto the game by itself)."));
-        usarCaItem.addActionListener(e -> {
-            guardarConfig("usar_ca", String.valueOf(usarCaItem.isSelected()));
-            if (usarCaItem.isSelected() && rutaCaptureAge() == null)
-                status.setText(t("CaptureAge no aparece en la ruta estándar: usa «Cambiar ruta de CaptureAge…».",
-                        "CaptureAge isn't at the standard path: use \u201CChange CaptureAge path\u2026\u201D."));
-        });
-        configMenu.add(usarCaItem);
-        JMenuItem rutaCaItem = new JMenuItem(t("Cambiar ruta de CaptureAge…", "Change CaptureAge path…"));
-        rutaCaItem.addActionListener(e -> {
-            JFileChooser fc = new JFileChooser();
-            Path actual = rutaCaptureAge();
-            if (actual != null) fc.setSelectedFile(actual.toFile());
-            fc.setDialogTitle(t("Elegir CaptureAge.exe", "Pick CaptureAge.exe"));
-            if (fc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
-                guardarConfig("ca_ruta", fc.getSelectedFile().getAbsolutePath());
-                status.setText(t("Ruta de CaptureAge guardada: ", "CaptureAge path saved: ")
-                        + fc.getSelectedFile().getAbsolutePath());
-            }
-        });
-        configMenu.add(rutaCaItem);
-        JMenu vigMenu = new JMenu(t("Vigilancia de vivos", "Live watch interval"));
-        ButtonGroup vg = new ButtonGroup();
-        String tickActual = leerConfig("tick_min", "1");
-        for (String mins : new String[]{"1", "2", "5"}) {
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem(t("Cada ", "Every ") + mins + " min", mins.equals(tickActual));
-            it.addActionListener(e -> {
-                guardarConfig("tick_min", mins);
+            @Override public boolean mostrarEloWatch() { return watchlist.mostrarEloWatch; }
+            @Override public void fijarMostrarEloWatch(boolean mostrar) { watchlist.mostrarEloWatch = mostrar; }
+            @Override public void repintarListaJugadores() { playersList.repaint(); }
+            @Override public void reiniciarVigilancia() {
                 if (vigilante != null) { vigilante.setDelay(tickMs()); vigilante.setInitialDelay(tickMs()); vigilante.restart(); }
-            });
-            vg.add(it);
-            vigMenu.add(it);
-        }
-        vigMenu.setToolTipText(t("Cada cuánto se refrescan los puntos rojos (1 min por defecto; sube si el servicio anda flojo).",
-                "How often live dots refresh (1 min by default; raise it if the service is struggling)."));
-        configMenu.add(vigMenu);
-        cargarAliases();
-        cargarNotas();
-        JMenu topMenu = new JMenu(t("Top ladder", "Top ladder"));
-        ButtonGroup topGrp = new ButtonGroup();
-        for (int n : new int[]{ 25, 50, 100 }) {
-            JRadioButtonMenuItem it = new JRadioButtonMenuItem("Top " + n,
-                    String.valueOf(n).equals(leerConfig("top_n", "50")));
-            it.addActionListener(e -> {
-                guardarConfig("top_n", String.valueOf(n));
-                if (watchlist.modoTop()) watchlist.forzarRecargaTop();
-            });
-            topGrp.add(it);
-            topMenu.add(it);
-        }
-        configMenu.add(topMenu);
-        configMenu.add(carpetaItem);
-        configMenu.addSeparator();
-        JMenuItem updItem = new JMenuItem(t("Buscar actualizaciones…", "Check for updates…"));
-        updItem.addActionListener(e -> comprobarActualizacion(true));
-        configMenu.add(updItem);
-        configMenu.add(aboutItem);
-        configBtn.addActionListener(e -> configMenu.show(configBtn, 0, configBtn.getHeight()));
-        JPanel esquina = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 4));   // Configuración: arriba a la derecha, siempre
-        JButton miPerfilBtn = new JButton(t("Mi perfil", "My profile"));
-        miPerfilBtn.setFocusable(false); miPerfilBtn.putClientProperty("JButton.buttonType", "roundRect");
-        miPerfilBtn.setToolTipText(t("Tu propio perfil (la primera vez te pide tu nick y lo recuerda; clic derecho para cambiar de cuenta). Con tu nick guardado, la app te avisa de tus partidas.", "Your own profile (asks your nick the first time and remembers it; right-click to change account). With your nick saved, the app notifies you about your games."));
-        miPerfilBtn.addActionListener(e -> abrirMiPerfil());
-        miPerfilBtn.addMouseListener(new MouseAdapter() {   // clic derecho: cambiar de cuenta
-            @Override public void mousePressed(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
-            @Override public void mouseReleased(MouseEvent e) { if (e.isPopupTrigger()) menu(e); }
-            void menu(MouseEvent e) {
-                JPopupMenu pm = new JPopupMenu();
-                JMenuItem otra = new JMenuItem(t("Cambiar de cuenta…", "Change account…")); otra.addActionListener(a -> { guardarConfig("mi_pid", ""); preguntarMiNick(); }); pm.add(otra);
-                pm.show(miPerfilBtn, e.getX(), e.getY());
             }
+            @Override public void cargarAliasesYNotas() { cargarAliases(); cargarNotas(); }
+            @Override public boolean modoTop() { return watchlist.modoTop(); }
+            @Override public void forzarRecargaTop() { watchlist.forzarRecargaTop(); }
+            @Override public Path elegirCarpetaSavegame() { return partidas.elegirSavegameManual(); }
+            @Override public void refiltrarPartidas() { partidas.applyFilters(); }
+            @Override public boolean hayCarpetaSavegame() { return partidas.obtenerSavegame(true) != null; }
+            @Override public void mostrarMiPerfil() { abrirMiPerfil(); }
+            @Override public void cambiarCuentaPropia() { preguntarMiNick(); }
+            @Override public void mostrarAcercaDe() { showAbout(); }
         });
-        esquina.add(miPerfilBtn);
-        esquina.add(configBtn);
+        JPanel esquina = menuConfiguracion.esquina();
 
         JPanel fila2 = partidas.construirFilaNota();   // nota sin-spoilers + «Mostrar resultados»: ver ui.PartidasView
 
@@ -1806,10 +1615,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         catch (Exception ex) { status.setText("Abre en tu navegador: https://" + TWITCH); }
     }
 
-    void abrirDonacion() {
-        try { Desktop.getDesktop().browse(URI.create(DONAR_URL)); }
-        catch (Exception ex) { status.setText("Abre en tu navegador: " + DONAR_URL); }
-    }
+    /** Delegado: el cuerpo (Desktop.browse + aviso en el estado si falla) vive en ui.MenuConfiguracion,
+     *  junto al resto del boton "Configuracion". Nombre conservado: el boton cafeBtn lo llama por su nombre. */
+    void abrirDonacion() { menuConfiguracion.abrirDonacion(); }
 
     // ----- Acerca de: movido a ui.AcercaDe (logo, showAbout, generarIco) -----
     void showAbout() { AcercaDe.showAbout(this, logo); }
@@ -1836,7 +1644,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // ----- ComponentesTema: los componentes que TemaApp necesita repintar ---
     // visible para ui.TemaApp (inversion de dependencias: TemaApp no conoce SpoilerFreeRecs)
     @Override public java.awt.Component raiz() { return this; }
-    @Override public JPopupMenu configMenu() { return configMenu; }
+    @Override public JPopupMenu configMenu() { return menuConfiguracion.menu(); }
     @Override public JLabel nota() { return partidas == null ? null : partidas.nota; }
     @Override public JLabel firma() { return firma; }
     @Override public JLabel watchPista1() { return watchlist.watchPista1(); }
