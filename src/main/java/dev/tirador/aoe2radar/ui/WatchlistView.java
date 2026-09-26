@@ -154,7 +154,8 @@ public final class WatchlistView {
         void reiniciarThrottleDirectos();
         void vigilarTwitchDirectos();
         void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms);
-        /** liveNow.socketExtra: además de las campanas, Live now (si está abierto) vigila su propio top 250. */
+        /** liveNow.socketExtra: además de las campanas, Live now (si está abierto) vigila su propio top 250.
+         *  ids tiene que ser MUTABLE: la ventana le añade el top de Live now antes de usarlo (nunca Set.of()). */
         void actualizarSocketExtra(Set<Long> ids);
         /** liveNow.ahoraNombre(pid): el nombre que Live now ya conoce de un jugador en curso, o el propio pid si no
          *  lo conoce (sin guarda de null, como la base: liveNow siempre existe cuando se llama). */
@@ -219,8 +220,12 @@ public final class WatchlistView {
      *  que puede pasar ANTES de que main() fije I18n.IDIOMA, y saldrían siempre en español aunque la app esté
      *  en inglés. Al ser de instancia, se calculan al construir la Watchlist (new WatchlistView(...) en
      *  SpoilerFreeRecs), que ya ocurre con el idioma fijado. Bug resuelto en fase 4: ver docs/DEUDA.md. */
-    private final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
-    final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
+    private final String TOP_PAIS = textoTopPais();
+    final String TOP_CLAN = textoTopClan();
+    /** Los textos de ★ Top país / ★ Top clan en el idioma activo AHORA (se evalúan al llamar, no al cargar la clase):
+     *  los comparten el combo y el menú «Abrir en» (MenuConfiguracion), para no repetirlos. */
+    public static String textoTopPais() { return t("\u2605 Top pa\u00eds", "\u2605 Country top"); }
+    public static String textoTopClan() { return t("\u2605 Top clan", "\u2605 Clan top"); }
 
     /** TODOS los países ISO con su nombre en el idioma de la app — Bulgaria
      *  incluida y sin listas que mantener a mano. */
@@ -445,6 +450,35 @@ public final class WatchlistView {
      *  forma va por la vía exacta (porSerie, una llamada). */
     static Integer eloParaResta(long pid, Map<Long, Integer> eloWatch, Set<Long> delSnapshot) {
         return delSnapshot.contains(pid) ? null : eloWatch.get(pid);
+    }
+
+    // Orden de escritura (revisor 1.3): el hilo de «Ver forma» lee primero la marca y luego el ELO (eloParaResta). Para
+    // que nunca vea «sin marca + ELO de anoche» (resta 0, el fallo F5), todo cambio pasa por «marcado»: un ELO de anoche
+    // se marca ANTES de escribirlo; uno fresco se escribe ANTES de quitar la marca. En la ventana intermedia, como mucho,
+    // la forma va por la vía exacta (una llamada de más), nunca por una resta falsa.
+
+    /** Un ELO fresco (API, leaderboard): primero el valor, después se quita la marca de «de anoche». */
+    public void ponerEloFresco(long pid, int elo) {
+        eloWatch.put(pid, elo);
+        eloDelSnapshot.remove(pid);
+    }
+
+    /** Un ELO de anoche (snapshot nocturno, resumen diario del clan): primero la marca, después el valor. */
+    void ponerEloDeAnoche(long pid, int elo) {
+        eloDelSnapshot.add(pid);
+        eloWatch.put(pid, elo);
+    }
+
+    /** Poda de eloDelSnapshot (revisor 1.3): quien ya no está ni en la Watchlist ni en el top/clan cargado pierde la
+     *  marca, y también su «ya barrido» (watchBarridos): su ELO de anoche sigue en eloWatch (lo comparten otras
+     *  vistas), así que si vuelve a la Watchlist se barre otra vez y la marca se pone de nuevo. En el EDT. */
+    void podarEloDelSnapshot() {
+        if (eloDelSnapshot.isEmpty()) return;
+        Set<Long> presentes = new HashSet<>();
+        for (Player p : todosJugadores) presentes.add(p.id());
+        for (Player p : topLadder) presentes.add(p.id());
+        for (Long pid : new ArrayList<>(eloDelSnapshot))
+            if (!presentes.contains(pid)) { eloDelSnapshot.remove(pid); watchBarridos.remove(pid); }
     }
 
     public void apagarForma() { trabajos.apagarForma(); }
@@ -778,6 +812,7 @@ public final class WatchlistView {
 
     /** Reconstruye la lista visible con el grupo activo («Todos» = todos). */
     public void aplicarFiltroGrupo() {
+        podarEloDelSnapshot();   // tras cambiar el top o quitar a alguien, la marca de «ELO de anoche» no se acumula
         String g = grupoActivo();
         boolean soloVivos = soloVivosBtn != null && soloVivosBtn.isSelected();
         boolean porElo = mostrarEloWatch && "elo".equals(leerConfig("orden_watch", "elo"));

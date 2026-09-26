@@ -83,6 +83,8 @@ final class AccionesVentana {
         SwingUtilities.invokeLater(() -> {
             // «Abrir en» (Configuración): por defecto ★ Top ladder, como siempre; o el país, clan, grupo o «Todos» elegido
             // (si ya no existe, ★ Top ladder). Antes se abría siempre en ★ y se pisaba grupo_activo (F3 de la revisión 1.3).
+            // OJO: abrir la vista la guarda como grupo_activo (onGrupoElegido), así que el grupo_activo de la sesión anterior
+            // solo se conserva si «Abrir en» es ese grupo o «Todos»; con ★ ladder/país/clan se escribe esa vista ★.
             VistaInicial.Eleccion inicio = v.watchlist.abrirVistaInicial();
             v.mostrarDirectos(true);                    // …con los Directos a la vista, no una tabla vacía
             if (Boolean.parseBoolean(leerConfig("inicio_min", "false")))

@@ -56,7 +56,7 @@ final class CableadoJugador {
                     @Override public void refrescarSujetos() { v.partidas.refrescarSujetos(v.partidas.ultimosSujetos, v.invitado != null); }   // el ELO recién llegado, a la cabecera
                     @Override public void mostrarEstado(String texto) { v.status.setText(texto); }
                     @Override public boolean enWatchlist(long pid) { return v.watchlist.containsPlayerId(pid); }
-                    @Override public void ponerEloWatch(long pid, int elo) { v.eloWatch.put(pid, elo); }
+                    @Override public void ponerEloWatch(long pid, int elo) { v.watchlist.ponerEloFresco(pid, elo); }   // de la API (vinculadas): fresco, quita la marca de «de anoche»
                     @Override public Set<String> gruposDisponibles() { return v.watchlist.gruposDisponibles(); }
                     @Override public String grupoActivo() { return v.watchlist.grupoActivo(); }
                     @Override public void agregarJugador(long pid, String nombre, String grupo) { v.todosJugadores.add(new Player(pid, nombre, grupo)); }

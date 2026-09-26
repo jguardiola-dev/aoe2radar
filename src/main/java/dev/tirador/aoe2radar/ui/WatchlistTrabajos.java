@@ -140,8 +140,7 @@ final class WatchlistTrabajos {
         wv.lastTop.clear(); wv.rankTop.clear();
         for (TopLadderService.FilaClan f : res.miembros()) {
             wv.topLadder.add(new Player(f.pid(), f.nombre(), wv.TOP_CLAN));
-            wv.eloWatch.put(f.pid(), f.rating());
-            wv.eloDelSnapshot.add(f.pid());   // resumen diario de sfr-data: ELO de anoche (F5)
+            wv.ponerEloDeAnoche(f.pid(), f.rating());   // resumen diario de sfr-data: ELO de anoche (F5)
             wv.rankTop.put(f.pid(), wv.topLadder.size());
         }
         guardarConfig("clan_tag", tag);
@@ -216,8 +215,7 @@ final class WatchlistTrabajos {
                     wv.rankTop.clear();
                     for (TopLadderService.FilaTop f : res.filas()) {
                         wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-                        wv.eloWatch.put(f.pid(), f.rating());
-                        wv.eloDelSnapshot.remove(f.pid());   // del leaderboard: fresco (F5)
+                        wv.ponerEloFresco(f.pid(), f.rating());   // del leaderboard: fresco (F5)
                         wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
                         wv.rankTop.put(f.pid(), wv.topLadder.size());
                     }
@@ -259,7 +257,7 @@ final class WatchlistTrabajos {
         wv.rankTop.clear();
         for (TopLadderService.FilaCache f : cache.filas()) {
             wv.topLadder.add(new Player(f.pid(), f.nombre(), WatchlistView.TOP_LADDER));
-            if (f.elo() > 0) { wv.eloWatch.put(f.pid(), f.elo()); wv.eloDelSnapshot.remove(f.pid()); }   // del leaderboard, aunque de caché (F5)
+            if (f.elo() > 0) wv.ponerEloFresco(f.pid(), f.elo());   // del leaderboard, aunque de caché (F5)
             wv.lastTop.put(f.pid(), f.ultimaPartidaMs());
             wv.rankTop.put(f.pid(), wv.topLadder.size());
         }
@@ -356,8 +354,7 @@ final class WatchlistTrabajos {
             } else { WatchlistView.VIVO.marcarFuera(r.pid()); }
         }
         if (r.elo() != null) {
-            wv.eloWatch.put(r.pid(), r.elo());
-            if (r.sabeSiJuega()) wv.eloDelSnapshot.remove(r.pid()); else wv.eloDelSnapshot.add(r.pid());   // F5: ¿fresco o de anoche?
+            if (r.sabeSiJuega()) wv.ponerEloFresco(r.pid(), r.elo()); else wv.ponerEloDeAnoche(r.pid(), r.elo());   // F5: ¿fresco o de anoche?
         }
     }
 
