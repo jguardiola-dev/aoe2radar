@@ -1770,7 +1770,7 @@ public final class WatchlistView {
             nombre = nombre.trim();
             Set<String> cfg = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
             cfg.addAll(gruposConfig()); cfg.add(nombre);
-            guardarConfig("grupos", String.join(";", cfg));
+            guardarConfig("grupos", String.join(",", cfg));   // fila 102 de DEUDA: "," como el resto de la escritura de grupos (ver ListaSeguidos)
             return nombre;
         }
         return sel;
