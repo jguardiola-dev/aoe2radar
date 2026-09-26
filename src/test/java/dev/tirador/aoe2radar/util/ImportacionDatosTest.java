@@ -80,6 +80,9 @@ class ImportacionDatosTest {
         Path vacia = Files.createDirectories(tmp.resolve("vacia"));
         assertFalse(ImportacionDatos.pideConfirmacion(true, vacia), "primer arranque, nada que perder");
         assertTrue(ImportacionDatos.pideConfirmacion(false, vacia), "ya tenía datos al arrancar");
+        Files.writeString(vacia.resolve("config.properties"), "idioma=es\n");
+        assertTrue(ImportacionDatos.pideConfirmacion(true, vacia), "hay ajustes que se sustituirían");
+        Files.delete(vacia.resolve("config.properties"));
         Files.writeString(vacia.resolve("players.txt"), "1;x\n");
         assertTrue(ImportacionDatos.pideConfirmacion(true, vacia), "añadió jugadores en esta sesión");
     }

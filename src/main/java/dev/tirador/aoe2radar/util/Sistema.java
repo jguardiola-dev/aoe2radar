@@ -206,13 +206,20 @@ public final class Sistema {
             CompletableFuture<byte[]> lectura = CompletableFuture.supplyAsync(() -> {
                 try { return p.getInputStream().readAllBytes(); } catch (IOException ex) { return null; }
             });
-            if (!pr.waitFor(segundos, TimeUnit.SECONDS)) { pr.destroyForcibly(); return null; }
-            byte[] b = lectura.get(segundos, TimeUnit.SECONDS);
+            long limite = System.nanoTime() + TimeUnit.SECONDS.toNanos(segundos);   // un solo plazo para todo
+            if (!pr.waitFor(segundos, TimeUnit.SECONDS)) { matar(pr); return null; }
+            byte[] b = lectura.get(Math.max(0, limite - System.nanoTime()), TimeUnit.NANOSECONDS);
             return b == null ? null : new String(b, StandardCharsets.UTF_8);
         } catch (Exception ex) {
-            if (pr != null) pr.destroyForcibly();
+            if (pr != null) matar(pr);
             return null;
         }
+    }
+
+    /** Mata el proceso y sus hijos (cmd lanza reg.exe: matando solo cmd, el hijo seguiría con la tubería abierta). */
+    private static void matar(Process pr) {
+        pr.descendants().forEach(ProcessHandle::destroyForcibly);
+        pr.destroyForcibly();
     }
 
     /** Pura: Documentos a partir de la salida de «reg query … /v Personal», con las %VARIABLES% expandidas; si no

@@ -10,6 +10,7 @@ import java.awt.Component;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static dev.tirador.aoe2radar.util.Config.guardarConfig;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
@@ -32,6 +33,19 @@ public final class ImportarDatos {
 
     /** Aviso pendiente para la app relanzada, en la carpeta de datos. */
     static final String AVISO = ".aviso_importacion.txt";
+
+    /** Una sola importación a la vez (el menú de Configuración sigue disponible mientras se prepara la primera). */
+    private static final AtomicBoolean IMPORTANDO = new AtomicBoolean();
+
+    /** Reserva la importación; false si ya hay una en marcha. */
+    static boolean reservar() { return IMPORTANDO.compareAndSet(false, true); }
+
+    static void liberar() { IMPORTANDO.set(false); }
+
+    private static void avisarEnMarcha(Component padre) {
+        JOptionPane.showMessageDialog(padre, t("Ya hay una importación en marcha: espera a que termine.",
+                "An import is already running: wait for it to finish."), NOMBRE, JOptionPane.INFORMATION_MESSAGE);
+    }
 
     /** Al arrancar, en el EDT y con la ventana ya visible: enseña el resultado de una importación recién hecha y, si
      *  toca, ofrece importar una sola vez. No bloquea la carga, que sigue en sus hilos. */
@@ -68,6 +82,7 @@ public final class ImportarDatos {
 
     /** Selector de carpeta; validación en segundo plano; confirmación si hay datos que se sustituirían. En el EDT. */
     public static void elegirEImportar(Component padre) {
+        if (IMPORTANDO.get()) { avisarEnMarcha(padre); return; }
         JFileChooser fc = new JFileChooser();
         fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         fc.setDialogTitle(t("Carpeta de la versión anterior de " + NOMBRE, "Folder of the previous " + NOMBRE + " version"));
@@ -95,7 +110,10 @@ public final class ImportarDatos {
                                 "This will replace your current groups and settings with those from the chosen folder.\n"
                                         + "A copy of the current ones will be saved in:\n" + copia + "\n\nImport?"),
                         NOMBRE, JOptionPane.OK_CANCEL_OPTION, JOptionPane.WARNING_MESSAGE) != JOptionPane.OK_OPTION) return;
-                new Thread(() -> importarYSalir(padre, origen, datos, recs), "importar-datos").start();
+                if (!reservar()) { avisarEnMarcha(padre); return; }
+                new Thread(() -> {
+                    try { importarYSalir(padre, origen, datos, recs); } finally { liberar(); }   // si sale bien, no vuelve: exit
+                }, "importar-datos").start();
             });
         }, "importar-validar").start();
     }
@@ -126,7 +144,18 @@ public final class ImportarDatos {
             try {
                 Files.writeString(datos.resolve(AVISO), aviso, StandardCharsets.UTF_8);   // directo: las escrituras de Archivos están en pausa
             } catch (Exception ex) { log("importar: no se pudo dejar el aviso: " + ex); }
-            Sistema.relanzar();
+            if (!Sistema.relanzar()) {
+                log("importar: no se pudo relanzar la app; hay que abrirla a mano");
+                // Este diálogo SÍ puede ir entre colocar y salir: las escrituras de Archivos siguen en pausa (colocar
+                // con seguirEnPausa=true), así que mientras está abierto nada de lo que hay en memoria llega al disco,
+                // y al cerrarlo se sale con System.exit sin el cierre normal. invokeAndWait: el EDT lo enseña y este
+                // hilo espera a que se cierre.
+                try {
+                    SwingUtilities.invokeAndWait(() -> JOptionPane.showMessageDialog(padre,
+                            t("Datos importados. Vuelve a abrir " + NOMBRE + ".", "Data imported. Open " + NOMBRE + " again."),
+                            NOMBRE, JOptionPane.INFORMATION_MESSAGE));
+                } catch (Exception ex) { log("importar: aviso de reabrir: " + ex); }
+            }
             System.exit(0);
         }
         String cabecera = switch (r.estado()) {

@@ -178,8 +178,15 @@ class SistemaTest {
     @Test void unProcesoColgadoNoCuelgaElArranque() {
         long t0 = System.nanoTime();
         assertNull(Sistema.ejecutarConLimite(1, "cmd", "/c", "ping -n 30 127.0.0.1 >nul"));
-        assertTrue((System.nanoTime() - t0) / 1_000_000 < 10_000, "el plazo protege de verdad");
+        assertTrue((System.nanoTime() - t0) / 1_000_000 < 4_000, "el plazo es uno solo y protege de verdad");
         assertEquals("hola", Sistema.ejecutarConLimite(5, "cmd", "/c", "echo hola").strip());
+    }
+
+    @Test void unNietoQueRetieneLaSalidaTampocoAlargaElPlazo() {
+        // cmd acaba enseguida, pero deja un ping que hereda la tubería: la lectura no termina nunca por sí sola.
+        long t0 = System.nanoTime();
+        assertNull(Sistema.ejecutarConLimite(1, "cmd", "/c", "start /b ping -n 30 127.0.0.1"));
+        assertTrue((System.nanoTime() - t0) / 1_000_000 < 2_500, "un solo plazo de 1 s en total, no uno por paso");
     }
 
     // ------------------------------------------------------------ relanzar

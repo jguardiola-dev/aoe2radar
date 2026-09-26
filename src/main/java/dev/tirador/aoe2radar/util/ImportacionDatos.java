@@ -56,10 +56,10 @@ public final class ImportacionDatos {
         return datosNuevos && !Boolean.parseBoolean(ofrecida);
     }
 
-    /** ¿Hay que pedir confirmación antes de importar? Si ya hay datos del usuario que se sustituirían: players.txt
-     *  en la carpeta, o la carpeta ya tenía datos al arrancar. */
+    /** ¿Hay que pedir confirmación antes de importar? Si ya hay datos del usuario que se sustituirían: players.txt o
+     *  config.properties en la carpeta, o la carpeta ya tenía datos al arrancar. */
     public static boolean pideConfirmacion(boolean datosNuevos, Path datos) {
-        return !datosNuevos || Files.exists(datos.resolve("players.txt"));
+        return !datosNuevos || Files.exists(datos.resolve("players.txt")) || Files.exists(datos.resolve("config.properties"));
     }
 
     /** ¿Vale origen? Tiene config.properties o players.txt y no es la propia carpeta de datos (ni está dentro de
@@ -185,7 +185,8 @@ public final class ImportacionDatos {
     }
 
     /**
-     * Paso 2: pone lo preparado en su sitio. Con el monitor de Config (el de leerConfig/guardarConfig: nadie lee ni
+     * Paso 2: pone lo preparado en su sitio. Orden de cerrojos: primero Config.class, después la pausa de Archivos
+     * (el mismo que sigue guardarConfig), nunca al revés. Con el monitor de Config (el de leerConfig/guardarConfig: nadie lee ni
      * guarda config.properties a medias) y las escrituras de Archivos en pausa (el Timer de países, la caché del top,
      * sfr-data, players.txt). Si {@code seguirEnPausa} y sale bien, las escrituras siguen en pausa: la app va a
      * relanzarse y salir, y nada de lo que tiene en memoria debe caer encima de lo importado. En cualquier otro caso

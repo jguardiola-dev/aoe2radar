@@ -30,9 +30,13 @@ public final class Archivos {
     public interface IOConsumer<T> { void accept(T t) throws IOException; }
 
     /** Pausa de escrituras mientras se colocan datos importados (ImportacionDatos.colocar): cada escribirAtomico
-     *  toma el cerrojo de lectura; quien importa toma el de escritura, así espera a las escrituras en curso y las
-     *  nuevas fallan con IOException (todos los que llaman ya la capturan). Cubre en un solo punto a los escritores
-     *  de la carpeta de datos: el Timer de países, la caché del top, sfr-data, config.properties y players.txt. */
+     *  toma el cerrojo de lectura con tryLock; quien importa toma el de escritura, así espera a las escrituras en
+     *  curso y las nuevas fallan al momento con IOException (todos los que llaman ya la capturan). Ninguna escritura
+     *  ESPERA a la pausa: savePlayers o guardarConfig desde el EDT fallan enseguida en vez de congelar la interfaz.
+     *  Cubre en un solo punto a los escritores de la carpeta de datos: el Timer de países, la caché del top,
+     *  sfr-data, config.properties y players.txt.
+     *  <p>Orden de cerrojos: primero el monitor de Config (Config.class) y después esta pausa, nunca al revés.
+     *  ImportacionDatos.colocar lo respeta; guardarConfig, que llega aquí con Config.class tomado, también. */
     private static final ReentrantReadWriteLock CERROJO = new ReentrantReadWriteLock();
     private static volatile boolean congeladas;
 
@@ -51,7 +55,7 @@ public final class Archivos {
 
     public static void escribirAtomico(Path destino, IOConsumer<OutputStream> escritor) throws IOException {
         if (congeladas) throw new IOException("escrituras en pausa: importando datos");   // antes del cerrojo: quien congeló no se bloquea a sí mismo
-        CERROJO.readLock().lock();
+        if (!CERROJO.readLock().tryLock()) throw new IOException("escrituras en pausa: importando datos");   // sin esperar
         try {
             if (congeladas) throw new IOException("escrituras en pausa: importando datos");
             escribirAtomicoYa(destino, escritor);
