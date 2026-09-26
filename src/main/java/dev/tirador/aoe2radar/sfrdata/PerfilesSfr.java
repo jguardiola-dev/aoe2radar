@@ -61,13 +61,15 @@ public final class PerfilesSfr {
         int i = (int) (pid % shards);
         boolean v2 = idx.get("v") instanceof Number vn && vn.intValue() >= 2;
         if (!v2) {   // formato antiguo (1.4.x): un paquete por jugador con nombres dentro
-            Map<String, Object> m = leerGzJson(sfr.versionado(String.format("shard-%03d.json.gz", i), String.valueOf(idx.get("hasta")), 120));
+            String nombre = String.format("shard-%03d.json.gz", i);
+            Map<String, Object> m = leerPaquete(nombre, sfr.versionado(nombre, String.valueOf(idx.get("hasta")), 120));
             m.put("v", 1L); return m;
         }
         String baseHasta = String.valueOf(idx.get("base_hasta"));
         String tagBase = idx.get("base_release") instanceof String tb && !tb.isBlank() ? tb : null;   // los paquetes base viven en su propia release (perfiles-base-…)
         String urlBase = tagBase == null ? sfr.baseRelease() : sfr.baseRelease().replaceAll("/[^/]+/?$", "/") + tagBase + "/";
-        Map<String, Object> base = leerGzJson(sfr.versionado(urlBase, String.format("shard-%04d.json.gz", i), tagBase == null ? baseHasta : tagBase, 120));
+        String nombreBase = String.format("shard-%04d.json.gz", i);
+        Map<String, Object> base = leerPaquete(nombreBase, sfr.versionado(urlBase, nombreBase, tagBase == null ? baseHasta : tagBase, 120));
         Map<String, Object> out = new HashMap<>(); out.put("v", 2L); out.put("civs", idx.get("civs")); out.put("mapas", idx.get("mapas")); out.put("hasta", idx.get("hasta"));
         Map<String, List<Object>> j = new HashMap<>();
         if (base.get("j") instanceof Map<?, ?> bj) for (Map.Entry<?, ?> en : bj.entrySet()) j.put(String.valueOf(en.getKey()), new ArrayList<>(arr(en.getValue())));
@@ -75,8 +77,9 @@ public final class PerfilesSfr {
         String clave = String.valueOf(pid);
         for (Object d : arr(idx.get("deltas"))) {   // los días posteriores a la base: solo el grupo de este paquete
             String fecha = String.valueOf(d);
+            String nombreDelta = "delta-" + fecha + "-g" + (i % grupos) + ".json.gz";
             try {
-                Map<String, Object> dj = leerGzJson(sfr.versionado("delta-" + fecha + "-g" + (i % grupos) + ".json.gz", fecha, 60));
+                Map<String, Object> dj = leerPaquete(nombreDelta, sfr.versionado(nombreDelta, fecha, 60));
                 if (dj.get("j") instanceof Map<?, ?> djm && djm.get(clave) != null) {
                     List<Object> lista = j.computeIfAbsent(clave, k -> new ArrayList<>());
                     Set<Long> ids = new HashSet<>(); for (Object o : lista) ids.add(lng(arr(o).get(0)));
@@ -86,5 +89,16 @@ public final class PerfilesSfr {
         }
         out.put("j", j);
         return out;
+    }
+
+    /**
+     * leerGzJson(bytes) de un paquete de versionado(); si no se entiende (roto, truncado), borra la copia en disco
+     * y su marca ".v" (sfr.olvidarVersionado): sin esto, el paquete roto valdría hasta que cambiara la versión y
+     * cada intento releería la misma basura. Si se entiende, un paquete roto de verdad (JSON válido pero sin lo
+     * que se espera) no se borra: eso no lo arregla volver a bajar la misma release (fila 66 de DEUDA).
+     */
+    private Map<String, Object> leerPaquete(String nombre, byte[] raw) throws Exception {
+        try { return leerGzJson(raw); }
+        catch (Exception ex) { sfr.olvidarVersionado(nombre); throw ex; }
     }
 }
