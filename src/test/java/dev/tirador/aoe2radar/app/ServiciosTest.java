@@ -8,6 +8,9 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Field;
 
+import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
+import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
+import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -83,5 +86,29 @@ class ServiciosTest {
         long antes = System.currentTimeMillis();
         Servicios.dormir(0);
         assertTrue(System.currentTimeMillis() - antes < 200);
+    }
+
+    @Test
+    void dormirSoloAcortaLaPausaParaElHiloDeLaOperacionCancelada() {
+        // Fila 56 de DEUDA: antes, dormir miraba "stopOperacion && opEnCurso" sin comprobar el hilo, así que
+        // pulsar Detener acortaba también las pausas de un barrido de fondo ajeno a la operación cancelada.
+        // Ahora usa Cancelacion.detieneEsteHilo(), que exige además que sea el hilo de esa operación.
+        stopOperacion = true;
+        opEnCurso = true;
+        try {
+            hiloOperacion = new Thread();   // un hilo distinto al de este test: su pausa NO debe acortarse
+            long antes = System.currentTimeMillis();
+            Servicios.dormir(400);
+            assertTrue(System.currentTimeMillis() - antes >= 350,
+                    "un hilo ajeno a la operación cancelada no debe acortar su pausa");
+
+            hiloOperacion = Thread.currentThread();   // el hilo de la operación cancelada: sí debe acortarse
+            antes = System.currentTimeMillis();
+            Servicios.dormir(3000);
+            assertTrue(System.currentTimeMillis() - antes < 300,
+                    "el hilo de la operación cancelada sí debe acortar su pausa");
+        } finally {
+            stopOperacion = false; opEnCurso = false; hiloOperacion = null;
+        }
     }
 }

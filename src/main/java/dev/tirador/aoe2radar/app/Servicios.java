@@ -35,8 +35,6 @@ import java.util.Collection;
 import java.util.List;
 
 import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
-import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.TRANSPORTE;
@@ -161,7 +159,7 @@ public class Servicios {
         long fin = System.currentTimeMillis() + ms;
         while (true) {
             long resta = fin - System.currentTimeMillis();
-            if (resta <= 0 || (stopOperacion && opEnCurso)) return;   // el freno solo corta esperas de operaciones cancelables
+            if (resta <= 0 || detieneEsteHilo()) return;   // el freno solo corta esperas del hilo de la operación cancelable (fila 56)
             try { Thread.sleep(Math.min(250, resta)); }
             catch (InterruptedException e) { return; }   // sin re-marcar: los hilos del pool se reutilizan
         }
