@@ -56,10 +56,12 @@ final class CableadoCentro {
             @Override public boolean seleccionada() { return v.navegador.directosBtn != null && v.navegador.directosBtn.isSelected(); }
         });
         v.centroCards.add(v.directos.panel(), "directos");
-        // techTree se crea AQUÍ, antes que Live now (fila 119 de DEUDA): su lambda "claveCivDeNombre" leía
-        // v.techTree ya construido, pero solo por el orden fortuito de los campos; con la creación movida delante
-        // deja de depender de ese orden. No toca v.liveNow ni nada creado después, así que el cambio es seguro. El
-        // panel se añade al CardLayout más abajo, en su sitio de siempre, para no mover el orden de las cartas.
+        // techTree se crea AQUÍ, antes que Live now (fila 119 de DEUDA). La lambda de más abajo
+        // ("civ -> v.techTree.claveCivDeNombre(civ)") ya funcionaba con el orden viejo, porque lee el campo
+        // v.techTree al INVOCARSE, no al crearse; pero dependía de que nadie la llamara antes de tiempo. Con la
+        // creación movida delante, deja de depender de ese orden de llamada. No toca v.liveNow ni nada creado
+        // después, así que el cambio es seguro. El panel se añade al CardLayout más abajo, en su sitio de
+        // siempre, para no mover el orden de las cartas.
         v.techTree = new TechTreeView(v, TechTreeServiceDatos.SISTEMA, v.stats, v.filtroStats, v.listas, v, Tareas.SWING,
                 new TechTreeView.Anfitrion() {
                     @Override public void precalentarPerfiles() { v.perfil.precalentar(); }
