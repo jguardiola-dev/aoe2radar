@@ -66,9 +66,13 @@ class RegresionCapturas {
     static ComparadorCapturas comparador;
     static boolean grabarFixture;
     static int fotos;
+    /** Solo para enriquecer el mensaje de pantalla bloqueada de foto() (ver AvisoHarness.logonUiActivo): no decide nada por sí sola. */
+    static boolean logonUi;
+    /** El tamaño real del JRootPane tras el setSize/validate de correr() (fila 138): asegurarTamanoRaiz compara cada foto contra ESTE valor, medido en esta máquina, en vez de una constante fija. */
+    static Dimension tamanoRaiz;
 
     @BeforeAll static void prepararDirectorio() throws IOException {
-        AvisoHarness.comprobarSesionActiva();   // antes de preparar nada: si la sesión está bloqueada, falla ya y claro
+        logonUi = AvisoHarness.logonUiActivo();   // sin Robot, sin captura: solo un dato para el mensaje si hace falta
         if (!HARNESS.endsWith(Path.of("target", "harness")))
             throw new IllegalStateException("el harness debe correr en target/harness (workingDirectory de surefire), no en " + HARNESS);
         AvisoHarness.empezar(BASE);   // pitido y cartel rojo: a partir de aquí la pantalla es del harness
@@ -189,10 +193,6 @@ class RegresionCapturas {
      * de 7 px (izquierda, derecha, abajo) y Robot captaría el escritorio que hay detrás.
      * ignorar: componentes con datos en directo (se excluyen de la comparación), más la última fila de píxeles.
      */
-    /** Tamaño esperado del JRootPane con la ventana en setSize(1500, 950) en esta máquina (fila 138): el marco
-     *  de Windows se come parte de esos 1500x950 (barra de título, bordes). */
-    static final Dimension TAMANO_RAIZ_ESPERADO = new Dimension(1486, 943);
-
     static void foto(String nombre) throws Exception { foto(nombre, () -> new JComponent[0]); }
     static void foto(String nombre, java.util.function.Supplier<JComponent[]> ignorar) throws Exception {
         SpoilerFreeRecs app = app();
@@ -231,6 +231,12 @@ class RegresionCapturas {
                 for (JComponent c : ignorar.get()) zonaVisible(c, raiz, zonas);   // se resuelven aquí, en el EDT
             });
             BufferedImage img = new Robot().createScreenCapture(r[0]);
+            // Encargo Opus, revisado: la señal de verdad de pantalla bloqueada es la PRIMERA foto real, no una
+            // captura de prueba aparte antes de arrancar la app (ver AvisoHarness.logonUiActivo). La app en tema
+            // oscuro nunca es negro puro; si lo es, es la sesión bloqueada (o el propio Robot fallando así).
+            if (fotos == 0 && todaNegra(img))
+                throw new IllegalStateException("La pantalla está bloqueada: desbloquéala y repite el harness."
+                        + (logonUi ? " (LogonUI activo)" : ""));
             res = comparador.comparar(nombre.replaceFirst("\\.png$", ""), img, zonas);
             System.out.println("foto " + nombre + " intento " + intento + " · " + (res.ok() ? "ok" : "FALLA") + " · " + res.detalle() + " · " + estado[0]);
         }
@@ -239,20 +245,30 @@ class RegresionCapturas {
         else if (intento > 1) REINTENTADAS.add(res.nombre() + " (intento " + intento + ")");
     }
 
+    /** ¿La imagen es negro puro (0x000000) en todos los píxeles? La app en tema oscuro nunca lo es de verdad. */
+    static boolean todaNegra(BufferedImage img) {
+        for (int y = 0; y < img.getHeight(); y++)
+            for (int x = 0; x < img.getWidth(); x++)
+                if ((img.getRGB(x, y) & 0xFFFFFF) != 0) return false;
+        return true;
+    }
+
     /**
      * Fila 138: si algo dejó la ventana con otro tamaño que el de arranque (un diálogo modal, un cambio de DPI,
      * una restauración tardía…), la foto saldría recortada o con márgenes distintos a la referencia sin que el
-     * código haya cambiado, y el diff sería confuso. Se comprueba ANTES de cada foto; si no es el esperado, se
-     * reajusta igual que al arrancar (setSize 1500x950 en el EDT + validate + una espera corta) y se reintenta
-     * una vez; si sigue mal, se falla aquí con un mensaje claro en vez de comparar una foto que ya se sabe distinta.
+     * código haya cambiado, y el diff sería confuso. Se comprueba ANTES de cada foto contra {@link #tamanoRaiz}
+     * (medido una vez, en correr(), justo después del setSize/validate de arranque: no una constante fija, para
+     * no depender del escalado/DPI de la máquina que ejecute el harness); si no coincide, se reajusta igual que
+     * al arrancar (setSize 1500x950 en el EDT + validate + una espera corta) y se reintenta una vez; si sigue
+     * mal, se falla aquí con un mensaje claro en vez de comparar una foto que ya se sabe distinta.
      */
     static void asegurarTamanoRaiz(SpoilerFreeRecs app) throws Exception {
         for (int intento = 0; intento < 2; intento++) {
             Dimension[] actual = new Dimension[1];
             SwingUtilities.invokeAndWait(() -> actual[0] = app.getRootPane().getSize());
-            if (actual[0].equals(TAMANO_RAIZ_ESPERADO)) return;
+            if (actual[0].equals(tamanoRaiz)) return;
             if (intento > 0)
-                throw new IllegalStateException("la ventana del harness mide " + actual[0] + " y no " + TAMANO_RAIZ_ESPERADO
+                throw new IllegalStateException("la ventana del harness mide " + actual[0] + " y no " + tamanoRaiz
                         + " tras reajustarla: revisa el escalado/DPI de esta máquina antes de seguir");
             SwingUtilities.invokeAndWait(() -> { app.setSize(1500, 950); app.setLocation(0, 0); app.validate(); });
             Thread.sleep(300);
@@ -306,6 +322,11 @@ class RegresionCapturas {
         Rectangle pantalla = GraphicsEnvironment.getLocalGraphicsEnvironment().getDefaultScreenDevice().getDefaultConfiguration().getBounds();
         new Robot().mouseMove(pantalla.x + pantalla.width - 5, pantalla.y + pantalla.height - 5);
         Thread.sleep(500);
+        // Fila 138: el tamaño real del JRootPane en ESTA máquina (el marco de Windows se come parte de los
+        // 1500x950 pedidos: barra de título, bordes), medido una vez aquí; asegurarTamanoRaiz() compara cada
+        // foto contra este valor en vez de una constante fija que dependería del escalado/DPI de la máquina.
+        SwingUtilities.invokeAndWait(() -> tamanoRaiz = app.getRootPane().getSize());
+        System.out.println("raíz del harness: " + tamanoRaiz);
         Paises.PAIS_DE.put(1L, "es"); Paises.PAIS_DE.put(2L, "es"); Paises.PAIS_DE.put(3L, "ar"); Paises.PAIS_DE.put(4L, "de");
         SwingUtilities.invokeAndWait(() -> { app.watchlist.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
         Thread.sleep(400);
