@@ -42,6 +42,8 @@ class SocketVivoTest {
         final List<String> cierres = new ArrayList<>();
         @Override public void ping() { pings++; }
         @Override public void cerrar(String motivo) { cierres.add(motivo); }
+        int abortos;
+        @Override public void abortar() { abortos++; }
     }
 
     /** Guarda las tareas diferidas y periódicas; el test las ejecuta a mano. */
@@ -510,7 +512,8 @@ class SocketVivoTest {
         reloj.avanzar(10 * 60_000L);
         planificador.periodicas.get(0).r().run();
         assertFalse(socket.conectado());
-        assertEquals(List.of("colgado"), c.cierres);
+        assertEquals(1, c.abortos, "colgada: se corta con abort, sin esperar la despedida");
+        assertTrue(c.cierres.isEmpty(), "sin cierre educado: nadie contestaría");
         assertEquals(0, c.pings, "a una conexión colgada ya no se le hace ping");
         assertEquals(1, planificador.diferidas.size(), "reconexión programada");
         planificador.diferidas.get(0).ejecutar();
@@ -526,7 +529,8 @@ class SocketVivoTest {
         planificador.periodicas.get(0).r().run();
         reloj.avanzar(30_000L);
         planificador.periodicas.get(0).r().run();
-        assertEquals(List.of("colgado"), c.cierres);
+        assertEquals(1, c.abortos, "colgada: se corta con abort, sin esperar la despedida");
+        assertTrue(c.cierres.isEmpty(), "sin cierre educado: nadie contestaría");
         assertEquals(1, planificador.diferidas.size());
     }
 

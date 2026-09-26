@@ -57,6 +57,9 @@ public final class SocketVivo {
     public interface Canal {
         void ping();
         void cerrar(String motivo);
+        /** Corta sin despedirse: para una conexión colgada, donde un cierre educado esperaría una respuesta que
+         *  no llegará (el WebSocket seguiría vivo hasta que expire el TCP). Por defecto, un cierre normal. */
+        default void abortar() { cerrar("colgado"); }
     }
     /** Lo que el transporte avisa. Tras abierto, cada texto y cada pong, el transporte pide el siguiente mensaje. */
     public interface Receptor {
@@ -136,7 +139,7 @@ public final class SocketVivo {
 
     /**
      * Conexión colgada (DEUDA, fila 88): «conectada» pero sin ningún mensaje ni pong en 10 min (p. ej. la red cambió y
-     * el otro lado ya no existe, sin que llegue ningún cierre). Se trata como una caída: se cierra el canal y se
+     * el otro lado ya no existe, sin que llegue ningún cierre). Se trata como una caída: se corta el canal (abort, sin despedida) y se
      * programa la reconexión de siempre; al volver a conectar, la app hace su barrido de reparación (trasCaida).
      */
     void revisarSalud() {
@@ -151,7 +154,7 @@ public final class SocketVivo {
             canal = null;
         }
         log("socket: ni mensajes ni pong en 10 min: conexión colgada, se reconecta");
-        if (c != null) { try { c.cerrar("colgado"); } catch (Exception ignored) { } }
+        if (c != null) { try { c.abortar(); } catch (Exception ignored) { } }
         programarReconexion(mio);
     }
 
@@ -313,6 +316,7 @@ public final class SocketVivo {
             if (canal == null) canal = new Canal() {
                 @Override public void ping() { ws.sendPing(ByteBuffer.wrap(new byte[]{ 1 })); }
                 @Override public void cerrar(String motivo) { ws.sendClose(WebSocket.NORMAL_CLOSURE, motivo); }
+                @Override public void abortar() { ws.abort(); }
             };
             return canal;
         }
