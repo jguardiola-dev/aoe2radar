@@ -306,6 +306,13 @@ public final class MenuConfiguracion {
         }
         configMenu.add(topMenu);
         configMenu.add(carpetaItem);
+        if (dev.tirador.aoe2radar.util.Sistema.empaquetada()) {   // fuera del paquete no hay nada que importar (y el menú del harness no cambia)
+            JMenuItem importarItem = new JMenuItem(t("Importar datos de otra versión…", "Import data from another version…"));
+            importarItem.setToolTipText(t("Copia grupos, ajustes, cachés y recs de la carpeta de una versión anterior en zip",
+                    "Copies groups, settings, caches and recs from the folder of an older zip version"));
+            importarItem.addActionListener(e -> ImportarDatos.elegirEImportar(anfitrion.padre()));
+            configMenu.add(importarItem);
+        }
         configMenu.addSeparator();
         JMenuItem updItem = new JMenuItem(t("Buscar actualizaciones…", "Check for updates…"));
         updItem.addActionListener(e -> comprobarActualizacion(true));

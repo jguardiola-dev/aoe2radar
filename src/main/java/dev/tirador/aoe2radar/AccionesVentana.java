@@ -93,6 +93,9 @@ final class AccionesVentana {
             // miraba !modoTop() cuando la app ya estaba siempre en ★, y nunca buscaba (general F2 / watchlist F3).
             if (inicio.buscaAlAbrir() && Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")) && v.playersModel.size() > 0)
                 v.partidas.fetchMatches(v.partidas.fetchBtn);
+            // Primer arranque de la app instalada con la carpeta de datos vacía: ofrecer UNA vez importar de una 1.x
+            // en zip. Lo último del turno, con la ventana ya montada; la carga sigue en sus hilos.
+            dev.tirador.aoe2radar.ui.ImportarDatos.ofrecerSiToca(v);
         });
         final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
