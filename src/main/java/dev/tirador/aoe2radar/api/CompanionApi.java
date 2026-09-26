@@ -29,7 +29,7 @@ import static dev.tirador.aoe2radar.util.Json.when;
  * Los endpoints del companion que usa la app, con su URL construida en un solo sitio (la misma que la 1.1 construía a
  * mano). Todos pasan por ApiClient (freno, cancelación); todos reintentan ante 429 (textoCon429) salvo buscarPerfiles
  * (texto). Construida con conCache(…), las fichas (/profiles/{pid}) y las páginas del ladder (/leaderboards) pasan
- * antes por una caché por URL (CacheRespuestas: 10 y 15 min, 500 entradas, solo 2xx); /matches, la búsqueda y Twitch
+ * antes por una caché por URL (CacheRespuestas: 10 y 14 min, 500 entradas, solo 2xx); /matches, la búsqueda y Twitch
  * nunca: son tiempo real. Con el constructor de siempre, sin caché (comportamiento de la 1.3).
  * Devuelven tipos del modelo: los conversores son puros (no aprenden país/canal, salvo parseMatch, ver DEUDA)
  * y no inventan valores: lo que falta queda null (textos, Integer) o -1 (ids y contadores long); cada pantalla decide
@@ -40,8 +40,9 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
 
     /** Cuánto vale una ficha /profiles/{pid} guardada: ELO, vinculadas y steamId no cambian en minutos. */
     static final long TTL_PERFIL_MS = 10 * 60_000L;
-    /** Cuánto vale una página de /leaderboards: lo que ya duraba la recarga del top (15 min). */
-    static final long TTL_LADDER_MS = 15 * 60_000L;
+    /** Cuánto vale una página de /leaderboards: 14 min, uno menos que el ritmo de la recarga del top y de las campanas
+     *  (15 min). Con 15 justos, la campana podía leer a los 15 min su propia página de hace 15 (plan API de la 1.3). */
+    static final long TTL_LADDER_MS = 14 * 60_000L;
     /** Máximo de respuestas guardadas (fichas y páginas del ladder juntas); al pasarlo sale la menos usada. */
     static final int MAX_CACHE = 500;
 
@@ -54,7 +55,7 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
     private CompanionApi(ApiClient api, CacheRespuestas cache) { this.api = api; this.cache = cache; }
 
     /**
-     * CON caché de fichas y páginas del ladder (10 y 15 min, MAX_CACHE entradas). Reloj: Reloj.SISTEMA en la app, uno
+     * CON caché de fichas y páginas del ladder (10 y 14 min, MAX_CACHE entradas). Reloj: Reloj.SISTEMA en la app, uno
      * falso en los tests. Antes de usarla en la app, quien pida datos que deben ser de ahora (el ELO tras una partida,
      * una recarga que pide el usuario) tiene que ir por perfilFresco / leaderboardFresca / clasificacionFresca.
      */
@@ -68,7 +69,7 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
      */
     private Object jsonConCache(String url, long ttlMs) throws IOException, InterruptedException {
         String guardado = cache == null ? null : cache.vigente(url);
-        if (guardado != null) return Json.parse(guardado);
+        if (guardado != null) { api.comprobarDetenida(); return Json.parse(guardado); }   // Detener también corta los aciertos
         return jsonFresco(url, ttlMs);
     }
 
@@ -220,7 +221,7 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
 
     /**
      * GET /leaderboards/{id}?page=…&per_page=… y, si pais no es null, &country=pais (también si es ""). Si hay caché
-     * (conCache), 15 min (TTL_LADDER_MS) por URL completa: la misma página del mismo ladder y país, pedida por dos pantallas, sale
+     * (conCache), 14 min (TTL_LADDER_MS) por URL completa: la misma página del mismo ladder y país, pedida por dos pantallas, sale
      * una vez a la red. Cada llamada recibe su propio mapa (se guarda el texto, no el objeto).
      */
     public Map<String, Object> leaderboard(String id, int pagina, int porPagina, String pais) throws IOException, InterruptedException {

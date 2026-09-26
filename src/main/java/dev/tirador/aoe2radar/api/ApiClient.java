@@ -40,6 +40,15 @@ public final class ApiClient {
     public void volcarLlamadas() { contador.volcar(); }
 
     /**
+     * Para quien responde sin llegar a pedir() (un acierto de la caché de CompanionApi): si hay un Detener real en curso
+     * para este hilo, sale con InterruptedException("detenido"), como saldría del freno. Sin esto, un bucle que va
+     * encadenando aciertos (sin esperar nunca en el freno) no se enteraría del botón Detener. Sin red.
+     */
+    void comprobarDetenida() throws InterruptedException {
+        if (detenida.getAsBoolean()) { Thread.interrupted(); throw new InterruptedException("detenido"); }
+    }
+
+    /**
      * Antes httpText: GET con freno si es del companion; lanza IOException «HTTP nnn» si no es 2xx. Un 429 del companion
      * se cuenta al freno (pausa global y aviso) aunque aquí no se reintente: en la 1.1 este camino lo dejaba pasar.
      */
