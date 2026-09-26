@@ -6,6 +6,7 @@ import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.util.Archivos;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import java.nio.charset.StandardCharsets;
@@ -117,11 +118,13 @@ public final class TopLadderService {
     /** Formato «firma|topCargado» en la primera línea y «pid;nombre;elo;lastTop» en las demás, con el Path inyectado. */
     public void guardarCache(Path cache, String firma, long cargadoMs, List<FilaCache> filas) {
         try {
-            List<String> lines = new ArrayList<>();
-            lines.add(firma + "|" + cargadoMs);
+            // escritura atómica (util.Archivos): un cierre a mitad no deja un top_cache.txt truncado; mismo contenido
+            // que el Files.write de antes (cada línea con el fin de línea del sistema)
+            StringBuilder b = new StringBuilder();
+            b.append(firma).append('|').append(cargadoMs).append(System.lineSeparator());
             for (FilaCache f : filas)
-                lines.add(f.pid() + ";" + f.nombre() + ";" + f.elo() + ";" + f.ultimaPartidaMs());
-            Files.write(cache, lines, StandardCharsets.UTF_8);
+                b.append(f.pid()).append(';').append(f.nombre()).append(';').append(f.elo()).append(';').append(f.ultimaPartidaMs()).append(System.lineSeparator());
+            Archivos.escribirAtomico(cache, b.toString().getBytes(StandardCharsets.UTF_8));
         } catch (Exception ex) {
             log("top cache: no se pudo guardar: " + causa(ex));
         }

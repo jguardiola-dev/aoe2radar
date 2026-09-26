@@ -1,0 +1,4 @@
+# Datos de aoe2techtree que van dentro del jar: byte a byte como los sirve aoe2techtree (LF), sin la
+# conversion a CRLF de core.autocrlf. TechTreeDatos.jarVale compara el data.json del jar con el de disco
+# byte a byte: con CRLF en el jar nunca coincidian y un PC limpio lo volvia a bajar todo de GitHub.
+src/main/resources/techtree/** -text

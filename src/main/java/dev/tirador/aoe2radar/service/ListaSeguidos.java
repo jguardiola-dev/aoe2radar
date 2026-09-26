@@ -1,6 +1,7 @@
 package dev.tirador.aoe2radar.service;
 
 import dev.tirador.aoe2radar.model.Player;
+import dev.tirador.aoe2radar.util.Archivos;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -87,13 +88,19 @@ public final class ListaSeguidos {
         return error;
     }
 
-    /** Escribe {@code jugadores} en players.txt. Devuelve el mensaje de error (ya traducido), o null si fue bien. */
+    /**
+     * Escribe {@code jugadores} en players.txt. Devuelve el mensaje de error (ya traducido), o null si fue bien.
+     * Escritura atómica (util.Archivos): un corte de luz o un cierre a mitad de guardado deja la watchlist de antes
+     * entera, nunca un players.txt truncado. Mismo contenido que el Files.write de antes (una línea por jugador,
+     * cada una con el fin de línea del sistema).
+     */
     public String guardar(List<Player> jugadores) {
         try {
-            List<String> lines = new ArrayList<>();
+            StringBuilder b = new StringBuilder();
             for (Player p : jugadores)
-                lines.add(p.id() + ";" + p.name() + ";" + p.grupo() + (p.vinculo() != 0 ? ";" + p.vinculo() : ""));
-            Files.write(playersFile, lines, StandardCharsets.UTF_8);
+                b.append(p.id()).append(';').append(p.name()).append(';').append(p.grupo())
+                 .append(p.vinculo() != 0 ? ";" + p.vinculo() : "").append(System.lineSeparator());
+            Archivos.escribirAtomico(playersFile, b.toString().getBytes(StandardCharsets.UTF_8));
             return null;
         } catch (IOException e) {
             return t("No se pudo guardar players.txt: ", "Could not save players.txt: ") + causa(e);
