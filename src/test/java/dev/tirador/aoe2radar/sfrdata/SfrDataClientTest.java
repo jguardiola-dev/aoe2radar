@@ -178,23 +178,24 @@ class SfrDataClientTest {
         assertEquals("https://otra/shard-0002.json.gz", red.pedidas.get(0).url());
     }
 
-    // ----- escritura atómica (fila 70 de DEUDA): a un ".tmp" y luego Files.move -----
+    // ----- escritura atómica (fila 70 de DEUDA): util.Archivos.escribirAtomico, a un ".tmp" con nombre único y
+    // luego Files.move. Como el sufijo es único por llamada (Files.createTempFile), se comprueba por carpeta
+    // (¿queda algún ".tmp"?) en vez de por un nombre fijo.
 
-    @Test void diarioNoDejaUnTmpBasuraDeUnCorteAnterior() throws Exception {
-        Path tmp = dir.resolve("perfiles_shards/elo_ayer.json.gz.tmp");
-        Files.createDirectories(tmp.getParent());
-        Files.writeString(tmp, "basura de un corte a medias");
-        assertEquals("release", txt(sfr.diario("elo_ayer.json.gz", 45)));
-        assertEquals("release", Files.readString(dir.resolve("perfiles_shards/elo_ayer.json.gz")));
-        assertFalse(Files.exists(tmp), "la escritura atomica no deja basura de un corte anterior");
+    static boolean noHayNingunTmpEn(Path carpeta) throws Exception {
+        if (!Files.exists(carpeta)) return true;
+        try (var listado = Files.list(carpeta)) { return listado.noneMatch(p -> p.getFileName().toString().endsWith(".tmp")); }
     }
 
-    @Test void versionadoNoDejaUnTmpBasuraDeUnCorteAnterior() throws Exception {
-        Path tmp = dir.resolve("perfiles_shards/shard-0009.json.gz.tmp");
-        Files.createDirectories(tmp.getParent());
-        Files.writeString(tmp, "basura");
+    @Test void diarioNoDejaNingunTmpTrasGuardar() throws Exception {
+        assertEquals("release", txt(sfr.diario("elo_ayer.json.gz", 45)));
+        assertEquals("release", Files.readString(dir.resolve("perfiles_shards/elo_ayer.json.gz")));
+        assertTrue(noHayNingunTmpEn(dir.resolve("perfiles_shards")), "la escritura atomica no deja su .tmp detrás");
+    }
+
+    @Test void versionadoNoDejaNingunTmpTrasGuardar() throws Exception {
         assertEquals("release", txt(sfr.versionado("shard-0009.json.gz", "2026-09-24", 120)));
-        assertFalse(Files.exists(tmp), "la escritura atomica no deja basura de un corte anterior");
+        assertTrue(noHayNingunTmpEn(dir.resolve("perfiles_shards")), "la escritura atomica no deja su .tmp detrás");
         assertEquals("2026-09-24", Files.readString(dir.resolve("perfiles_shards/shard-0009.json.gz.v")));
     }
 }

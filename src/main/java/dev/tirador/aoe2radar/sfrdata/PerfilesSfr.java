@@ -98,7 +98,10 @@ public final class PerfilesSfr {
      * que se espera) no se borra: eso no lo arregla volver a bajar la misma release (fila 66 de DEUDA).
      */
     private Map<String, Object> leerPaquete(String nombre, byte[] raw) throws Exception {
-        try { return leerGzJson(raw); }
-        catch (Exception ex) { sfr.olvidarVersionado(nombre); throw ex; }
+        try {
+            Map<String, Object> m = leerGzJson(raw);
+            if (m == null) throw new java.io.IOException("paquete vacío (null): " + nombre);
+            return m;
+        } catch (Exception ex) { sfr.olvidarVersionado(nombre); throw ex; }
     }
 }

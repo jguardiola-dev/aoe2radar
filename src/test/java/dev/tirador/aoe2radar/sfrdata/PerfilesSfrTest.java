@@ -195,4 +195,14 @@ class PerfilesSfrTest {
         Map<String, Object> m = p.shard(300L);
         assertEquals(1L, m.get("v"));
     }
+
+    @Test void unShardConNullSeTrataComoRotoYSeBorra() throws Exception {
+        indice("{\"v\":1,\"shards\":256,\"hasta\":\"2026-09-24\"}");
+        red.urls.put(BASE + "shard-044.json.gz", gz("null"));   // 300 % 256 = 44; JSON válido pero sin contenido
+        PerfilesSfr p = nuevo();
+
+        assertThrows(Exception.class, () -> p.shard(300L), "un paquete 'null' no se traga en silencio");
+        assertFalse(Files.exists(dir.resolve("perfiles_shards/shard-044.json.gz")), "se borra como un paquete roto");
+        assertFalse(Files.exists(dir.resolve("perfiles_shards/shard-044.json.gz.v")));
+    }
 }

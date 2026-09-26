@@ -289,10 +289,14 @@ class EloNocturnoTest {
         Thread lector = new Thread(() -> {
             while (sigueLeyendo.get()) if (elo.ayer.isEmpty()) { vistoVacio.set(true); break; }
         });
+        lector.setDaemon(true);   // si algo falla abajo, no se cuelga la JVM al final del test
         lector.start();
-        elo.cargar();                       // el refresco corre en este hilo mientras «lector» espía elo.ayer
-        sigueLeyendo.set(false);
-        lector.join();
+        try {
+            elo.cargar();                    // el refresco corre en este hilo mientras «lector» espía elo.ayer
+        } finally {
+            sigueLeyendo.set(false);
+            lector.join();
+        }
 
         assertFalse(vistoVacio.get(), "quien lee ayer mientras se refresca (mismos jugadores) nunca lo ve vacío");
         assertEquals(2, elo.ayer.get(1L)[0], "y al final tiene los valores de la noche nueva");

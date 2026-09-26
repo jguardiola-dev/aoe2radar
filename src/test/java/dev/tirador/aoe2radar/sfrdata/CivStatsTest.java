@@ -56,14 +56,16 @@ class CivStatsTest {
         SfrDataClient sfrB = sfr(dirB, new RedBloqueable(gz("{\"ventana\":\"B\"}"), null, null));
 
         Thread hiloA = new Thread(() -> CivStats.statsAsegurar(sfrA, VENTANA, false));
+        hiloA.setDaemon(true);   // si algo falla antes de soltar el latch, no se cuelga la JVM al final del test
         hiloA.start();
-        aEntroALaRed.await();   // A ya vio el hueco vacío y está "descargando"
-
-        CivStats.statsAsegurar(sfrB, VENTANA, false);   // B ve el mismo hueco vacío y termina antes
-        assertEquals("B", CivStats.VENTANAS_STATS.get(VENTANA).etiqueta());
-
-        dejarSalirA.countDown();   // A termina de descargar y parsear
-        hiloA.join();
+        try {
+            aEntroALaRed.await();   // A ya vio el hueco vacío y está "descargando"
+            CivStats.statsAsegurar(sfrB, VENTANA, false);   // B ve el mismo hueco vacío y termina antes
+            assertEquals("B", CivStats.VENTANAS_STATS.get(VENTANA).etiqueta());
+        } finally {
+            dejarSalirA.countDown();   // suelta a A pase lo que pase arriba, para no dejarlo esperando para siempre
+            hiloA.join();
+        }
 
         assertEquals("B", CivStats.VENTANAS_STATS.get(VENTANA).etiqueta(),
                 "A vio el hueco vacío antes de que B terminara: no debe pisar el valor que B ya dejó puesto");
