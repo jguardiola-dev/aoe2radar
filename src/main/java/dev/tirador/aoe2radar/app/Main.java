@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.app;
 import dev.tirador.aoe2radar.SpoilerFreeRecs;
 import dev.tirador.aoe2radar.ui.AcercaDe;
 import dev.tirador.aoe2radar.ui.TemaApp;
+import dev.tirador.aoe2radar.util.ManejadorExcepciones;
 
 import javax.swing.JOptionPane;
 import javax.swing.SwingUtilities;
@@ -33,6 +34,9 @@ public class Main {
         if (args.length > 0 && args[0].equals("--make-ico")) {
             System.exit(AcercaDe.generarIco() ? 0 : 1);
         }
+        // Punto 10 (1.3): lo que se escape de cualquier hilo (EDT incluido) queda en descargas.log, sin diálogos.
+        // El fallo de arranque de abajo lo sigue capturando su propio try/catch (arranque_error.log y diálogo).
+        ManejadorExcepciones.instalar();
         cargarCatalogos();
         IDIOMA = leerConfig("idioma",
                 Locale.getDefault().getLanguage().equalsIgnoreCase("es") ? "es" : "en");
