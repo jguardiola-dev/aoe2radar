@@ -272,14 +272,19 @@ import static dev.tirador.aoe2radar.service.NombresStats.posicionNombre;
 import dev.tirador.aoe2radar.service.AzarService;
 import dev.tirador.aoe2radar.service.AzarServiceCompanion;
 import static dev.tirador.aoe2radar.service.AzarService.ajustarRefAzar;
+// Raíz de composición (fase 3, tanda 4, Z6): app.Servicios crea COMPANION/API_CLIENTE/... y PAUSA_MS/PER_PAGE,
+// VIVO, ELO_1V1, ANOTACIONES, dormir, cargarControl, aprenderCatalogos y buscarPerfiles. Import static para que
+// ninguna llamada existente cambie de texto; import normal para las referencias cualificadas (Servicios::dormir...).
+import dev.tirador.aoe2radar.app.Servicios;
+import static dev.tirador.aoe2radar.app.Servicios.*;
 
 public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.Navegacion, dev.tirador.aoe2radar.ui.ComponentesTema {
 
     // ----- Configuración -----------------------------------------------------
     static final Path   PLAYERS_FILE = Path.of("players.txt");
     static final String DONAR_URL    = "https://paypal.me/12Tirador/5EUR";
-    static final int    PER_PAGE     = 50;   // partidas consultadas por jugador
-    static final long   PAUSA_MS     = 300;  // cortesía entre llamadas
+    // PER_PAGE y PAUSA_MS: movidos a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llegan aquí por
+    // el import static de más abajo, con el mismo nombre y valor.
 
     // tarjeta, filaBarra, enlaceVerTodo y las ventanas de lista/tabla completa (ver ui.Listas); RegresionCapturas la usa por el nombre del campo.
     final Listas listas = new Listas(this, v -> ultimoClicCtrl = v);
@@ -350,19 +355,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // ----- Modelo ------------------------------------------------------------
 
-    /** Añade a los catálogos los mapas y civs de las partidas recibidas y
-     *  persiste las novedades. */
-    static void aprenderCatalogos(Collection<Match> ms) {
-        boolean nm = false, nc = false;
-        for (Match m : ms) {
-            if (esRankedRM(m.mode)
-                    && m.map != null && !m.map.isBlank() && MAPAS_CAT.add(m.map.trim())) nm = true;
-            for (MatchPlayer p : m.players)
-                if (p.civ != null && !p.civ.isBlank() && CIVS_CAT.add(p.civ.trim())) nc = true;
-        }
-        if (nm) guardarConfig("mapas_ranked", String.join(",", MAPAS_CAT));
-        if (nc) guardarConfig("civs_vistas", String.join(",", CIVS_CAT));
-    }
+    // aprenderCatalogos: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el
+    // import static de más abajo.
 
     // Presentación de Match (enfrentamiento/refNombre/eloAntesDespues/rivalTexto/refConVeredicto/FechaCell):
     // movida a ui.PartidasTexto (fase 3, tanda 3, oleada B). SUJETOS: movido a ui.PartidasView.SUJETOS.
@@ -380,8 +374,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         }
     };
     final Map<Long, Integer> eloWatch  = new HashMap<>();   // ELO actual por seguido (escrito en el EDT)
-    /** Quién está en partida ahora (ver service.EstadoVivo): un solo dueño para el socket, los barridos y la UI. */
-    static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
+    // VIVO: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el import static
+    // de más abajo. No depende del momento en que se crean los demás servicios (EstadoVivo.SISTEMA es un
+    // singleton propio, sin conexión con COMPANION/API_CLIENTE), así que moverlo no cambia el comportamiento.
     /** Fuerza la carga de la clase ui.WatchlistView AQUÍ, en la inicialización estática de SpoilerFreeRecs — el
      *  mismo punto relativo donde TOP_LADDER/TOP_PAIS/TOP_CLAN/PAISES vivían en la 1.1 — para que esos static
      *  se evalúen ANTES de que main() fije IDIOMA (por eso salen siempre en español, aunque el sistema esté en
@@ -400,7 +395,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         int u = unidadCombo.getSelectedIndex();
         return Math.min(24 * 7, n * (u == 1 ? 24 : u == 2 ? 24 * 7 : 1));   // techo: una semana; el histórico completo vive en el perfil («Todas las partidas del perfil»)
     }
-    final JLabel status = new JLabel(t("Listo.", "Ready.")) {
+    public final JLabel status = new JLabel(t("Listo.", "Ready.")) {   // visible para app.Servicios (avisarPausa429/cargarControl pintan aquí desde fuera del paquete)
         @Override public void setText(String texto) {   // si no cabe, el tooltip lo enseña entero
             super.setText(texto);
             setToolTipText(texto == null || texto.isBlank() ? null : texto);
@@ -608,8 +603,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         liveNow.alAbrirDespues();
     }
 
-    /** ÚNICA instancia del ELO 1v1 de sesión: la usan MenusJugadorSwing (inyectada) y submenuJugadorPartida (watchlist), aquí. */
-    static final EloSesion ELO_1V1 = new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA);   // pid → ELO 1v1 RM (sesión; caduca al terminar una partida)
+    // ELO_1V1: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el import
+    // static de más abajo. Va después de VIVO en Servicios, igual que aquí.
     Integer elo1v1Conocido(long pid) { return menus.elo1v1Conocido(pid); }
     JMenuItem itemJugadorPartida(MatchPlayer p) { return menus.itemJugadorPartida(p); }
 
@@ -901,10 +896,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         catch (Exception e) { return 60_000; }
     }
 
-    /** Poner/quitar/leer alias y notas, con la persistencia inyectada (service.AnotacionesService): un solo estado
-     *  compartido con cache.Anotaciones, cuyos mapas ALIASES/NOTAS se le pasan tal cual. Los diálogos se quedan
-     *  aquí, en la app. */
-    static final AnotacionesService ANOTACIONES = new AnotacionesService(ALIASES, NOTAS, (clave, valor) -> guardarConfig(clave, valor));
+    // ANOTACIONES: movido a app.Servicios (fase 3, tanda 4, Z6, raíz de composición); llega aquí por el import
+    // static de más abajo. Los diálogos se quedan aquí, en la ventana.
 
     // notaDe, pedirAlias, pedirNota, borrarNota, mostrarVinculadas y nicksAnteriores se movieron a
     // ui.DialogosJugador en la tanda 3 (oleada A2, T3-A2): delegados de una línea con el mismo nombre.
@@ -934,33 +927,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     JLabel firma;                       // grises regulados según el tema
 
-    public static void main(String[] args) {
-        if (args.length > 0 && args[0].equals("--make-ico")) {
-            System.exit(generarIco() ? 0 : 1);
-        }
-        cargarCatalogos();
-        IDIOMA = leerConfig("idioma",
-                Locale.getDefault().getLanguage().equalsIgnoreCase("es") ? "es" : "en");
-        SwingUtilities.invokeLater(() -> {
-            String tema = temaValido(leerConfig("tema", TEMA_SISTEMA));
-            flatLafDisponible = aplicarTema(tema, null);
-            if (!flatLafDisponible) {
-                try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
-                catch (Exception ignored) {}
-            }
-            try {
-                new SpoilerFreeRecs(tema).setVisible(true);
-            } catch (Throwable ex) {   // un fallo de arranque nunca más muere en silencio: queda escrito y avisa
-                StringBuilder sb = new StringBuilder("Fallo al arrancar " + NOMBRE + " " + VERSION + "\n" + ex + "\n");
-                for (StackTraceElement st : ex.getStackTrace()) sb.append("    at ").append(st).append("\n");
-                try { Files.writeString(Path.of("arranque_error.log"), sb.toString()); } catch (Exception ignored) { }
-                JOptionPane.showMessageDialog(null,
-                        NOMBRE + " no ha podido arrancar.\nDetalle guardado en arranque_error.log (junto al exe).\n\n" + ex,
-                        NOMBRE, JOptionPane.ERROR_MESSAGE);
-                System.exit(2);
-            }
-        });
-    }
+    // main(): movido a app.Main (fase 3, tanda 4, Z6, raíz de composición) con el mismo orden (--make-ico,
+    // catálogos, idioma, tema, ventana en el EDT). El pom y el harness llaman a SpoilerFreeRecs.main, así que
+    // se queda este delegado de una línea.
+    public static void main(String[] args) { dev.tirador.aoe2radar.app.Main.main(args); }
 
     /** La Watchlist (panel izquierdo): ver ui.WatchlistView. */
     final WatchlistView watchlist;
@@ -1007,7 +977,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
             @Override public long opSerial() { return opSerial; }
             @Override public void marcarHiloOperacionActual() { hiloOperacion = Thread.currentThread(); }
             @Override public boolean detenerOperacion() { return stopOperacion; }
-            @Override public void dormir(long ms) { SpoilerFreeRecs.dormir(ms); }
+            @Override public void dormir(long ms) { Servicios.dormir(ms); }
             @Override public void abrirUrl(String url) { SpoilerFreeRecs.this.abrirUrl(url); }
             @Override public void espectar(Player p) { SpoilerFreeRecs.this.espectar(p); }
             @Override public java.nio.file.Path rutaCaptureAge() { return dev.tirador.aoe2radar.service.Juego.rutaCaptureAge(); }
@@ -1044,7 +1014,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         };
     }
 
-    SpoilerFreeRecs(String temaInicial) {
+    public SpoilerFreeRecs(String temaInicial) {   // visible para app.Main (main() construye la ventana desde fuera del paquete)
         super(NOMBRE + " " + VERSION + t(" — tu radar del AoE2 competitivo, sin spoilers · por ", " — your competitive AoE2 radar, spoiler-free · by ") + AUTOR);
         configurarVentana();
 
@@ -1680,7 +1650,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
         new Thread(() -> { cargarControl(); cargarEloAyer(); }, "control").start();
         if (!leerConfig("mi_pid", "").isBlank()) iniciarVigilanciaLogJuego();   // «Mi partida»: aviso temprano al encontrar partida
 
-        new javax.swing.Timer(3_600_000, e -> new Thread(SpoilerFreeRecs::cargarControl, "control").start()).start();
+        new javax.swing.Timer(3_600_000, e -> new Thread(Servicios::cargarControl, "control").start()).start();
         vigilante.setInitialDelay(tickMs());
         vigilante.start();
         if (Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")))
@@ -1930,7 +1900,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final MiPartidaPanel miPartida = new MiPartidaPanel(
             new MiPartidaServiceJuego(this::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
             Tareas.SWING, this, this, new MiPartidaPanel.Anfitrion() {
-                @Override public List<String[]> buscarPerfiles(String nick) { return SpoilerFreeRecs.buscarPerfiles(nick); }
+                @Override public List<String[]> buscarPerfiles(String nick) { return Servicios.buscarPerfiles(nick); }
                 @Override public void mostrarEstado(String texto) { status.setText(texto); }
                 @Override public void sincronizarSocket() { SpoilerFreeRecs.this.sincronizarSocket(); }
             });
@@ -1950,12 +1920,12 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
      *  service.BarridoVivos). Campo de instancia, junto al código que lo usa (como recService). Lo usan
      *  ui.PartidasView (fetchMatches) y ui.WatchlistView (los dos, inyectado por constructor). */
     final BarridoVivos barridoVivos = new BarridoVivos(COMPANION, Reloj.SISTEMA, SpoilerFreeRecs::resumenVivo,
-            Snapshots.ELO_AYER, SpoilerFreeRecs::dormir, PAUSA_MS, PER_PAGE);
+            Snapshots.ELO_AYER, Servicios::dormir, PAUSA_MS, PER_PAGE);
 
     /** RecService: descarga, disco y savegame para UNA partida (ver service.RecService). Campo de instancia (no
      *  static): se cablea junto al código que lo usa, sin tocar el bloque static de COMPANION/LIVE/SERVICIO_PERFIL. */
     final RecService recService = new DescargaRecs(Recs::descargarRec, RecsDisco::destino, Juego::copiarASavegame,
-            SpoilerFreeRecs::dormir, PAUSA_MS);
+            Servicios::dormir, PAUSA_MS);
 
     /** La pestaña «Partidas»: ver ui.PartidasView/ui.PartidasPresenter (fase 3, tanda 3, oleada B). Se construye
      *  aquí (como field initializer: se ejecuta antes que configurarVentana y que crear la Watchlist, igual que
@@ -2019,10 +1989,10 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
                 @Override public boolean detenido() { return stopOperacion; }
                 @Override public void pararOperacion() { stopOperacion = true; }
                 @Override public void anotarHiloOperacion() { hiloOperacion = Thread.currentThread(); }
-                @Override public void aprenderCatalogos(List<Match> res) { SpoilerFreeRecs.aprenderCatalogos(res); }
+                @Override public void aprenderCatalogos(List<Match> res) { Servicios.aprenderCatalogos(res); }
                 @Override public List<String> mapasConocidos() { return new ArrayList<>(MAPAS_CAT); }
                 @Override public List<String> civsConocidas() { return new ArrayList<>(CIVS_CAT); }
-                @Override public void dormir(long ms) { SpoilerFreeRecs.dormir(ms); }
+                @Override public void dormir(long ms) { Servicios.dormir(ms); }
                 @Override public long perfilAbiertoPid() { return perfil.pidAbierto(); }
                 @Override public boolean perfilAbierto() { return perfil.abierto(); }
                 @Override public String perfilNombreAbierto() { return perfil.nombreAbierto(); }
@@ -2044,66 +2014,8 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // ----- Tabla: aplicarOrdenColumnas/guardarColumnas/MatchesTableModel movidos a ui.PartidasView -----
 
     // ----- HTTP --------------------------------------------------------------
-    /** La pausa por 429 del companion, contada en la barra de estado (ApiClient avisa; la red ya no toca Swing). */
-    static void avisarPausa429(long seg) {
-        SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
-        final SpoilerFreeRecs appF = app;
-        if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(t("La API pide calma (429): la app pausa las consultas ", "The API asks for calm (429): the app pauses its requests for ") + seg + t(" s y sigue sola.", " s and carries on by itself.")));
-    }
-    /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
-     *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pintar en Swing. */
-    static void cargarControl() {
-        String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""), txt -> guardarConfig("control_msg_visto", txt));
-        if (msg != null) {
-            SpoilerFreeRecs app = null; for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs sf) app = sf;
-            final SpoilerFreeRecs appF = app;
-            if (appF != null) SwingUtilities.invokeLater(() -> appF.status.setText(msg));
-        }
-    }
-    /** Transporte con el timeout de 20 s de control.json (distinto del normal, ya en la 1.1). El de la comprobación
-     *  de versión reutiliza TRANSPORTE (mismo timeout que httpText). Cableado junto al propio ControlService, no al
-     *  lado de COMPANION/LIVE/SERVICIO_PERFIL. */
-    static final Transporte TRANSPORTE_CONTROL = url -> {
-        HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20)).header("User-Agent", UA).GET().build(),
-                HttpResponse.BodyHandlers.ofString());
-        return new Transporte.Respuesta(r.statusCode(), r.body());
-    };
-    /** El «mando a distancia» y la comprobación de versión (service.ControlService). */
-    static final ControlService CONTROL_SERVICE = new ControlService(TRANSPORTE_CONTROL, TRANSPORTE);
-    /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
-    static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, SpoilerFreeRecs::avisarPausa429, () -> detieneEsteHilo());
-    /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto. */
-    static final CompanionApi COMPANION = new CompanionApi(API_CLIENTE);
-    /** Las reglas del directo que necesitan la API (ver service.LiveService). */
-    static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);
-    /** Los tops de la watchlist: red, decisión y disco de cargarTopLadder/cargarTopClan/vigilarTop (ver service.TopLadderService). */
-    static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
-    /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
-    static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
-            new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
-                @Override public String mapa(String clave) { return nombreMapaClave(clave); }
-                @Override public String civ(String clave) { return nombreCivStats(clave); }
-            }, Reloj.SISTEMA),
-            new HistorialPerfil(COMPANION, ACTIVIDAD_CACHE, pid -> cargarActividad(pid), a -> guardarActividad(a), ms -> dormir(ms), PER_PAGE, PAUSA_MS, Reloj.SISTEMA),
-            new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA));
-    /** Búsqueda de perfiles por nick (service.BusquedaPerfiles), la usan los cinco buscadores de la interfaz. Va
-     *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
-    static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
-    /** El barrido de Twitch y sus miniaturas (ver service.TwitchService); usa dormir() entre las llamadas una a una. */
-    static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms));
-
-    static void dormir(long ms) {
-        long fin = System.currentTimeMillis() + ms;
-        while (true) {
-            long resta = fin - System.currentTimeMillis();
-            if (resta <= 0 || (stopOperacion && opEnCurso)) return;   // el freno solo corta esperas de operaciones cancelables
-            try { Thread.sleep(Math.min(250, resta)); }
-            catch (InterruptedException e) { return; }   // sin re-marcar: los hilos del pool se reutilizan
-        }
-    }
-
-    /** Búsqueda de jugadores por nombre en el companion: {id, nombre, etiqueta legible}. Delegados de service.BusquedaPerfiles
-     *  (BUSQUEDA): la lógica vive allí; aquí solo queda la fachada que usa el Anfitrion de Mi partida. */
-    /** Búsqueda explícita (Enter): la API y el índice local, juntos y sin duplicados; primero lo local. Así un nick cambiado hace poco (que el volcado aún no conoce) también aparece. */
-    static List<String[]> buscarPerfiles(String q) { return BUSQUEDA.buscar(q); }
+    // Todo este bloque (avisarPausa429, cargarControl, TRANSPORTE_CONTROL, la cadena CONTROL_SERVICE →
+    // API_CLIENTE → COMPANION → LIVE → TOP_LADDER_SERVICE → SERVICIO_PERFIL → BUSQUEDA → TWITCH_SERVICE, dormir
+    // y buscarPerfiles) se movió a app.Servicios (fase 3, tanda 4, Z6, raíz de composición), con el mismo orden
+    // de texto. Llega aquí por el import static de más abajo, así que ninguna llamada cambia.
 }

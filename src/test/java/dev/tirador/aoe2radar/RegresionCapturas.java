@@ -1,5 +1,6 @@
 package dev.tirador.aoe2radar;
 
+import dev.tirador.aoe2radar.app.Servicios;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.Comparado;
 import dev.tirador.aoe2radar.model.FichaPerfil;
@@ -236,7 +237,7 @@ class RegresionCapturas {
     static String estadoWatch(SpoilerFreeRecs app) {
         List<Long> ids = new ArrayList<>();
         for (var p : app.todosJugadores) ids.add(p.id());
-        return "watch: vivo(1)=" + SpoilerFreeRecs.VIVO.matchDe(1L) + " todos=" + ids + " modelo=" + app.playersModel.size()
+        return "watch: vivo(1)=" + Servicios.VIVO.matchDe(1L) + " todos=" + ids + " modelo=" + app.playersModel.size()
                 + " grupo=" + app.watchlist.grupoActivo() + " top=" + app.watchlist.modoTop()
                 + " titulo='" + (app.watchlist.tituloWatch == null ? null : app.watchlist.tituloWatch.getTitle()) + "'"
                 + " resumen='" + (app.watchlist.resumenWatch == null ? null : app.watchlist.resumenWatch.getText()) + "'";
@@ -421,13 +422,13 @@ class RegresionCapturas {
         // harness deja él mismo el estado que fotografía: sin depender de la red ni de aquel fallo.
         SwingUtilities.invokeAndWait(() -> { app.liveNow.conEnCurso(Map::clear); app.liveNow.pintar(); });
         // menú contextual de la watchlist sobre un jugador en partida
-        SpoilerFreeRecs.VIVO.marcarJugando(1L, 555L);
+        Servicios.VIVO.marcarJugando(1L, 555L);
         SwingUtilities.invokeAndWait(() -> { app.todosJugadores.add(new Player(1L, "12Tirador", "General")); app.todosJugadores.add(new Player(3L, "pume", "General")); app.watchlist.rebuildGrupos(); app.watchlist.grupoCombo.setSelectedItem("Todos"); app.watchlist.aplicarFiltroGrupo(); app.playersList.setSelectedIndex(0); });
         // La partida 555 es inventada: un refresco de la propia app la quita en ~1 s y el panel pasa a «0 jugando»
         // (registrado: vivo(1)=null en la foto en 5 de 5 pasadas). Si el refresco tardaba, la foto pillaba el estado
         // intermedio («1 jugando»). Se espera a que termine para fotografiar siempre el estado final. DEUDA.md.
         boolean[] enPartida = { true };
-        for (int i = 0; i < 40 && enPartida[0]; i++) { Thread.sleep(250); SwingUtilities.invokeAndWait(() -> enPartida[0] = SpoilerFreeRecs.VIVO.jugando(1L)); }
+        for (int i = 0; i < 40 && enPartida[0]; i++) { Thread.sleep(250); SwingUtilities.invokeAndWait(() -> enPartida[0] = Servicios.VIVO.jugando(1L)); }
         Thread.sleep(300);
         SwingUtilities.invokeAndWait(() -> { Rectangle r = app.playersList.getCellBounds(0, 0); app.watchlist.menuContextualWatchlist(app.playersModel.get(0), new java.awt.event.MouseEvent(app.playersList, java.awt.event.MouseEvent.MOUSE_RELEASED, System.currentTimeMillis(), 0, r.x + 40, r.y + 8, 1, true)); });
         Thread.sleep(700);

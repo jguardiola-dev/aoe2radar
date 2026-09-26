@@ -1,5 +1,5 @@
 target/
-app/
+/app/
 *.zip
 # ficheros de ejecución de la app: solo en la raíz (anclados con «/» para no ignorar el paquete java sfrdata ni la fixture del harness)
 /config.properties
