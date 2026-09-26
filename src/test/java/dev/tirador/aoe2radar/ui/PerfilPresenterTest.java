@@ -33,6 +33,8 @@ class PerfilPresenterTest {
     /** Un ProfileService de mentira: solo lo que usa el presentador. */
     static class PerfilesFalso implements ProfileService {
         FichaPerfil ficha;
+        /** La última ficha conocida, si difiere de la que devuelve ficha() (F9); null = la misma que ficha. */
+        FichaPerfil conocida;
         AnioSfr anioSfr;
         Exception anioSfrFalla;
         Actividad historialResultado;
@@ -44,7 +46,7 @@ class PerfilPresenterTest {
         Consumer<Actividad> ultimoParcial;
 
         @Override public FichaPerfil ficha(long pid) { if (fichaFalla != null) throw fichaFalla; return ficha; }
-        @Override public FichaPerfil fichaConocida(long pid) { return ficha; }
+        @Override public FichaPerfil fichaConocida(long pid) { return conocida != null ? conocida : ficha; }
         @Override public Integer elo1v1(long pid) { return null; }
         @Override public List<Perfil.Vinculada> vinculadas(long pid) { return List.of(); }
         @Override public List<Perfil.Vinculada> vinculadasConElo(long pid) { return List.of(); }
@@ -328,6 +330,29 @@ class PerfilPresenterTest {
         assertEquals(1, pantalla.hoyIniciadoVeces);
         assertEquals(3, pantalla.hoyNuevas);
         assertSame(perfiles.ficha, pantalla.hoyFicha);
+    }
+
+    /** F9: «Actualizar hoy» con la ficha caída (ficha() devuelve null) pero traerHoy bien: se pinta con la última
+     *  ficha conocida, no con null (que dejaba «Sin datos de perfil» y sin chips de ELO). */
+    @Test void actualizar_hoy_con_la_ficha_caida_usa_la_ultima_conocida() {
+        pantalla.pidAbierto = 5L;
+        perfiles.ficha = null;
+        perfiles.conocida = new FichaPerfil(Map.of("rm_1v1", new int[]{ 1500, 10 }), "es", "", 20);
+        perfiles.traerHoyResultado = 2;
+        presenter.actualizarHoy(5L);
+        assertSame(perfiles.conocida, pantalla.hoyFicha);
+        assertEquals(2, pantalla.hoyNuevas);
+    }
+
+    /** F9: lo mismo en la carga por la API: la cabecera no se pinta vacía si la ficha falla y había una conocida. */
+    @Test void cargar_por_api_con_la_ficha_caida_pinta_la_ultima_conocida() {
+        pantalla.pidAbierto = 7L;
+        perfiles.anioSfr = null;
+        perfiles.ficha = null;
+        perfiles.conocida = new FichaPerfil(Map.of(), "es", "", 3);
+        perfiles.historialResultado = actividad(7L, "Zutano", List.of());
+        presenter.cargar(7L, "Zutano", null, false);
+        assertSame(perfiles.conocida, pantalla.cabeceraPintada);
     }
 
     @Test void actualizar_hoy_descartado_si_el_pid_abierto_ya_no_es_ese() {

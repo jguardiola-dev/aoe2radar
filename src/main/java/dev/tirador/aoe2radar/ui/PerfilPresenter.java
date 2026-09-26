@@ -156,7 +156,7 @@ public final class PerfilPresenter {
                     });
                     return;
                 }
-                FichaPerfil ficha = perfiles.ficha(pid);
+                FichaPerfil ficha = fichaOConocida(pid);
                 tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.cabecera(ficha); });
                 int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // primero 250 partidas; el resto solo si te quedas
                 Actividad a = (fresco && base.completo()) ? base : perfiles.historial(pid, nombre, base, false, max, parcialA -> tareas.enUi(() -> {
@@ -174,6 +174,13 @@ public final class PerfilPresenter {
         });
     }
 
+    /** F9 (1.3): la ficha por la API; si esa llamada falla (null), la última conocida, para no borrar la cabecera
+     *  con «Sin datos de perfil» cuando lo que falló fue solo la ficha. Fuera del EDT (hace red). */
+    private FichaPerfil fichaOConocida(long pid) {
+        FichaPerfil f = perfiles.ficha(pid);
+        return f != null ? f : perfiles.fichaConocida(pid);
+    }
+
     /** F5: fin de una carga (en el EDT). Solo apaga cargando() si ninguna carga posterior la ha relevado. */
     private void terminar(long token) {
         if (token == cargaToken) pantalla.cargando(false);
@@ -185,7 +192,7 @@ public final class PerfilPresenter {
         pantalla.hoyIniciado();
         tareas.enFondo("perfil-hoy", () -> {
             try {
-                FichaPerfil ficha = perfiles.ficha(pid);
+                FichaPerfil ficha = fichaOConocida(pid);
                 pantalla.marcarVinculadasPedidas(pid);
                 int nuevas = perfiles.traerHoy(pid);
                 tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.hoyTerminado(ficha, nuevas); });

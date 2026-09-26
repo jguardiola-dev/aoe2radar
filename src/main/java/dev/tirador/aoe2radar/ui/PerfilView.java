@@ -189,7 +189,8 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     // ----- estado y componentes propios (mismos nombres que la 1.1) -----
     private JPanel actividadPanel, actCabecera, actChips;
     private JLabel actTitulo; public JLabel actEstado;   // visible para RegresionCapturas
-    private JLabel actSubtitulo, actPista;
+    JLabel actSubtitulo;   // de paquete: lo mira PerfilViewTest
+    private JLabel actPista;
     private JComboBox<String> actModoCombo;
     private PanelScrollable actCuerpo;
     private JTextField perfilBusca;
@@ -660,7 +661,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
     @Override public void marcarVinculadasPedidas(long pid) { vinculadasPedidas.add(pid); }
 
     @Override public void hoyTerminado(FichaPerfil ficha, int nuevas) {
-        actPintarCabecera(ficha);
+        if (ficha != null) actPintarCabecera(ficha);   // F9: sin ficha nueva ni conocida, se deja la cabecera que había (p. ej. la sintética de sfr-data)
         Actividad a = actividadCache.get(actPid);
         if (a != null) { actRellenarModos(a); actPintar(); }
         actHoyBtn.setText(nuevas == 0 ? t("Al día · sin partidas nuevas", "Up to date · no new games") : t("Actualizado · +", "Updated · +") + nuevas + t(" partidas", " games"));
