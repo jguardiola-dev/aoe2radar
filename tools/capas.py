@@ -13,7 +13,11 @@ for f in glob.glob(base + '*/*.java'):
             aristas[pk].add((m.group(1), m.group(2), os.path.basename(f)))
 permitido = {'util': {'model'}, 'model': set(), 'cache': {'model', 'util'}, 'api': {'model', 'util', 'cache'},
              'sfrdata': {'model', 'util', 'api', 'cache'}, 'techtree': {'model', 'util', 'api', 'cache'},
-             'service': {'api', 'sfrdata', 'techtree', 'cache', 'model', 'util'}, 'ui': {'service', 'model', 'util'}}
+             'service': {'api', 'sfrdata', 'techtree', 'cache', 'model', 'util'}, 'ui': {'service', 'model', 'util'},
+             # app es la raíz de composición (Main + Servicios): puede importar cualquier paquete de capa.
+             # Ningún paquete de capa tiene 'app' en su propio conjunto de arriba, así que si alguno la importa
+             # sale como MAL (el paquete raíz, SpoilerFreeRecs.java, sí puede: no lo audita este script).
+             'app': {'util', 'model', 'cache', 'api', 'sfrdata', 'techtree', 'service', 'ui'}}
 malas = 0
 for pk in sorted(aristas):
     for dest, clase, fich in sorted(aristas[pk]):
