@@ -44,7 +44,8 @@ class PartidasViewTest {
         @Override public List<Player> seleccion() { return new ArrayList<>(seleccion); }
         @Override public int seleccionSize() { return seleccion.size(); }
         @Override public boolean soloVivosMarcado() { return false; }
-        @Override public boolean modoTop() { return false; }
+        volatile boolean modoTop;
+        @Override public boolean modoTop() { return modoTop; }
         @Override public String grupoDestino() { return "General"; }
         @Override public List<Player> conFamilias(List<Player> base) { return base; }
         @Override public void limpiarSeleccion() { seleccion.clear(); }
@@ -94,7 +95,8 @@ class PartidasViewTest {
         @Override public void abrirUrl(String url) { }
         @Override public String nombreVisible(long pid, String nombre) { return nombre; }
         @Override public String paisDe(long pid) { return null; }
-        @Override public boolean enCursoReal(Match m) { return false; }
+        volatile java.util.function.Predicate<Match> enCurso = m -> false;
+        @Override public boolean enCursoReal(Match m) { return enCurso.test(m); }
         /** En qué hilo se pidió cada ruta de rec (true = EDT): quien la pide va a mirar el disco justo después. */
         final List<Boolean> destinoEnEdt = Collections.synchronizedList(new ArrayList<>());
         /** Si están puestos, destino (fuera del EDT) espera / falla: un «Enviar al juego» que sigue mirando recs, o que se rompe. */
@@ -117,9 +119,12 @@ class PartidasViewTest {
         @Override public List<String> mapasConocidos() { return List.of(); }
         @Override public List<String> civsConocidas() { return List.of(); }
         @Override public void dormir(long ms) { }
-        @Override public long perfilAbiertoPid() { return 0; }
-        @Override public boolean perfilAbierto() { return false; }
-        @Override public String perfilNombreAbierto() { return ""; }
+        volatile long perfilPid;
+        volatile boolean perfilAbierto;
+        volatile String perfilNombre = "";
+        @Override public long perfilAbiertoPid() { return perfilPid; }
+        @Override public boolean perfilAbierto() { return perfilAbierto; }
+        @Override public String perfilNombreAbierto() { return perfilNombre; }
         @Override public void mostrarHistorialSiSigueAbierto(long pid, String nombre) { }
         @Override public Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws java.io.IOException, InterruptedException {
             pedidas.add(pid);
