@@ -75,7 +75,7 @@
     crear_exe.bat (el script de la 1.1 que hacía este empaquetado) no está en el repo ni en el histórico de
     Git; no ha aparecido en C:\proyectos, el Escritorio ni Documentos. Sus parámetros están deducidos del
     propio código:
-      - Nombre/versión/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE="aoe2radar", VERSION="1.1").
+      - Nombre/versión/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE y VERSION; el número de versión se fija allí).
       - Clase principal: dev.tirador.aoe2radar.SpoilerFreeRecs (la misma del manifest del jar).
       - Icono: AcercaDe.generarIco() documenta literalmente que
         "crear_exe.bat" generaba logo.ico así: java -cp build SpoilerFreeRecs, opción make-ico
@@ -89,7 +89,7 @@
     <profile>
       <id>empaquetar</id>
       <properties>
-        <!-- Sincronizar a mano con Identidad.VERSION hasta que la fase 4 automatice el release. -->
+        <!-- Se fija a mano: cambiarlo a la vez que util.Identidad.VERSION. -->
         <jpackage.appVersion>1.2</jpackage.appVersion>
         <jpackage.vendor>12Tirador</jpackage.vendor>
         <jpackage.entrada>${project.build.directory}/jpackage-input</jpackage.entrada>

@@ -5,8 +5,9 @@ A Windows desktop app for Age of Empires II DE: spoiler-free recs (recorded game
 ratings, civ stats and tech tree. Java 21 + Swing + FlatLaf. Data comes from the aoe2companion API
 (REST + websocket) and from aoe2techtree; the `sfr-data` repo precomputes nightly summaries and profiles.
 
-It is being migrated from a single file (`SpoilerFreeRecs.java`, ~13,900 lines) to packages that each have
-their own responsibility. The full plan, with phases and closing criteria, lives in
+It was migrated from a single file (`SpoilerFreeRecs.java`, ~13,900 lines in 1.1) to packages that each have
+their own responsibility; the migration is done, and `SpoilerFreeRecs.java` is now a window of about 300
+lines that only does the wiring. The plan, with phases and closing criteria, lives in
 [docs/ARQUITECTURA.md](ARQUITECTURA.md).
 
 ## Requirements
@@ -59,8 +60,8 @@ cleans the packaging):
    `aoe2radar.exe`, its own runtime (implicit jlink, nothing to install separately) and the jars in `app/`.
    WiX Toolset is not needed because no installer is generated, only the app folder.
 
-The `.exe` version (`jpackage.appVersion` in the profile) is kept in sync by hand with
-`util.Identidad.VERSION` until phase 4 automates it.
+The version is set by hand in two places: `util.Identidad.VERSION` (what the app shows) and
+`jpackage.appVersion` in the profile (the `.exe` version). Change both together.
 
 ## Layered architecture
 Summary table; the details of what each layer knows and the key contracts are in
@@ -70,12 +71,12 @@ Summary table; the details of what each layer knows and the key contracts are in
 |---|---|
 | `model` | Plain data (`Match`, `Player`, `Forma`…). No Swing, no network. |
 | `util` | `Json`, `t()` (i18n), formats, `Log`, `Identidad`, `Config`, `Reloj`, `Archivos` (atomic write). |
-| `api` | Companion client: REST + websocket. Transport and parsing only. |
+| `api` | Companion client: `ApiClient`, `CompanionApi` (REST), `SocketVivo` (websocket), `Throttle`/`ThrottleCubo` (throttle + circuit breaker). Transport and parsing only. |
 | `sfrdata` | `sfr-data` client (shards, elo, muestra, civstats, ladder), with a disk cache. |
 | `techtree` | aoe2techtree data, with a disk cache and ETag. |
 | `cache` | `CacheService`: in-memory and disk caches with TTL, one single implementation. |
-| `service` | Business rules: `ProfileService`, `LiveService`, `FormService`, `RecService`, `WatchlistService`, `RatingsService`, `Throttle`, `ControlService`… |
-| `ui` | One view per tab (`…View`) and its presenter (`…Presenter`). Views do not call the network. |
+| `service` | Business rules: `ProfileService`, `LiveService`, `FormService`, `RecService`, `RatingsService`, `ControlService`…, and the watchlist pieces: `ListaSeguidos`, `Familias`, `FiltroLista`, `BarridoVivos`, `TopLadderService`, `Campanas`, `AnotacionesService`. |
+| `ui` | One view per tab (`…View`) and its presenter (`…Presenter`). Views do not call the network. Shared UI state: `AppState` (active view and navigation history, with listeners) and `Navegador` (tab chrome and back/forward; implements `Navegacion`). |
 | `app` | `Main` (the real startup: `--make-ico`, catalogs, language, theme, window on the EDT) and `Servicios` (composition root: creates and connects, in a fixed order, the services that talk to the companion). |
 | (root package) | `SpoilerFreeRecs` is the window (`JFrame`): it declares the fields the views share and calls the wiring in order from the constructor; today under 300 lines. The `Cableado*`/`AccionesVentana` classes (same package, so they can read those fields without making them `public`) do the composition (which view with which service) and the "open something" actions (URL, Twitch, spectate, CaptureAge). |
 
