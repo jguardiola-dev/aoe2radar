@@ -322,6 +322,16 @@ class RegresionCapturas {
         return null;
     }
 
+    /** buscaNick (el campo de "Buscar jugador por nick" de la Watchlist) es privado: no se toca src/main solo para
+     *  exponerlo al harness (misma regla que buscarBoton). Se identifica por su tooltip, único en la ventana. */
+    static JTextField buscarCampoPorTooltip(Container raiz, String prefijoTooltip) {
+        for (Component c : raiz.getComponents()) {
+            if (c instanceof JTextField tf && tf.getToolTipText() != null && tf.getToolTipText().startsWith(prefijoTooltip)) return tf;
+            if (c instanceof Container hijo) { JTextField r = buscarCampoPorTooltip(hijo, prefijoTooltip); if (r != null) return r; }
+        }
+        return null;
+    }
+
     static void correr() throws Exception {
         SpoilerFreeRecs.main(new String[0]);
         for (int i = 0; i < 60 && app() == null; i++) Thread.sleep(250);
@@ -342,6 +352,23 @@ class RegresionCapturas {
         Paises.PAIS_DE.put(1L, "es"); Paises.PAIS_DE.put(2L, "es"); Paises.PAIS_DE.put(3L, "ar"); Paises.PAIS_DE.put(4L, "de");
         SwingUtilities.invokeAndWait(() -> { app.watchlist.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
         Thread.sleep(400);
+        // Fila 131 de DEUDA: el resumen «N jugadores · M jugando» llega con el siguiente repintado de
+        // indicadores, no al momento de añadir jugadores: esperar (con tope) a que ya diga el total de los 3
+        // recién añadidos, en vez de arriesgarse a fotografiar el «0 jugadores» inicial de vez en cuando.
+        String[] resumenWatchTxt = { null };
+        for (int i = 0; i < 40; i++) {
+            SwingUtilities.invokeAndWait(() -> resumenWatchTxt[0] = app.watchlist.resumenWatch.getText());
+            if (resumenWatchTxt[0] != null && resumenWatchTxt[0].startsWith("3 ")) break;
+            Thread.sleep(100);
+        }
+        // Fila 131 de DEUDA: buscaNick tiene el foco nada más abrir la Watchlist (vista de arranque) y su
+        // cursor parpadea; la foto salía distinta según en qué fase del parpadeo cayera. Solo en el harness
+        // (nunca en la app): caret transparente y sin parpadeo, así la foto no depende del instante.
+        JTextField buscaNick = buscarCampoPorTooltip(app.getContentPane(), "Escribe un nick y pulsa Enter");
+        if (buscaNick != null) {
+            JTextField campo = buscaNick;
+            SwingUtilities.invokeAndWait(() -> { campo.setCaretColor(new Color(0, 0, 0, 0)); campo.getCaret().setBlinkRate(0); });
+        }
         // la vista de arranque es Twitch: canales, miniaturas y espectadores en directo, imposibles de congelar.
         // Se ignora la fila de cabecera entera (padre de directosContador), no solo sus etiquetas: el ancho de
         // «N espectadores · Actualizado hh:mm:ss» desplaza el desplegable Idioma y el botón Refrescar.
