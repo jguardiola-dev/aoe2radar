@@ -194,48 +194,48 @@ public final class WatchlistView {
     }
 
     // ----- colaboradores inyectados (mismas instancias que la ventana) -----
-    private final Window ventana;
-    private final ProfileService perfiles;
-    private final dev.tirador.aoe2radar.service.BusquedaPerfiles busqueda;
-    private final TopLadderService topLadderService;
-    private final FormService formaService;
-    private final Campanas campanas;
-    private final BarridoVivos barridoVivos;
-    private final EloSesion eloSesion;
-    private final MenusJugador menus;
-    private final DialogosJugador dialogos;
-    private final Navegacion navegacion;
+    final Window ventana;
+    final ProfileService perfiles;
+    final dev.tirador.aoe2radar.service.BusquedaPerfiles busqueda;
+    final TopLadderService topLadderService;
+    final FormService formaService;
+    final Campanas campanas;
+    final BarridoVivos barridoVivos;
+    final EloSesion eloSesion;
+    final MenusJugador menus;
+    final DialogosJugador dialogos;
+    final Navegacion navegacion;
     private final Tareas tareas;
-    private final EnlacePartidas enlacePartidas;
-    private final Anfitrion anfitrion;
+    final EnlacePartidas enlacePartidas;
+    final Anfitrion anfitrion;
 
     // ----- estado compartido con la ventana (creado allí, inyectado aquí: misma instancia) -----
-    private final List<Player> todosJugadores;
-    private final DefaultListModel<Player> playersModel;
-    private final JList<Player> playersList;
-    private final Map<Long, Integer> eloWatch;
-    private final Map<Long, Integer> gamesWatch;
-    private final Map<Long, String[]> twitchLive;
-    private final Map<Long, String> aliases;
-    private final JLabel status;
-    private final JProgressBar progreso;
-    private final List<Match> all;
+    final List<Player> todosJugadores;
+    final DefaultListModel<Player> playersModel;
+    final JList<Player> playersList;
+    final Map<Long, Integer> eloWatch;
+    final Map<Long, Integer> gamesWatch;
+    final Map<Long, String[]> twitchLive;
+    final Map<Long, String> aliases;
+    final JLabel status;
+    final JProgressBar progreso;
+    final List<Match> all;
     public JToggleButton soloVivosBtn;   // visible: fetchMatches (Partidas) lo consulta; se crea en construirPanel(), como la 1.1
-    private final JPanel sujetosPanel;   // de Partidas (lo rellena PartidasView.refrescarSujetos); solo lo insertamos en el layout
+    final JPanel sujetosPanel;   // de Partidas (lo rellena PartidasView.refrescarSujetos); solo lo insertamos en el layout
 
-    private static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
+    static final EstadoVivo VIVO = EstadoVivo.SISTEMA;
 
     // ----- propios -----
     /** Persistencia, grupos y altas/bajas/movimientos de la watchlist: ver service.ListaSeguidos. */
-    private final ListaSeguidos listaSeguidos;
-    private final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
+    final ListaSeguidos listaSeguidos;
+    final Set<Long> watchBarridos = new HashSet<>();   // seguidos ya consultados en este arranque
     public final JComboBox<String> grupoCombo = new JComboBox<>();   // visible para RegresionCapturas
     public boolean mostrarEloWatch = Boolean.parseBoolean(leerConfig("elo_watchlist", "true"));   // visible: el ítem «Mostrar ELO en la Watchlist» del menú Configuración (cromo) lo lee/escribe
-    private boolean vigilando = false;
+    boolean vigilando = false;
     private JPanel watchPanel;
     public JPanel norteWatchRef;   // visible: la ventana repinta al restaurar el ancho del split (mostrarDirectos/cerrarTechTree)
     public javax.swing.border.TitledBorder tituloWatch;   // visible para RegresionCapturas
-    private JButton delBtn;
+    JButton delBtn;
     public JLabel cabLabel;   // visible: lo consulta esFondoDeseleccionable (cromo)
     public JLabel resumenWatch;   // visible para RegresionCapturas; ejemplo: «50 jugadores · 6 en directo»
 
@@ -245,7 +245,7 @@ public final class WatchlistView {
      *  en inglés. Al ser de instancia, se calculan al construir la Watchlist (new WatchlistView(...) en
      *  SpoilerFreeRecs), que ya ocurre con el idioma fijado. Bug resuelto en fase 4: ver docs/DEUDA.md. */
     private final String TOP_PAIS = t("\u2605 Top pa\u00eds", "\u2605 Country top");
-    private final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
+    final String TOP_CLAN = t("\u2605 Top clan", "\u2605 Clan top");
 
     /** TODOS los países ISO con su nombre en el idioma de la app — Bulgaria
      *  incluida y sin listas que mantener a mano. */
@@ -264,69 +264,69 @@ public final class WatchlistView {
     /** De instancia por el mismo motivo que TOP_PAIS/TOP_CLAN (comentario de arriba): así sale en el idioma
      *  activo de verdad, y no en el que estuviera fijado (o sin fijar) cuando se cargó la clase. */
     public final PaisItem[] PAISES = catalogoPaises();
-    private PaisItem paisActual;
-    private JComboBox<PaisItem> paisCombo;
-    private JTextField buscaPais;
-    private JPanel parPais;
-    private boolean rearmandoPais;
-    private List<PaisItem> catalogoOrdenado = List.of();
+    PaisItem paisActual;
+    JComboBox<PaisItem> paisCombo;
+    JTextField buscaPais;
+    JPanel parPais;
+    boolean rearmandoPais;
+    List<PaisItem> catalogoOrdenado = List.of();
 
-    private String topFirma = "";
-    private final Map<Long, Integer> rankTop = new HashMap<>();
-    private JComboBox<String> topNCombo; private boolean rellenandoTopN; private JButton addJugBtn;
-    private JPanel parClan, parClanGuardados; private JTextField clanField; private JPopupMenu clanPopup;
-    private JComboBox<String> clanesGuardadosCombo; private JButton clanEstrella; private boolean rellenandoClanes;
+    String topFirma = "";
+    final Map<Long, Integer> rankTop = new HashMap<>();
+    JComboBox<String> topNCombo; boolean rellenandoTopN; JButton addJugBtn;
+    JPanel parClan, parClanGuardados; JTextField clanField; JPopupMenu clanPopup;
+    JComboBox<String> clanesGuardadosCombo; JButton clanEstrella; boolean rellenandoClanes;
 
     private final FiltroLista filtroLista = new FiltroLista(VIVO);   // qué fila se ve y en qué orden (sin Swing)
-    private final Set<Long> vinculosExpandidos = new HashSet<>();
-    private final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
-    private final Map<Long, Boolean> vivoFamilia = new HashMap<>();   // principal -> alguna cuenta viva
-    private final List<Player> topLadder = new ArrayList<>();
-    private final Map<Long, Long> lastTop = new HashMap<>();   // pid -> última partida (ms), del leaderboard
-    private long topCargado;
-    private volatile boolean cargandoTop, vigilandoTop;
-    private final Path topCache;
-    private final long pausaMs;
-    private final int perPage;
+    final Set<Long> vinculosExpandidos = new HashSet<>();
+    final Map<Long, Character> marcaFila = new HashMap<>();   // pid -> P(rincipal) / E(xpandida) / H(ija)
+    final Map<Long, Boolean> vivoFamilia = new HashMap<>();   // principal -> alguna cuenta viva
+    final List<Player> topLadder = new ArrayList<>();
+    final Map<Long, Long> lastTop = new HashMap<>();   // pid -> última partida (ms), del leaderboard
+    long topCargado;
+    volatile boolean cargandoTop, vigilandoTop;
+    final Path topCache;
+    final long pausaMs;
+    final int perPage;
     /** El «río» de Top ladder usa este throttle propio (independiente del de Twitch, ver ui.DirectosPresenter). */
-    private long ultimoTopMs;
-    private boolean avisoTopMostrado;   // el popup del top caído: solo la primera vez por sesión
-    private final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    long ultimoTopMs;
+    boolean avisoTopMostrado;   // el popup del top caído: solo la primera vez por sesión
+    final Set<Long> topVerificados = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     // ----- forma reciente -----
-    private static final Map<Long, Integer> TOP_STREAK = new java.util.concurrent.ConcurrentHashMap<>();   // racha del ladder (+3 / -2)
-    private static final Map<Long, int[]> TOP_LAST10 = new java.util.concurrent.ConcurrentHashMap<>();   // {ganadas, perdidas} de las últimas 10
-    private final Map<Long, Forma> forma24 = new java.util.concurrent.ConcurrentHashMap<>();
-    private final Map<Long, Forma> forma7d = new java.util.concurrent.ConcurrentHashMap<>();
-    private final Map<Long, Long> formaTs24 = new java.util.concurrent.ConcurrentHashMap<>();
-    private final Map<Long, Long> formaTs7d = new java.util.concurrent.ConcurrentHashMap<>();
-    private volatile boolean formaVisible;   // el chip: nace apagado, no se recuerda
+    static final Map<Long, Integer> TOP_STREAK = new java.util.concurrent.ConcurrentHashMap<>();   // racha del ladder (+3 / -2)
+    static final Map<Long, int[]> TOP_LAST10 = new java.util.concurrent.ConcurrentHashMap<>();   // {ganadas, perdidas} de las últimas 10
+    final Map<Long, Forma> forma24 = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Long, Forma> forma7d = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Long, Long> formaTs24 = new java.util.concurrent.ConcurrentHashMap<>();
+    final Map<Long, Long> formaTs7d = new java.util.concurrent.ConcurrentHashMap<>();
+    volatile boolean formaVisible;   // el chip: nace apagado, no se recuerda
     /** ¿Se ve la columna Forma? La consulta playersList.getToolTipText (queda en la ventana: playersList es suyo). */
     public boolean formaVisible() { return formaVisible; }
-    private volatile int ventanaForma = 24;   // 24 h o 7 d (selector junto al chip)
-    private JButton formaBtn, ocultarFormaBtn;
+    volatile int ventanaForma = 24;   // 24 h o 7 d (selector junto al chip)
+    JButton formaBtn, ocultarFormaBtn;
 
     // ----- campanas -----
     public JToggleButton campanaBtn;   // visible para RegresionCapturas
     private final Map<String, Set<Long>> campanaIds = new java.util.concurrent.ConcurrentHashMap<>();   // id de vista → jugadores vigilados
 
     // ----- hover card (hoy inerte: se conserva igual) -----
-    private JWindow hoverCard;
-    private boolean cardFijada;
-    private javax.swing.Timer hoverTimer;
-    private long hoverPid;
-    private Point hoverPantalla;
+    JWindow hoverCard;
+    boolean cardFijada;
+    javax.swing.Timer hoverTimer;
+    long hoverPid;
+    Point hoverPantalla;
     /** ¿Es buen momento para enseñar la hover-card? Nunca sobre diálogos,
      *  menús abiertos o con el ratón ya fuera de la lista. */
-    private Component hoverAncla;   // componente sobre el que vive la tarjeta flotante (la watchlist por defecto; en Live now, el nick)
-    private JTextField buscaNick;
+    Component hoverAncla;   // componente sobre el que vive la tarjeta flotante (la watchlist por defecto; en Live now, el nick)
+    JTextField buscaNick;
 
     /** Ctrl+F de la ventana: foco en el buscador de nick y selecciona lo que hubiera (mismo comportamiento que
      *  la 1.1, con la misma guarda por si aún no se ha construido el panel). */
     public void enfocarBuscador() {
         if (buscaNick != null) { buscaNick.requestFocusInWindow(); buscaNick.selectAll(); }
     }
-    private JLabel watchPista1, watchPista2, watchPista3;   // explicación visible de la Watchlist
+    JLabel watchPista1, watchPista2, watchPista3;   // explicación visible de la Watchlist
     /** Las tres etiquetas de pista de la Watchlist: TemaApp las repinta al cambiar de tema (ui.ComponentesTema). */
     public JLabel watchPista1() { return watchPista1; }
     public JLabel watchPista2() { return watchPista2; }
@@ -334,7 +334,7 @@ public final class WatchlistView {
 
     /** Familias: vínculos entre cuentas del mismo jugador (ver service.Familias). Campo de instancia, junto al
      *  código que lo usa (no junto a COMPANION/LIVE/SERVICIO_PERFIL: es un servicio sin red). */
-    private final Familias familiaSvc = new Familias();
+    final Familias familiaSvc = new Familias();
 
     /** Ver ui.WatchlistView.EnlacePartidas y ui.WatchlistView.Anfitrion para el contrato completo. */
     public WatchlistView(Window ventana, ProfileService perfiles,
@@ -1123,7 +1123,7 @@ public final class WatchlistView {
             "Fetches the recent ±ELO (per the selector) and shows it as a sortable column next to the ELO. With players selected it checks only those; with none, everyone. Not remembered between sessions."); }
     static String tipOcultarForma() { return t("Oculta la columna Forma (los datos siguen en caché 10 min).", "Hides the Recent form column (data stays cached for 10 min)."); }
 
-    private Map<Long, Forma> formaActiva() { return ventanaForma <= 24 ? forma24 : forma7d; }
+    Map<Long, Forma> formaActiva() { return ventanaForma <= 24 ? forma24 : forma7d; }
 
     /** Cambiar de vista apaga la columna Forma (vuelve solo si la pides). */
     public void apagarForma() {
@@ -1136,7 +1136,7 @@ public final class WatchlistView {
     }
 
     /** Consulta la forma de los jugadores dados (con caché de 10 min), con progreso y Detener. */
-    private void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) {
+    void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) {
         Map<Long, Forma> cache = horas <= 24 ? forma24 : forma7d;
         Map<Long, Long> ts = horas <= 24 ? formaTs24 : formaTs7d;
         List<Player> pendientes = new ArrayList<>();
@@ -1188,7 +1188,7 @@ public final class WatchlistView {
     }
 
     /** Objetivo de «Ver forma»: los seleccionados si los hay; si no, todos los visibles. */
-    private List<Player> objetivoForma() {
+    List<Player> objetivoForma() {
         List<Player> sel = playersList.getSelectedValuesList();
         return sel.isEmpty() ? jugadoresVisibles() : new ArrayList<>(sel);
     }
@@ -1236,7 +1236,7 @@ public final class WatchlistView {
 
     // ===== Campanas: aviso cuando alguien de una vista marcada entra en partida =========================
 
-    private String idVistaCampana() {
+    String idVistaCampana() {
         if (modoClan()) return "\u2605clan|" + (clanField == null ? "" : clanField.getText().trim().toLowerCase(Locale.ROOT));
         if (modoPais()) return "\u2605pais|" + paisSel();
         if (modoTop()) return "\u2605ladder";
@@ -1345,7 +1345,7 @@ public final class WatchlistView {
     }
 
     // ----- «★ Top clan»: una vista más de la watchlist -----
-    private void cargarTopClan() {
+    void cargarTopClan() {
         String tag = clanField == null ? "" : clanField.getText().trim();
         if (tag.isEmpty()) { status.setText(t("Escribe el tag del clan (p. ej. R1).", "Type the clan tag (e.g. R1).")); return; }
         status.setText(anfitrion.clanesVacios() ? t("Descargando la lista de clanes…", "Downloading the clan list…") : t("Cargando el clan…", "Loading the clan…"));
@@ -1528,7 +1528,7 @@ public final class WatchlistView {
 
     /** La cuenta hermana con MÁS ELO conocido que la propia, o null.
      *  Bebe de los vínculos guardados y de las familias consultadas. */
-    private String[] mejorAlt(long pid) {
+    String[] mejorAlt(long pid) {
         return familiaSvc.mejorAlt(pid, todosJugadores, perfiles.familia(pid), eloWatch);
     }
 
@@ -1566,12 +1566,12 @@ public final class WatchlistView {
                 || s.equals(t("Gestionar grupos…", "Manage groups…")) ? null : s;
     }
 
-    private static String limpiarGrupo(String nombre) { return nombre.trim().replace(";", " ").replace(",", " "); }
+    static String limpiarGrupo(String nombre) { return nombre.trim().replace(";", " ").replace(",", " "); }
 
     /** Grupos creados por el usuario (existen aunque estén vacíos). */
     public Set<String> gruposConfig() { return listaSeguidos.gruposConfig(); }
 
-    private void registrarGrupo(String g) { listaSeguidos.registrarGrupo(g); rebuildGrupos(); }
+    void registrarGrupo(String g) { listaSeguidos.registrarGrupo(g); rebuildGrupos(); }
 
     public void moverJugador(Player p, String grupo) {
         listaSeguidos.moverJugador(todosJugadores, p, grupo);
@@ -1582,14 +1582,14 @@ public final class WatchlistView {
         status.setText(p.name() + t(" movido al grupo «", " moved to group “") + grupo + t("».", "”."));
     }
 
-    private void renombrarGrupo(String viejo, String nuevo) {
+    void renombrarGrupo(String viejo, String nuevo) {
         listaSeguidos.renombrarGrupo(todosJugadores, viejo, nuevo);
         savePlayers();
         rebuildGrupos();
         aplicarFiltroGrupo();
     }
 
-    private void borrarGrupo(String g) {
+    void borrarGrupo(String g) {
         listaSeguidos.borrarGrupo(todosJugadores, g);
         savePlayers();
         rebuildGrupos();
@@ -1597,7 +1597,7 @@ public final class WatchlistView {
     }
 
     /** Diálogo de gestión: crear, renombrar y borrar grupos sin tocar jugadores. */
-    private void gestionarGrupos() {
+    void gestionarGrupos() {
         DefaultListModel<String> modelo = new DefaultListModel<>();
         Runnable recargar = () -> {
             modelo.clear();
@@ -1726,7 +1726,7 @@ public final class WatchlistView {
     }
 
     // visible para esGrupoDeUsuario (y para el menú "mover a grupo")
-    private Set<String> gruposExistentes() {
+    Set<String> gruposExistentes() {
         Set<String> gs = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
         gs.add(GRUPO_GENERAL);
         for (Player x : todosJugadores) gs.add(x.grupo());
@@ -1742,7 +1742,7 @@ public final class WatchlistView {
      */
     public boolean esGrupoDeUsuario(String nombre) { return gruposExistentes().contains(nombre); }
 
-    private void moverVarios(List<Player> lista, String g) {
+    void moverVarios(List<Player> lista, String g) {
         int n = listaSeguidos.moverVarios(todosJugadores, lista, g);
         savePlayers(); rebuildGrupos(); aplicarFiltroGrupo(); refrescarWatchlist();
         status.setText(n + t(" jugadores movidos a «", " players moved to \u201C") + g + "\u00bb.");
@@ -1824,7 +1824,7 @@ public final class WatchlistView {
         return false;
     }
 
-    private void onGrupoElegido() {
+    void onGrupoElegido() {
         String sel = String.valueOf(grupoCombo.getSelectedItem());
         if (sel.equals(TOP_CLAN)) {
             guardarConfig("grupo_activo", sel);
@@ -1846,7 +1846,7 @@ public final class WatchlistView {
         actualizarIndicadoresVivos();
     }
 
-    private void crearGrupoDialog() {
+    void crearGrupoDialog() {
         String nombre = JOptionPane.showInputDialog(ventana,
                 t("Nombre del grupo nuevo:", "New group name:"),
                 t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
@@ -1862,7 +1862,7 @@ public final class WatchlistView {
                     "” active: players you add next will go there."));
     }
 
-    private void refrescarCabeceraOrden() {
+    void refrescarCabeceraOrden() {
         if (cabLabel == null) return;
         String ordenCfg = leerConfig("orden_watch", "elo");
         boolean porForma = formaVisible && ordenCfg.startsWith("forma");
@@ -1882,7 +1882,7 @@ public final class WatchlistView {
     }
 
     /** En los modos ★ la lista es de solo lectura; el país solo se ve en ★ país. */
-    private void actualizarBotonesModo() {
+    void actualizarBotonesModo() {
         boolean editable = !modoTop();
         if (delBtn != null) delBtn.setEnabled(editable);
         if (parPais != null) parPais.setVisible(modoPais());
@@ -2087,7 +2087,7 @@ public final class WatchlistView {
     }
 
     /** ¿Hay alguien jugando ahora en el grupo? (null = en cualquiera). */
-    private boolean grupoTieneVivo(String grupo) {
+    boolean grupoTieneVivo(String grupo) {
         for (Player p : todosJugadores)
             if ((grupo == null || p.grupo().equalsIgnoreCase(grupo)) && VIVO.jugando(p.id()))
                 return true;
@@ -2460,7 +2460,7 @@ public final class WatchlistView {
 
     // ===== Tarjeta de perfil flotante (hoy inerte: el hover-timer nunca dispara) ==========================
 
-    private boolean hoverProcede() {
+    boolean hoverProcede() {
         Component c = hoverAncla != null ? hoverAncla : playersList;
         return KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow() == ventana
                 && MenuSelectionManager.defaultManager().getSelectedPath().length == 0
@@ -2478,9 +2478,9 @@ public final class WatchlistView {
     }
 
     /** Muestra la tarjeta de perfil de un jugador en la posición dada. */
-    private void mostrarPerfilCard(long pid, String nombre, Point enPantalla) { mostrarPerfilCard(pid, nombre, enPantalla, false); }
+    void mostrarPerfilCard(long pid, String nombre, Point enPantalla) { mostrarPerfilCard(pid, nombre, enPantalla, false); }
 
-    private void mostrarPerfilCard(long pid, String nombre, Point enPantalla, boolean fijar) {
+    void mostrarPerfilCard(long pid, String nombre, Point enPantalla, boolean fijar) {
         Object[] cache = anfitrion.tarjetaPerfilCache(pid);
         if (cache != null) {
             pintarCard((String) cache[0], (int[]) cache[1], enPantalla, pid, fijar);
