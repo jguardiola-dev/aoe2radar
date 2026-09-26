@@ -1,9 +1,19 @@
 package dev.tirador.aoe2radar.ui;
 
+import dev.tirador.aoe2radar.model.Match;
+import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.model.Player;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
+import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -100,5 +110,207 @@ class PartidasPresenterTest {
 
     @Test void filtroPeriodo_sinFechaDeInicioQuedaFuera() {
         assertFalse(PartidasPresenter.pasaFiltroPeriodo(1, null, AHORA));
+    }
+
+    // ======================================================================
+    // Lo que salió de la vista en la 1.3 (fase 5): referencia, filtros, sugerencias
+    // ======================================================================
+
+    private String idiomaPrevio;
+    @BeforeEach void espanol() { idiomaPrevio = IDIOMA; IDIOMA = "es"; }
+    @AfterEach void idiomaDeAntes() { IDIOMA = idiomaPrevio; }
+
+    /** La watchlist en pequeño: selección y lista; cuenta cuántas veces se le pide la lista entera. */
+    static final class WatchlistFalsa implements PartidasPresenter.Watchlist {
+        final List<Player> seleccion = new ArrayList<>(), jugadores = new ArrayList<>();
+        boolean modoTop;
+        Player invitado;
+        int pedidasTodos;
+        @Override public List<Player> seleccion() { return new ArrayList<>(seleccion); }
+        @Override public int seleccionSize() { return seleccion.size(); }
+        @Override public boolean modoTop() { return modoTop; }
+        @Override public int totalJugadores() { return jugadores.size(); }
+        @Override public Player jugador(int indice) { return jugadores.get(indice); }
+        @Override public List<Player> todosJugadores() { pedidasTodos++; return jugadores; }
+        @Override public Player invitado() { return invitado; }
+    }
+
+    static MatchPlayer mp(long id, String nombre, int equipo, Integer rating) {
+        MatchPlayer p = new MatchPlayer(); p.id = id; p.name = nombre; p.team = equipo; p.rating = rating;
+        return p;
+    }
+
+    static Match partida(long id, MatchPlayer... jugadores) {
+        Match m = new Match();
+        m.id = id; m.started = AHORA.minusSeconds(3600); m.finished = AHORA.minusSeconds(600); m.mode = "1v1 Random Map"; m.map = "Arabia";
+        for (MatchPlayer p : jugadores) m.players.add(p);
+        return m;
+    }
+
+    // ----- asignarRef -----
+
+    @Test void asignarRef_elSujetoDeMasRating() {
+        Match m = partida(1, mp(10, "a", 1, 1500), mp(11, "b", 2, 1600));
+        PartidasPresenter.asignarRef(m, Set.of(10L, 11L), new WatchlistFalsa());
+        assertEquals(11, m.refId);
+    }
+
+    @Test void asignarRef_sujetoSinRatingPierdeYElPrimeroConRatingSeQueda() {
+        Match a = partida(1, mp(10, "a", 1, null), mp(11, "b", 2, 1400));
+        Match b = partida(2, mp(10, "a", 1, 1500), mp(11, "b", 2, null));
+        Match c = partida(3, mp(10, "a", 1, 1500), mp(11, "b", 2, 1500));
+        for (Match m : List.of(a, b, c)) PartidasPresenter.asignarRef(m, Set.of(10L, 11L), new WatchlistFalsa());
+        assertEquals(List.of(11L, 10L, 10L), List.of(a.refId, b.refId, c.refId), "en empate, el primero");
+    }
+
+    @Test void asignarRef_sinSujetos_seleccionAntesQueLista() {
+        WatchlistFalsa w = new WatchlistFalsa();
+        w.seleccion.add(new Player(21, "d", "G"));
+        w.jugadores.add(new Player(30, "e", "G"));
+        Match m = partida(1, mp(30, "e", 1, 2000), mp(21, "d", 2, 1000));
+        PartidasPresenter.asignarRef(m, Set.of(), w);
+        assertEquals(21, m.refId);
+        Match n = partida(2, mp(31, "f", 1, 2000), mp(30, "e", 2, 1000));
+        PartidasPresenter.asignarRef(n, Set.of(), w);
+        assertEquals(30, n.refId, "sin selección que la jugara: el primero de la lista");
+    }
+
+    @Test void asignarRef_nadieConocido_elDeMasRatingYSinJugadoresNoToca() {
+        Match m = partida(1, mp(40, "g", 1, 1200), mp(41, "h", 2, 1300), mp(42, "i", 1, null));
+        PartidasPresenter.asignarRef(m, Set.of(), new WatchlistFalsa());
+        assertEquals(41, m.refId);
+        Match primeroSinRating = partida(2, mp(43, "j", 1, null), mp(44, "k", 2, 900));
+        PartidasPresenter.asignarRef(primeroSinRating, Set.of(), new WatchlistFalsa());
+        assertEquals(44, primeroSinRating.refId);
+        Match vacia = partida(3); vacia.refId = 7;
+        PartidasPresenter.asignarRef(vacia, Set.of(), new WatchlistFalsa());
+        assertEquals(7, vacia.refId);
+    }
+
+    // ----- idsFiltroSujetos -----
+
+    @Test void idsFiltroSujetos_marcadosYSusCuentasVinculadas() {
+        WatchlistFalsa w = new WatchlistFalsa();
+        Player p1 = new Player(100, "P1", "G", 5), p2 = new Player(101, "P2", "G", 5), p3 = new Player(102, "P3", "G", 0), p4 = new Player(103, "P4", "G", 6);
+        w.jugadores.addAll(List.of(p1, p2, p3, p4));
+        assertEquals(Set.of(100L, 101L), PartidasPresenter.idsFiltroSujetos(List.of(p1, p3), Set.of(100L), w));
+        assertEquals(Set.of(102L), PartidasPresenter.idsFiltroSujetos(List.of(p1, p3), Set.of(102L), w));
+        assertEquals(Set.of(), PartidasPresenter.idsFiltroSujetos(List.of(p1, p3), Set.of(), w), "sin marcar: sin filtro");
+        assertEquals(Set.of(), PartidasPresenter.idsFiltroSujetos(List.of(p3), Set.of(100L), w), "marcado pero ya no es sujeto");
+        w.pedidasTodos = 0;
+        PartidasPresenter.idsFiltroSujetos(List.of(p3), Set.of(102L), w);
+        assertEquals(0, w.pedidasTodos, "sin vínculo no se pide la lista entera");
+    }
+
+    // ----- filtrar -----
+
+    static PartidasPresenter.Filtros sinFiltros() {
+        return new PartidasPresenter.Filtros("Todos los modos", "Todos los modos", 0, "Todos los mapas", 0, "");
+    }
+
+    @Test void filtrar_rellenaLaMismaListaYDevuelveLasTerminadas() {
+        Match a = partida(1, mp(10, "a", 1, 1500), mp(20, "rivalA", 2, 1400));
+        Match viva = partida(2, mp(10, "a", 1, 1500), mp(21, "rivalB", 2, 1400)); viva.finished = null; viva.enDisco = true; viva.enJuego = true;
+        Match colgada = partida(3, mp(10, "a", 1, 1500), mp(22, "rivalC", 2, 1400)); colgada.finished = null;
+        List<Match> view = new ArrayList<>(List.of(partida(99)));
+        List<Match> asignadas = new ArrayList<>();
+        List<Match> terminadas = PartidasPresenter.filtrar(List.of(a, viva, colgada), sinFiltros(), Set.of(), asignadas::add,
+                m -> m.id == 2, AHORA, view);
+        assertEquals(List.of(a, viva, colgada), view, "la lista de la vista se vacía y se rellena (la misma instancia)");
+        assertEquals(List.of(a), terminadas);
+        assertEquals(List.of(a, viva, colgada), asignadas, "sin rival: una sola asignación por partida");
+        assertEquals("▶", viva.estado);
+        assertEquals("—", colgada.estado);
+        assertFalse(viva.enDisco || viva.enJuego);
+    }
+
+    @Test void filtrar_modoMapaPeriodoRivalYSujetos() {
+        Match a = partida(1, mp(10, "a", 1, 1500), mp(20, "rivalA", 2, 1400));
+        Match b = partida(2, mp(11, "b", 1, 1500), mp(21, "rivalB", 2, 1400)); b.mode = "Team";
+        Match c = partida(3, mp(10, "a", 1, 1500), mp(22, "rivalC", 2, 1400)); c.map = "Nómada";
+        Match d = partida(4, mp(10, "a", 1, 1500), mp(23, "rivalD", 2, 1400)); d.started = AHORA.minusSeconds(10L * 24 * 3600);
+        List<Match> all = List.of(a, b, c, d), view = new ArrayList<>();
+        List<Match> asignadas = new ArrayList<>();
+        java.util.function.Consumer<Match> ref = m -> { asignadas.add(m); m.refId = m.players.get(0).id; };
+        PartidasPresenter.filtrar(all, new PartidasPresenter.Filtros("Team", "Todos los modos", 0, null, 0, ""), Set.of(), ref, m -> false, AHORA, view);
+        assertEquals(List.of(b), view);
+        PartidasPresenter.filtrar(all, new PartidasPresenter.Filtros(null, "Todos los modos", 2, "Nómada", 0, ""), Set.of(), ref, m -> false, AHORA, view);
+        assertEquals(List.of(c), view);
+        PartidasPresenter.filtrar(all, new PartidasPresenter.Filtros(null, "Todos los modos", 0, null, 1, ""), Set.of(), ref, m -> false, AHORA, view);
+        assertEquals(List.of(a, b, c), view, "periodo 7 días: la de hace 10 fuera");
+        asignadas.clear();
+        PartidasPresenter.filtrar(all, new PartidasPresenter.Filtros(null, "Todos los modos", 0, null, 0, "rivalc"), Set.of(), ref, m -> false, AHORA, view);
+        assertEquals(List.of(c), view);
+        assertEquals(List.of(a, b, c, c, d), asignadas, "con rival: se asigna antes de mirar el rival y otra vez al entrar");
+        PartidasPresenter.filtrar(all, sinFiltros(), Set.of(11L, 77L), ref, m -> false, AHORA, view);
+        assertEquals(List.of(b), view, "sujetos: alguna de sus cuentas jugó");
+    }
+
+    @Test void mensajeFiltros() {
+        assertEquals("2 de 5 partidas (según filtros).", PartidasPresenter.mensajeFiltros(2, 5));
+        IDIOMA = "en";
+        assertEquals("2 of 5 games (per filters).", PartidasPresenter.mensajeFiltros(2, 5));
+    }
+
+    @Test void modosYMapas_ordenadosSinRepetirYSinMapasVacios() {
+        Match a = partida(1); a.mode = "Z"; a.map = "Nómada";
+        Match b = partida(2); b.mode = "A"; b.map = " ";
+        Match c = partida(3); c.mode = "A"; c.map = null;
+        Match d = partida(4); d.mode = "M"; d.map = "Arabia";
+        assertEquals(List.of("A", "M", "Z"), new ArrayList<>(PartidasPresenter.modosDe(List.of(a, b, c, d))));
+        assertEquals(List.of("Arabia", "Nómada"), new ArrayList<>(PartidasPresenter.mapasDe(List.of(a, b, c, d))));
+    }
+
+    // ----- sugerenciasRival -----
+
+    static List<String> textos(List<Map.Entry<String, Integer>> sug) {
+        List<String> out = new ArrayList<>();
+        for (Map.Entry<String, Integer> e : sug) out.add(e.getKey() + "=" + e.getValue());
+        return out;
+    }
+
+    @Test void sugerencias_topOchoPorPartidasSinAliadosNiGte() {
+        List<Match> all = new ArrayList<>();
+        long id = 1;
+        for (int r = 1; r <= 9; r++)
+            for (int k = 0; k < r; k++) all.add(partida(id++, mp(10, "Ana", 1, 1500), mp(500 + r, "Rival" + r, 2, 1400)));
+        all.add(partida(id++, mp(10, "Ana", 1, 1500), mp(600, "RivalAliado", 1, 1400), mp(601, "x", 2, 1400), mp(602, "y", 2, 1400)));
+        Match gte = partida(id++, mp(700, "RivalGte", 1, 1500), mp(701, "z", 2, 1400)); gte.gte = 3;
+        all.add(gte);
+        List<Match> asignadas = new ArrayList<>();
+        List<Map.Entry<String, Integer>> sug = PartidasPresenter.sugerenciasRival(all, "rival",
+                m -> { asignadas.add(m); m.refId = 10; }, (pid, nombre) -> nombre);
+        assertEquals(List.of("Rival9=9", "Rival8=8", "Rival7=7", "Rival6=6", "Rival5=5", "Rival4=4", "Rival3=3", "Rival2=2"), textos(sug));
+        assertEquals(all.size() - 1, asignadas.size(), "fija la referencia de cada partida, salvo las de Guess the ELO");
+    }
+
+    @Test void sugerencias_enEquipos_soloElEquipoContrario() {
+        Match equipos = partida(1, mp(10, "Ana", 1, 1500), mp(600, "RivalAliado", 1, 1400), mp(601, "RivalContra", 2, 1400), mp(602, "z", 2, 1400));
+        assertEquals(List.of("RivalContra=1"), textos(PartidasPresenter.sugerenciasRival(List.of(equipos), "rival", m -> m.refId = 10, (pid, n) -> n)));
+    }
+
+    @Test void sugerencias_porNombreVisibleOReal_yContandoMayusculasJuntas() {
+        List<Match> all = List.of(
+                partida(1, mp(10, "Ana", 1, 1500), mp(501, "Pepe", 2, 1400)),
+                partida(2, mp(10, "Ana", 1, 1500), mp(502, "PEPE", 2, 1400)),
+                partida(3, mp(10, "Ana", 1, 1500), mp(503, "Juan", 2, 1400)));
+        List<Map.Entry<String, Integer>> sug = PartidasPresenter.sugerenciasRival(all, "terror",
+                m -> m.refId = 10, (pid, nombre) -> pid == 503 ? "El Terror" : nombre);
+        assertEquals(List.of("El Terror=1"), textos(sug), "por el alias");
+        sug = PartidasPresenter.sugerenciasRival(all, "pep", m -> m.refId = 10, (pid, nombre) -> nombre);
+        assertEquals(List.of("Pepe=2"), textos(sug), "el orden sin mayúsculas junta Pepe y PEPE");
+        sug = PartidasPresenter.sugerenciasRival(all, "juan", m -> m.refId = 10, (pid, nombre) -> pid == 503 ? "El Terror" : nombre);
+        assertEquals(List.of("El Terror=1"), textos(sug), "o por el nombre real");
+    }
+
+    @Test void sugerencias_nadaQueSugerirOCoincidenciaExactaYUnica_vacia() {
+        List<Match> all = List.of(partida(1, mp(10, "Ana", 1, 1500), mp(501, "Rival1", 2, 1400)),
+                                  partida(2, mp(10, "Ana", 1, 1500), mp(502, "Rival12", 2, 1400)));
+        assertEquals(List.of(), PartidasPresenter.sugerenciasRival(all, "", m -> m.refId = 10, (pid, n) -> n));
+        assertEquals(List.of(), PartidasPresenter.sugerenciasRival(List.of(), "r", m -> m.refId = 10, (pid, n) -> n));
+        assertEquals(List.of(), PartidasPresenter.sugerenciasRival(all, "zz", m -> m.refId = 10, (pid, n) -> n));
+        assertEquals(List.of(), PartidasPresenter.sugerenciasRival(all, "rival12", m -> m.refId = 10, (pid, n) -> n), "exacta y única: nada");
+        assertEquals(List.of("Rival1=1", "Rival12=1"), textos(PartidasPresenter.sugerenciasRival(all, "rival1", m -> m.refId = 10, (pid, n) -> n)),
+                "exacta pero no única: se sugieren las dos");
     }
 }

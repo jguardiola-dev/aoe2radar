@@ -1,7 +1,6 @@
 package dev.tirador.aoe2radar.ui;
 
 import dev.tirador.aoe2radar.model.Match;
-import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.AzarService;
 import dev.tirador.aoe2radar.service.BarridoVivos;
@@ -43,7 +42,6 @@ import java.util.Set;
 import java.util.TreeSet;
 
 import static dev.tirador.aoe2radar.service.ReglasPartida.marcarFantasmas;
-import static dev.tirador.aoe2radar.service.ReglasPartida.rivalCoincide;
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -72,7 +70,7 @@ public final class PartidasView {
 
     /** Lo que Partidas necesita de la Watchlist (ui.WatchlistView; la ventana lo cablea). Nombres de negocio: la
      *  vista no conoce playersList/playersModel/eloWatch, solo lo que puede hacer con ellos. */
-    public interface EnlaceWatchlist {
+    public interface EnlaceWatchlist extends PartidasPresenter.Watchlist {
         List<Player> seleccion();
         int seleccionSize();
         boolean soloVivosMarcado();
@@ -399,27 +397,9 @@ public final class PartidasView {
     void sugerirRivales() {
         rivalPopup.setVisible(false);
         rivalPopup.removeAll();
-        if (filtroRival.length() < 1 || all.isEmpty()) return;
-        Map<String, Integer> cuenta = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
-        for (Match m : all) {
-            if (m.gte > 0) continue;
-            asignarRef(m);
-            MatchPlayer yo = null;
-            for (MatchPlayer p : m.players) if (p.id == m.refId) yo = p;
-            for (MatchPlayer p : m.players) {
-                if (p.id == m.refId) continue;
-                if (yo != null && m.players.size() > 2 && p.team == yo.team) continue;
-                String vis = anfitrion.nombreVisible(p.id, p.name);
-                if (normalizarNick(vis).contains(filtroRival) || normalizarNick(p.name).contains(filtroRival)) cuenta.merge(vis, 1, Integer::sum);
-            }
-        }
-        if (cuenta.isEmpty()) return;
-        List<Map.Entry<String, Integer>> lista = new ArrayList<>(cuenta.entrySet());
-        lista.sort((a, b) -> b.getValue() - a.getValue());
-        int n = 0;
-        for (Map.Entry<String, Integer> en : lista) {
-            if (n++ >= 8) break;
-            if (normalizarNick(en.getKey()).equals(filtroRival) && lista.size() == 1) return;
+        List<Map.Entry<String, Integer>> sugerencias = PartidasPresenter.sugerenciasRival(all, filtroRival, this::asignarRef, anfitrion::nombreVisible);
+        if (sugerencias.isEmpty()) return;
+        for (Map.Entry<String, Integer> en : sugerencias) {
             JMenuItem it = new JMenuItem(en.getKey() + "  (" + en.getValue() + ")");
             it.addActionListener(a -> { rivalField.setText(en.getKey()); rivalPopup.setVisible(false); });
             rivalPopup.add(it);
@@ -508,86 +488,39 @@ public final class PartidasView {
     public void refreshModeCombo() {
         actualizandoCombos = true;
         Object sel = modeCombo.getSelectedItem();
-        TreeSet<String> modos = new TreeSet<>();
-        for (Match m : all) modos.add(m.mode);
+        TreeSet<String> modos = PartidasPresenter.modosDe(all);
         modeCombo.removeAllItems();
         modeCombo.addItem(todosModos());
         for (String s : modos) modeCombo.addItem(s);
         if (sel != null && modos.contains(String.valueOf(sel))) modeCombo.setSelectedItem(sel);
         Object selMapa = mapaCombo.getSelectedItem();
-        TreeSet<String> mapas = new TreeSet<>();
-        for (Match m : all) if (m.map != null && !m.map.isBlank()) mapas.add(m.map);
+        TreeSet<String> mapas = PartidasPresenter.mapasDe(all);
         mapaCombo.removeAllItems(); mapaCombo.addItem(t("Todos los mapas", "All maps"));
         for (String s : mapas) mapaCombo.addItem(s);
         if (selMapa != null && mapas.contains(String.valueOf(selMapa))) mapaCombo.setSelectedItem(selMapa);
         actualizandoCombos = false;
     }
 
-    /** Fija el jugador seguido de referencia de la partida. */
-    void asignarRef(Match m) {
-        MatchPlayer suj = null;
-        for (MatchPlayer mp : m.players)
-            if (SUJETOS.contains(mp.id) && (suj == null || (mp.rating != null && (suj.rating == null || mp.rating > suj.rating)))) suj = mp;
-        if (suj != null) { m.refId = suj.id; return; }
-        for (Player p : enlaceWatchlist.seleccion())
-            if (m.tieneJugador(p.id())) { m.refId = p.id(); return; }
-        for (int i = 0; i < enlaceWatchlist.totalJugadores(); i++) {
-            Player p = enlaceWatchlist.jugador(i);
-            if (m.tieneJugador(p.id())) { m.refId = p.id(); return; }
-        }
-        if (!m.players.isEmpty()) {
-            MatchPlayer mejor = m.players.get(0);
-            for (MatchPlayer p : m.players)
-                if (p.rating != null && (mejor.rating == null || p.rating > mejor.rating)) mejor = p;
-            m.refId = mejor.id;
-        }
-    }
+    /** Fija el jugador seguido de referencia de la partida (la regla vive en PartidasPresenter.asignarRef). */
+    void asignarRef(Match m) { PartidasPresenter.asignarRef(m, SUJETOS, enlaceWatchlist); }
 
     public void ajustarColumnas() { tabla.ajustarColumnas(); }
 
+    /** Lee los filtros de la barra, deja que PartidasPresenter.filtrar rellene {@code view} y pinta: tabla, «en
+     *  disco» en el fondo (abajo), guía, texto del botón y estado. */
     public void applyFilters() {
         marcarFantasmas(all);
-        String modo = (String) modeCombo.getSelectedItem();
-        Set<Long> selIds = new HashSet<>();
-        List<Player> baseFiltro = new ArrayList<>();
-        for (Player s : ultimosSujetos) if (filtroSujetos.contains(s.id())) baseFiltro.add(s);
-        for (Player p : baseFiltro) {
-            selIds.add(p.id());
-            if (p.vinculo() != 0)
-                for (Player x : enlaceWatchlist.todosJugadores())
-                    if (x.vinculo() == p.vinculo()) selIds.add(x.id());
-        }
-
-        Instant ahora = Instant.now();
-        List<Match> terminadas = new ArrayList<>();
-
-        view.clear();
-        for (Match m : all) {
-            if (!PartidasPresenter.pasaFiltroModo(modo, todosModos(), m.mode)) continue;
-            if (!PartidasPresenter.pasaFiltroMapa(mapaCombo.getSelectedIndex(), mapaCombo.getSelectedItem(), m.map)) continue;
-            if (!PartidasPresenter.pasaFiltroPeriodo(periodoCombo.getSelectedIndex(), m.started, ahora)) continue;
-            if (!filtroRival.isEmpty()) { asignarRef(m); if (!rivalCoincide(m, filtroRival)) continue; }
-            if (!selIds.isEmpty()) {
-                boolean alguno = false;
-                for (long id : selIds) if (m.tieneJugador(id)) { alguno = true; break; }
-                if (!alguno) continue;
-            }
-            asignarRef(m);
-            if (m.finished == null) {
-                m.estado = anfitrion.enCursoReal(m) ? "\u25B6" : "\u2014";
-                m.enDisco = false;
-                m.enJuego = false;
-            } else {
-                terminadas.add(m);   // «en disco»/«en juego»: se miran en el disco, fuera del EDT (abajo)
-            }
-            view.add(m);
-        }
+        PartidasPresenter.Filtros filtros = new PartidasPresenter.Filtros((String) modeCombo.getSelectedItem(), todosModos(),
+                mapaCombo.getSelectedIndex(), mapaCombo.getSelectedItem(), periodoCombo.getSelectedIndex(), filtroRival);
+        Set<Long> selIds = PartidasPresenter.idsFiltroSujetos(ultimosSujetos, filtroSujetos, enlaceWatchlist);
+        List<Match> terminadas = PartidasPresenter.filtrar(all, filtros, selIds, this::asignarRef, anfitrion::enCursoReal,
+                Instant.now(), view);
         tableModel.fireTableDataChanged();
         marcarEnDiscoEnFondo(terminadas);
         mostrarGuiaVacia(all.isEmpty());
         actualizarTextoBuscar();
         if (!all.isEmpty())
-            anfitrion.estado(view.size() + t(" de ", " of ") + all.size() + t(" partidas (según filtros).", " games (per filters)."));
+            anfitrion.estado(PartidasPresenter.mensajeFiltros(view.size(), all.size()));
     }
 
     /** Solo pinta el último cálculo de «en disco» (applyFilters puede llamarse varias veces seguidas). EDT. */
