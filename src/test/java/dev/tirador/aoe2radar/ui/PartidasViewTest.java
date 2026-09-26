@@ -207,9 +207,12 @@ class PartidasViewTest {
     }
 
     @AfterEach void cerrar() throws Exception {
-        SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
-        IDIOMA = idiomaPrevio;
-        restaurarConfig(configPrevio);
+        try {
+            SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
+            IDIOMA = idiomaPrevio;
+        } finally {
+            restaurarConfig(configPrevio);   // aunque la ventana sea null o dispose lance
+        }
     }
 
     // ----- utilidades -----

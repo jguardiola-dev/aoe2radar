@@ -577,6 +577,7 @@ public final class PartidasView {
     /** El botón principal dice a quién va a buscar. */
     public void actualizarTextoBuscar() {
         if (fetchWorker != null) return;
+        objetivoEtiqueta = null;   // como en la 1.1: nulo ANTES de consultar watchlist y anfitrión
         PartidasPresenter.QuienBusca quien = PartidasPresenter.quienBusca(enlaceWatchlist, anfitrion);
         objetivoEtiqueta = quien.objetivo();
         fetchBtn.setText(quien.textoBoton());

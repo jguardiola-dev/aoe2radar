@@ -93,9 +93,12 @@ class PartidasLogicaTest {
     }
 
     @AfterEach void cerrar() throws Exception {
-        SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
-        IDIOMA = idiomaPrevio;
-        PartidasViewTest.restaurarConfig(configPrevio);
+        try {
+            SwingUtilities.invokeAndWait(() -> { PartidasView.SUJETOS.clear(); ventana.dispose(); });
+            IDIOMA = idiomaPrevio;
+        } finally {
+            PartidasViewTest.restaurarConfig(configPrevio);   // aunque la ventana sea null o dispose lance
+        }
     }
 
     static MatchPlayer mp(long id, String nombre, int equipo, Integer rating) {
