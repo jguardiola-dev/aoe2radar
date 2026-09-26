@@ -79,6 +79,12 @@ public final class Listas {
     public JPanel filaBarra(String nombre, double fraccion, String valor, Color color, String tooltip, Runnable alClicar) { return filaBarra(null, nombre, fraccion, valor, color, tooltip, alClicar); }
 
     public JPanel filaBarra(Icon icono, String nombre, double fraccion, String valor, Color color, String tooltip, Runnable alClicar) {
+        // Fila 111 / decisión 7: esFilaJugador es un campo COMPARTIDO de Listas (una sola instancia pinta todas
+        // las listas de la ventana), así que hay que fijar su valor AQUÍ, al construir esta fila, y no leerlo
+        // dentro del clic derecho: ese clic llega mucho después (cuando el usuario lo pide), y para entonces
+        // quien pintó la lista ya devolvió esFilaJugador a false en su finally. Leído en el momento del clic,
+        // el menú «Abrir perfil en pestaña nueva» casi nunca salía (bug de la 1.1).
+        boolean filaJugador = esFilaJugador;
         JPanel f = new JPanel(new BorderLayout(6, 0)) {
             @Override protected void paintComponent(Graphics g) {
                 super.paintComponent(g);
@@ -108,7 +114,7 @@ public final class Listas {
                 @Override public void mousePressed(MouseEvent e) { menu(e); }
                 @Override public void mouseReleased(MouseEvent e) { menu(e); }
                 void menu(MouseEvent e) {
-                    if (!e.isPopupTrigger() || !esFilaJugador) return;
+                    if (!e.isPopupTrigger() || !filaJugador) return;
                     JPopupMenu pm = new JPopupMenu();
                     JMenuItem it = new JMenuItem(t("Abrir perfil en pestaña nueva", "Open profile in a new tab"));
                     it.addActionListener(a -> { marcarUltimoClicCtrl.accept(true); alClicar.run(); marcarUltimoClicCtrl.accept(false); });

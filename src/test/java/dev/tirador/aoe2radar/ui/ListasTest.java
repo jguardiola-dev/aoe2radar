@@ -7,8 +7,10 @@ import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
 import java.awt.Color;
 import java.awt.Cursor;
+import java.awt.IllegalComponentStateException;
 import java.awt.event.InputEvent;
 import java.awt.event.MouseEvent;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -63,5 +65,44 @@ class ListasTest {
         });
         assertEquals(List.of(true, false), recibidos);
         assertEquals(Boolean.TRUE, ultimoDentroDelRunnable.get());
+    }
+
+    /**
+     * Fila 111 / decisión 7: esFilaJugador se debe fijar AL CONSTRUIR la fila, no leerse en el clic derecho (que
+     * llega mucho después, cuando quien pinta varias listas seguidas ya volvió a poner esFilaJugador a false en
+     * su finally). Aquí no hay ventana real (los tests de Listas no toman pantalla, ver la cabecera del archivo),
+     * así que se comprueba que el menú SE INTENTA abrir: JPopupMenu.show() exige un componente visible en
+     * pantalla y lanza IllegalComponentStateException si no lo está (comprobado aparte, sin pantalla, con un
+     * JPanel suelto: siempre pasa por esa comprobación de AWT antes de dibujar nada). Que salte esa excepción
+     * concreta prueba que el código pasó el guard de "!filaJugador" y llegó a pm.show(); si el guard leyera el
+     * campo compartido esFilaJugador (el bug), habría vuelto antes y no lanzaría nada.
+     */
+    @Test void filaBarraClicDerechoUsaElEsFilaJugadorDeLaConstruccionNoElDelClic() throws Exception {
+        Listas listasPropias = new Listas(null, v -> { });
+        JPanel[] filaRef = new JPanel[1];
+        SwingUtilities.invokeAndWait(() -> {
+            listasPropias.esFilaJugador = true;
+            filaRef[0] = listasPropias.filaBarra("nombre", 0.5, "50 %", Color.GRAY, null, () -> { });
+            listasPropias.esFilaJugador = false;   // como el finally de quien pinta la lista, ya con la fila construida
+        });
+        MouseEvent clicDerecho = new MouseEvent(filaRef[0], MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(),
+                InputEvent.BUTTON3_DOWN_MASK, 5, 5, 1, true, MouseEvent.BUTTON3);
+        InvocationTargetException lanzada = assertThrows(InvocationTargetException.class,
+                () -> SwingUtilities.invokeAndWait(() -> filaRef[0].dispatchEvent(clicDerecho)));
+        assertInstanceOf(IllegalComponentStateException.class, lanzada.getCause(),
+                "el menú se intentó abrir (pm.show llegó a pedir la posición en pantalla)");
+    }
+
+    /** Contraparte: si la fila nunca fue de jugador, el clic derecho no debe intentar abrir nada (sin excepción). */
+    @Test void filaBarraClicDerechoSinEsFilaJugadorNoAbreMenu() throws Exception {
+        Listas listasPropias = new Listas(null, v -> { });
+        JPanel[] filaRef = new JPanel[1];
+        SwingUtilities.invokeAndWait(() -> {
+            listasPropias.esFilaJugador = false;
+            filaRef[0] = listasPropias.filaBarra("nombre", 0.5, "50 %", Color.GRAY, null, () -> { });
+        });
+        MouseEvent clicDerecho = new MouseEvent(filaRef[0], MouseEvent.MOUSE_PRESSED, System.currentTimeMillis(),
+                InputEvent.BUTTON3_DOWN_MASK, 5, 5, 1, true, MouseEvent.BUTTON3);
+        assertDoesNotThrow(() -> SwingUtilities.invokeAndWait(() -> filaRef[0].dispatchEvent(clicDerecho)));
     }
 }
