@@ -67,7 +67,7 @@ class SistemaTest {
     // ------------------------------------------------------------ carpeta de datos
 
     @Test void sinPaqueteLaCarpetaDeDatosEsLaDeTrabajoYNoSeCreaNada() {
-        Sistema.Resolucion r = Sistema.resolver(null, tmp.toString(), tmp.toString(), () -> tmp.resolve("docs"));
+        Sistema.Resolucion r = Sistema.resolver(null, null, tmp.toString(), tmp.toString(), () -> tmp.resolve("docs"));
         assertEquals(Path.of(""), r.carpeta());
         assertNull(r.documentos());
         assertFalse(r.datosNuevos());
@@ -81,7 +81,7 @@ class SistemaTest {
         Path docs = tmp.resolve("OneDrive").resolve("Documentos");
         assertEquals(roaming.resolve("aoe2radar"), Sistema.carpetaDatos(app, roaming.toString(), "C:\\ignorado"));
 
-        Sistema.Resolucion r = Sistema.resolver(app, roaming.toString(), "C:\\ignorado", () -> docs);
+        Sistema.Resolucion r = Sistema.resolver(null, app.toString(), roaming.toString(), "C:\\ignorado", () -> docs);
         assertEquals(roaming.resolve("aoe2radar"), r.carpeta());
         assertTrue(Files.isDirectory(r.carpeta()), "se crea si no existe");
         assertEquals(docs, r.documentos());
@@ -94,7 +94,7 @@ class SistemaTest {
         Path app = Files.createDirectories(tmp.resolve("app"));
         Path datos = Files.createDirectories(tmp.resolve("Roaming").resolve("aoe2radar"));
         Files.writeString(datos.resolve("players.txt"), "1;Ana\n");
-        assertFalse(Sistema.resolver(app, tmp.resolve("Roaming").toString(), null, () -> SIN_DOCS).datosNuevos());
+        assertFalse(Sistema.resolver(null, app.toString(), tmp.resolve("Roaming").toString(), null, () -> SIN_DOCS).datosNuevos());
     }
 
     @Test void sinAppdataSeUsaUserHomeAppDataRoaming() {
@@ -110,7 +110,7 @@ class SistemaTest {
             Files.writeString(app.resolve(marca), "");
             Path roaming = tmp.resolve("Roaming_" + marca);
             assertEquals(app, Sistema.carpetaDatos(app, roaming.toString(), null));
-            Sistema.Resolucion r = Sistema.resolver(app, roaming.toString(), null, () -> tmp.resolve("docs"));
+            Sistema.Resolucion r = Sistema.resolver(null, app.toString(), roaming.toString(), null, () -> tmp.resolve("docs"));
             assertEquals(app, r.carpeta());
             assertNull(r.documentos(), "portátil: las recs van junto al exe, no a Documentos");
             assertFalse(r.datosNuevos(), "portátil: no se ofrece importar");
@@ -122,7 +122,7 @@ class SistemaTest {
     @Test void siNoSePuedePrepararVuelveALaCarpetaDeLaApp() throws IOException {
         Path app = Files.createDirectories(tmp.resolve("app"));
         Path archivo = Files.writeString(tmp.resolve("soy_un_archivo"), "x");   // APPDATA apunta a un archivo
-        Sistema.Resolucion r = Sistema.resolver(app, archivo.toString(), null, () -> SIN_DOCS);
+        Sistema.Resolucion r = Sistema.resolver(null, app.toString(), archivo.toString(), null, () -> SIN_DOCS);
         assertEquals(app, r.carpeta());
         assertTrue(r.aviso().startsWith("datos: no se pudo preparar"), r.aviso());
     }
@@ -160,6 +160,26 @@ class SistemaTest {
                 Sistema.documentos(REG_ONEDRIVE, env::get, "C:\\Users\\Jorge", p -> false), "si no existe, respaldo");
         assertEquals(Path.of("C:\\Users\\Jorge\\Documents"),
                 Sistema.documentos(null, env::get, "C:\\Users\\Jorge", p -> true), "sin reg.exe, respaldo");
+    }
+
+    @Test void unaRutaInvalidaNuncaLanza() {
+        assertNull(Sistema.carpetaInstalacion(null, "C:\\a" + '\0' + "b"));
+        assertNull(Sistema.carpetaInstalacion("C:\\a" + '\0' + "b\\x.exe", null));
+        Sistema.Resolucion r = Sistema.resolver(null, "C:\\a" + '\0' + "b", tmp.toString(), null, () -> SIN_DOCS);
+        assertEquals(Path.of(""), r.carpeta(), "como sin paquete");
+    }
+
+    @Test void unaCarpetaDeRecsRelativaSeIgnora() {
+        Path docs = Path.of("D:\\Docs");
+        assertEquals(Path.of("D:\\Docs\\aoe2radar\\recs"), Sistema.carpetaRecs(Path.of("C:\\datos"), docs, "recs"));
+        assertEquals(Path.of("recs"), Sistema.carpetaRecs(Path.of(""), null, "otra\\carpeta"));
+    }
+
+    @Test void unProcesoColgadoNoCuelgaElArranque() {
+        long t0 = System.nanoTime();
+        assertNull(Sistema.ejecutarConLimite(1, "cmd", "/c", "ping -n 30 127.0.0.1 >nul"));
+        assertTrue((System.nanoTime() - t0) / 1_000_000 < 10_000, "el plazo protege de verdad");
+        assertEquals("hola", Sistema.ejecutarConLimite(5, "cmd", "/c", "echo hola").strip());
     }
 
     // ------------------------------------------------------------ relanzar

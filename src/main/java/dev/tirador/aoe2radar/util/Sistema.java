@@ -1,11 +1,13 @@
 package dev.tirador.aoe2radar.util;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -53,8 +55,10 @@ public final class Sistema {
      * con Conveyor, la de instalación ({@code app.dir}); si no hay ninguna, null (mvn, tests, harness).
      */
     static Path carpetaInstalacion(String jpackageAppPath, String conveyorAppDir) {
-        if (jpackageAppPath != null && !jpackageAppPath.isBlank()) return carpetaExe(jpackageAppPath);
-        if (conveyorAppDir != null && !conveyorAppDir.isBlank()) return Path.of(conveyorAppDir).toAbsolutePath();
+        try {
+            if (jpackageAppPath != null && !jpackageAppPath.isBlank()) return carpetaExe(jpackageAppPath);
+            if (conveyorAppDir != null && !conveyorAppDir.isBlank()) return Path.of(conveyorAppDir).toAbsolutePath();
+        } catch (RuntimeException ex) { }   // ruta inválida (InvalidPathException, IOError…): como sin paquete; nunca lanza
         return null;
     }
 
@@ -105,8 +109,8 @@ public final class Sistema {
      *  ni a Config: sus constantes salen de esta misma clase y, si el primero en llegar es uno de ellos, su
      *  inicialización aún no ha terminado. El aviso lo escribe Log al inicializarse ({@link #avisoCarpetaDatos()}). */
     private static final class Datos {
-        static final Resolucion R = resolver(carpetaInstalacion(), System.getenv("APPDATA"),
-                System.getProperty("user.home"), Sistema::documentosDelUsuario);
+        static final Resolucion R = resolver(System.getProperty(PROP_JPACKAGE), System.getProperty(PROP_CONVEYOR),
+                System.getenv("APPDATA"), System.getProperty("user.home"), Sistema::documentosDelUsuario);
     }
 
     /** Carpeta de los datos de la app (ver el comentario de la clase). */
@@ -124,9 +128,12 @@ public final class Sistema {
 
     /** Elige la carpeta de datos y la crea; solo toca el disco de las rutas que recibe. Nunca lanza (corre en un
      *  inicializador estático): si algo falla, vuelve a la carpeta de la app, como en la 1.3. */
-    static Resolucion resolver(Path instalacion, String appdata, String userHome, Supplier<Path> documentos) {
-        if (instalacion == null) return new Resolucion(Path.of(""), null, false, null);   // fuera del paquete: como siempre
+    static Resolucion resolver(String jpackageAppPath, String conveyorAppDir, String appdata, String userHome,
+                               Supplier<Path> documentos) {
+        Path instalacion = null;
         try {
+            instalacion = carpetaInstalacion(jpackageAppPath, conveyorAppDir);
+            if (instalacion == null) return new Resolucion(Path.of(""), null, false, null);   // fuera del paquete: como siempre
             Path datos = carpetaDatos(instalacion, appdata, userHome);
             if (datos.equals(instalacion)) return new Resolucion(datos, null, false, null);   // portátil
             boolean nuevos = true;
@@ -134,8 +141,9 @@ public final class Sistema {
             Files.createDirectories(datos);
             return new Resolucion(datos, documentos.get(), nuevos, null);
         } catch (Exception ex) {
-            return new Resolucion(instalacion, null, false, "datos: no se pudo preparar la carpeta de datos (" + ex
-                    + "); se usa la de la app: " + instalacion.toAbsolutePath());
+            Path app = instalacion != null ? instalacion : Path.of("");
+            return new Resolucion(app, null, false, "datos: no se pudo preparar la carpeta de datos (" + ex
+                    + "); se usa la de la app: " + app.toAbsolutePath());
         }
     }
 
@@ -163,12 +171,15 @@ public final class Sistema {
     /** Carpeta de las recs descargadas (ver el comentario de la clase). */
     public static Path carpetaRecs() { return Recs.DIR; }
 
-    /** Pura: la carpeta fijada en config si la hay y es una ruta válida; si no, Documentos\aoe2radar\recs con
+    /** Pura: la carpeta fijada en config si la hay y es una ruta absoluta válida; si no, Documentos\aoe2radar\recs con
      *  Documentos conocida (empaquetada); si no, recs/ en la carpeta de datos (portátil, o {@code Path.of("recs")}
      *  fuera del paquete). */
     static Path carpetaRecs(Path datos, Path documentos, String configurada) {
         if (configurada != null && !configurada.isBlank()) {
-            try { return Path.of(configurada.strip()); } catch (InvalidPathException ignored) { }
+            try {
+                Path p = Path.of(configurada.strip());
+                if (p.isAbsolute()) return p;   // relativa: dependería del directorio de trabajo; se ignora
+            } catch (InvalidPathException ignored) { }
         }
         if (documentos != null) return documentos.resolve(CARPETA_DATOS).resolve("recs");
         return datos.resolve("recs");
@@ -181,15 +192,27 @@ public final class Sistema {
      *  redirige), si existe; si no, user.home\Documents. Una llamada a reg.exe (con la consola en UTF-8, para que
      *  un nombre de usuario con tilde no salga en la página OEM) desde el holder Datos, una vez por arranque. */
     static Path documentosDelUsuario() {
-        String salida = null;
-        try {
-            Process pr = new ProcessBuilder("cmd", "/c", "chcp 65001 >nul & reg query \"" + CLAVE_SHELL + "\" /v Personal")
-                    .redirectErrorStream(true).start();
-            byte[] b = pr.getInputStream().readAllBytes();
-            if (pr.waitFor(5, TimeUnit.SECONDS)) salida = new String(b, StandardCharsets.UTF_8);
-            else pr.destroy();
-        } catch (Exception ignored) { }
+        String salida = ejecutarConLimite(5, "cmd", "/c", "chcp 65001 >nul & reg query \"" + CLAVE_SHELL + "\" /v Personal");
         return documentos(salida, System::getenv, System.getProperty("user.home"), Files::isDirectory);
+    }
+
+    /** Ejecuta y devuelve la salida (UTF-8), o null si falla o no acaba en el plazo. La salida se lee en otro hilo:
+     *  si el proceso se cuelga, el plazo protege de verdad (se mata con destroyForcibly) y el arranque sigue. */
+    static String ejecutarConLimite(long segundos, String... comando) {
+        Process pr = null;
+        try {
+            pr = new ProcessBuilder(comando).redirectErrorStream(true).start();
+            Process p = pr;
+            CompletableFuture<byte[]> lectura = CompletableFuture.supplyAsync(() -> {
+                try { return p.getInputStream().readAllBytes(); } catch (IOException ex) { return null; }
+            });
+            if (!pr.waitFor(segundos, TimeUnit.SECONDS)) { pr.destroyForcibly(); return null; }
+            byte[] b = lectura.get(segundos, TimeUnit.SECONDS);
+            return b == null ? null : new String(b, StandardCharsets.UTF_8);
+        } catch (Exception ex) {
+            if (pr != null) pr.destroyForcibly();
+            return null;
+        }
     }
 
     /** Pura: Documentos a partir de la salida de «reg query … /v Personal», con las %VARIABLES% expandidas; si no
