@@ -61,6 +61,7 @@ final class CableadoCromo {
         VentanaPrincipalAjustes.configurar(v, v.logo, new VentanaPrincipalAjustes.Anfitrion() {
             @Override public void alCerrar() {
                 VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar();
+                Servicios.API_CLIENTE.volcarLlamadas();   // la cuenta de llamadas desde el último volcado horario, al log (sin red)
                 Paises.guardarAlCerrar(2000);   // F13 (1.3): los países del último minuto; retiene el cierre 2 s como mucho
             }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
