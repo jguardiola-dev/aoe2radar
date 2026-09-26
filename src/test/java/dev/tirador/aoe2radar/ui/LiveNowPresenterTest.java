@@ -18,8 +18,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * LiveNowPresenter con Tareas.EN_LINEA (sin hilos) y dobles del buscador (LiveService.partidas) y de la Pantalla:
  * comprueba el barrido por lotes (caché de 60 s, circuito de tres fallos, marcado de en-curso/terminadas) y el
  * evento del socket (liveEvento), incluido que respeta puedeRepintar() antes de programar el repintado.
- * <p>Usa ids de partida grandes y propios de cada test porque EstadoVivo.SISTEMA es un singleton compartido por
- * toda la JVM de test (igual que en la 1.1: un solo VIVO para toda la app).
+ * <p>Cada presentador se construye con su propio EstadoVivo (DEUDA, fila 125: se inyecta por constructor), así
+ * que ningún test comparte el singleton EstadoVivo.SISTEMA de toda la app con otro.
  */
 class LiveNowPresenterTest {
 
@@ -102,7 +102,7 @@ class LiveNowPresenterTest {
 
     final BuscadorFalso buscador = new BuscadorFalso();
     final PantallaFalsa pantalla = new PantallaFalsa();
-    final LiveNowPresenter presenter = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla);
+    final LiveNowPresenter presenter = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla, new EstadoVivo(Reloj.SISTEMA));
 
     // ----- refrescar: fuente, caché y suscripción del socket -----------------------------
 
@@ -135,7 +135,7 @@ class LiveNowPresenterTest {
 
     @Test void refrescar_yaCargando_noRelanza() {
         TareasAplazadas tareas = new TareasAplazadas();
-        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla, new EstadoVivo(Reloj.SISTEMA));
         pantalla.fuente = List.<Object[]>of(ficha(101L, "Uno", 1500, 10, "es"));
         p.refrescar(false);   // encola el barrido, no lo ejecuta: ahoraCargando ya queda a true
         assertEquals(1, tareas.pendientesFondo.size());
@@ -238,7 +238,9 @@ class LiveNowPresenterTest {
 
     /** Sin el candado, un escritor que hace conTop(t -> { t.clear(); t.addAll(...); }) mientras un lector recorre
      *  ahoraTop en ficha() dispara casi siempre una ConcurrentModificationException en unos pocos cientos de ms:
-     *  esta es la mutación que demuestra el arreglo (quítalo y este test se pone en rojo). */
+     *  esta es la mutación que demuestra el arreglo (quítalo y este test se pone en rojo). Es una prueba de
+     *  concurrencia real (dos hilos, sin candado): el rojo es muy probable pero no está garantizado al 100%;
+     *  lo comprobé a mano 3 de 3 veces al quitar el synchronized. */
     @Test void ficha_esSeguraFrenteAEscriturasConcurrentesDeAhoraTop() throws InterruptedException {
         List<Object[]> base = new ArrayList<>();
         for (long i = 0; i < 400; i++) base.add(ficha(i, "J" + i, 1000, (int) i, "es"));
@@ -264,7 +266,7 @@ class LiveNowPresenterTest {
 
     @Test void pedirResultado_consultaLaApiConElCsvDeUnSoloPidYActualizaWonAntesDeAvisar() {
         TareasQueGuardaNombre tareas = new TareasQueGuardaNombre();
-        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla, new EstadoVivo(Reloj.SISTEMA));
         Match m = matchTerminado(9501L, 501L);
         Match conResultado = matchTerminado(9501L, 501L);
         conResultado.players.get(0).won = true;
@@ -286,7 +288,7 @@ class LiveNowPresenterTest {
 
     @Test void pedirClanes_lanzaUnHiloDemonioLlamadoClanes() {
         TareasQueGuardaNombre tareas = new TareasQueGuardaNombre();
-        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla);
+        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), tareas, pantalla, new EstadoVivo(Reloj.SISTEMA));
         p.pedirClanes();
         assertEquals("clanes", tareas.ultimoNombreDemonio);
         assertNotNull(tareas.trabajoDemonioPendiente);
@@ -302,14 +304,5 @@ class LiveNowPresenterTest {
         p.refrescar(false);
         assertNotNull(propio.partida(9901L), "se guardó en el EstadoVivo inyectado");
         assertNull(EstadoVivo.SISTEMA.partida(9901L), "y no en el singleton global de la app");
-    }
-
-    @Test void constructorDeCuatroArgumentosSigueUsandoElSistemaGlobal() {
-        long pid = 9902L;
-        LiveNowPresenter p = new LiveNowPresenter(buscador, java.util.concurrent.ConcurrentHashMap.newKeySet(), Tareas.EN_LINEA, pantalla);
-        pantalla.fuente = List.<Object[]>of(ficha(pid, "Uno", 1500, 10, "es"));
-        buscador.resultado = List.of(matchEnCurso(99002L, pid));
-        p.refrescar(false);
-        assertNotNull(EstadoVivo.SISTEMA.partida(pid), "el constructor de siempre (el que usa LiveNowView) sigue pasando SISTEMA");
     }
 }
