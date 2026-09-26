@@ -178,7 +178,9 @@ public final class WatchlistView {
         void seleccionCambiada();
         /** ¿La partida sigue realmente en curso? (cache.Vivos.enCursoReal, ui no puede importar cache). */
         boolean enCursoReal(Match m);
-        /** api.CompanionApi, que ui no puede importar: búsqueda de perfiles por nick (addPlayerDialog). */
+        /** api.CompanionApi, que ui no puede importar: búsqueda de perfiles por nick. Ya no lo usa addPlayerDialog
+         *  (decisión 8, DEUDA fila 112: delega en service.BusquedaPerfiles, como el resto de buscadores); queda
+         *  sin llamadores en WatchlistView. No se borra aquí: su implementación vive en SpoilerFreeRecs.java. */
         List<dev.tirador.aoe2radar.model.PerfilEncontrado> buscarPerfilesApi(String q) throws Exception;
         /** api.CompanionApi.perfil/pagina, solo para la tarjeta de hover (hoy inerte). */
         Perfil perfilApi(long pid) throws Exception;
@@ -1270,7 +1272,10 @@ public final class WatchlistView {
         if (s.isEmpty()) { campanaIds.clear(); SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket); return; }
         new Thread(() -> {
             Map<String, Set<Long>> nuevo = campanas.calcularCampanaIds(s, todosJugadores);
-            campanaIds.clear(); campanaIds.putAll(nuevo);   // no atomico entre el clear y el putAll: ver DEUDA
+            // fila 107 de DEUDA: retainAll+putAll en vez de clear+putAll, para que campanaIds nunca quede vacio
+            // a medias mientras otro hilo (el socket) lo lee con tocaAvisar/campanaContiene.
+            campanaIds.keySet().retainAll(nuevo.keySet());
+            campanaIds.putAll(nuevo);
             Set<Long> todos = new HashSet<>(); for (Set<Long> x : nuevo.values()) todos.addAll(x);
             anfitrion.actualizarSocketExtra(todos);
             SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket);
@@ -1301,13 +1306,18 @@ public final class WatchlistView {
         });
     }
 
-    /** Alguien vigilado entra en partida: si está en una lista con campana, aviso (toast dentro de la app; Windows si está minimizada). */
+    /** Alguien vigilado entra en partida: si está en una lista con campana, aviso (toast dentro de la app; Windows si está minimizada).
+     *  El nombre y el texto se construyen DENTRO del invokeLater (fila 106 de DEUDA): nombreDe recorre
+     *  todosJugadores/topLadder, que se leen y escriben desde el EDT (rebuildGrupos, altas, bajas...); llamarlo
+     *  desde un hilo de fondo (vigilarTop/vigilarVivos) podía toparse con un ConcurrentModificationException. */
     public void avisarSiCampana(long pid, Match m) {
         if (!campanas.tocaAvisar(pid, m, campanaIds)) return;
-        String nombre = anfitrion.nombreVisible(pid, anfitrion.ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : anfitrion.ahoraNombre(pid));
-        String resumen = enlacePartidas.resumenVivo(m, pid);
-        String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " \u00B7 " + resumen : "");
-        SwingUtilities.invokeLater(() -> anfitrion.mostrarToast(texto, m.id));   // solo dentro de la app: nada de notificaciones de Windows
+        SwingUtilities.invokeLater(() -> {
+            String nombre = anfitrion.nombreVisible(pid, anfitrion.ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : anfitrion.ahoraNombre(pid));
+            String resumen = enlacePartidas.resumenVivo(m, pid);
+            String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " \u00B7 " + resumen : "");
+            anfitrion.mostrarToast(texto, m.id);   // solo dentro de la app: nada de notificaciones de Windows
+        });
     }
 
     private String nombreDe(long pid) { for (Player p : todosJugadores) if (p.id() == pid) return p.name(); for (Player p : topLadder) if (p.id() == pid) return p.name(); return String.valueOf(pid); }
@@ -1482,7 +1492,6 @@ public final class WatchlistView {
         vigilandoTop = true;
         List<Player> top = new ArrayList<>(topLadder);
         new SwingWorker<TopLadderService.ResultadoVigilancia, Void>() {
-            final List<Match> terminadasRio = new ArrayList<>();
             @Override protected TopLadderService.ResultadoVigilancia doInBackground() {
                 return topLadderService.vigilarTop(top, VIVO::jugando, VIVO::matchDe,
                         (pid, m) -> {   // el lote: alguien aparece en curso (ver DEUDA: avisarSiCampana sigue en el hilo de fondo, como en la 1.1)
@@ -1506,16 +1515,10 @@ public final class WatchlistView {
                         if (v != null) VIVO.marcarJugando(p.id(), v);
                         else { VIVO.marcarFuera(p.id()); }   // el REST manda al quitar
                     }
-                    boolean tablaTocada = false;
-                    for (Match fresco : terminadasRio)
-                        for (Match m : all)
-                            if (m.id == fresco.id && m.finished == null) {
-                                m.finished = fresco.finished;   // la EN DIRECTO de la tabla ya acabó
-                                m.players = fresco.players;
-                                tablaTocada = true;
-                            }
-                    if (tablaTocada) enlacePartidas.applyFilters();
-                    else enlacePartidas.repintarTabla();
+                    // fila 109 de DEUDA: aquí había un "terminadasRio" que nunca se rellenaba (nada de este
+                    // método añadía partidas a esa lista); el bloque que lo consumía no actuaba nunca, así que
+                    // el resultado real siempre era el repintado simple. Se borra el muerto, no el comportamiento.
+                    enlacePartidas.repintarTabla();
                     actualizarIndicadoresVivos();
                 } catch (Exception ignored) { }
             }
@@ -1769,7 +1772,7 @@ public final class WatchlistView {
             nombre = nombre.trim();
             Set<String> cfg = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
             cfg.addAll(gruposConfig()); cfg.add(nombre);
-            guardarConfig("grupos", String.join(";", cfg));
+            guardarConfig("grupos", String.join(",", cfg));   // fila 102 de DEUDA: "," como el resto de la escritura de grupos (ver ListaSeguidos)
             return nombre;
         }
         return sel;
@@ -2106,7 +2109,7 @@ public final class WatchlistView {
         int nAmbito = 0;
         for (Player p : (modoTop() ? topLadder : todosJugadores))
             if ((modoTop() || g == null || p.grupo().equalsIgnoreCase(g)) && VIVO.jugando(p.id())) nAmbito++;
-        if (soloVivosBtn != null)
+        if (soloVivosBtn != null) {
             soloVivosBtn.setText("\u25CF " + t("Jugando", "Playing") + (nAmbito > 0 ? " (" + nAmbito + ")" : ""));
             soloVivosBtn.setToolTipText(null);   // sin tooltip: el chip se explica solo
             if (resumenWatch != null) {
@@ -2114,6 +2117,7 @@ public final class WatchlistView {
                 for (int i = 0; i < playersModel.size(); i++) totalAmbito++;
                 resumenWatch.setText(totalAmbito + t(" jugadores", " players") + " \u00B7 " + nAmbito + t(" jugando", " playing"));
             }
+        }
         tituloWatch.setTitle(nVivos == 0 ? "Watchlist"
                 : "Watchlist \u2014 " + nVivos + t(" jugando", " playing"));
         if (soloVivosBtn != null && soloVivosBtn.isSelected()) aplicarFiltroGrupo();
@@ -2195,14 +2199,6 @@ public final class WatchlistView {
         return !q.equals(textoActualDelCampo.trim());
     }
 
-    /** Añade a {@code out} los resultados locales que no estuvieran ya (por id, out[i][0]): la API manda primero
-     *  (conoce el nick actual), el índice local completa sin repetir. Mismo criterio que la 1.1 (addPlayerDialog). */
-    static void agregarLocalesSinRepetir(List<String[]> out, List<String[]> locales) {
-        Set<String> vistos = new HashSet<>();
-        for (String[] r : out) vistos.add(r[0]);
-        for (String[] r : locales) if (vistos.add(r[0])) out.add(new String[]{ r[0], r[1], r[2] + "  ·  " + r[0] });
-    }
-
     public void addPlayerDialog(boolean soloVer) { addPlayerDialog(soloVer, null); }
 
     public void addPlayerDialog(boolean soloVer, String nickInicial) {
@@ -2212,21 +2208,11 @@ public final class WatchlistView {
         if (q == null || q.isBlank()) return;
         status.setText(t("Buscando \"", "Searching \"") + q.trim() + "\"…");
         new SwingWorker<List<String[]>, Void>() {
-            @Override protected List<String[]> doInBackground() throws Exception {
-                List<String[]> out = new ArrayList<>();
-                for (dev.tirador.aoe2radar.model.PerfilEncontrado p : anfitrion.buscarPerfilesApi(q)) {   // sin reintento, como antes
-                    long id = p.pid();
-                    if (id <= 0) continue;
-                    String name = p.nombre();
-                    String pais = p.pais();
-                    anfitrion.aprenderPais(id, pais);
-                    long games  = p.partidas();
-                    out.add(new String[]{ String.valueOf(id), name,
-                            name + (pais != null ? "  [" + pais + "]" : "") + "  ·  " + id
-                                 + (games > 0 ? "  ·  " + games + " partidas" : "") });
-                }
-                agregarLocalesSinRepetir(out, busqueda.local(q.trim()));   // la API primero (conoce el nick actual, aunque el volcado aún no); después el índice local, sin repetir
-                return out;
+            // decisión 8 (DEUDA fila 112): mismo buscador que Ratings/Perfil/Live/Cara a cara (service.BusquedaPerfiles):
+            // local primero, luego la API, sin duplicados y con el mismo formato de fila. Antes esta vista llamaba a
+            // la API a mano (con su propio formato, sin t() en "partidas") y solo después completaba con lo local.
+            @Override protected List<String[]> doInBackground() {
+                return busqueda.buscar(q.trim());
             }
             @Override protected void done() {
                 try {

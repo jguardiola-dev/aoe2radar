@@ -179,12 +179,14 @@ public final class ListaSeguidos {
         jugadores.removeIf(x -> x.id() == id);
     }
 
-    /** Mueve al jugador de id p.id() al grupo indicado. OJO (igual que en la 1.1): pierde el vinculo, a
-     *  diferencia de moverVarios, que sí lo conserva (ver DEUDA). */
+    /** Mueve al jugador de id p.id() al grupo indicado, conservando su vínculo de familia (decisión 5 de Jorge,
+     *  DEUDA fila 103): antes de la fase 4 se perdía al mover uno solo, a diferencia de moverVarios, que ya lo
+     *  conservaba. Ahora los dos caminos se comportan igual. */
     public void moverJugador(List<Player> jugadores, Player p, String grupo) {
-        for (int i = 0; i < jugadores.size(); i++)
-            if (jugadores.get(i).id() == p.id())
-                jugadores.set(i, new Player(p.id(), p.name(), grupo));
+        for (int i = 0; i < jugadores.size(); i++) {
+            Player x = jugadores.get(i);
+            if (x.id() == p.id()) jugadores.set(i, new Player(x.id(), x.name(), grupo, x.vinculo()));
+        }
     }
 
     /** Mueve a todos los de {@code lista} (por id) al grupo indicado; conserva su vínculo. Devuelve cuántos ids
