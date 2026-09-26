@@ -52,7 +52,7 @@ final class CableadoCentro {
             }
             @Override public void repintarLista() { v.playersList.repaint(); }
             @Override public void estado(String texto) { v.status.setText(texto); }
-            @Override public void abrirUrl(String url) { v.abrirUrl(url); }
+            @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
             @Override public boolean seleccionada() { return v.navegador.directosBtn != null && v.navegador.directosBtn.isSelected(); }
         });
         v.centroCards.add(v.directos.panel(), "directos");
@@ -61,22 +61,22 @@ final class CableadoCentro {
             @Override public String paisSel() { return v.watchlist.paisSel(); }
             @Override public String clanBuscado() { return v.watchlist.clanBuscado(); }
             @Override public boolean campanaContiene(long pid) { return v.watchlist.campanaContiene(pid); }
-            @Override public void sincronizarSocket() { v.sincronizarSocket(); }
+            @Override public void sincronizarSocket() { v.enlaceVivo.sincronizarSocket(); }
             @Override public boolean socketConectado() { return v.enlaceVivo.conectado(); }
             @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
             @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
             @Override public void ocultarHoverCard(boolean forzar) { v.watchlist.ocultarHoverCard(forzar); }
-            @Override public boolean confirmarEspectar(String quien) { return v.confirmarEspectar(quien); }
-            @Override public void espectarPartida(long matchId) { v.espectarPartida(matchId); }
-            @Override public void abrirUrl(String url) { v.abrirUrl(url); }
+            @Override public boolean confirmarEspectar(String quien) { return dev.tirador.aoe2radar.ui.ConfirmacionEspectar.confirmar(v, quien); }
+            @Override public void espectarPartida(long matchId) { AccionesVentana.espectarPartida(v, matchId); }
+            @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
             @Override public void descargar(List<Match> lista, boolean enviarAlJuego, Runnable alTerminar) { v.partidas.descargarSinCambiarVista(lista, enviarAlJuego, alTerminar); }
             @Override public void estadoGlobal(String texto) { v.status.setText(texto); }
         });
         v.centroCards.add(v.liveNow.panel(), "ahora");
         v.techTree = new TechTreeView(v, TechTreeServiceDatos.SISTEMA, v.stats, v.filtroStats, v.listas, v, Tareas.SWING,
                 new TechTreeView.Anfitrion() {
-                    @Override public void precalentarPerfiles() { v.precalentarPerfiles(); }
-                    @Override public void cerrar() { v.cerrarTechTree(); }
+                    @Override public void precalentarPerfiles() { v.perfil.precalentar(); }
+                    @Override public void cerrar() { v.navegador.cerrarTechTree(); }
                 },
                 new TechTreeView.EnlaceCivStats() {
                     // Civ Stats se crea después (civStats es null mientras se construye el tech tree, como civStatsPanel en la 1.1)
@@ -112,21 +112,21 @@ final class CableadoCentro {
                     @Override public boolean hayTop250() { if (v.liveNow == null) return false; boolean[] hay = { false }; v.liveNow.conTop(l -> hay[0] = !l.isEmpty()); return hay[0]; }
                     @Override public Set<Long> idsTop250() { Set<Long> s = new HashSet<>(); if (v.liveNow != null) v.liveNow.conTop(l -> { for (Object[] x : l) s.add((Long) x[0]); }); return s; }
                     @Override public boolean ultimoClicFueCtrl() { return v.ultimoClicCtrl; }
-                    @Override public void pedirAlias(long pid, String nombreOriginal) { v.pedirAlias(pid, nombreOriginal); }
-                    @Override public void pedirNota(long pid, String nombre) { v.pedirNota(pid, nombre); }
-                    @Override public void borrarNota(long pid, String nombre) { v.borrarNota(pid, nombre); }
-                    @Override public void mostrarVinculadas(long pid, String nombre) { v.mostrarVinculadas(pid, nombre); }
-                    @Override public void nicksAnteriores(long pid, String nombre) { v.nicksAnteriores(pid, nombre); }
-                    @Override public void abrirUrl(String url) { v.abrirUrl(url); }
+                    @Override public void pedirAlias(long pid, String nombreOriginal) { v.dialogos.pedirAlias(pid, nombreOriginal); }
+                    @Override public void pedirNota(long pid, String nombre) { v.dialogos.pedirNota(pid, nombre); }
+                    @Override public void borrarNota(long pid, String nombre) { v.dialogos.borrarNota(pid, nombre); }
+                    @Override public void mostrarVinculadas(long pid, String nombre) { v.dialogos.mostrarVinculadas(pid, nombre); }
+                    @Override public void nicksAnteriores(long pid, String nombre) { v.dialogos.nicksAnteriores(pid, nombre); }
+                    @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
                     @Override public void registrarDestino(long pid, String nombre) { v.registrarDestino(new SpoilerFreeRecs.Destino("perfil", pid, nombre, null)); }
                     @Override public void actualizarTextoBuscar() { v.partidas.actualizarTextoBuscar(); }
-                    @Override public JToggleButton crearBotonPestana(String texto, Icon icono) { return SpoilerFreeRecs.pestana(texto, icono); }
+                    @Override public JToggleButton crearBotonPestana(String texto, Icon icono) { return dev.tirador.aoe2radar.ui.Navegador.pestana(texto, icono); }
                     @Override public void traerAlFrente() { v.toFront(); v.requestFocus(); }
                     @Override public void mostrarEstadoGlobal(String texto) { v.status.setText(texto); }
                     @Override public void cerrarPerfil() { v.mostrarDirectos(false); }
                     @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-                    @Override public boolean confirmarEspectar(String nombre) { return v.confirmarEspectar(nombre); }
-                    @Override public void espectarPartida(long matchId) { v.espectarPartida(matchId); }
+                    @Override public boolean confirmarEspectar(String nombre) { return dev.tirador.aoe2radar.ui.ConfirmacionEspectar.confirmar(v, nombre); }
+                    @Override public void espectarPartida(long matchId) { AccionesVentana.espectarPartida(v, matchId); }
                     @Override public void cargarPartidasEnTabla(List<Match> lista, Player sujeto) {
                         v.partidas.cargarPartidasEnTabla(lista, sujeto, v.watchlist.vistaActualId());
                         v.mostrarDirectos(false);

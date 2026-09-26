@@ -79,7 +79,7 @@ final class CableadoWatchlist {
             @Override public void applyFilters() { v.partidas.applyFilters(); }
             @Override public void actualizarTextoBuscar() { v.partidas.actualizarTextoBuscar(); }
             @Override public void limpiarSujetos() { dev.tirador.aoe2radar.ui.PartidasView.SUJETOS.clear(); }
-            @Override public void sincronizarSocket() { v.sincronizarSocket(); }
+            @Override public void sincronizarSocket() { v.enlaceVivo.sincronizarSocket(); }
             @Override public String resumenVivo(Match m, long pid) { return ReglasPartida.resumenVivo(m, pid); }
             @Override public String refNombre(Match m) { return v.partidas.refNombre(m); }
             @Override public void repintarTabla() { v.partidas.table.repaint(); }
@@ -105,15 +105,15 @@ final class CableadoWatchlist {
             @Override public boolean clanesVacios() { return dev.tirador.aoe2radar.sfrdata.Ladder.clanes.isEmpty(); }
             @Override public void asegurarLadderEnFondo() { dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar(false); }
             @Override public List<Map.Entry<String, Integer>> sugerirClanes(String texto) { return dev.tirador.aoe2radar.service.ConsultasLadder.sugerirClanes(texto); }
-            @Override public void trabajando(boolean on) { v.trabajando(on); }
+            @Override public void trabajando(boolean on) { v.barraEstado.trabajando(on); }
             @Override public long opSerial() { return v.barraEstado.opSerial(); }
             @Override public void marcarHiloOperacionActual() { hiloOperacion = Thread.currentThread(); }
             @Override public boolean detenerOperacion() { return stopOperacion; }
             @Override public void dormir(long ms) { Servicios.dormir(ms); }
-            @Override public void abrirUrl(String url) { v.abrirUrl(url); }
-            @Override public void espectar(Player p) { v.espectar(p); }
+            @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
+            @Override public void espectar(Player p) { AccionesVentana.espectar(v, p); }
             @Override public java.nio.file.Path rutaCaptureAge() { return dev.tirador.aoe2radar.service.Juego.rutaCaptureAge(); }
-            @Override public void lanzarCaptureAge(java.nio.file.Path rec) { v.lanzarCaptureAge(rec); }
+            @Override public void lanzarCaptureAge(java.nio.file.Path rec) { AccionesVentana.lanzarCaptureAge(v, rec); }
             @Override public void mostrarToast(String texto, long matchId) { v.mostrarToast(texto, matchId); }
             @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) {
                 JPanel toastActual = v.barraEstado.toast();
@@ -131,7 +131,7 @@ final class CableadoWatchlist {
             @Override public Object[] tarjetaPerfilCache(long pid) { return v.perfilCardCache.vigente(pid); }
             @Override public void tarjetaPerfilGuardar(long pid, Object[] valor) { v.perfilCardCache.poner(pid, valor); }
             @Override public boolean perfilAbierto() { return v.perfil.abierto(); }
-            @Override public Icon iconoVista(String tipo) { return SpoilerFreeRecs.iconoVista(tipo); }
+            @Override public Icon iconoVista(String tipo) { return dev.tirador.aoe2radar.ui.Navegador.iconoVista(tipo); }
             @Override public void seleccionCambiada() { if (v.ratings != null) v.ratings.sincronizarSeleccion(); if (v.perfil != null) v.perfil.sincronizarSeleccion(); }
             @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
             @Override public List<dev.tirador.aoe2radar.model.PerfilEncontrado> buscarPerfilesApi(String q) throws Exception { return COMPANION.buscarPerfiles(q); }

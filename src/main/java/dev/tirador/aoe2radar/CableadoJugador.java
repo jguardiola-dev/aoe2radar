@@ -52,7 +52,7 @@ final class CableadoJugador {
                     @Override public void refrescarAlturas() { v.watchlist.refrescarAlturasWatch(); }
                     @Override public void refrescarTabla() { v.partidas.refrescarTabla(); }
                     @Override public void ajustarColumnasTabla() { v.partidas.ajustarColumnas(); }
-                    @Override public void actualizarControles() { v.actualizarControlesTabla(); }
+                    @Override public void actualizarControles() { v.navegador.actualizarControlesTabla(); }
                     @Override public void refrescarSujetos() { v.partidas.refrescarSujetos(v.partidas.ultimosSujetos, v.invitado != null); }   // el ELO recién llegado, a la cabecera
                     @Override public void mostrarEstado(String texto) { v.status.setText(texto); }
                     @Override public boolean enWatchlist(long pid) { return v.watchlist.containsPlayerId(pid); }
@@ -75,16 +75,16 @@ final class CableadoJugador {
         return new MenusJugadorSwing(VIVO, ELO_1V1, SERVICIO_PERFIL, v,
                 pid -> v.liveNow != null ? v.liveNow.liveFicha(pid) : null, Tareas.SWING,
                 new MenusJugadorSwing.Acciones() {
-                    @Override public void espectarPartida(long matchId) { v.espectarPartida(matchId); }
-                    @Override public void abrirUrl(String url) { v.abrirUrl(url); }
+                    @Override public void espectarPartida(long matchId) { AccionesVentana.espectarPartida(v, matchId); }
+                    @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
                     @Override public String nombreVisible(long pid, String nombre) { return Anotaciones.nombreVisible(pid, nombre); }
                     @Override public String paisDe(long pid) { return dev.tirador.aoe2radar.cache.Paises.paisDe(pid); }
-                    @Override public String notaDe(long pid) { return v.notaDe(pid); }
-                    @Override public void pedirAlias(long pid, String nombreOriginal) { v.pedirAlias(pid, nombreOriginal); }
-                    @Override public void pedirNota(long pid, String nombre) { v.pedirNota(pid, nombre); }
-                    @Override public void borrarNota(long pid, String nombre) { v.borrarNota(pid, nombre); }
-                    @Override public void mostrarVinculadas(long pid, String nombre) { v.mostrarVinculadas(pid, nombre); }
-                    @Override public void nicksAnteriores(long pid, String nombre) { v.nicksAnteriores(pid, nombre); }
+                    @Override public String notaDe(long pid) { return v.dialogos.notaDe(pid); }
+                    @Override public void pedirAlias(long pid, String nombreOriginal) { v.dialogos.pedirAlias(pid, nombreOriginal); }
+                    @Override public void pedirNota(long pid, String nombre) { v.dialogos.pedirNota(pid, nombre); }
+                    @Override public void borrarNota(long pid, String nombre) { v.dialogos.borrarNota(pid, nombre); }
+                    @Override public void mostrarVinculadas(long pid, String nombre) { v.dialogos.mostrarVinculadas(pid, nombre); }
+                    @Override public void nicksAnteriores(long pid, String nombre) { v.dialogos.nicksAnteriores(pid, nombre); }
                     @Override public boolean enWatchlist(long pid) { return v.watchlist.containsPlayerId(pid); }
                     @Override public Set<String> gruposDisponibles() { return v.watchlist.gruposParaFichar(); }
                     @Override public void anadirAWatchlist(long pid, String nombre, String grupo) {

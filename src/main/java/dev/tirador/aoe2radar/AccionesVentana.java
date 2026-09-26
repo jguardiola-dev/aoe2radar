@@ -15,6 +15,7 @@ package dev.tirador.aoe2radar;
 import dev.tirador.aoe2radar.app.Servicios;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.Espectar;
+import dev.tirador.aoe2radar.ui.TemaApp;
 import dev.tirador.aoe2radar.ui.WatchlistView;
 
 import javax.swing.*;
@@ -50,14 +51,17 @@ final class AccionesVentana {
 
     private AccionesVentana() {}
 
+    // Cargas iniciales (canales, jugadores, tema/fuentes) y el arranque de los
+    // temporizadores: vigilante de vivos, ping del socket, comprobar actualizacion,
+    // precarga del tech tree y del ladder. Es lo último que hace el constructor.
     static void arrancar(SpoilerFreeRecs v) {
         cargarCanales();
         v.watchlist.loadPlayers();
         v.watchlist.sanearVinculosHuerfanos();
         v.getRootPane().setDefaultButton(v.partidas.fetchBtn);   // acción primaria: acento y Enter
-        v.ajustarGrises(flatLafDisponible && temaOscuroActivo);
-        v.ajustarBotonesEspeciales(flatLafDisponible && temaOscuroActivo);
-        v.ajustarFuentesSecundarias();
+        TemaApp.ajustarGrises(v, flatLafDisponible && temaOscuroActivo);
+        TemaApp.ajustarBotonesEspeciales(v, flatLafDisponible && temaOscuroActivo);
+        TemaApp.ajustarFuentesSecundarias(v);
         v.partidas.table.getInputMap(JComponent.WHEN_FOCUSED)
              .put(KeyStroke.getKeyStroke("ENTER"), "descargarSeleccion");
         v.partidas.table.getActionMap().put("descargarSeleccion", new AbstractAction() {
@@ -74,8 +78,8 @@ final class AccionesVentana {
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
         v.enlaceVivo.iniciarPing();
         javax.swing.Timer tUpd = new javax.swing.Timer(8000, e -> {   // una vez, tras arrancar
-            v.comprobarActualizacion(false); v.techTree.precargar();
-            cargarPaises(); v.instalarAutoScroll();
+            v.menuConfiguracion.comprobarActualizacion(false); v.techTree.precargar();
+            cargarPaises(); v.autoScroll.instalar();
             new javax.swing.Timer(60_000, ev -> guardarPaises()).start();
             v.watchlist.refrescarCampanas();
             v.campanasTimer = new javax.swing.Timer(15 * 60_000, ev -> v.watchlist.refrescarCampanas()); v.campanasTimer.start();
@@ -101,7 +105,7 @@ final class AccionesVentana {
             } else if (v.watchlist.modoClan() && tocaSondear) v.watchlist.vigilarTop();   // el clan se vigila, pero nunca se sustituye por el top del ladder
         });
         new Thread(() -> { cargarControl(); cargarEloAyer(); }, "control").start();
-        if (!leerConfig("mi_pid", "").isBlank()) v.iniciarVigilanciaLogJuego();   // «Mi partida»: aviso temprano al encontrar partida
+        if (!leerConfig("mi_pid", "").isBlank()) v.miPartida.iniciarVigilancia();   // «Mi partida»: aviso temprano al encontrar partida
 
         new javax.swing.Timer(3_600_000, e -> new Thread(Servicios::cargarControl, "control").start()).start();
         v.vigilante.setInitialDelay(tickMs());
@@ -115,8 +119,11 @@ final class AccionesVentana {
         catch (Exception ex) { v.status.setText(t("No se pudo abrir el navegador: ", "Couldn't open the browser: ") + causa(ex)); }
     }
 
-    static boolean usarCA(SpoilerFreeRecs v) { return Boolean.parseBoolean(leerConfig("usar_ca", "false")); }
+    static boolean usarCA() { return Boolean.parseBoolean(leerConfig("usar_ca", "false")); }
 
+    /** Lanza CaptureAge — con una rec (la reproduce con su overlay) o sin argumentos (modo acompañante: se
+     *  engancha al juego al espectar). Buscar la ruta y arrancar el proceso viven en service.Espectar (fase 3,
+     *  tanda 4, Z4); aquí solo queda traducir el resultado al texto de estado. */
     static void lanzarCaptureAge(SpoilerFreeRecs v, Path rec) {
         Espectar.ResultadoCaptureAge r = v.espectar.lanzarCaptureAge();
         switch (r.estado()) {
@@ -127,13 +134,15 @@ final class AccionesVentana {
         }
     }
 
+    /** Abre el juego espectando una partida en curso (protocolo
+     *  aoe2de://1/matchId, el mismo que usa aoe2companion/aoe2recs). */
     static void espectarPartida(SpoilerFreeRecs v, long matchId) {
         log("espectar: lanzando aoe2de://1/" + matchId);
         try {
             v.espectar.espectarPartida(matchId);
             boolean caListo = rutaCaptureAge() != null;
-            if (usarCA(v) && caListo) lanzarCaptureAge(v, null);
-            String pista = (!usarCA(v) && caListo)
+            if (usarCA() && caListo) lanzarCaptureAge(v, null);
+            String pista = (!usarCA() && caListo)
                     ? t(" (Configuración → «Usar CaptureAge» lo lanzaría también)",
                         " (Settings → \u201CUse CaptureAge\u201D would launch it too)")
                     : "";
@@ -144,6 +153,9 @@ final class AccionesVentana {
         }
     }
 
+    /** Verifica que la partida sigue en curso justo antes de lanzar el juego:
+     *  si acaba de terminar, avisa y re-sincroniza en vez de abrir AoE2 a un
+     *  «Invalid match ID». La llamada de red y sus logs viven en service.Espectar.viva (fase 3, tanda 4, Z4). */
     static void espectarVerificando(SpoilerFreeRecs v, long profileId, long matchId) {
         v.status.setText(t("Comprobando que la partida sigue en curso…", "Checking the game is still live…"));
         new SwingWorker<Boolean, Void>() {
