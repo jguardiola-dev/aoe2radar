@@ -1301,13 +1301,18 @@ public final class WatchlistView {
         });
     }
 
-    /** Alguien vigilado entra en partida: si está en una lista con campana, aviso (toast dentro de la app; Windows si está minimizada). */
+    /** Alguien vigilado entra en partida: si está en una lista con campana, aviso (toast dentro de la app; Windows si está minimizada).
+     *  El nombre y el texto se construyen DENTRO del invokeLater (fila 106 de DEUDA): nombreDe recorre
+     *  todosJugadores/topLadder, que se leen y escriben desde el EDT (rebuildGrupos, altas, bajas...); llamarlo
+     *  desde un hilo de fondo (vigilarTop/vigilarVivos) podía toparse con un ConcurrentModificationException. */
     public void avisarSiCampana(long pid, Match m) {
         if (!campanas.tocaAvisar(pid, m, campanaIds)) return;
-        String nombre = anfitrion.nombreVisible(pid, anfitrion.ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : anfitrion.ahoraNombre(pid));
-        String resumen = enlacePartidas.resumenVivo(m, pid);
-        String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " \u00B7 " + resumen : "");
-        SwingUtilities.invokeLater(() -> anfitrion.mostrarToast(texto, m.id));   // solo dentro de la app: nada de notificaciones de Windows
+        SwingUtilities.invokeLater(() -> {
+            String nombre = anfitrion.nombreVisible(pid, anfitrion.ahoraNombre(pid).equals(String.valueOf(pid)) ? nombreDe(pid) : anfitrion.ahoraNombre(pid));
+            String resumen = enlacePartidas.resumenVivo(m, pid);
+            String texto = "\u25CF " + nombre + t(" ha empezado una partida", " started a game") + (resumen != null ? " \u00B7 " + resumen : "");
+            anfitrion.mostrarToast(texto, m.id);   // solo dentro de la app: nada de notificaciones de Windows
+        });
     }
 
     private String nombreDe(long pid) { for (Player p : todosJugadores) if (p.id() == pid) return p.name(); for (Player p : topLadder) if (p.id() == pid) return p.name(); return String.valueOf(pid); }

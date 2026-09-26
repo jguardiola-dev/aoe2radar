@@ -509,6 +509,51 @@ class WatchlistViewTest {
         assertNull(watchlist.tipCuentaVinculada(m));
     }
 
+    // ===== avisarSiCampana: nombre y texto se construyen en el EDT (fila 106 de DEUDA) ==========================
+
+    /**
+     * avisarSiCampana llega desde un hilo de fondo (vigilarTop/vigilarVivos). nombreDe recorre todosJugadores,
+     * que el EDT lee y escribe (rebuildGrupos, altas, bajas...): antes del arreglo, ese recorrido se hacía en el
+     * propio hilo de fondo, ANTES del invokeLater, así que podía toparse con la lista a medio modificar. El
+     * hook de más abajo detecta desde qué hilo se recorre todosJugadores.
+     */
+    @Test void avisarSiCampana_leeTodosJugadoresSoloEnElEdt() throws Exception {
+        java.util.concurrent.atomic.AtomicBoolean invocado = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean fueraDelEdt = new java.util.concurrent.atomic.AtomicBoolean(false);
+        List<Player> jugadoresVigilados = new ArrayList<>() {
+            @Override public java.util.Iterator<Player> iterator() {
+                invocado.set(true);
+                if (!javax.swing.SwingUtilities.isEventDispatchThread()) fueraDelEdt.set(true);
+                return super.iterator();
+            }
+        };
+        jugadoresVigilados.add(new Player(1L, "Ana", "G"));
+        WatchlistView w = nuevaInstancia(jugadoresVigilados);
+
+        // campanaIds es privado: se rellena por reflexión con una campana ya calculada para el grupo "G",
+        // sin pasar por refrescarCampanas (que lanza un hilo de red que aquí no hace falta).
+        java.lang.reflect.Field campo = WatchlistView.class.getDeclaredField("campanaIds");
+        campo.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Set<Long>> campanaIds = (Map<String, Set<Long>>) campo.get(w);
+        campanaIds.put("grupo|G", Set.of(1L));
+
+        Match m = new Match();
+        m.id = 555L;
+
+        Thread hiloDeFondo = new Thread(() -> w.avisarSiCampana(1L, m), "vigilar-test");
+        hiloDeFondo.start();
+        hiloDeFondo.join(2000);
+
+        assertFalse(fueraDelEdt.get(), "todosJugadores no debe recorrerse fuera del EDT");
+
+        // deja correr en el EDT lo que avisarSiCampana haya encolado con invokeLater
+        javax.swing.SwingUtilities.invokeAndWait(() -> { });
+
+        assertTrue(invocado.get(), "el hook debía dispararse: avisarSiCampana sí llega a leer todosJugadores");
+        assertFalse(fueraDelEdt.get(), "todosJugadores no debe recorrerse fuera del EDT (tampoco tras el invokeLater)");
+    }
+
     // ===== alta de jugador: solo lo que no abre diálogo =========================================================
 
     @Test void sugerenciaCaducada_siElTextoCambio() {
