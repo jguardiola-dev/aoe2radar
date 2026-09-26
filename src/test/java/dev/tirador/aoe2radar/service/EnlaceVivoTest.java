@@ -73,7 +73,8 @@ class EnlaceVivoTest {
         @Override public List<Long> idsTodosJugadores() { return todos; }
         @Override public List<Long> idsTopLadder() { return topLadder; }
         @Override public Set<Long> idsSocketExtra() { return extra; }
-        @Override public void liveEvento(long pid, Match m, boolean terminada) { avisos.add("liveEvento:" + pid + ":" + terminada); }
+        final List<Match> partidasLive = new ArrayList<>();   // la partida que llegó con cada liveEvento (null si ninguna)
+        @Override public void liveEvento(long pid, Match m, boolean terminada) { avisos.add("liveEvento:" + pid + ":" + terminada); partidasLive.add(m); }
         @Override public void avisarSiCampana(long pid, Match m) { avisos.add("campana:" + pid); }
         @Override public void avisarMiPartida(long pid, Match m) { avisos.add("miPartida:" + pid); }
         @Override public void avisarTrasCambio() { avisos.add("avisarTrasCambio"); }
@@ -180,6 +181,25 @@ class EnlaceVivoTest {
         assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos);
         assertFalse(vivo.jugando(7));
         assertTrue(vivo.terminada(555));
+    }
+
+    /** Revisión 1.3, F5: la terminada llega a Live now con la partida de la API (con su hora de fin), no con null. */
+    @Test void quitadaConfirmadaPasaALiveNowLaPartidaDeLaApiConSuFin() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "]}";
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 1);
+        Match fin = vistas.partidasLive.get(0);
+        assertNotNull(fin, "antes llegaba null y Live now pintaba «hace 0 min»");
+        assertEquals(555L, fin.id);
+        assertNotNull(fin.finished);
+    }
+
+    @Test void quitadaSinDatosSigueSinPartidaParaLiveNow() {
+        red.cuerpo = "{\"matches\":[]}";
+        vivo.marcarJugando(7, 555);
+        enlace.comprobarQuitada(555, 2);   // último intento sin datos: sale sin partida (no hay otra)
+        assertEquals(1, vistas.partidasLive.size());
+        assertNull(vistas.partidasLive.get(0));
     }
 
     @Test void quitadaDeUnaPartidaQueLaApiVeVivaNoSacaANadie() {

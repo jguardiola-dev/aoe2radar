@@ -157,7 +157,10 @@ public final class EnlaceVivo {
                 fuera = vivo.quitarPartida(matchId);
             }
             boolean cambio = false;
-            for (long pid : fuera) { vistas.liveEvento(pid, null, true); cambio = true; }
+            // TERMINADA: la partida que devolvió la API, con su hora de fin (si no, Live now pintaba «hace 0 min» hasta
+            // que caducaba a las 2 h). Sin datos: null, como antes (Live now usa la que guardó al empezar). Revisión 1.3, F5.
+            Match fin = c.veredicto() == LiveService.Veredicto.TERMINADA ? c.partida() : null;
+            for (long pid : fuera) { vistas.liveEvento(pid, fin, true); cambio = true; }
             if (cambio) vistas.avisarTrasCambio();
         } finally {
             if (!sigue) quitadasEnVuelo.remove(matchId);

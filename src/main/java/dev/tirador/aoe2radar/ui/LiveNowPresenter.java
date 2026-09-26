@@ -265,7 +265,8 @@ public final class LiveNowPresenter {
         if (terminada) {
             Match viva = estadoVivo.soltarPartida(pid);
             Match fin = m != null ? m : viva;
-            if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, System.currentTimeMillis() }); }
+            // con la hora de fin real si se sabe (la da la API, revisión 1.3, F5), como el barrido; si no, la de ahora
+            if (fin != null && fin.id > 0) synchronized (liveTerminadas) { liveTerminadas.putIfAbsent(fin.id, new Object[]{ fin, fin.finished != null ? fin.finished.toEpochMilli() : System.currentTimeMillis() }); }
             synchronized (ahoraEnCurso) { ahoraEnCurso.remove(pid); }
         } else if (m != null) {
             estadoVivo.guardarPartida(pid, m);

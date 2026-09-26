@@ -292,6 +292,16 @@ class LiveNowPresenterTest {
         assertTrue(presenter.terminadasVigentes().stream().anyMatch(x -> ((Match) x[0]).id == 9301L));
     }
 
+    /** Revisión 1.3, F5: con la hora de fin real (la de la API), las terminadas se ordenan y caducan por ella. */
+    @Test void liveEvento_terminadaConHoraDeFin_laApuntaConEsaHora() {
+        pantalla.fuente = List.<Object[]>of(ficha(611L, "Uno", 1500, 10, "es"));
+        presenter.refrescar(false);
+        Match fin = matchTerminado(9311L, 611L);   // terminó hace 10 min
+        presenter.liveEvento(611L, fin, true);
+        Object[] x = presenter.terminadasVigentes().stream().filter(t -> ((Match) t[0]).id == 9311L).findFirst().orElseThrow();
+        assertEquals(fin.finished.toEpochMilli(), (Long) x[1]);
+    }
+
     @Test void liveEvento_noRepintaSiLaPantallaNoLoPermite() {
         pantalla.fuente = List.<Object[]>of(ficha(701L, "Uno", 1500, 10, "es"));
         presenter.refrescar(false);
