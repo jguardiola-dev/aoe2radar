@@ -13,6 +13,7 @@ class ImportarDatosTest {
     @Test void fueraDelPaqueteNoSeOfreceNiSeRecuerda() {
         String antes = leerConfig(ImportacionDatos.CLAVE_OFRECIDA, "ausente");
         ImportarDatos.ofrecerSiToca(null);
+        ImportarDatos.alArrancar(null);   // ni aviso ni oferta: vuelve sin lanzar hilos ni diálogos
         assertEquals(antes, leerConfig(ImportacionDatos.CLAVE_OFRECIDA, "ausente"));
     }
 }

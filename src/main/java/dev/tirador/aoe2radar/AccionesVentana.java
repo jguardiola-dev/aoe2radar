@@ -64,9 +64,11 @@ final class AccionesVentana {
         // ni retrasa el resto del arranque), se limpian los de más de un día en las carpetas donde escribirAtomico
         // escribe: la de trabajo (config.properties) y sfrdata (paises.txt, perfiles_shards).
         Thread hiloLimpiarTemporales = new Thread(() -> {
-            limpiarTemporales(dev.tirador.aoe2radar.util.Config.CONFIG_FILE.toAbsolutePath().getParent(), "config.properties", Duration.ofDays(1));   // la carpeta de datos (junto al exe si está empaquetada), no el directorio de trabajo
+            limpiarTemporales(dev.tirador.aoe2radar.util.Config.CONFIG_FILE.toAbsolutePath().getParent(), "config.properties", Duration.ofDays(1));   // la carpeta de datos (%APPDATA%\aoe2radar empaquetada; junto al exe en modo portátil), no el directorio de trabajo
             limpiarTemporales(LADDER_DIR, "paises.txt", Duration.ofDays(1));
             limpiarTemporales(LADDER_DIR.resolve("perfiles_shards"), "", Duration.ofDays(1));
+            limpiarTemporales(dev.tirador.aoe2radar.cache.RecsDisco.RECS_DIR, "",   // recs a medio importar (ImportacionDatos)
+                    dev.tirador.aoe2radar.util.ImportacionDatos.SUFIJO_REC_TEMPORAL, Duration.ofDays(1));
         }, "limpiar-temporales");
         hiloLimpiarTemporales.setDaemon(true);   // revisor: limpieza de arranque, no debe retrasar el cierre de la app
         hiloLimpiarTemporales.start();
@@ -93,9 +95,9 @@ final class AccionesVentana {
             // miraba !modoTop() cuando la app ya estaba siempre en ★, y nunca buscaba (general F2 / watchlist F3).
             if (inicio.buscaAlAbrir() && Boolean.parseBoolean(leerConfig("buscar_al_abrir", "true")) && v.playersModel.size() > 0)
                 v.partidas.fetchMatches(v.partidas.fetchBtn);
-            // Primer arranque de la app instalada con la carpeta de datos vacía: ofrecer UNA vez importar de una 1.x
-            // en zip. Lo último del turno, con la ventana ya montada; la carga sigue en sus hilos.
-            dev.tirador.aoe2radar.ui.ImportarDatos.ofrecerSiToca(v);
+            // App instalada: el resultado de una importación recién hecha o, con la carpeta de datos vacía, ofrecer UNA
+            // vez importar de una 1.x en zip. Lo último del turno, con la ventana ya montada; la carga sigue en sus hilos.
+            dev.tirador.aoe2radar.ui.ImportarDatos.alArrancar(v);
         });
         final boolean autoOn = Boolean.parseBoolean(leerConfig("autoarranque", "false"));
         new Thread(() -> fijarAutoArranque(autoOn)).start();   // reconcilia SIEMPRE: escribe si sí, borra si no
