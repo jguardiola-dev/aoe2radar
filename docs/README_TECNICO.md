@@ -63,6 +63,63 @@ cleans the packaging):
 The version is set by hand in two places: `util.Identidad.VERSION` (what the app shows) and
 `jpackage.appVersion` in the profile (the `.exe` version). Change both together.
 
+## App, data and recs folders (`util.Sistema`)
+**Packaged or not** is decided in one place, `Sistema.carpetaInstalacion`: the `jpackage.app-path` system
+property (set by the jpackage launcher: the exe path) or the `app.dir` system property (set by the Conveyor
+launcher: the install folder). Neither → not packaged (`mvn`, tests, capture harness).
+
+- **App folder** (`carpetaApp()` / `enCarpetaApp`): the install folder. Read-only resources only: today the
+  `banderas/` copy that the `empaquetar` profile leaves next to the exe (`ImagenesJuego.BANDERAS_DIR`). The
+  tech tree and the flags inside the jar are read from the classpath.
+- **Data folder** (`carpetaBase()` / `enCarpetaBase`): everything the app writes — `config.properties`,
+  `players.txt`, `top_cache.txt`, `descargas.log`, `sfrdata/`, `techtree/` (the disk copy of the tech tree,
+  filled from the jar and refreshed by ETag) and `arranque_error.log`.
+- **Recs folder** (`carpetaRecs()`, used by `RecsDisco.RECS_DIR`).
+
+| Situation | Data folder | Recs folder |
+|---|---|---|
+| Not packaged | `Path.of("")` (working directory, as always: the harness depends on it) | `recs` (relative) |
+| Packaged, `portable` or `portable.txt` in the app folder | the app folder (as in 1.1–1.3) | `recs/` there |
+| Packaged | `%APPDATA%\aoe2radar` (without `APPDATA`: `user.home\AppData\Roaming\aoe2radar`), created if missing | `Documents\aoe2radar\recs` |
+| The data folder cannot be prepared | the app folder, and a line in the log | as above |
+
+`config.properties` key `carpeta_recs`, if set, overrides the recs folder. Documents is the `Personal` value of
+`HKCU\...\Explorer\User Shell Folders` (it follows a OneDrive redirection), read once with `reg.exe` (console
+in UTF-8) and expanded; if missing or not a folder, `user.home\Documents`. Under Conveyor (MSIX), Windows
+redirects `%APPDATA%` writes to the package's private copy transparently (removed on uninstall), and the portable
+file cannot be created in the install folder.
+
+The folder is resolved once, in a lazy holder (`Sistema.Datos`), the first time a data path is asked for (on
+the main thread, in `Main.main`). `Sistema` cannot call `Log` or `Config` while resolving (their constants come
+from it), so it keeps the message (`avisoCarpetaDatos()`) and `Log` writes it when it finishes initializing;
+the recs folder, which does read `config.properties`, lives in a second holder.
+
+### Importing data from a 1.x zip (`util.ImportacionDatos`, `ui.ImportarDatos`)
+An installed app cannot know where the old zip was, so there is no automatic migration. Instead:
+
+- `Sistema.datosNuevos()`: when packaged (not portable), the data folder had neither `config.properties` nor
+  `players.txt` at startup (decided before anything writes `config.properties`).
+- If so, and `importar_ofrecido` is not set, `AccionesVentana.arrancar` asks once, after the window is up:
+  "Coming from aoe2radar 1.x (zip)?" with **Choose folder…** / **No, thanks**. Either answer is remembered.
+  The same action is in Settings → **Import data from another version…** (only when packaged, so the
+  harness menu capture does not change).
+- The chosen folder must contain `config.properties` or `players.txt` and must not be (or contain, or be
+  inside) the data folder. The copy runs on a background thread: `sfrdata/`, `top_cache.txt`, `players.txt`
+  and `config.properties` go to a `.importando` staging folder inside the data folder; `config.properties` is
+  rewritten (`carpeta_recs` pointing inside the old folder → the new recs folder; `importar_ofrecido=true`);
+  the old recs are copied to the recs folder without overwriting (each through a temporary name); then the
+  staged files are moved into place with `players.txt`, `config.properties` and the `importado_desde.txt`
+  marker last. On any error the staging folder is deleted and the data folder is left as it was. Not
+  imported: `descargas.log`, `techtree/` (rebuilt from the jar; its ETag is forgotten when `data.json` comes
+  from the jar), app resources.
+- Afterwards the app relaunches its own exe (`Sistema.relanzar`, from `ProcessHandle`) and exits with
+  `System.exit`, skipping the normal close: the old in-memory player list and countries would otherwise be
+  saved over the imported files.
+
+Autostart with Windows (`Sistema.fijarAutoArranque`, `HKCU\...\CurrentVersion\Run`) points at the exe
+(`jpackage.app-path`), never at the data folder. Under Conveyor there is no `jpackage.app-path`, so the menu
+item is disabled (an MSIX app needs a startup task declared in its package instead).
+
 ## Layered architecture
 Summary table; the details of what each layer knows and the key contracts are in
 [docs/ARQUITECTURA.md](ARQUITECTURA.md#layers-inside-out).
