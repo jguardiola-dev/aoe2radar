@@ -1270,7 +1270,10 @@ public final class WatchlistView {
         if (s.isEmpty()) { campanaIds.clear(); SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket); return; }
         new Thread(() -> {
             Map<String, Set<Long>> nuevo = campanas.calcularCampanaIds(s, todosJugadores);
-            campanaIds.clear(); campanaIds.putAll(nuevo);   // no atomico entre el clear y el putAll: ver DEUDA
+            // fila 107 de DEUDA: retainAll+putAll en vez de clear+putAll, para que campanaIds nunca quede vacio
+            // a medias mientras otro hilo (el socket) lo lee con tocaAvisar/campanaContiene.
+            campanaIds.keySet().retainAll(nuevo.keySet());
+            campanaIds.putAll(nuevo);
             Set<Long> todos = new HashSet<>(); for (Set<Long> x : nuevo.values()) todos.addAll(x);
             anfitrion.actualizarSocketExtra(todos);
             SwingUtilities.invokeLater(enlacePartidas::sincronizarSocket);

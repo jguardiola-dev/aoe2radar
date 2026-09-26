@@ -554,6 +554,89 @@ class WatchlistViewTest {
         assertFalse(fueraDelEdt.get(), "todosJugadores no debe recorrerse fuera del EDT (tampoco tras el invokeLater)");
     }
 
+    // ===== refrescarCampanas: campanaIds nunca se ve vacío a medias (fila 107 de DEUDA) =========================
+
+    /**
+     * Mismo patrón que EloNocturnoTest.elMapaDeAyerNuncaSeVeVacioMientrasSeRefresca: muchas claves (20.000, para
+     * que el retainAll+putAll tarde lo bastante) y un hilo lector espiando campanaIds mientras se refresca dos
+     * veces con las MISMAS claves. Con clear()+putAll() el mapa se ve vacío entre medias; con retainAll+putAll,
+     * las claves que siguen existiendo nunca desaparecen.
+     */
+    /** EnlacePartidas mínimo que solo avisa (por el latch) cuando refrescarCampanas termina su hilo de fondo. */
+    static final class EnlaceConLatch implements WatchlistView.EnlacePartidas {
+        final java.util.concurrent.CountDownLatch listo;
+        EnlaceConLatch(java.util.concurrent.CountDownLatch listo) { this.listo = listo; }
+        @Override public void fetchMatches() { }
+        @Override public void mostrarDirectos(boolean mostrar) { }
+        @Override public void refrescarSujetos(List<Player> tracked, boolean esInvitado) { }
+        @Override public List<Player> ultimosSujetos() { return List.of(); }
+        @Override public void taparResultados() { }
+        @Override public void applyFilters() { }
+        @Override public void actualizarTextoBuscar() { }
+        @Override public void limpiarSujetos() { }
+        @Override public void sincronizarSocket() { listo.countDown(); }
+        @Override public String resumenVivo(Match m, long pid) { return null; }
+        @Override public String refNombre(Match m) { return ""; }
+        @Override public void repintarTabla() { }
+        @Override public void fijarObjetivo(Player p, String vistaId) { }
+        @Override public Player invitado() { return null; }
+        @Override public void limpiarInvitado() { }
+        @Override public String vistaDelInvitado() { return ""; }
+        @Override public boolean sujetosPanelVisible() { return false; }
+        @Override public String vistaDeSujetos() { return ""; }
+    }
+
+    @Test void refrescarCampanas_noDejaCampanaIdsVacioAMedias() throws Exception {
+        int n = 20_000;
+        Set<String> vistas = new java.util.LinkedHashSet<>();
+        for (int i = 0; i < n; i++) vistas.add("grupo|G" + i);
+        Map<String, String> cfg = new HashMap<>();
+        Campanas campanasGrande = new Campanas(
+                new CompanionApi(new ApiClient(new ThrottleSinFreno(), new TransporteNuncaLlamado(), s -> { }, () -> false)),
+                (k, def) -> cfg.getOrDefault(k, def), cfg::put, nombre -> false);
+        campanasGrande.guardarCampanas(vistas);   // config "campanas" con las 20.000 vistas, en un solo guardado
+
+        WatchlistView w = nuevaInstancia(new ArrayList<>());
+        java.lang.reflect.Field campoCampanas = WatchlistView.class.getDeclaredField("campanas");
+        campoCampanas.setAccessible(true);
+        campoCampanas.set(w, campanasGrande);
+        java.lang.reflect.Field campoEnlace = WatchlistView.class.getDeclaredField("enlacePartidas");
+        campoEnlace.setAccessible(true);
+        java.lang.reflect.Field campoCampanaIds = WatchlistView.class.getDeclaredField("campanaIds");
+        campoCampanaIds.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Set<Long>> campanaIds = (Map<String, Set<Long>>) campoCampanaIds.get(w);
+
+        // primer refresco: parte de vacío, no es lo que se prueba (solo deja las 20.000 claves puestas)
+        java.util.concurrent.CountDownLatch listo1 = new java.util.concurrent.CountDownLatch(1);
+        campoEnlace.set(w, new EnlaceConLatch(listo1));
+        w.refrescarCampanas();
+        assertTrue(listo1.await(20, java.util.concurrent.TimeUnit.SECONDS), "el primer refresco no terminó a tiempo");
+        assertEquals(n, campanaIds.size());
+
+        // segundo refresco: MISMAS 20.000 claves. Aquí es donde clear()+putAll() dejaría el mapa vacío a medias
+        // mientras otro hilo lo lee (p. ej. avisarSiCampana/campanaContiene en el hilo del socket).
+        java.util.concurrent.CountDownLatch listo2 = new java.util.concurrent.CountDownLatch(1);
+        campoEnlace.set(w, new EnlaceConLatch(listo2));
+        java.util.concurrent.atomic.AtomicBoolean vistoVacio = new java.util.concurrent.atomic.AtomicBoolean(false);
+        java.util.concurrent.atomic.AtomicBoolean sigueLeyendo = new java.util.concurrent.atomic.AtomicBoolean(true);
+        Thread lector = new Thread(() -> {
+            while (sigueLeyendo.get()) if (campanaIds.isEmpty()) { vistoVacio.set(true); break; }
+        });
+        lector.setDaemon(true);
+        lector.start();
+        try {
+            w.refrescarCampanas();
+            assertTrue(listo2.await(20, java.util.concurrent.TimeUnit.SECONDS), "el segundo refresco no terminó a tiempo");
+        } finally {
+            sigueLeyendo.set(false);
+            lector.join(5000);
+        }
+
+        assertFalse(vistoVacio.get(), "quien lee campanaIds mientras se refresca (mismas claves) nunca debe verlo vacío");
+        assertEquals(n, campanaIds.size());
+    }
+
     // ===== alta de jugador: solo lo que no abre diálogo =========================================================
 
     @Test void sugerenciaCaducada_siElTextoCambio() {
