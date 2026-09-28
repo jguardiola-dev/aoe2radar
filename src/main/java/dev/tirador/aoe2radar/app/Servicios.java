@@ -5,6 +5,7 @@ import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.service.ActualizadorService;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
 import dev.tirador.aoe2radar.service.AnotacionesService;
 import dev.tirador.aoe2radar.service.BusquedaPerfiles;
@@ -21,6 +22,8 @@ import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.service.TwitchService;
 import dev.tirador.aoe2radar.service.TwitchServiceCompanion;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
+import dev.tirador.aoe2radar.util.Identidad;
+import dev.tirador.aoe2radar.util.Instalacion;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import javax.swing.SwingUtilities;
@@ -134,6 +137,25 @@ public class Servicios {
     };
     /** El «mando a distancia» y la comprobación de versión (service.ControlService). */
     public static final ControlService CONTROL_SERVICE = new ControlService(TRANSPORTE_CONTROL, TRANSPORTE);
+    /** Descarga binaria del actualizador propio (el jar de una release, unos MB): HttpURLConnection con 15 s para
+     *  conectar y 30 s como mucho entre bytes (el HttpClient solo pone plazo hasta las cabeceras: un cuerpo atascado
+     *  colgaría la descarga para siempre). Sigue la redirección de GitHub a su CDN (https a https). Sin freno: GitHub,
+     *  no el companion. */
+    static final ActualizadorService.Descarga DESCARGA_BINARIA = url -> {
+        java.net.HttpURLConnection c = (java.net.HttpURLConnection) URI.create(url).toURL().openConnection();
+        c.setConnectTimeout(15_000);
+        c.setReadTimeout(30_000);
+        c.setInstanceFollowRedirects(true);
+        c.setRequestProperty("User-Agent", UA);
+        int estado = c.getResponseCode();
+        if (estado != 200) { c.disconnect(); throw new java.io.IOException("HTTP " + estado); }
+        return c.getInputStream();
+    };
+    /** El actualizador propio de la app instalada (1.4): update.json y el jar de GitHub, y el disco (util.Instalacion).
+     *  Las rutas se piden en cada uso (Instalacion::actuales) y el constructor no toca disco ni red. update.json va por
+     *  TRANSPORTE (texto, sigue redirecciones). */
+    public static final ActualizadorService ACTUALIZADOR = new ActualizadorService(TRANSPORTE, DESCARGA_BINARIA,
+            Instalacion::actuales, Identidad.VERSION, System.getProperty("java.version"));
     /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
     public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto.

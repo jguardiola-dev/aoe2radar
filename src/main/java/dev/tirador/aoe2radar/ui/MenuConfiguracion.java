@@ -79,6 +79,9 @@ public final class MenuConfiguracion {
         List<String> clanesGuardados();
         /** «Abrir en»: todos los países, con su nombre en el idioma de la app. */
         List<PaisItem> paises();
+        /** El actualizador propio (1.4): si la app instalada puede actualizarse sola, comprueba con él y devuelve true;
+         *  si no, false y sigue el aviso por tags de GitHub. Se llama FUERA del EDT (hilo «actualizaciones»). */
+        default boolean actualizadorPropio(boolean manual) { return false; }
     }
 
     private final Anfitrion anfitrion;
@@ -312,6 +315,17 @@ public final class MenuConfiguracion {
                     "Copies groups, settings, caches and recs from the folder of an older zip version"));
             importarItem.addActionListener(e -> ImportarDatos.elegirEImportar(anfitrion.padre()));
             configMenu.add(importarItem);
+            // 1.4: el actualizador propio. Con el ajuste apagado, solo avisa (franja con [Actualizar]); nunca descarga solo.
+            JCheckBoxMenuItem autoActItem = new JCheckBoxMenuItem(t("Actualizar automáticamente", "Update automatically"),
+                    Actualizaciones.automatico());
+            autoActItem.setToolTipText(t("Descarga las versiones nuevas y las aplica al cerrar la app (con la app instalada). Apagado: solo avisa (lo que ya estuviera descargado se aplica igualmente al cerrar).",
+                    "Downloads new versions and applies them when you close the app (installed app). Off: it only lets you know (anything already downloaded is still applied on close)."));
+            autoActItem.addActionListener(e -> {
+                boolean on = autoActItem.isSelected();
+                guardarConfig(Actualizaciones.CLAVE_AUTO, String.valueOf(on));
+                if (on) comprobarActualizacion(false);   // lo que haya, ya
+            });
+            configMenu.add(autoActItem);
         }
         configMenu.addSeparator();
         JMenuItem updItem = new JMenuItem(t("Buscar actualizaciones…", "Check for updates…"));
@@ -420,9 +434,12 @@ public final class MenuConfiguracion {
     public JPanel esquina() { return esquina; }
 
     /** Consulta GitHub Releases (una llamada, sin claves) y enseña el botón si hay versión nueva. La red y la
-     *  lectura del JSON viven en service.ControlService#ultimaVersion; aquí solo quedan la UI y los diálogos. */
+     *  lectura del JSON viven en service.ControlService#ultimaVersion; aquí solo quedan la UI y los diálogos.
+     *  1.4: con la app instalada y su carpeta escribible, lo hace el actualizador propio (Anfitrion.actualizadorPropio:
+     *  update.json, franja, sin diálogos); los tags vX.Y quedan para el zip en carpeta no escribible y el desarrollo. */
     public void comprobarActualizacion(boolean manual) {
         new Thread(() -> {
+            if (anfitrion.actualizadorPropio(manual)) return;   // instalada y escribible: franja del actualizador propio
             final String tagF = controlService.ultimaVersion(RELEASES_API);
             SwingUtilities.invokeLater(() -> {
                 if (tagF != null && versionMayor(tagF, VERSION)) {
