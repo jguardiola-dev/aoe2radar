@@ -55,22 +55,45 @@ processes, only to make the error message clearer; it never decides on its own t
 
 ### Publishing a version (`release.yml`)
 `.github/workflows/release.yml` builds the Windows package on GitHub, so a release does not depend on the
-development PC. It runs `mvn -B -Pempaquetar -DskipTests package` on `windows-latest`, zips
-`target/dist/aoe2radar` as `aoe2radar-X.Y-windows.zip` (same name and layout as the 1.2 and 1.3 zips: an
-`aoe2radar/` folder inside) and attaches it to the tag's release.
+development PC. On `windows-latest`, with the JDK pinned to a fixed Temurin version (`21.0.9`, see below), it
+installs Inno Setup 6 if the runner image lacks it (`choco install innosetup`), runs
+`mvn -B -Pempaquetar,instalador -DskipTests verify` and attaches four files to the tag's release:
+
+| File | What for |
+|---|---|
+| `aoe2radar-X.Y-setup.exe` | The per-user installer (Inno Setup). What the README tells users to download. |
+| `aoe2radar-X.Y-windows.zip` | `target/dist/aoe2radar` zipped, same name and layout as the 1.2 and 1.3 zips (an `aoe2radar/` folder inside). |
+| `aoe2radar-X.Y.jar` | Exactly the app jar inside the package, renamed: what the self-updater downloads. |
+| `update.json` | What the self-updater reads (see [Self-updater](#self-updater-utilinstalacion-serviceactualizadorservice)). |
+
+`update.json` is written by the workflow: `version` (`version.app`), `jar`, `sha256` and `size` of that jar
+(computed in CI), `runtime` (`JAVA_VERSION` of the packaged `runtime/release`), `instalador` (the setup file
+name), and, read from `app/aoe2radar.cfg` with the same rules as `util.CfgLanzador.leer`: `classpath` (the other
+jars), `opciones` (`java-options` except `-Djpackage.app-version`) and `mainclass`. It is uploaded last, so an
+app that reads it already finds the jar it names.
+
+**The JDK version is pinned on purpose.** The runtime inside the package comes from it, and the self-updater
+compares it with each installation's `java.version`: a release built with a different JDK is offered as "needs
+reinstalling" (installer) instead of a jar swap. Changing the pinned version (for a Java security update, say)
+is fine and is exactly how the runtime gets renewed; just expect that release to go out as a full update.
 
 Steps to publish X.Y:
 1. Change `<version>` in `pom.xml` (e.g. `1.4.0`), merge to `main`, and wait for the `build` workflow to be green.
 2. On GitHub: **Releases → Draft a new release**, tag `vX.Y` (e.g. `v1.4`) on `main`, write the notes,
-   **Publish**. The `release` workflow starts on its own and, a few minutes later, the zip appears in the release.
-3. To rebuild the zip of an existing tag (or if the automatic run failed): **Actions → release → Run workflow**,
-   with the tag. It replaces the zip (`--clobber`): a zip with the same name uploaded by hand to that release
-   is overwritten without asking. If the release does not exist yet, the workflow creates it as a draft, to be
-   completed and published by hand.
+   **Publish**. The `release` workflow starts on its own and, a few minutes later, the four files appear in
+   the release.
+3. To rebuild the files of an existing tag (or if the automatic run failed): **Actions → release → Run
+   workflow**, with the tag. It replaces them (`--clobber`): a file with the same name uploaded by hand to that
+   release is overwritten without asking. If the release does not exist yet, the workflow creates it as a
+   draft, to be completed and published by hand.
 
-Safety check: the workflow fails before uploading anything if the tag does not match the pom version
-(`v` + `version.app`, e.g. `v1.4` for `1.4.0`). While the zip is being built (a few minutes) the published
-release has no zip yet; the app's update checker may already show it.
+Safety checks: the workflow fails before uploading anything if the tag does not match the pom version
+(`v` + `version.app`, e.g. `v1.4` for `1.4.0`), if `version.app` is not plain digits and dots (the self-updater
+would reject it), or if the installer was not produced. While the files are being built (several minutes) the
+published release has none yet: `releases/latest/download/update.json` answers 404 and installed apps simply
+try again later; the 1.3 zip's tag-based checker may already show the new version. Re-running the workflow
+on a published release rebuilds the jar (its SHA-256 may change) and uploads it before `update.json`: for a few
+seconds a client may get the new jar with the old hash, reject it (download failed) and retry later.
 
 ## Packaging (Maven profile `empaquetar`)
 The normal build (`mvn test`, `mvn package`) does not produce the `.exe`: that lives in a separate profile
@@ -90,7 +113,35 @@ cleans the packaging):
    main class from the manifest, `--make-ico` documented in `AcercaDe.generarIco()`).
 4. Calls the JDK's `jpackage` with `--type app-image`: a `target/dist/aoe2radar/` folder with
    `aoe2radar.exe`, its own runtime (implicit jlink, nothing to install separately) and the jars in `app/`.
-   WiX Toolset is not needed because no installer is generated, only the app folder.
+   WiX Toolset is not needed: jpackage only makes the app folder; the installer is Inno Setup's job (below).
+
+### Installer (Maven profile `instalador`, `packaging/aoe2radar.iss`)
+```
+mvn -Pempaquetar,instalador -DskipTests verify
+```
+Always together with `empaquetar`, and bound to `verify` so it runs after everything `empaquetar` does in
+`package` (jpackage and the flags copy). It calls Inno Setup 6's `ISCC.exe` (default: a per-user install,
+`%LOCALAPPDATA%\Programs\Inno Setup 6\ISCC.exe`; elsewhere, `-Discc="C:\...\ISCC.exe"`) on
+`packaging/aoe2radar.iss`, passing the version (`version.app`), the app-image folder and the icon, and leaves
+`target/instalador/aoe2radar-X.Y-setup.exe`. ISCC's output lists every file it packs ("Compressing: …"); the
+count must match the files in `target/dist/aoe2radar`.
+
+What the installer does:
+- Per user, no administrator rights (`PrivilegesRequired=lowest`): installs into
+  `%LOCALAPPDATA%\Programs\aoe2radar` (`{userpf}`), Start menu entry for the user, optional desktop shortcut
+  (unchecked box). Wizard in English or Spanish, following the Windows UI language (English otherwise).
+- **Fixed `AppId`**: installing a newer version over an older one replaces it in place. Never change it.
+- If the app is open, the wizard closes it first (Restart Manager, `CloseApplications`, also watching `*.jar`).
+  Not verified yet whether Java takes that as its normal close (`windowClosing`, which may apply a pending
+  self-update just before the installer overwrites `app\`) or as a shutdown without it (nothing applied, window
+  geometry not saved). Either way the result is the installer's: its `[InstallDelete]` removes every
+  `app\aoe2radar-*.jar` so only the new `.cfg`'s jar remains, and the app's startup discards a stale update
+  marker. (Check once: install over an open app and look at `descargas.log`.)
+- The uninstaller removes the program (including jars the self-updater added, and the autostart registry
+  value) but **not** the data folder or the recs, and says so in a final message with both paths.
+- Needs Inno Setup **6.3 or later** (`ArchitecturesAllowed=x64compatible`); the CI installs the latest.
+- The `.iss` file is UTF-8 **with BOM** (without it ISCC reads it as ANSI); in its `[Code]` section no line may
+  start with `[`.
 
 ## Version: one single place
 The version lives only in `<version>` in `pom.xml` (today `1.3.0`). To release a new one, change that line
@@ -114,10 +165,11 @@ and nothing else. From it:
 
 ## App, data and recs folders (`util.Sistema`)
 **Packaged or not** is decided in one place, `Sistema.carpetaInstalacion`: the `jpackage.app-path` system
-property (set by the jpackage launcher: the exe path) or the `app.dir` system property (set by the Conveyor
-launcher: the install folder). Neither → not packaged (`mvn`, tests, capture harness).
+property, set by the jpackage launcher (the exe path). Without it → not packaged (`mvn`, tests, capture
+harness).
 
-- **App folder** (`carpetaApp()` / `enCarpetaApp`): the install folder. Read-only resources only: today the
+- **App folder** (`carpetaApp()` / `enCarpetaApp`): the install folder. Read-only resources only (the one
+  exception is the self-updater, which adds jars to `app/` and rewrites its `.cfg`): today the
   `banderas/` copy that the `empaquetar` profile leaves next to the exe (`ImagenesJuego.BANDERAS_DIR`). The
   tech tree and the flags inside the jar are read from the classpath.
 - **Data folder** (`carpetaBase()` / `enCarpetaBase`): everything the app writes — `config.properties`,
@@ -134,9 +186,7 @@ launcher: the install folder). Neither → not packaged (`mvn`, tests, capture h
 
 `config.properties` key `carpeta_recs`, if set, overrides the recs folder. Documents is the `Personal` value of
 `HKCU\...\Explorer\User Shell Folders` (it follows a OneDrive redirection), read once with `reg.exe` (console
-in UTF-8) and expanded; if missing or not a folder, `user.home\Documents`. Under Conveyor (MSIX), Windows
-redirects `%APPDATA%` writes to the package's private copy transparently (removed on uninstall), and the portable
-file cannot be created in the install folder.
+in UTF-8) and expanded; if missing or not a folder, `user.home\Documents`.
 
 The folder is resolved once, in a lazy holder (`Sistema.Datos`), the first time a data path is asked for (on
 the main thread, in `Main.main`). `Sistema` cannot call `Log` or `Config` while resolving (their constants come
@@ -177,11 +227,82 @@ An installed app cannot know where the old zip was, so there is no automatic mig
   (`Sistema.relanzar`, from `ProcessHandle`) and exits with `System.exit`, skipping the normal close: the old
   in-memory player list and countries would otherwise be saved over the imported files.
 - `reg.exe` (Documents lookup) runs with a 5 s limit and its output is read on another thread, so a hung
-  process cannot block startup; an invalid `jpackage.app-path`/`app.dir` counts as "not packaged".
+  process cannot block startup; an invalid `jpackage.app-path` counts as "not packaged".
 
 Autostart with Windows (`Sistema.fijarAutoArranque`, `HKCU\...\CurrentVersion\Run`) points at the exe
-(`jpackage.app-path`), never at the data folder. Under Conveyor there is no `jpackage.app-path`, so the menu
-item is disabled (an MSIX app needs a startup task declared in its package instead).
+(`jpackage.app-path`), never at the data folder. Without `jpackage.app-path` (not packaged) the menu item is
+disabled.
+
+## Self-updater (`util.Instalacion`, `service.ActualizadorService`)
+Only the app jar changes; the runtime and the rest of `app/aoe2radar.cfg` change rarely and go through the
+installer. Pieces, from the inside out:
+
+| Piece | Package | What it does |
+|---|---|---|
+| `CfgLanzador` | util | Reads and rewrites jpackage's `.cfg` (real format: `[Application]` with repeated `app.classpath=$APPDIR\…`, `app.mainclass`, `[JavaOptions]`). Only the app jar line and `-Djpackage.app-version` change; everything else stays byte for byte (line endings included). Atomic write **without** fallback: temp file in the same folder, `force` to disk, `ATOMIC_MOVE`; if the move fails, the old file is intact (unlike `Archivos.escribirAtomico`, which writes in place as a fallback). |
+| `VerificacionJar` | util | Exact size, SHA-256, a readable zip, `app/Main.class` and the `.cfg`'s main class inside. |
+| `Instalacion` | util | Disk side, no network: detection, the pending download (`lista.properties`), apply on close, startup marker, revert, confirm, sweep of old jars. Everything that changes files takes an inter-process lock (`actualizacion/.cerrojo`, `FileChannel.tryLock`, up to 5 s; otherwise it is left for next time). |
+| `ActualizadorService` (`Actualizador`) | service | `update.json`, the jar-or-installer decision, the download. |
+| `Actualizaciones` + `FranjaActualizacion` | ui | Presenter and the thin bar (same style as `FranjaAviso`); no dialogs. |
+| `app.Main`, `CableadoCromo`, `AccionesVentana` | app/root | Startup marker and recovery; the bar, the close hook, the 12 h timer. |
+
+**When it is active.** Only when the app runs packaged, from a jar inside `app/` that the `.cfg` names (exactly one
+`aoe2radar-*.jar` there), and `app/` is writable (tested by creating and deleting a file:
+`Files.isWritable` lies on Windows). That is the installer's folder, or a zip unpacked where the user can write.
+Otherwise (zip in a read-only folder, development, harness) Settings keeps the old check against the GitHub
+tags `vX.Y` (`ControlService.ultimaVersion`), which the 1.3 zip also uses.
+
+**Check.** 8 s after startup and every 12 h, off the EDT: `releases/latest/download/update.json` (GitHub's
+download CDN, no API rate limit; the HTTP client follows the redirect). Required: `version` (1–4 numeric parts,
+no suffixes), `jar` (exactly `aoe2radar-<version>.jar`: no paths), `sha256`, `size`; otherwise the file is
+ignored. Not newer than `Identidad.VERSION` → nothing. **Full update** (installer) if the version already failed
+as a jar, or if `runtime`, `classpath`, `opciones` or `mainclass` are missing or differ from this installation's
+`java.version` and `.cfg`. Otherwise **jar update**.
+
+**Download.** With Settings → **Update automatically** on (default), right away; off, only when the user clicks
+**Update** in the bar. One at a time (`AtomicBoolean`). From the tag's URL (`releases/download/vX.Y/…`, not
+`latest`), with 15 s to connect and 30 s max between bytes (`HttpURLConnection`: `HttpClient` only times out up
+to the headers). Into `<data>/actualizacion/<jar>.descargando` with the SHA-256 computed on the fly, cut off as
+soon as it exceeds the announced size; then size, SHA-256 and contents are checked, and only then, under the
+lock, the file is forced to disk, moved (`ATOMIC_MOVE`) to its real name and recorded in `lista.properties`
+together with the package it is meant for (runtime, classpath, options, main class). A failed download leaves
+nothing under the real name and is retried on the next check.
+
+**Apply (on close).** Last step of the window's normal close (`alCerrar`, after saving everything), in a thread
+the close waits for up to 20 s. Nothing if there is no pending jar, it is not newer than this version or than the
+jar the `.cfg` already names (another window may have updated further), it is the failed version, or the
+runtime/`.cfg` are no longer the ones it was published for (an installer ran: the pending jar is forgotten). Then:
+the jar is re-verified; copied to `app/<jar>` through a `.parcial` temp file (with today's date — `Files.copy`
+keeps the download's date on Windows, which would make the sweep think it is old —, forced to disk, verified,
+`ATOMIC_MOVE`); a copy of the current `.cfg` (`cfg.anterior`) and the **marker** (`aplicada.properties`:
+previous jar, new jar, versions) are written; the `.cfg` is read again and must be byte-identical to the one read
+at the start (else someone, e.g. the installer, changed it: nothing is written); and the new `.cfg` is written
+atomically. The jar in use is never touched (Windows locks it). If anything fails, the `.cfg` stays as it was and
+the app stays on its version; it is logged and retried on the next close.
+
+**Restart now** sets a flag and dispatches `WINDOW_CLOSING`, so the app leaves through the normal close
+(`alCerrar` → apply → `Sistema.relanzar()` → `EXIT_ON_CLOSE`), never a bare `System.exit`.
+
+**Startup and recovery.** First thing in `Main.main` (`Instalacion.alArrancar`): if there is a marker and the jar
+in use is the marker's new jar, this is a start after updating: its pid is added to the marker. If the marker
+names another jar (the installer or another window changed things), it is discarded. If **two earlier starts**
+of the new jar died without opening the window (their pids are no longer alive: a double click on a slow first
+start does not count), the `.cfg` is restored from `cfg.anterior` and the app relaunches itself with the
+previous version. And if `Main` catches a startup exception while the marker is on (the whole startup is now
+inside the try), it reverts right there, writes `arranque_error.log`, says so in the error dialog and relaunches.
+Revert only happens if the previous jar is still in `app/`, the copy names it and the current `.cfg` still names
+the new jar; it records the version as failed (`fallida.properties`: it will be offered as a full update) and the
+old version shows once in the bar "The update to X could not start: you are still on Y". When the window has
+opened, `Instalacion.confirmar` (background thread) deletes the marker and the copy, and sweeps `app/`: every
+`aoe2radar-*.jar` that is not the one running, not the `.cfg`'s, not the marker's, and older than 10 minutes
+(one still locked by another open window stays for the next start); plus leftovers in `actualizacion/`.
+
+**Limits of the recovery.** The code that counts starts and reverts is the **new** jar's. If that jar cannot even
+reach `Main` (the launcher cannot load it, the JVM crashes first), nothing reverts automatically: the fix is to
+run the installer (data is untouched). That is why the jar is verified completely before it reaches `app/`, and
+only applied onto the exact runtime and `.cfg` it was built for. A hang without an exception is not detected in
+that start; it counts as a failed start in the next one. A failure after the window has opened (the update is
+already confirmed) does not revert.
 
 ## Layered architecture
 Summary table; the details of what each layer knows and the key contracts are in

@@ -167,6 +167,8 @@
 | 2026-09-26 | Profile / Civ Stats / Live now leftovers | Civ Stats F3 with several civs (Ctrl) only restores the first; LiveNowView.conTop unused after D1 (delete); A→B→A race of the profile canceller (F5, older) | low |
 | 2026-09-26 | stale comments | RegresionCapturas ~558 (applyFilters marks enDisco); SpoilerFreeRecs.java ~297 says MatchesTableModel is in ui.PartidasView (now ui.MatchesTableModel) | low |
 | 2026-09-26 | smoke test (real data) | `replay=false` for every player in matches whose rec exists: if the UI uses it for «has rec», it lies; the socket sends the map name translated while the API sends it in English (1.1) | low |
+| 2026-09-28 | installer (Inno Setup) | check by hand how Java closes the app when the installer's Restart Manager closes it (windowClosing or a shutdown without it) and adjust the text in packaging/aoe2radar.iss and README_TECNICO | low |
+| 2026-09-28 | app.Main | 1.4: a startup failure outside new SpoilerFreeRecs (catalogs, config, theme) now writes arranque_error.log, shows the dialog and exits with code 2 (before, it escaped with no dialog); intended, listed for the 1.4 notes | low |
 
 ## Planned for 1.4
 
