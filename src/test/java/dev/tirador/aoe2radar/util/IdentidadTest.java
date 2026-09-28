@@ -85,6 +85,29 @@ class IdentidadTest {
             assertEquals(v.replaceAll(pom[0], pom[1]), Identidad.versionCorta(v), "versión " + v);
     }
 
+    /** 1.4.1: el pom dice 1.4.1 y la app (título, Acerca de, update.json, tag v1.4.1) también, sin perder el parche. */
+    @Test void conElPomActualLaAppDice141() throws Exception {
+        if (versionDelPom().equals("1.4.1")) {
+            assertEquals("1.4.1", Identidad.VERSION);
+            assertEquals("1.4.1", recurso().getProperty("version.app"), "la de jpackage, ISCC y el tag de release.yml");
+        }
+    }
+
+    /** Un parche de tres tramos frente a la versión de dos tramos instalada, en las dos comparaciones que hay: la del
+     *  aviso por tags (Texto.versionMayor, MenuConfiguracion) y la del actualizador (misma función, en
+     *  ActualizadorService e Instalacion). Y el formato que exigen update.json y el nombre del jar. */
+    @Test void la141EsNuevaParaLa14YAlReves() {
+        assertEquals(true, Texto.versionMayor("v1.4.1", "1.4"), "tag v1.4.1 con la 1.4 instalada");
+        assertEquals(true, Texto.versionMayor("1.4.1", "1.4"), "update.json 1.4.1 con la 1.4 instalada");
+        assertFalse(Texto.versionMayor("v1.4.1", "1.4.1"), "la misma versión no es nueva");
+        assertFalse(Texto.versionMayor("v1.4", "1.4.1"), "la 1.4 no es nueva para la 1.4.1");
+        assertFalse(Texto.versionMayor("1.4.0", "1.4.1"));
+        assertEquals(true, Texto.versionMayor("v1.5", "1.4.1"), "y la siguiente sí");
+        assertEquals(true, Texto.versionMayor("1.4.10", "1.4.9"), "numérica, no alfabética");
+        assertEquals(true, Instalacion.VERSION.matcher("1.4.1").matches(), "update.json acepta 1.4.1");
+        assertEquals("aoe2radar-1.4.1.jar", Instalacion.nombreJar("1.4.1"));
+    }
+
     @Test void reglaDeConversion() {
         assertEquals("1.3", Identidad.versionCorta("1.3.0"));
         assertEquals("1.3.1", Identidad.versionCorta("1.3.1"), "un parche no se pierde (si no, v1.3.1 sería siempre «nueva»)");

@@ -206,6 +206,30 @@ class ActualizadorServiceTest {
         assertEquals(1, descargas.urls.size());
     }
 
+    /** 1.4.1, el primer parche de tres tramos que publica el actualizador: la 1.4 instalada lo ve como nuevo y, con
+     *  el mismo runtime y classpath, lo baja como jar suelto del tag v1.4.1; la 1.4.1 ya no ve la 1.4 como nueva. */
+    @Test void unaInstalacion14VeLa141ComoNuevaYLaBajaComoJar() throws Exception {
+        byte[] jar141 = jarBueno("1.4.1");
+        cuerpoUpdate = updateJson("1.4.1", jar141, "21.0.9");
+        descargas.bytes = jar141;
+        ActualizadorService.Info info = ActualizadorService.leer(cuerpoUpdate);
+        assertNotNull(info, "update.json con version 1.4.1 debe valer");
+        assertEquals("aoe2radar-1.4.1.jar", info.jar());
+        assertEquals(ActualizadorService.Tipo.JAR, ActualizadorService.decidir(info, "21.0.9", CfgLanzador.leer(CFG), null), "mismo paquete: solo el jar");
+
+        assertEquals(new Actualizador.Resultado(Actualizador.Estado.LISTA, "1.4.1"), servicio().comprobar(true));
+        assertEquals(List.of("https://github.com/jguardiola-dev/aoe2radar/releases/download/v1.4.1/aoe2radar-1.4.1.jar"), descargas.urls);
+        assertEquals("1.4.1", Instalacion.leerLista(dir).version());
+
+        String json141 = updateJson("1.4.1", jar141, "21.0.9"), json14 = updateJson("1.4", jar141, "21.0.9");
+        ActualizadorService ya141 = new ActualizadorService(
+                url -> new Transporte.Respuesta(200, json141), descargas, () -> rutas, "1.4.1", "21.0.9");
+        assertEquals(Actualizador.Estado.AL_DIA, ya141.comprobar(false).estado(), "la misma versión no es nueva");
+        ActualizadorService vieja = new ActualizadorService(
+                url -> new Transporte.Respuesta(200, json14), descargas, () -> rutas, "1.4.1", "21.0.9");
+        assertEquals(Actualizador.Estado.AL_DIA, vieja.comprobar(false).estado(), "la 1.4 no es nueva para la 1.4.1");
+    }
+
     @Test void unaDescargaMalaNuncaQuedaConElNombreBueno() throws Exception {
         descargas.bytes = jarBueno("1.6");   // mismo tamaño, otro sha
         assertEquals(Actualizador.Estado.FALLO_DESCARGA, servicio().comprobar(true).estado());
