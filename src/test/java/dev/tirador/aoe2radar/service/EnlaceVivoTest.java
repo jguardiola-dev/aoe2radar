@@ -492,6 +492,106 @@ class EnlaceVivoTest {
         assertEquals(2, esperasQuitada().size(), "la ronda inicial y la del reintento: nada más");
     }
 
+    // ===== 1.4: las partidas nuevas (A8) también se confirman en lote, con un conjunto «en vuelo» =====
+
+    /** Espera (con tope) a que el hilo «socket-confirmar» termine: su último aviso es avisarTrasCambio. */
+    void esperarConfirmacion() throws InterruptedException {
+        long limite = System.currentTimeMillis() + 2000;
+        while (!vistas.avisos.contains("avisarTrasCambio") && System.currentTimeMillis() < limite) Thread.sleep(5);
+    }
+    static String json(long id, long startedMs, boolean terminada) {
+        return "{\"match_id\":" + id + ",\"started\":" + startedMs + (terminada ? ",\"finished\":" + (startedMs + 60_000) : "") + "}";
+    }
+
+    @Test void veintePartidasNuevasEnUnMensajeSeConfirmanEnUnaLlamada() throws InterruptedException {
+        List<String> vivas = new ArrayList<>();
+        for (int i = 0; i < 20; i++) vivas.add(partidaJson(2000 + i, Duration.ofMinutes(2), false));
+        red.cuerpo = "{\"matches\":[" + String.join(",", vivas) + "]}";
+        List<SocketVivo.Evento> evs = new ArrayList<>(); Set<Long> ids = new LinkedHashSet<>();
+        for (int i = 0; i < 20; i++) { evs.add(new SocketVivo.Partida("matchAdded", partida(2000 + i, 300 + i))); ids.add(300L + i); }
+        enlace.procesarEventosSocket(evs, ids);
+        esperarConfirmacion();
+        assertEquals(1, red.llamadas, "antes: 20 llamadas (una por partida); ahora: 1");
+        for (int i = 0; i < 20; i++) assertEquals(2000L + i, vivo.matchDe(300 + i));
+        assertEquals(1, avisosDe("avisarTrasCambio"));
+    }
+
+    @Test void laMismaPartidaDosVecesEnElMensajeEsUnaSolaConfirmacionConTodosSusCandidatos() throws InterruptedException {
+        red.cuerpo = "{\"matches\":[]}";   // sin datos: el beneficio de la duda
+        Match a = partida(555, 7), b = partida(555, 8);   // el repetido trae otro vigilado
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchAdded", a), new SocketVivo.Partida("matchUpdated", b)), Set.of(7L, 8L));
+        esperarConfirmacion();
+        assertEquals(1, red.llamadas, "antes: 2 (la del evento repetido iba otra vez a la red)");
+        assertEquals(555L, vivo.matchDe(7));
+        assertEquals(555L, vivo.matchDe(8), "el candidato del evento repetido se suma a la que está en vuelo");
+    }
+
+    @Test void enElLoteElFantasmaSeIgnoraYLaOtraSeMarca() throws InterruptedException {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(40), true) + "," + partidaJson(556, Duration.ofMinutes(2), false) + "]}";
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchAdded", partida(555, 7)), new SocketVivo.Partida("matchAdded", partida(556, 8))), Set.of(7L, 8L));
+        esperarConfirmacion();
+        assertEquals(1, red.llamadas);
+        assertFalse(vivo.jugando(7), "fantasma: la API la da por terminada");
+        assertEquals(556L, vivo.matchDe(8));
+    }
+
+    @Test void nuevaQueNoVieneYLaPaginaLlegaAntesDeSuInicioNoPreguntaSuelta() throws InterruptedException {
+        red.cuerpo = "{\"matches\":[" + partidaJson(1, Duration.ofMinutes(30), true) + "]}";   // la página llega a 2023: mucho antes que ellas
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchAdded", partida(555, 7)), new SocketVivo.Partida("matchAdded", partida(556, 8))), Set.of(7L, 8L));
+        esperarConfirmacion();
+        assertEquals(1, red.llamadas, "la API no las tiene aún (no pudieron quedar tapadas): sin preguntas sueltas");
+        assertEquals(555L, vivo.matchDe(7)); assertEquals(556L, vivo.matchDe(8));
+    }
+
+    @Test void nuevaQueNoVieneYLaPaginaNoLlegaASuInicioPreguntaPorEllaSola() throws InterruptedException {
+        red.cuerpo = "{\"matches\":[" + json(1, System.currentTimeMillis(), false) + "]}";   // la más antigua de la página empezó después que ellas
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchAdded", partida(555, 7)), new SocketVivo.Partida("matchAdded", partida(556, 8))), Set.of(7L, 8L));
+        esperarConfirmacion();
+        assertEquals(3, red.llamadas, "el lote y una pregunta suelta por cada una, como antes");
+        assertEquals(555L, vivo.matchDe(7)); assertEquals(556L, vivo.matchDe(8));
+    }
+
+    /** Menor del revisor: un evento repetido mientras la partida está en la red se suma a esa confirmación (sin otra
+     *  llamada) y se marca con la partida del último evento. */
+    @Test void unEventoRepetidoMientrasEstaEnLaRedSeSumaSinOtraLlamada() throws Exception {
+        java.util.concurrent.CountDownLatch enRed = new java.util.concurrent.CountDownLatch(1), seguir = new java.util.concurrent.CountDownLatch(1);
+        red.porUrl = url -> { enRed.countDown(); try { seguir.await(2, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } return "{\"matches\":[]}"; };
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchAdded", partida(555, 7))), Set.of(7L, 8L));
+        assertTrue(enRed.await(2, java.util.concurrent.TimeUnit.SECONDS), "el hilo está preguntando");
+        Match b = partida(555, 7, 8);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchUpdated", b)), Set.of(7L, 8L));
+        seguir.countDown();
+        esperarConfirmacion();
+        assertEquals(1, red.llamadas, "antes: 2");
+        assertEquals(555L, vivo.matchDe(8), "el candidato que llegó en vuelo también se marca");
+        assertSame(b, vivo.partida(8), "con la partida del último evento");
+    }
+
+    /** Menor del revisor: un matchRemoved de una partida aún en confirmación no se descarta. */
+    @Test void unaQuitadaDeUnaPartidaEnConfirmacionSeProgramaIgual() throws Exception {
+        java.util.concurrent.CountDownLatch enRed = new java.util.concurrent.CountDownLatch(1), seguir = new java.util.concurrent.CountDownLatch(1);
+        red.porUrl = url -> { enRed.countDown(); try { seguir.await(2, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); } return "{\"matches\":[]}"; };
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Partida("matchAdded", partida(555, 7))), Set.of(7L));
+        assertTrue(enRed.await(2, java.util.concurrent.TimeUnit.SECONDS));
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
+        seguir.countDown();
+        esperarConfirmacion();
+        assertEquals(List.of(EnlaceVivo.ESPERA_QUITADA_MS), esperasQuitada(), "antes se perdía y el jugador quedaba «jugando»");
+    }
+
+    @Test void quitadaAusenteConLaPaginaAntesDeSuInicioNoPreguntaSuelta() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(1, Duration.ofMinutes(60), true) + "]}";
+        for (int i = 0; i < 2; i++) {
+            Match g = new Match(); g.id = 1000 + i; g.started = Instant.ofEpochMilli(HORA - Duration.ofMinutes(10).toMillis());
+            vivo.marcarJugando(100 + i, 1000 + i); vivo.guardarPartida(100 + i, g);
+        }
+        enlace.procesarEventosSocket(quitadas(2), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(1, red.llamadas, "empezaron hace 10 min y la página llega a hace 60: la API no las tiene");
+        assertEquals(1000L, vivo.matchDe(100), "sin datos: un reintento, como antes");
+    }
+
     // ===== sincronizarSocket: mismo orden de ids que la base =====
 
     @Test void sincronizarSocketPideLosIdsEnElOrdenDeLaBase() {
