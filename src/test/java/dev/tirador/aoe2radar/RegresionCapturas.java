@@ -658,7 +658,8 @@ class RegresionCapturas {
         // 26b29c7) antes de extraer la vista. Se inyecta en `all`/`view` por el MISMO camino que usa
         // fetchMatches.done() (SpoilerFreeRecs ~5551-5566): limpiar SUJETOS, pintar la cabecera «Partidas de:»
         // con refrescarSujetos(...), volcar en `all` y dejar que refreshModeCombo()/applyFilters() hagan el
-        // resto (asignan refId, marcan enDisco/enJuego, llenan `view`). Nada de red: no se toca fetchBtn.
+        // resto (asignan refId y llenan `view`; «en disco»/«en juego» los marca después un SwingWorker,
+        // PartidasView.marcarEnDiscoEnFondo, durante la espera previa a la foto). Nada de red: no se toca fetchBtn.
         SwingUtilities.invokeAndWait(() -> app.mostrarDirectos(false));   // pestaña Partidas; con `all` vacío enseña la guía
         Thread.sleep(400);
         foto("shot_guia.png");
