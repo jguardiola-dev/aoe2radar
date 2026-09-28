@@ -197,6 +197,11 @@ class SistemaTest {
         assertFalse(Sistema.esLanzadorRelanzable("C:\\jdk\\bin\\JAVAW.EXE"));
         assertFalse(Sistema.esLanzadorRelanzable("/usr/bin/java"));
         assertFalse(Sistema.esLanzadorRelanzable(null));
+        // relanzar: primero el exe del lanzador (jpackage.app-path); si no vale, el comando de este proceso
+        assertEquals("C:\\app\\aoe2radar.exe", Sistema.exeParaRelanzar("C:\\app\\aoe2radar.exe", "C:\\otro\\hijo.exe"));
+        assertEquals("C:\\app\\aoe2radar.exe", Sistema.exeParaRelanzar(null, "C:\\app\\aoe2radar.exe"));
+        assertEquals("C:\\app\\aoe2radar.exe", Sistema.exeParaRelanzar("", "C:\\app\\aoe2radar.exe"));
+        assertNull(Sistema.exeParaRelanzar(null, "C:\\jdk\\bin\\java.exe"));
         assertFalse(Sistema.relanzar(), "fuera del paquete nunca relanza");
     }
 }

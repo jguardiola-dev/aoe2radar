@@ -264,13 +264,25 @@ public final class Sistema {
         return n.endsWith(".exe") && !n.equals("java.exe") && !n.equals("javaw.exe");
     }
 
-    /** Vuelve a abrir la app (el mismo exe de este proceso, empaquetada). Devuelve si lo lanzó; no cierra esta. */
+    /** Pura: el exe que hay que lanzar para volver a abrir la app. Primero el del lanzador ({@code jpackage.app-path}),
+     *  que es el que el usuario abre; si no vale, el comando de este proceso. El lanzador de jpackage suele correr la
+     *  app como DOS procesos aoe2radar.exe (el lanzador y un hijo con la JVM): este proceso es el hijo y su comando es
+     *  hoy el mismo exe, pero se prefiere app-path por si algún día difieren. Null si ninguno es un lanzador. */
+    static String exeParaRelanzar(String appPath, String comando) {
+        if (esLanzadorRelanzable(appPath)) return appPath;
+        if (esLanzadorRelanzable(comando)) return comando;
+        return null;
+    }
+
+    /** Vuelve a abrir la app (su exe, empaquetada). Devuelve si lo lanzó. No cierra esta ni toca el proceso lanzador:
+     *  quien llama sale por su camino (el cierre normal o System.exit en este proceso, el hijo), y el lanzador sale solo
+     *  al acabar su hijo. Probado con un app-image de jpackage: el proceso relanzado sobrevive a que salgan los dos. */
     public static boolean relanzar() {
         if (!empaquetada()) return false;
-        String cmd = ProcessHandle.current().info().command().orElse(null);
-        if (!esLanzadorRelanzable(cmd)) return false;
+        String exe = exeParaRelanzar(System.getProperty(PROP_JPACKAGE), ProcessHandle.current().info().command().orElse(null));
+        if (exe == null) return false;
         try {
-            new ProcessBuilder(cmd).start();
+            new ProcessBuilder(exe).start();
             return true;
         } catch (Exception ex) { return false; }
     }
