@@ -65,8 +65,8 @@ Foundation (Adoptium); its exact version is in `runtime/release` (`JAVA_VERSION`
 
 OpenJDK is licensed under the GNU General Public License, version 2, with the Classpath Exception. The
 license texts and the notices of every module and third-party component in the runtime are in
-`runtime/legal/`, one folder per module (for example `runtime/legal/java.base/LICENSE`,
-`ASSEMBLY_EXCEPTION` and `ADDITIONAL_LICENSE_INFO`). They must not be removed from the package.
+`runtime/legal/`, one folder per module (for example `runtime/legal/java.base/`). They must not be
+removed from the package.
 
 Source code of the runtime: https://github.com/adoptium/jdk21u (tag matching `JAVA_VERSION`) and
 https://openjdk.org/projects/jdk-updates/.

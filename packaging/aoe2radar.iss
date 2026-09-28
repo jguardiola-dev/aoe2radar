@@ -90,6 +90,8 @@ Name: "escritorio"; Description: "{cm:IconoEscritorio}"; GroupDescription: "{cm:
 Type: files; Name: "{app}\app\aoe2radar-*.jar"
 
 [Files]
+; DistDir entero: el app-image de jpackage más lo que el pom copia junto al exe (banderas\, y LICENSE y
+; THIRD_PARTY_NOTICES.md desde la 1.4.1). Por eso esos dos no se nombran aquí: saldrían dos veces.
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; El que cierra la app antes de instalar (se extrae a {tmp}) y de desinstalar (el que quedó en {app}).
 Source: "cerrar_aoe2radar.ps1"; DestDir: "{app}"; Flags: ignoreversion
