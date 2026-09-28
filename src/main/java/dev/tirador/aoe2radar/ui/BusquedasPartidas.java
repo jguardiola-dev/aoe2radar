@@ -319,10 +319,8 @@ final class BusquedasPartidas {
                 btn.setEnabled(true);
                 vista.azarBtn.setEnabled(true);
                 vista.gteBtn.setEnabled(true);
-                if (isCancelled()) {
-                    vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));   // el botón «Detener»
-                    return;
-                }
+                // (Ya no hay rama «isCancelled()» aquí: solo cancelan la × y una búsqueda nueva, y las dos ponen
+                // fetchWorker = null antes, así que salen por arriba; el botón «Detener» pone el freno, no cancela.)
                 try {
                     PartidasPresenter.Recorrido r = get();
                     // Detenida (el botón, la barra o el freno): lo leído hasta el corte se muestra igual, con un aviso
