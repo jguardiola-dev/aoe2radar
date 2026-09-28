@@ -232,7 +232,7 @@ final class WatchlistControles {
                 t("\uD83D\uDD0D Buscar jugador por nick  (Enter = ver sus partidas)", "\uD83D\uDD0D Find a player by nick  (Enter = see their games)"));
         wv.buscaNick.setToolTipText(t("Escribe un nick y pulsa Enter: verás sus partidas sin añadirlo; desde su nombre podrás ficharlo a un grupo.",
                 "Type a nick and press Enter: you'll see their games without adding them; from their name you can add them to a group."));
-        JPopupMenu nickPopup = new JPopupMenu(); nickPopup.setFocusable(false);
+        JPopupMenu nickPopup = TemaApp.registrarPopup(new JPopupMenu()); nickPopup.setFocusable(false);
         javax.swing.Timer nickDebounce = new javax.swing.Timer(450, ev -> {
             String q = wv.buscaNick.getText().trim();
             nickPopup.setVisible(false); nickPopup.removeAll();
@@ -281,7 +281,7 @@ final class WatchlistControles {
         wv.clanField = new JTextField(10);
         wv.clanField.putClientProperty("JTextField.placeholderText", t("Tag del clan (R1, DK, TdB…)", "Clan tag (R1, DK, TdB…)"));
         wv.clanField.setText(leerConfig("clan_tag", ""));
-        wv.clanPopup = new JPopupMenu(); wv.clanPopup.setFocusable(false);
+        wv.clanPopup = TemaApp.registrarPopup(new JPopupMenu()); wv.clanPopup.setFocusable(false);
         wv.clanField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             void cambio() {
                 wv.clanPopup.setVisible(false); wv.clanPopup.removeAll();

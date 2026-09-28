@@ -549,7 +549,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         JTextField ed = (JTextField) liveValor.getEditor().getEditorComponent();
         if (Boolean.TRUE.equals(ed.getClientProperty("prediccionClanes"))) return;
         ed.putClientProperty("prediccionClanes", true);
-        liveClanPopup = new JPopupMenu(); liveClanPopup.setFocusable(false);
+        liveClanPopup = TemaApp.registrarPopup(new JPopupMenu()); liveClanPopup.setFocusable(false);
         ed.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             void cambio() {
                 if (!"clan".equals(new String[]{ "top", "pais", "clan", "grupo" }[Math.max(0, liveFuente.getSelectedIndex())])) return;
