@@ -116,11 +116,11 @@ class PartidasViewTest {
         @Override public void terminarOperacion(long op) { ops.terminar(op); progreso = ops.hayVivas(); }
         @Override public long operacionActual() { return opSerial; }
         @Override public boolean detenido(long op) { return ops.detenido(op); }
-        @Override public void pararOperacion(long op) { ops.detener(op); }
-        @Override public void anotarHiloOperacion(long op) { ops.anotarHilo(op); }
+        @Override public void pararOperacion(long op) { ops.detener(op); ops.interrumpir(op); }
+        @Override public void anotarHiloOperacion(long op, boolean interrumpible) { ops.anotarHilo(op, interrumpible); }
         @Override public void soltarHiloOperacion() { ops.soltarHilo(); }
         /** El «Detener» de la barra de estado: para SOLO la operación viva más reciente. */
-        long detenerDeLaBarra() { return ops.detenerUltima(); }
+        long detenerDeLaBarra() { long op = ops.detenerUltima(); ops.interrumpir(op); return op; }
         @Override public void aprenderCatalogos(List<Match> res) { }
         @Override public List<String> mapasConocidos() { return List.of(); }
         @Override public List<String> civsConocidas() { return List.of(); }
@@ -260,18 +260,22 @@ class PartidasViewTest {
         CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
         Instant fin = Instant.now().minusSeconds(600);
         anfitrion.paginador = (pid, pag, pp) -> {
-            if (pid == B.id()) { enB.countDown(); soltarB.await(5, TimeUnit.SECONDS); }
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }   // una petición que no acaba sola
             return List.of(partida(pid, pid == A.id() ? A : pid == B.id() ? B : C, fin));
         };
-        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
-        assertTrue(enB.await(5, TimeUnit.SECONDS));
-        anfitrion.detenerDeLaBarra();   // el «Detener» de la barra de estado: la búsqueda es la operación viva más reciente
-        soltarB.countDown();          // la petición en vuelo de B acaba igual
-        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
-        asentar();
+        try {
+            enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+            assertTrue(enB.await(5, TimeUnit.SECONDS));
+            anfitrion.detenerDeLaBarra();   // el «Detener» de la barra: la búsqueda es la operación viva más reciente
+            // Sin soltar B: Detener interrumpe la petición en vuelo (esperar da 10 s; B esperaría 60).
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine sin esperar a B");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
         assertFalse(anfitrion.pedidas.contains(C.id()), "tras Detener no se consulta a nadie más");
-        enEdt(() -> assertEquals(2, vista.all.size(), "lo leído hasta el corte (A y B) se muestra (decisión de Jorge, 1.3)"));
-        assertEquals("Búsqueda detenida: resultados parciales (2 de 3 jugadores)", anfitrion.estado,
+        enEdt(() -> assertEquals(1, vista.all.size(), "lo leído hasta el corte (A) se muestra (decisión de Jorge, 1.3)"));
+        assertEquals("Búsqueda detenida: resultados parciales (1 de 3 jugadores)", anfitrion.estado,
                 "avisa de que es parcial: no se presenta como la búsqueda entera");
     }
 
@@ -647,26 +651,55 @@ class PartidasViewTest {
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
         enlace.jugadores.addAll(List.of(A, B));
-        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
         Instant fin = Instant.now().minusSeconds(600);
         anfitrion.paginador = (pid, pag, pp) -> {
-            if (pid == A.id()) { enA.countDown(); soltarA.await(5, TimeUnit.SECONDS); }
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }   // una petición que no acaba sola
             return List.of(partida(pid, pid == A.id() ? A : B, fin));
         };
-        enEdt(() -> vista.fetchBtn.doClick());
-        assertTrue(enA.await(5, TimeUnit.SECONDS));
-        enEdt(() -> vista.fetchBtn.doClick());   // el mismo botón, ahora «Detener»
-        assertEquals("Deteniendo la búsqueda…", anfitrion.estado);
-        soltarA.countDown();
-        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
-        asentar();
+        try {
+            enEdt(() -> vista.fetchBtn.doClick());
+            assertTrue(enB.await(5, TimeUnit.SECONDS));
+            enEdt(() -> vista.fetchBtn.doClick());   // el mismo botón, ahora «Detener»
+            // Sin soltar B: el botón interrumpe la petición en vuelo (esperar da 10 s; B esperaría 60).
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine sin esperar a B");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
         enEdt(() -> {
             assertEquals(1, vista.all.size(), "lo leído de A se muestra (decisión de Jorge, 1.3)");
             assertEquals("Búsqueda detenida: resultados parciales (1 de 2 jugadores)", anfitrion.estado);
             assertFalse(anfitrion.progreso);
             assertTrue(vista.fetchBtn.isEnabled() && vista.azarBtn.isEnabled() && vista.gteBtn.isEnabled());
         });
-        assertFalse(anfitrion.pedidas.contains(B.id()));
+    }
+
+    @Test void botonBuscar_trasDetener_unConsultandoPendienteNoPisaElDeteniendo() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        try {
+            // Todo en UNA tarea del EDT: el «Consultando Beto…» publicado mientras tanto queda en cola y llega a
+            // process() DESPUÉS de pulsar Detener.
+            enEdt(() -> {
+                vista.fetchBtn.doClick();
+                try { assertTrue(enB.await(5, TimeUnit.SECONDS)); } catch (InterruptedException e) { throw new AssertionError(e); }
+                vista.fetchBtn.doClick();
+            });
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
+        int desde = anfitrion.estados.indexOf("Deteniendo la búsqueda…");
+        assertTrue(desde >= 0, "estados: " + anfitrion.estados);
+        List<String> tras = new ArrayList<>(anfitrion.estados.subList(desde, anfitrion.estados.size()));
+        assertTrue(tras.stream().noneMatch(s -> s.startsWith("Consultando")), "estados tras Detener: " + tras);
     }
 
     // ----- Enter sin selección (decisión de Jorge, 1.3): vuelve a avisar -----

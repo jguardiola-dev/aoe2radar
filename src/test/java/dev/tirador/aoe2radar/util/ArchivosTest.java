@@ -73,4 +73,17 @@ class ArchivosTest {
             s.sorted(java.util.Comparator.reverseOrder()).forEach(p -> { try { Files.deleteIfExists(p); } catch (IOException ignored) { } });
         }
     }
+
+    @Test void escribirAtomico_conElHiloMarcadoComoInterrumpido_escribeEntero(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+        // Detener de «Buscar partidas» interrumpe su hilo (util.Operaciones.interrumpir), y ese hilo guarda config
+        // (Canales.aprenderCanal) mientras lee partidas: la escritura no debe abortarse a medias.
+        Path destino = dir.resolve("config.properties");
+        Thread.currentThread().interrupt();
+        try {
+            Archivos.escribirAtomico(destino, "clave=valor".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } finally {
+            Thread.interrupted();
+        }
+        assertTrue(Files.readString(destino).equals("clave=valor"));
+    }
 }

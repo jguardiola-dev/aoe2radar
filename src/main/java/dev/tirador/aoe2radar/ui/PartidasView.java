@@ -131,8 +131,9 @@ public final class PartidasView {
         long operacionActual();
         boolean detenido(long op);
         void pararOperacion(long op);
-        /** Al empezar el doInBackground de la operación (el freno de la red mira el hilo)... */
-        void anotarHiloOperacion(long op);
+        /** Al empezar el doInBackground de la operación (el freno de la red mira el hilo); {@code interrumpible}: Detener
+         *  además interrumpe el hilo (solo trabajo que no deja archivos a medias; ver util.Operaciones.anotarHilo)... */
+        void anotarHiloOperacion(long op, boolean interrumpible);
         /** ...y al acabarlo, en un finally (el hilo del pool vuelve limpio). */
         void soltarHiloOperacion();
         void aprenderCatalogos(List<Match> res);

@@ -145,6 +145,23 @@ class BarraEstadoTest {
         cerrar(b, ventana);
     }
 
+    @Test void detenerPorSuBotonPropio_repintaElDetenerDeLaBarra() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            long anterior = b.empezarOperacion();
+            long reciente = b.empezarOperacion();
+            b.detener(anterior);   // p. ej. la × de «Partidas de:» sobre una búsqueda que ya no es la última
+            assertTrue(ops.detenido(anterior));
+            assertTrue(b.detenerDescBtn.isEnabled(), "Detener sigue apuntando a la reciente, que no está detenida");
+            b.detener(reciente);   // «Buscar partidas» → «Detener» sobre la última viva
+            assertFalse(b.detenerDescBtn.isEnabled(), "no queda habilitado apuntando a una operación ya detenida");
+            assertTrue(b.detenerDescBtn.isVisible() && b.progreso.isVisible());
+        });
+        cerrar(b, ventana);
+    }
+
     @Test void terminarLaAnteriorConOtraViva_noApagaNadaYDetenerSigueEnLaReciente() throws Exception {
         AnfitrionFalso anf = new AnfitrionFalso();
         JFrame ventana = new JFrame();

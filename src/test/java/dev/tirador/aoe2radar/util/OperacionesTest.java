@@ -155,4 +155,108 @@ class OperacionesTest {
         }
         assertEquals(n, vivas, "las 200 quedaron registradas y se terminan de una en una");
     }
+
+    // ----- interrumpir: Detener rápido para el trabajo interrumpible -----
+
+    @Test void interrumpir_cortaLaEsperaDelHiloInterrumpibleDeEsaOperacion() throws Exception {
+        ops.empezar(1);
+        CountDownLatch anotado = new CountDownLatch(1);
+        AtomicBoolean cortado = new AtomicBoolean();
+        AtomicBoolean marcaAlSoltar = new AtomicBoolean(true);
+        Thread h = new Thread(() -> {
+            ops.anotarHilo(1, true);
+            try {
+                anotado.countDown();
+                Thread.sleep(60_000);   // la pausa de recorrer, o la petición en vuelo
+            } catch (InterruptedException e) {
+                cortado.set(true);
+                Thread.currentThread().interrupt();   // aunque alguien la vuelva a marcar...
+            } finally {
+                ops.soltarHilo();
+                marcaAlSoltar.set(Thread.currentThread().isInterrupted());   // ...soltarHilo la limpia
+            }
+        });
+        h.start();
+        assertTrue(anotado.await(5, TimeUnit.SECONDS));
+        ops.detener(1);
+        ops.interrumpir(1);
+        h.join(5000);
+        assertFalse(h.isAlive(), "no espera los 60 s");
+        assertTrue(cortado.get());
+        assertFalse(marcaAlSoltar.get(), "el hilo vuelve al pool sin la marca de interrumpido");
+    }
+
+    @Test void interrumpir_sinFrenoPuesto_noInterrumpe() throws Exception {
+        ops.empezar(1);
+        CountDownLatch anotados = new CountDownLatch(1), fin = new CountDownLatch(1);
+        AtomicBoolean interrumpido = new AtomicBoolean();
+        Thread h = new Thread(() -> esperarMarcado(1, true, anotados, fin, interrumpido));
+        h.start();
+        assertTrue(anotados.await(5, TimeUnit.SECONDS));
+        ops.interrumpir(1);   // sin detener antes: la red borraría la marca y la petición saldría igual
+        fin.countDown();
+        h.join(5000);
+        assertFalse(interrumpido.get());
+    }
+
+    @Test void interrumpir_noTocaHilosNoInterrumpiblesNiDeOtraOperacion() throws Exception {
+        ops.empezar(1);
+        ops.empezar(2);
+        CountDownLatch anotados = new CountDownLatch(2), fin = new CountDownLatch(1);
+        AtomicBoolean interrumpido1 = new AtomicBoolean(), interrumpido2 = new AtomicBoolean();
+        Thread descarga = new Thread(() -> esperarMarcado(1, false, anotados, fin, interrumpido1));   // una descarga de recs
+        Thread otra = new Thread(() -> esperarMarcado(2, true, anotados, fin, interrumpido2));        // otra búsqueda
+        descarga.start(); otra.start();
+        assertTrue(anotados.await(5, TimeUnit.SECONDS));
+        ops.detener(1);
+        ops.interrumpir(1);
+        fin.countDown();
+        descarga.join(5000); otra.join(5000);
+        assertFalse(interrumpido1.get(), "una descarga no se interrumpe: una rec escrita a medias quedaría truncada");
+        assertFalse(interrumpido2.get(), "ni el hilo de otra operación");
+    }
+
+    private void esperarMarcado(long op, boolean interrumpible, CountDownLatch anotados, CountDownLatch fin, AtomicBoolean interrumpido) {
+        ops.anotarHilo(op, interrumpible);
+        try {
+            anotados.countDown();
+            fin.await(5, TimeUnit.SECONDS);
+            interrumpido.set(Thread.currentThread().isInterrupted());
+        } catch (InterruptedException e) {
+            interrumpido.set(true);
+        } finally {
+            ops.soltarHilo();
+        }
+    }
+
+    @Test void unHiloDelPoolReutilizado_noHeredaLaMarcaDeInterrumpido() throws Exception {
+        // La interrupción llega mientras el trabajo no está bloqueado (la marca queda puesta); al soltar el hilo se
+        // borra: el siguiente trabajo del mismo hilo del pool (un barrido de Live now) no la hereda.
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        try {
+            ops.empezar(1);
+            CountDownLatch anotado = new CountDownLatch(1);
+            Future<?> operacion = pool.submit(() -> {
+                ops.anotarHilo(1, true);
+                try {
+                    anotado.countDown();
+                    long tope = System.currentTimeMillis() + 5000;
+                    while (!Thread.currentThread().isInterrupted() && System.currentTimeMillis() < tope) Thread.onSpinWait();
+                } finally {
+                    ops.soltarHilo();
+                }
+            });
+            assertTrue(anotado.await(5, TimeUnit.SECONDS));
+            ops.detener(1);
+            ops.interrumpir(1);
+            operacion.get(5, TimeUnit.SECONDS);
+            Future<Boolean> barrido = pool.submit(() -> Thread.currentThread().isInterrupted());
+            assertFalse(barrido.get(5, TimeUnit.SECONDS));
+            ops.interrumpir(1);   // ya soltado: no alcanza al barrido
+            Future<Boolean> otro = pool.submit(() -> Thread.currentThread().isInterrupted());
+            assertFalse(otro.get(5, TimeUnit.SECONDS));
+        } finally {
+            pool.shutdownNow();
+        }
+    }
 }

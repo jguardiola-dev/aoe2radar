@@ -90,8 +90,8 @@ final class CableadoPartidas {
                     @Override public void terminarOperacion(long op) { v.barraEstado.terminarOperacion(op); }
                     @Override public long operacionActual() { return v.barraEstado.opSerial(); }
                     @Override public boolean detenido(long op) { return v.barraEstado.operaciones().detenido(op); }
-                    @Override public void pararOperacion(long op) { v.barraEstado.operaciones().detener(op); }
-                    @Override public void anotarHiloOperacion(long op) { v.barraEstado.operaciones().anotarHilo(op); }
+                    @Override public void pararOperacion(long op) { v.barraEstado.detener(op); }
+                    @Override public void anotarHiloOperacion(long op, boolean interrumpible) { v.barraEstado.operaciones().anotarHilo(op, interrumpible); }
                     @Override public void soltarHiloOperacion() { v.barraEstado.operaciones().soltarHilo(); }
                     @Override public void aprenderCatalogos(List<Match> res) { Servicios.aprenderCatalogos(res); }
                     @Override public List<String> mapasConocidos() { return new ArrayList<>(MAPAS_CAT); }

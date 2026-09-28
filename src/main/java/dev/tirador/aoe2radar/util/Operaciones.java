@@ -24,7 +24,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * Hilos: la lista de vivas y el historial se protegen con el monitor de este objeto (la barra los toca en el EDT;
  * los trabajos de fondo leen). {@link Freno#detenido()} es volatile (lo escribe el EDT, lo lee el hilo de fondo).
- * El mapa hilo→freno es concurrente: cada hilo de fondo escribe solo su propia entrada.
+ * El mapa hilo→freno es concurrente: cada hilo de fondo escribe solo su propia entrada, bajo el monitor (para que
+ * {@link #interrumpir} no alcance a un hilo que ya lo soltó); {@link #detieneEsteHilo} lo lee sin él.
  * Sin Swing ni red: se prueba con JUnit normal.
  */
 public final class Operaciones {
@@ -56,6 +57,8 @@ public final class Operaciones {
         @Override protected boolean removeEldestEntry(Map.Entry<Long, Freno> e) { return size() > HISTORIAL && !vivas.contains(e.getValue()); }
     };
     private final Map<Thread, Freno> porHilo = new ConcurrentHashMap<>();
+    /** Los hilos de {@code porHilo} que se pueden interrumpir (ver anotarHilo); monitor: this. */
+    private final java.util.Set<Thread> interrumpibles = new java.util.HashSet<>();
 
     /** Empieza la operación {@code id}: freno suelto, la más reciente de las vivas. */
     public synchronized void empezar(long id) {
@@ -106,16 +109,43 @@ public final class Operaciones {
         return new EstadoDetener(true, !f.detenido, f.id);
     }
 
-    /** El trabajo de fondo de la operación {@code id} corre en ESTE hilo (al empezar su doInBackground). */
+    /** El trabajo de fondo de la operación {@code id} corre en ESTE hilo (al empezar su doInBackground). No se
+     *  interrumpe al detenerla: solo ve el freno (lo mismo que {@code anotarHilo(id, false)}). */
     public void anotarHilo(long id) {
-        Freno f;
-        synchronized (this) { f = recientes.get(id); }
-        if (f != null) porHilo.put(Thread.currentThread(), f);
+        anotarHilo(id, false);
     }
 
-    /** Este hilo ya no trabaja para ninguna operación (al acabar su doInBackground, en un finally). */
+    /** Como {@link #anotarHilo(long)}; con {@code interrumpible}, {@link #interrumpir(long)} además interrumpe este
+     *  hilo para que Detener corte al momento una espera (Thread.sleep, la petición HTTP en vuelo). Solo para trabajo
+     *  que lo sabe manejar y no escribe archivos a medias (hoy, el recorrido de «Buscar partidas»): una descarga de
+     *  recs NO lo es (una escritura interrumpida dejaría la rec truncada). */
+    public synchronized void anotarHilo(long id, boolean interrumpible) {
+        Freno f = recientes.get(id);
+        if (f == null) return;
+        Thread yo = Thread.currentThread();
+        porHilo.put(yo, f);
+        if (interrumpible) interrumpibles.add(yo); else interrumpibles.remove(yo);
+    }
+
+    /** Este hilo ya no trabaja para ninguna operación (al acabar su doInBackground, en un finally). Borra también
+     *  la marca de interrumpido que pudiera quedarle de un Detener: el hilo vuelve limpio al pool. Tras soltarlo
+     *  (bajo el mismo monitor que {@link #interrumpir}) ya nadie puede interrumpirlo por esta operación, así que
+     *  limpiar la marca después es seguro. */
     public void soltarHilo() {
-        porHilo.remove(Thread.currentThread());
+        Thread yo = Thread.currentThread();
+        synchronized (this) {
+            porHilo.remove(yo);
+            interrumpibles.remove(yo);
+        }
+        Thread.interrupted();
+    }
+
+    /** Interrumpe los hilos interrumpibles que hoy trabajan para la operación {@code id} (Detener rápido), solo si ya
+     *  está detenida: sin freno puesto, ApiClient borraría la interrupción y la petición saldría igual. Los que ya
+     *  la soltaron no se tocan: un hilo del pool que ya hace otra cosa nunca recibe esta interrupción. */
+    public synchronized void interrumpir(long id) {
+        for (Map.Entry<Thread, Freno> e : porHilo.entrySet())
+            if (e.getValue().id == id && e.getValue().detenido && interrumpibles.contains(e.getKey())) e.getKey().interrupt();
     }
 
     /** ¿Detener va por ESTE hilo? Solo si es el trabajo de fondo de una operación a la que han pedido parar. */

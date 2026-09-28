@@ -150,6 +150,15 @@ public final class BarraEstado {
         if (seguiaViva && !operaciones.hayVivas()) anfitrion.operacionTerminada();   // cualquier fin de la última deja la UI usable
     }
 
+    /** Para la operación {@code op} desde un botón propio (la × de «Partidas de:», «Buscar partidas» → «Detener»):
+     *  su freno, la interrupción de su hilo si es interrumpible, y el «Detener» de la barra repintado (si apuntaba a
+     *  ella, queda deshabilitado hasta que termine). EDT. */
+    public void detener(long op) {
+        operaciones.detener(op);
+        operaciones.interrumpir(op);
+        pintarOperaciones();
+    }
+
     /** Progreso y «Detener» según las operaciones vivas (util.Operaciones.estadoDetener decide; aquí se pinta). */
     private void pintarOperaciones() {
         Operaciones.EstadoDetener e = operaciones.estadoDetener();
@@ -196,6 +205,7 @@ public final class BarraEstado {
             final long serialDetenido = operaciones.detenerUltima();   // SOLO la más reciente que sigue viva
             log("detener pulsado (op #" + serialDetenido + ", última empezada #" + opSerial + ")");
             if (serialDetenido < 0) return;
+            operaciones.interrumpir(serialDetenido);   // corta ya su espera, si su trabajo es interrumpible
             pintarOperaciones();   // queda deshabilitado mientras esa siga viva
             status.setText(t("Deteniendo… (como mucho 15 s si había una petición en vuelo)",
                     "Stopping… (at most 15 s if a request was in flight)"));

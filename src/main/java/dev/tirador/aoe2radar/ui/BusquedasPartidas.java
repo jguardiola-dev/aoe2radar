@@ -114,7 +114,7 @@ final class BusquedasPartidas {
                 + " x" + multAzar + " continuar=" + continuar + " stop=" + vista.anfitrion.detenido(miSerial));
         new SwingWorker<List<Match>, String>() {
             @Override protected List<Match> doInBackground() throws Exception {
-                vista.anfitrion.anotarHiloOperacion(miSerial);   // Detener corta la espera del freno de ESTA operación, no la de todos
+                vista.anfitrion.anotarHiloOperacion(miSerial, false);   // Detener corta la espera del freno de ESTA operación, no la de todos
                 try {
                     return vista.azarService.buscarAleatorias(lo, hi, mapaSel, civSel, hours, multAzar, cutoff, miSerial, this::publish);
                 } finally {
@@ -177,7 +177,7 @@ final class BusquedasPartidas {
         vista.anfitrion.estado(t("Preparando Guess the ELO…", "Preparing Guess the ELO…"));
         new SwingWorker<List<Match>, String>() {
             @Override protected List<Match> doInBackground() throws Exception {
-                vista.anfitrion.anotarHiloOperacion(miSerial);   // Detener corta la espera del freno de ESTA operación, no la de todos
+                vista.anfitrion.anotarHiloOperacion(miSerial, false);   // Detener corta la espera del freno de ESTA operación, no la de todos
                 try {
                     return vista.azarService.buscarGte(cutoff, this::publish);
                 } finally {
@@ -214,8 +214,9 @@ final class BusquedasPartidas {
     }
 
     /** El botón «Buscar partidas» (y la guía, que lo pulsa): con una búsqueda en marcha dice «Detener» y la
-     *  para; si no, busca. Parar = poner SU freno (no cancelar el SwingWorker): el recorrido acaba tras la página en
-     *  curso y su done() muestra lo leído como resultados parciales (decisión de Jorge, 1.3). */
+     *  para; si no, busca. Parar = poner SU freno e interrumpir su hilo (no cancelar el SwingWorker): la página en
+     *  vuelo o la pausa se cortan al momento (esa página se descarta) y su done() muestra lo leído hasta ahí como
+     *  resultados parciales (decisión de Jorge, 1.3). */
     public void alternar(JButton btn) {
         if (vista.fetchWorker != null) {
             vista.anfitrion.pararOperacion(serialBusqueda);
@@ -281,7 +282,7 @@ final class BusquedasPartidas {
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         SwingWorker<PartidasPresenter.Recorrido, String> fw = new SwingWorker<>() {
             @Override protected PartidasPresenter.Recorrido doInBackground() {
-                vista.anfitrion.anotarHiloOperacion(miSerial);
+                vista.anfitrion.anotarHiloOperacion(miSerial, true);   // interrumpible: Detener corta al momento la página en vuelo o la pausa
                 try {
                     // Detener (el del botón, el de la barra de estado si es la última operación viva, o la × de
                     // «Partidas de:») corta el recorrido ENTERO, no solo la página en curso (revisión 1.3, general
@@ -293,8 +294,9 @@ final class BusquedasPartidas {
                 }
             }
             @Override protected void process(List<String> msgs) {
-                // Un «Consultando…» tardío de una búsqueda cancelada, cerrada con la × o sustituida no tapa nada.
-                if (isCancelled() || vista.fetchWorker != this) return;
+                // Un «Consultando…» tardío de una búsqueda cancelada, cerrada con la ×, sustituida o ya detenida no tapa
+                // nada (tampoco el «Deteniendo…» del botón).
+                if (isCancelled() || vista.fetchWorker != this || vista.anfitrion.detenido(miSerial)) return;
                 vista.anfitrion.estado(msgs.get(msgs.size() - 1));
             }
             @Override protected void done() {

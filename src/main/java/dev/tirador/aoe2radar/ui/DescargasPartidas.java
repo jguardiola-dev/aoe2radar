@@ -275,7 +275,7 @@ final class DescargasPartidas {
 
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() {
-                vista.anfitrion.anotarHiloOperacion(miSerial);
+                vista.anfitrion.anotarHiloOperacion(miSerial, false);   // NO interrumpible: una rec escrita a medias quedaría truncada
                 try {
                     descargarTodas();
                 } finally {
