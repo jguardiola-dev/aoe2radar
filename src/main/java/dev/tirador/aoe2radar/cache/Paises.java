@@ -74,9 +74,14 @@ public final class Paises {
      * (fin de sesión ordenado; si Windows mata el proceso antes, no hay remedio y el Timer de 60 s es el tope de lo
      * perdido). Este hook no toca Swing (lo que llevó a descartarlo para la geometría en F11): solo guardarAlCerrar,
      * con su espera de 2 s como mucho. En un cierre normal, alCerrar ya guardó y aquí no queda nada sucio. Una vez.
+     * <p>Ojo: el hook corre en TODAS las salidas, también en la de ImportarDatos, que sale sin el cierre normal para
+     * no pisar lo importado. Ahí no escribe porque util.Archivos sigue con las escrituras en pausa (escribirAtomico
+     * falla y guardarPaises solo lo anota en el log): si esa pausa cambia, hay que desactivar este hook antes.
      */
     public static void guardarAlApagar() {
-        if (GANCHO_APAGADO.compareAndSet(false, true)) Runtime.getRuntime().addShutdownHook(hiloApagado());
+        if (!GANCHO_APAGADO.compareAndSet(false, true)) return;
+        try { Runtime.getRuntime().addShutdownHook(hiloApagado()); }
+        catch (IllegalStateException apagandoYa) { }   // la JVM ya está saliendo (p. ej. ImportarDatos): nada que registrar
     }
 
     /** El hilo del shutdown hook (paquete: PaisesTest lo corre sin registrarlo). */

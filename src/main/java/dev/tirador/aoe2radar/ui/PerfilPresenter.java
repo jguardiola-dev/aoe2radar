@@ -193,9 +193,10 @@ public final class PerfilPresenter {
     }
 
     /** ¿Sigue mandando la carga token de pid? Su perfil está abierto y ninguna carga posterior la ha relevado (1.4,
-     *  A→B→A). Desde cualquier hilo: cargaToken es volatile. */
+     *  A→B→A). Desde cualquier hilo: cargaToken es volatile y se lee primero, así también se ve el pid abierto que el
+     *  EDT fijó antes de subir el testigo. */
     private boolean vigente(long pid, long token) {
-        return pantalla.pidAbierto() == pid && token == cargaToken;
+        return token == cargaToken && pantalla.pidAbierto() == pid;
     }
 
     /** «Actualizar hoy»: ficha + las 50 partidas más recientes, fundidas con lo que ya había. Hilo "perfil-hoy". */

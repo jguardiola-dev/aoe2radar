@@ -82,8 +82,12 @@ public final class TemaApp {
      */
     static void refrescarSueltos(java.awt.Component raiz, java.util.Collection<? extends java.awt.Window> ventanas,
                                  java.util.Collection<javax.swing.JPopupMenu> popups) {
-        for (java.awt.Window w : ventanas) if (w != raiz) SwingUtilities.updateComponentTreeUI(w);
-        for (javax.swing.JPopupMenu pm : popups) SwingUtilities.updateComponentTreeUI(pm);
+        // Cada una en su try: un fallo en una ventana secundaria no debe cortar el resto del cambio de tema (grises,
+        // botones, fuentes) ni hacer que aplicarTema devuelva false, que significa «no hay FlatLaf».
+        for (java.awt.Window w : ventanas)
+            if (w != raiz) try { SwingUtilities.updateComponentTreeUI(w); } catch (RuntimeException ex) { dev.tirador.aoe2radar.util.Log.log("tema: ventana " + w.getName() + ": " + ex); }
+        for (javax.swing.JPopupMenu pm : popups)
+            try { SwingUtilities.updateComponentTreeUI(pm); } catch (RuntimeException ex) { dev.tirador.aoe2radar.util.Log.log("tema: popup: " + ex); }
     }
 
     /** Windows: AppsUseLightTheme = 0 -> apps en modo oscuro.
