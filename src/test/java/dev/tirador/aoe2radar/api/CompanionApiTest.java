@@ -125,14 +125,11 @@ class CompanionApiTest {
         assertEquals("offline", companion.twitchCanal("x").tipo(), "si no llega lista, el propio objeto");
     }
 
-    @Test void recientesYPaginaReintentanEl429() throws Exception {
-        red.estados.add(429);
-        companion.recientes(null, 1, 50);
-        assertEquals(2, red.pedidas.size(), "río de «Al azar»: con reintento, como su httpText429 de la 1.1");
+    @Test void paginaReintentaEl429() throws Exception {
         red.estados.add(429);
         companion.pagina(1L, 1, 50);
-        assertEquals(4, red.pedidas.size(), "paginaciones: con reintento");
-        assertEquals(2, throttle.cuatrocientosVeintinueve);
+        assertEquals(2, red.pedidas.size(), "paginaciones: con reintento");
+        assertEquals(1, throttle.cuatrocientosVeintinueve);
     }
 
     @Test void twitchCanalConCuerpoNullEsNull() throws Exception {
@@ -196,20 +193,10 @@ class CompanionApiTest {
         assertEquals(0, companion.pagina(1L, 3, 50).brutas());
     }
 
-    @Test void recientesConYSinFiltroDeLadder() throws Exception {
-        red.cuerpo = TRES_PARTIDAS;
-        assertEquals(4, companion.recientes("rm_1v1", 1, 50).brutas());
-        assertEquals("https://data.aoe2companion.com/api/matches?leaderboard_ids=rm_1v1&page=1&per_page=50", ultima());
-        companion.recientes("3", 2, 50);
-        assertEquals("https://data.aoe2companion.com/api/matches?leaderboard_ids=3&page=2&per_page=50", ultima());
-        companion.recientes(null, 1, 50);
-        assertEquals("https://data.aoe2companion.com/api/matches?page=1&per_page=50", ultima(), "las tres variantes del río, como la 1.1");
-    }
-
     @Test void unaPartidaConFechaAbsurdaEntraConLaFechaNull() throws Exception {
-        // Antes parseMatch lanzaba (when con -1e30) y la página entera del río de «Al azar» contaba como fallida.
+        // Antes parseMatch lanzaba (when con -1e30) y la página entera contaba como fallida.
         red.cuerpo = "{\"matches\":[{\"match_id\":21,\"started\":-1e30,\"finished\":-1e17},{\"match_id\":22,\"started\":1700000000}]}";
-        PaginaPartidas p = companion.recientes(null, 1, 50);
+        PaginaPartidas p = companion.pagina(1L, 1, 50);
         assertEquals(List.of(21L, 22L), p.partidas().stream().map(m -> m.id).toList(), "la página se lee entera");
         assertNull(p.partidas().get(0).started);
         assertNull(p.partidas().get(0).finished);

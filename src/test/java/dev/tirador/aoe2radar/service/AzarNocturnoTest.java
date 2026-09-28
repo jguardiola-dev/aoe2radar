@@ -18,19 +18,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
 import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.FakeTransporte;
-import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.SIN_PARTIDAS;
 import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.ThrottleNoop;
-import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.jsonUnaPartida1v1;
-import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.ladderDeUnaPagina;
 import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.partidaDeMuestra;
-import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.rioVacio;
-import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.urlLb;
-import static dev.tirador.aoe2radar.service.AzarServiceCompanionTest.urlPartidas;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * 1.4, «nocturno primero» en «Al azar» y «Guess the ELO»: el ladder de anoche (LadderNocturno, desde elo_ayer v2) en vez
- * de bisecar el leaderboard en vivo, y la muestra de anteayer. Sin red: el mismo Transporte falso que
+ * 1.4, «nocturno primero» en «Al azar» y «Guess the ELO»: la muestra de anteayer (el ladder de anoche y los lotes,
+ * en AzarLotesTest). Sin red: el mismo Transporte falso que
  * AzarServiceCompanionTest (cualquier URL no registrada revienta el test).
  */
 class AzarNocturnoTest {
@@ -53,89 +47,6 @@ class AzarNocturnoTest {
         List<long[]> l = new ArrayList<>();
         for (int i = 0; i < 1000; i++) l.add(new long[]{ 10_000 + i, 2500 - i, hace1h });
         return l;
-    }
-
-    // ----- Al azar: el tramo sale del ladder de anoche -----------------------------------------------------
-
-    @Test void conElLadderDeAnocheNoSePideNiUnaPaginaDelLeaderboard() throws Exception {
-        List<long[]> ladder = ladderDeAnoche();
-        FakeTransporte red = new FakeTransporte();
-        for (long[] j : ladder) red.responder(urlPartidas(j[0], 1), SIN_PARTIDAS);
-        // la única partida: dos jugadores del tramo 1920-1950 (pids 10550 = 1950 y 10560 = 1940), sin rating en la
-        // respuesta del companion: el filtro usa el de anoche (como antes usaba el de las páginas del leaderboard)
-        red.responder(urlPartidas(10_550, 1), jsonUnaPartida1v1(777, 10_550, 10_560));
-        red.responder(urlPartidas(10_560, 1), jsonUnaPartida1v1(777, 10_550, 10_560));
-        AtomicInteger pedidasAlLadder = new AtomicInteger();
-        AzarServiceCompanion s = servicio(red, () -> null, () -> null, () -> { pedidasAlLadder.incrementAndGet(); return ladder; });
-        Instant cutoff = Instant.now().minus(Duration.ofHours(3));
-        List<Match> res = s.buscarAleatorias(1920, 1950, null, null, 3, 1, cutoff, 1, m -> { });
-        assertEquals(0, llamadasAlLeaderboard(red), "ni bisección ni muestreo de páginas: el ladder es el de anoche");
-        assertTrue(red.totalLlamadas() > 0, "las partidas de cada perfil siguen saliendo del companion");
-        assertTrue(red.llamadas.keySet().stream().allMatch(u -> {
-            long pid = Long.parseLong(u.replaceAll(".*profile_ids=(\\d+).*", "$1"));
-            return pid >= 10_550 && pid <= 10_580;
-        }), "solo se consultan perfiles del tramo 1920-1950 (pids 10550-10580)");
-        assertEquals(1, res.size());
-        assertEquals(777L, res.get(0).id);
-        assertEquals(1, pedidasAlLadder.get(), "una sola lectura del ladder nocturno por contexto (10 min)");
-    }
-
-    /** Revisión: la última partida del volcado siempre es anterior a anoche. Con una ventana de 3 h, antes el tramo
-     *  entero quedaba «inactivo» (0 perfiles consultados, tramo agotado); ahora cuenta como actividad desconocida. */
-    @Test void unaVentanaCortaNoDejaElTramoSinPerfilesPorqueElVolcadoEsDeAnoche() throws Exception {
-        long hace26h = System.currentTimeMillis() - 26 * 3_600_000L;
-        List<long[]> ladder = new ArrayList<>();
-        for (int i = 0; i < 1000; i++) ladder.add(new long[]{ 10_000 + i, 2500 - i, hace26h });
-        FakeTransporte red = new FakeTransporte();
-        for (long[] j : ladder) red.responder(urlPartidas(j[0], 1), SIN_PARTIDAS);
-        AzarServiceCompanion s = servicio(red, () -> null, () -> null, () -> ladder);
-        s.buscarAleatorias(1920, 1950, null, null, 3, 1, Instant.now().minus(Duration.ofHours(3)), 1, m -> { });
-        assertTrue(red.totalLlamadas() > 0, "se consultan perfiles del tramo");
-        assertEquals(0, llamadasAlLeaderboard(red));
-    }
-
-    @Test void unRangoFueraDelLadderDeAnocheSaleSinLlamadas() throws Exception {
-        FakeTransporte red = new FakeTransporte();   // nada registrado
-        AzarServiceCompanion s = servicio(red, () -> null, () -> null, AzarNocturnoTest::ladderDeAnoche);
-        assertTrue(s.buscarAleatorias(3000, 3100, null, null, 3, 1, Instant.now().minus(Duration.ofHours(3)), 1, m -> { }).isEmpty());
-        assertEquals(0, red.totalLlamadas(), "páginas fuera del ladder nocturno: vacías, nunca al companion");
-    }
-
-    @Test void sinDatosNuevosSigueConElLeaderboardEnVivo() throws Exception {
-        long ahora = Instant.now().getEpochSecond();
-        FakeTransporte red = new FakeTransporte();
-        ladderDeUnaPagina(red, ahora);
-        rioVacio(red);
-        red.responder(urlPartidas(111, 1), SIN_PARTIDAS);
-        red.responder(urlPartidas(222, 1), SIN_PARTIDAS);
-        AzarServiceCompanion s = servicio(red, () -> null, () -> null, () -> null);   // elo_ayer de la 1.3: sin rangos
-        s.buscarAleatorias(1000, 2000, null, null, 1, 1, Instant.now().minus(Duration.ofHours(1)), 1, m -> { });
-        assertTrue(red.llamadasA(urlLb("rm_1v1", 1)) > 0, "como hasta ahora: la página 1 del leaderboard en vivo");
-    }
-
-    @Test void unFalloAlLeerElLadderDeAnocheCaeAlEnVivo() throws Exception {
-        long ahora = Instant.now().getEpochSecond();
-        FakeTransporte red = new FakeTransporte();
-        ladderDeUnaPagina(red, ahora);
-        rioVacio(red);
-        red.responder(urlPartidas(111, 1), SIN_PARTIDAS);
-        red.responder(urlPartidas(222, 1), SIN_PARTIDAS);
-        AzarServiceCompanion s = servicio(red, () -> null, () -> null, () -> { throw new IllegalStateException("roto"); });
-        s.buscarAleatorias(1000, 2000, null, null, 1, 1, Instant.now().minus(Duration.ofHours(1)), 1, m -> { });
-        assertTrue(red.llamadasA(urlLb("rm_1v1", 1)) > 0);
-    }
-
-    // ----- Guess the ELO sin muestra: franjas del ladder de anoche -----------------------------------------
-
-    @Test void gteSinMuestraUsaElLadderDeAnoche() throws Exception {
-        List<long[]> ladder = ladderDeAnoche();
-        FakeTransporte red = new FakeTransporte();
-        for (long[] j : ladder) red.responder(urlPartidas(j[0], 1), jsonUnaPartida1v1(900_000 + j[0], j[0], j[0] + 1));
-        AzarServiceCompanion s = servicio(red, () -> null, () -> null, () -> ladder);
-        List<Match> res = s.buscarGte(Instant.now().minus(Duration.ofHours(48)), m -> { });
-        assertEquals(0, llamadasAlLeaderboard(red));
-        assertFalse(res.isEmpty());
-        for (Match m : res) assertNotNull(m.players.get(0).rating, "el revelado lleva el ELO de anoche");
     }
 
     // ----- Muestra de anteayer -----------------------------------------------------------------------------
@@ -162,16 +73,12 @@ class AzarNocturnoTest {
 
     @Test void conVentanaDe24HorasAnteayerNoEntra() throws Exception {
         FakeTransporte red = new FakeTransporte();
-        long ahora = Instant.now().getEpochSecond();
-        ladderDeUnaPagina(red, ahora);
-        rioVacio(red);
-        red.responder(urlPartidas(111, 1), SIN_PARTIDAS);
-        red.responder(urlPartidas(222, 1), SIN_PARTIDAS);
         AtomicInteger pedidasAnteayer = new AtomicInteger();
         AzarServiceCompanion s = servicio(red, () -> muestra(1000, 3), () -> { pedidasAnteayer.incrementAndGet(); return muestra(2000, 20); }, () -> null);
-        s.buscarAleatorias(1000, 2000, null, null, 24, 1, Instant.now().minus(Duration.ofHours(24)), 1, m -> { });
+        assertThrows(java.io.IOException.class,   // sin ladder nocturno, lo que no da la muestra ya no se busca (1.4.1)
+                () -> s.buscarAleatorias(1000, 2000, null, null, 24, 1, Instant.now().minus(Duration.ofHours(24)), 1, m -> { }));
         assertEquals(0, pedidasAnteayer.get(), "24 h: la ventana no llega a anteayer");
-        assertFalse(s.deMuestra(), "3 de ayer no bastan: la tirada sigue como antes (API)");
+        assertFalse(s.deMuestra(), "3 de ayer no bastan y sin ladder de anoche no se busca más: la tirada no sale de la muestra");
         assertFalse(s.conAnteayer());
     }
 

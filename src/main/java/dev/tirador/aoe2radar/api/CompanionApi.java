@@ -134,14 +134,8 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder, FuenteP
         return matches(String.valueOf(pid), pagina, porPagina);
     }
 
-    /**
-     * GET /matches?[leaderboard_ids=…&]page=…&per_page=…: las partidas recientes de todo el ladder (el «río» de «Al
-     * azar»), convertida entera. leaderboard null: sin filtro de ladder.
-     */
-    public PaginaPartidas recientes(String leaderboard, int pagina, int porPagina) throws IOException, InterruptedException {
-        String filtro = leaderboard == null ? "" : "leaderboard_ids=" + leaderboard + "&";
-        return aPagina(Json.parse(api.textoCon429(Http.API + "/matches?" + filtro + "page=" + pagina + "&per_page=" + porPagina)));
-    }
+    // 1.4.1: fuera recientes() (/matches sin profile_ids, el «río» de «Al azar»): desde 2026-09-28 el companion responde
+    // 422 «profile_ids must be specified». /matches siempre con profile_ids (matches/partidas/pagina).
 
     /**
      * Una página de partidas de un jugador, convertida entera (para paginaciones que recorren la página completa y

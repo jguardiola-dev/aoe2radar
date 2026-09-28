@@ -158,13 +158,12 @@ class CompanionApiCacheTest {
 
     @Test void matchesBusquedaYTwitchNuncaSeGuardan() throws Exception {
         companion.matches("1,2", 1, 50); companion.matches("1,2", 1, 50);
-        companion.recientes("rm_1v1", 1, 50); companion.recientes("rm_1v1", 1, 50);
         red.cuerpo = "{\"profiles\":[],\"data\":[]}";
         companion.buscarPerfiles("tirador"); companion.buscarPerfiles("tirador");
         companion.twitchDirectos(); companion.twitchDirectos();
         red.cuerpo = "[]";
         companion.twitchCanal("x"); companion.twitchCanal("x");
-        assertEquals(10, peticiones(), "tiempo real: siempre a la red");
+        assertEquals(8, peticiones(), "tiempo real: siempre a la red");
         assertEquals(0, companion.aciertosCache());
     }
 

@@ -25,12 +25,13 @@ public interface AzarService {
      * Partidas 1v1 al azar cuyo ELO medio (o el de cada jugador, según el filtro) cae en [lo, hi], dentro de las
      * últimas «hours» horas (cutoff ya calculado por quien llama), con filtro opcional de mapa y civ. Orden de
      * fuentes, igual que hoy: (1) si hours >= 24, la muestra nocturna de sfr-data (si da 5 o más, cero llamadas al
-     * companion); si no, (2) lo ya leído en esta sesión que cumpla los filtros de hoy; (3) el «río» de partidas
-     * recientes del ladder, solo si el rango es una porción amplia y sin filtro de civ; (4) perfiles muestreados
-     * del tramo del ladder, sin repetir los ya consultados en los últimos 10 minutos. Desde la 1.4, con los datos
-     * nocturnos nuevos: si hours >= 48 la muestra de anteayer completa la de ayer, y el tramo (3-4) sale del ladder de
-     * anoche (sin llamadas al leaderboard); con datos anteriores, como antes.
-     * <p>multAzar multiplica el número de pasadas de muestreo de perfiles (intensidad del diálogo). progreso recibe
+     * companion; si hours >= 48, la de anteayer completa la de ayer); si no, (2) lo ya leído en esta sesión que cumpla
+     * los filtros de hoy; (3) jugadores al azar del tramo según el ladder de anoche (preferencia por los activos), sin
+     * repetir los consultados en los últimos 10 minutos, con sus partidas pedidas por lotes de hasta 10
+     * (/matches?profile_ids=<csv>&per_page=100) y como mucho 6 × multAzar llamadas por tirada. 1.4.1: el «río» de
+     * partidas recientes del ladder ya no existe (el companion responde 422 a /matches sin profile_ids, 2026-09-28) y,
+     * sin el ladder de anoche de sfr-data, se lanza IOException con un mensaje que lo explica y no se llama a nadie.
+     * <p>multAzar multiplica las pasadas de muestreo y el tope de llamadas (intensidad del diálogo). progreso recibe
      * los mismos textos que antes mostraba directamente el estado de la ventana (vía publish/process del
      * SwingWorker). serial es solo para identificar la operación en los mensajes de log.
      * <p>Si se interrumpe (Detener) durante la búsqueda, devuelve lo encontrado hasta el corte, igual que hoy. El
@@ -43,7 +44,8 @@ public interface AzarService {
     /**
      * «Guess the ELO»: hasta 5 partidas 1v1 recientes de tramos distintos del ladder (élite, medio-alto, medio,
      * medio-bajo y fondo), o de la muestra nocturna si esta ya da alguna sin repetir. cutoff, la misma ventana
-     * temporal configurada para «Al azar por ELO».
+     * temporal configurada para «Al azar por ELO». Sin muestra: los tramos del ladder de anoche y UNA llamada por lotes
+     * para los hasta 10 jugadores elegidos; sin ladder de anoche, IOException con el mensaje y ninguna llamada (1.4.1).
      */
     List<Match> buscarGte(Instant cutoff, Consumer<String> progreso) throws Exception;
 
