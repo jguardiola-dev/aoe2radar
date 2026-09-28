@@ -387,7 +387,14 @@ class RegresionCapturas {
         JTextField buscaNick = buscarCampoPorTooltip(app.getContentPane(), "Escribe un nick y pulsa Enter", "Type a nick and press Enter");
         if (buscaNick != null) {
             JTextField campo = buscaNick;
-            SwingUtilities.invokeAndWait(() -> { campo.setCaretColor(new Color(0, 0, 0, 0)); campo.getCaret().setBlinkRate(0); });
+            // Fase 5: el color transparente no bastaba: a veces el cursor salía pintado (0,014 % en vez de ≤0,010 %,
+            // bisección 2026-09-28: ya pasaba en la 1.3 como fallo del primer intento). Un caret que no pinta nada
+            // no depende de cuándo llegue el foco ni de cuándo se reinstale la UI.
+            SwingUtilities.invokeAndWait(() -> {
+                campo.setCaretColor(new Color(0, 0, 0, 0));
+                campo.setCaret(new javax.swing.text.DefaultCaret() { @Override public void paint(Graphics g) { } });
+                campo.getCaret().setBlinkRate(0);
+            });
         } else {
             System.out.println("AVISO: no se encontró buscaNick (campo de búsqueda de la Watchlist): shot_watchlist puede salir con el cursor parpadeando");
         }
