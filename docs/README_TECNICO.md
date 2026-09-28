@@ -88,7 +88,7 @@ Steps to publish X.Y:
    draft, to be completed and published by hand.
 
 Safety checks: the workflow fails before uploading anything if the tag does not match the pom version
-(`v` + `version.app`, e.g. `v1.4` for `1.4.0`), if `version.app` is not plain digits and dots (the self-updater
+(`v` + `version.app`, e.g. `v1.4` for `1.4.0`, but `v1.4.1` for the patch `1.4.1`), if `version.app` is not plain digits and dots (the self-updater
 would reject it), or if the installer was not produced. While the files are being built (several minutes) the
 published release has none yet: `releases/latest/download/update.json` answers 404 and installed apps simply
 try again later; the 1.3 zip's tag-based checker may already show the new version. Re-running the workflow

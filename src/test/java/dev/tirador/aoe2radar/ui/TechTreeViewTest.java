@@ -9,7 +9,13 @@ import org.junit.jupiter.api.Test;
 
 import javax.imageio.ImageIO;
 import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Cursor;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.file.Files;
@@ -65,8 +71,10 @@ class TechTreeViewTest {
     }
 
     static class AnfitrionFake implements TechTreeView.Anfitrion {
+        final List<String> urls = new ArrayList<>();
         @Override public void precalentarPerfiles() { }
         @Override public void cerrar() { }
+        @Override public void abrirUrl(String url) { urls.add(url); }
     }
 
     static class EnlaceCivStatsFake implements TechTreeView.EnlaceCivStats {
@@ -221,5 +229,52 @@ class TechTreeViewTest {
         assertEquals(0, tareas.veces("techtree-icono-disco"),
                 "con los tamaños alineados, la precarga ya deja el icono en caché: el pintado no debe pedir el respaldo de disco");
         assertFalse(v.ttIconos.isEmpty(), "y el árbol sí pinta con icono: la precarga cacheó algo de verdad");
+    }
+
+    /** 1.4.1: el pie ya no dice «Datos e iconos: … MIT» (los iconos no son MIT: son de Microsoft, bajo sus Game
+     *  Content Usage Rules) y enlaza esas reglas: el clic pide a la ventana abrir su URL. */
+    @Test void elPieSeparaLaMitDeLosIconosDeMicrosoftYEnlazaSusReglas() throws Exception {
+        AnfitrionFake anfitrion = new AnfitrionFake();
+        JFrame marco = new JFrame();
+        TechTreeView[] out = new TechTreeView[1];
+        SwingUtilities.invokeAndWait(() -> out[0] = new TechTreeView(marco, new TechTreeServiceFake(), new StatsServiceFake(),
+                new FiltroStats("rm_1v1", "30", "*", "*"), new Listas(marco, b -> { }), null, new TareasAplazadas(),
+                anfitrion, new EnlaceCivStatsFake()));
+        JPanel[] pie = new JPanel[1];
+        SwingUtilities.invokeAndWait(() -> pie[0] = out[0].piePagina());
+
+        List<JLabel> etiquetas = new ArrayList<>();
+        etiquetasDe(pie[0], etiquetas);
+        StringBuilder texto = new StringBuilder();
+        JLabel enlace = null;
+        for (JLabel l : etiquetas) {
+            texto.append(l.getText());
+            if (l.getCursor().getType() == Cursor.HAND_CURSOR) enlace = l;
+        }
+        String s = texto.toString();
+        // El enlace va en la parte que nunca se recorta (WEST); la ayuda de uso, en la que sí (CENTER).
+        JPanel oeste = (JPanel) ((BorderLayout) pie[0].getLayout()).getLayoutComponent(BorderLayout.WEST);
+        List<JLabel> fijas = new ArrayList<>();
+        etiquetasDe(oeste, fijas);
+        assertTrue(fijas.contains(enlace), "el enlace no debe poder quedar fuera en una ventana estrecha");
+        System.out.println("pie del Tech tree: ancho preferido " + pie[0].getPreferredSize().width + " px, atribución "
+                + oeste.getPreferredSize().width + " px");
+        assertFalse(s.contains("iconos: aoe2techtree") || s.contains("icons: aoe2techtree"), "los iconos no son MIT: " + s);
+        assertTrue(s.contains("aoe2techtree.net (HSZemi, MIT)"), s);
+        assertTrue(s.contains("Age of Empires II © Microsoft"), s);
+        assertTrue(s.contains("Game Content Usage Rules"), s);
+        assertTrue(enlace != null, "falta la etiqueta clicable de las reglas");
+
+        JLabel e = enlace;
+        SwingUtilities.invokeAndWait(() -> e.dispatchEvent(
+                new MouseEvent(e, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, 2, 2, 1, false, MouseEvent.BUTTON1)));
+        assertEquals(List.of("https://www.xbox.com/en-US/developers/rules"), anfitrion.urls);
+    }
+
+    private static void etiquetasDe(java.awt.Container c, List<JLabel> out) {
+        for (Component h : c.getComponents()) {
+            if (h instanceof JLabel l) out.add(l);
+            else if (h instanceof java.awt.Container sub) etiquetasDe(sub, out);
+        }
     }
 }

@@ -105,6 +105,7 @@ class TechTreePresenterTest {
         boolean precalentado; boolean cerrado;
         @Override public void precalentarPerfiles() { precalentado = true; }
         @Override public void cerrar() { cerrado = true; }
+        @Override public void abrirUrl(String url) { }
     }
 
     static class EnlaceCivStatsFake implements TechTreeView.EnlaceCivStats {
