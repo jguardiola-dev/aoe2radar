@@ -57,7 +57,7 @@ processes, only to make the error message clearer; it never decides on its own t
 `.github/workflows/release.yml` builds the Windows package on GitHub, so a release does not depend on the
 development PC. On `windows-latest`, with the JDK pinned to a fixed Temurin version (`21.0.9`, see below), it
 installs Inno Setup 6 if the runner image lacks it (`choco install innosetup`), runs
-`mvn -B -Pempaquetar,instalador -DskipTests verify` and attaches four files to the tag's release:
+`mvn -B "-Pempaquetar,instalador" -DskipTests verify` and attaches four files to the tag's release:
 
 | File | What for |
 |---|---|
@@ -117,7 +117,7 @@ cleans the packaging):
 
 ### Installer (Maven profile `instalador`, `packaging/aoe2radar.iss`)
 ```
-mvn -Pempaquetar,instalador -DskipTests verify
+mvn "-Pempaquetar,instalador" -DskipTests verify
 ```
 Always together with `empaquetar`, and bound to `verify` so it runs after everything `empaquetar` does in
 `package` (jpackage and the flags copy). It calls Inno Setup 6's `ISCC.exe` (default: a per-user install,

@@ -77,7 +77,7 @@ jobs:
         env:
           ISCC: ${{ steps.inno.outputs.iscc }}
         run: |
-          mvn -B -Pempaquetar,instalador -DskipTests "-Discc=$env:ISCC" verify
+          mvn -B "-Pempaquetar,instalador" -DskipTests "-Discc=$env:ISCC" verify
           if ($LASTEXITCODE -ne 0) { throw "falló el empaquetado" }
 
       - name: El tag coincide con la versión del pom

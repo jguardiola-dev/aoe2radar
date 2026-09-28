@@ -161,7 +161,7 @@ mvn -q -DskipTests compile      # build
 .\verificar.ps1 -Rapido         # tests, no screen needed
 .\verificar.ps1                 # tests + screenshot harness (don't touch the mouse while it runs)
 mvn -Pempaquetar -DskipTests package   # builds the .exe (jpackage)
-mvn -Pempaquetar,instalador -DskipTests verify   # ...and the installer (Inno Setup 6)
+mvn "-Pempaquetar,instalador" -DskipTests verify   # ...and the installer (Inno Setup 6)
 ```
 
 ## Author
