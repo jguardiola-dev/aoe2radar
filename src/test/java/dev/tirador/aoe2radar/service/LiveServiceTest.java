@@ -88,4 +88,35 @@ class LiveServiceTest {
         String url = red.pedidas.get(0);
         assertTrue(url.contains("profile_ids=7") && url.contains("page=1") && url.contains("per_page=50"), url);
     }
+
+    // ===== comprobarVarias: varias partidas en una sola llamada (confirmación en lote de las quitadas) =====
+
+    @Test void variasPartidasEnUnaSolaLlamadaConLosPidsEnCsv() {
+        responder(partida(555, Duration.ofMinutes(30), true), partida(556, Duration.ofMinutes(10), false), partida(1, Duration.ofMinutes(5), false));
+        java.util.Map<Long, LiveService.Comprobacion> l = live.comprobarVarias(List.of(7L, 8L, 9L), List.of(555L, 556L, 557L), 100);
+        assertEquals(1, red.pedidas.size(), "una llamada para las tres");
+        String url = red.pedidas.get(0);
+        assertTrue(url.contains("profile_ids=7,8,9") && url.contains("page=1") && url.contains("per_page=100"), url);
+        assertEquals(LiveService.Veredicto.TERMINADA, l.get(555L).veredicto());
+        assertEquals(555, l.get(555L).partida().id);
+        assertEquals(LiveService.Veredicto.VIVA, l.get(556L).veredicto());
+        assertEquals(LiveService.Veredicto.SIN_DATOS, l.get(557L).veredicto());
+        assertNull(l.get(557L).error(), "no vino: sin datos, no un fallo");
+    }
+
+    @Test void conUnSoloPidPideLoMismoQueComprobar() {
+        live.comprobarVarias(List.of(7L), List.of(555L), 5);
+        live.comprobar(7, 555, 5);
+        assertEquals(red.pedidas.get(1), red.pedidas.get(0));
+    }
+
+    @Test void variasConLaApiCaidaTodasSinDatosConElError() {
+        red.estado = 500;
+        java.util.Map<Long, LiveService.Comprobacion> l = live.comprobarVarias(List.of(7L, 8L), List.of(555L, 556L), 100);
+        assertEquals(2, l.size());
+        for (LiveService.Comprobacion c : l.values()) {
+            assertEquals(LiveService.Veredicto.SIN_DATOS, c.veredicto());
+            assertNotNull(c.error());
+        }
+    }
 }

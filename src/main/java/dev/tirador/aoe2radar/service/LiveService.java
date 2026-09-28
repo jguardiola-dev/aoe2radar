@@ -6,6 +6,12 @@ import dev.tirador.aoe2radar.util.Reloj;
 
 import java.io.IOException;
 import java.time.Instant;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
 import static dev.tirador.aoe2radar.util.Hilos.avisarSiUi;
@@ -43,6 +49,33 @@ public final class LiveService {
             return new Comprobacion(Veredicto.SIN_DATOS, null, null);
         } catch (Exception ex) {   // también InterruptedException, como en la 1.1 (ver DEUDA)
             return new Comprobacion(Veredicto.SIN_DATOS, null, ex);
+        }
+    }
+
+    /**
+     * Varias partidas en UNA llamada: pide las últimas `porPagina` partidas de todos los pids a la vez (CSV, como el
+     * barrido de Live now) y decide cada matchId como {@link #comprobar}: si aparece, enCursoReal con la hora del reloj;
+     * si no, SIN_DATOS (con varios pids, una ausente pudo quedar tapada por las partidas de los otros: el llamador
+     * decide si pregunta por ella sola). Con un solo pid pide lo mismo que comprobar(pid, …). Si la API falla, todas
+     * SIN_DATOS con el error. No lanza. Va a la red: lo usa la confirmación en lote de las quitadas (EnlaceVivo).
+     */
+    public Map<Long, Comprobacion> comprobarVarias(Collection<Long> pids, Collection<Long> matchIds, int porPagina) {
+        avisarSiUi("LiveService.comprobarVarias");
+        Map<Long, Comprobacion> veredictos = new LinkedHashMap<>();
+        try {
+            Set<Long> buscadas = new HashSet<>(matchIds);
+            Iterable<Match> partidas = pids.size() == 1 ? api.partidas(pids.iterator().next(), 1, porPagina)
+                    : api.partidas(pids.stream().map(String::valueOf).collect(Collectors.joining(",")), 1, porPagina);
+            Instant ahora = Instant.ofEpochMilli(reloj.ahoraMs());
+            for (Match r : partidas) {
+                if (r != null && buscadas.contains(r.id) && !veredictos.containsKey(r.id))
+                    veredictos.put(r.id, new Comprobacion(enCursoReal(r, ahora) ? Veredicto.VIVA : Veredicto.TERMINADA, r, null));
+            }
+            for (long id : matchIds) veredictos.putIfAbsent(id, new Comprobacion(Veredicto.SIN_DATOS, null, null));
+            return veredictos;
+        } catch (Exception ex) {   // también InterruptedException, como comprobar
+            for (long id : matchIds) veredictos.put(id, new Comprobacion(Veredicto.SIN_DATOS, null, ex));
+            return veredictos;
         }
     }
 
