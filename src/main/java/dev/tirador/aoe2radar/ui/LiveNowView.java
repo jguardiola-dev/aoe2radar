@@ -9,6 +9,7 @@ import dev.tirador.aoe2radar.service.ConsultasLadder;
 import dev.tirador.aoe2radar.service.ControlService;
 import dev.tirador.aoe2radar.service.EstadoVivo;
 import dev.tirador.aoe2radar.service.LiveService;
+import dev.tirador.aoe2radar.service.ReglasPartida;
 
 import javax.swing.BorderFactory;
 import javax.swing.Box;
@@ -633,7 +634,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
         } finally { liveRellenando = false; }
         // filtros
         lista.removeIf(m -> !liveTipoOk(m));
-        if (!"*".equals(liveMapaSel)) lista.removeIf(m -> !liveMapaSel.equals(m.map));
+        if (!"*".equals(liveMapaSel)) lista.removeIf(m -> !ReglasPartida.mismoMapa(liveMapaSel, m.map));
         if (liveTwitch.isSelected()) lista.removeIf(m -> m.players.stream().noneMatch(mp -> twitchLive.containsKey(mp.id)));
         if (liveTopTop.isSelected()) lista.removeIf(m -> { Set<Integer> equipos = new HashSet<>(); for (MatchPlayer mp : m.players) { Object[] f = fichas.get(mp.id); if (LiveNowPresenter.enTop(f, 50)) equipos.add(mp.team); } return equipos.size() < 2; });
         java.util.function.ToIntFunction<Match> eloMax = m -> { int mx = 0; for (MatchPlayer mp : m.players) if (mp.rating != null) mx = Math.max(mx, mp.rating); return mx; };
@@ -654,7 +655,7 @@ public final class LiveNowView implements LiveNowPresenter.Pantalla {
             if (lista.isEmpty()) { JLabel vac = new JLabel(presenter.cargando() ? t("Consultando…", "Checking…") : t("Nadie de esta fuente en partida con estos filtros.", "Nobody from this source in a game with these filters.")); vac.setForeground(Color.GRAY); vac.setAlignmentX(0f); ahoraCuerpo.add(vac); }
         }
         List<Object[]> terminadas = presenter.terminadasVigentes();
-        terminadas.removeIf(x -> !liveTipoOk((Match) x[0]) || (!"*".equals(liveMapaSel) && !liveMapaSel.equals(((Match) x[0]).map)));
+        terminadas.removeIf(x -> !liveTipoOk((Match) x[0]) || (!"*".equals(liveMapaSel) && !ReglasPartida.mismoMapa(liveMapaSel, ((Match) x[0]).map)));
         if (liveOrden.getSelectedIndex() == 0) terminadas.sort((a, b) -> eloMax.applyAsInt((Match) b[0]) - eloMax.applyAsInt((Match) a[0]));   // por el jugador de mayor ELO de la partida
         else terminadas.sort((a, b) -> Long.compare((Long) b[1], (Long) a[1]));
         ahoraCuerpo.add(Box.createVerticalStrut(10));
