@@ -152,4 +152,27 @@ class CivStatsViewTest {
         assertEquals("franks", tras[0], "la selección de la tabla llega al filtro compartido");
         assertEquals("franks", tras[1], "tras cambiar de mapa la civ sigue elegida");
     }
+
+    /** F3 con varias civs (1.4): con dos civs elegidas (Ctrl), cambiar el mapa conservaba solo la primera; las dos
+     *  deben seguir en tendencias y en la tabla, y la civ del filtro no cambia. */
+    @Test void cambiarDeMapaConservaVariasCivsSeleccionadas() throws Exception {
+        FiltroStats filtro = new FiltroStats("rm_1v1", "30", "*", "*");
+        List<Object> tras = new java.util.ArrayList<>();
+        SwingUtilities.invokeAndWait(() -> {
+            CivStatsView cs = vista(filtro);
+            cs.filtrosCambiados(false);
+            for (String civ : new String[]{ "aztecs", "mongols" })
+                for (int r = 0; r < cs.stModelo.getRowCount(); r++) if (civ.equals(cs.stTabla.getClientProperty("civ" + r))) { int vr = cs.stTabla.convertRowIndexToView(r); cs.stTabla.addRowSelectionInterval(vr, vr); }
+            tras.add(new java.util.TreeSet<>(cs.stCivsSeleccionadas));
+            tras.add(filtro.civSeleccionada());
+            cs.stMapaCombo.setSelectedIndex(1);
+            tras.add(new java.util.TreeSet<>(cs.stCivsSeleccionadas));
+            tras.add(filtro.civSeleccionada());
+            tras.add(cs.stTabla.getSelectedRowCount());
+        });
+        assertEquals(new java.util.TreeSet<>(List.of("aztecs", "mongols")), tras.get(0));
+        assertEquals(new java.util.TreeSet<>(List.of("aztecs", "mongols")), tras.get(2), "las dos siguen en tendencias");
+        assertEquals(tras.get(1), tras.get(3), "la civ del filtro es la misma");
+        assertEquals(2, tras.get(4), "y las dos siguen marcadas en la tabla");
+    }
 }
