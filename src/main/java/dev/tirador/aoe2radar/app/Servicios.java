@@ -185,9 +185,10 @@ public class Servicios {
     /** El estado «¿está caído el companion?», UNO para todas las fuentes con respaldo (api.ConRespaldo): 3 fallos seguidos
      *  o su cortacircuitos abierto (pausa por 429, se pregunta sin esperar) → World's Edge 5 min; luego se prueba otra vez. */
     public static final ConRespaldo.Estado RESPALDO = new ConRespaldo.Estado(Reloj.SISTEMA, () -> THROTTLE.pausaRestanteMs() > 0, Servicios::avisarRespaldo);
-    /** Partidas recientes con respaldo: «Buscar partidas» (recs), la tarjeta del hover y el «¿ya terminó?» de LiveService.
-     *  NO el historial largo (HistorialPerfil), los barridos de partidas en curso (BarridoVivos, Live now, vigilarTop) ni
-     *  «Al azar»: esos siguen con COMPANION (World's Edge no pagina ni ve partidas en curso). */
+    /** Partidas recientes con respaldo: «Buscar partidas» (recs, por lotes) y la tarjeta del hover. NO el «¿ya terminó?»
+     *  de LiveService (solo cuenta terminada si la API lo confirma, y World's Edge no ve partidas en curso), el historial
+     *  largo (HistorialPerfil), los barridos de partidas en curso (BarridoVivos, Live now, vigilarTop) ni «Al azar»: esos
+     *  siguen con COMPANION. */
     public static final FuentePartidas PARTIDAS = ConRespaldo.partidas(RESPALDO, COMPANION, WORLDS_EDGE);
     /** Ladder con respaldo: el top de la watchlist y las campanas (con filtro de país, World's Edge no sirve). */
     public static final FuenteLadder LADDER = ConRespaldo.ladder(RESPALDO, COMPANION, WORLDS_EDGE);
@@ -196,7 +197,7 @@ public class Servicios {
     /** Búsqueda de nicks con respaldo (en World's Edge, solo el alias exacto; el índice local de sfr-data sigue igual). */
     public static final FuenteBusqueda BUSCAR = ConRespaldo.busqueda(RESPALDO, COMPANION, WORLDS_EDGE);
     /** Las reglas del directo que necesitan la API (ver service.LiveService). */
-    public static final LiveService LIVE = new LiveService(PARTIDAS, COMPANION, Reloj.SISTEMA);   // «¿ya terminó?» con respaldo; el barrido de Live now, no
+    public static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);   // sin respaldo: «¿ya terminó?» solo lo confirma el companion
     /** Los tops de la watchlist: red, decisión y disco de cargarTopLadder/cargarTopClan/vigilarTop (ver service.TopLadderService). */
     public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, LADDER, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */

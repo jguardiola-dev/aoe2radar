@@ -475,6 +475,23 @@ public final class CivStatsView {
         finally { stRellenandoMapas = false; }
     }
 
+    /** F3 con varias civs (Ctrl, 1.4): tras repintar la tabla se restauraba solo la primera y las demás se perdían de
+     *  tendencias y matriz. La primera ya está elegida (como antes, por el oyente); aquí se añaden las otras que sigan
+     *  en la tabla, sin avisar al oyente, y se rehace stCivsSeleccionadas como lo haría él. La civ del filtro no cambia. */
+    private void restaurarOtrasCivs(List<String> previas) {
+        stRepintandoTabla = true;
+        try {
+            for (int r = 0; r < stModelo.getRowCount(); r++) {
+                Object k = stTabla.getClientProperty("civ" + r);
+                if (k != null && previas.contains(String.valueOf(k))) { int vr = stTabla.convertRowIndexToView(r); stTabla.addRowSelectionInterval(vr, vr); }
+            }
+        } finally { stRepintandoTabla = false; }
+        stCivsSeleccionadas.clear();
+        for (int vr : stTabla.getSelectedRows()) { Object k = stTabla.getClientProperty("civ" + stTabla.convertRowIndexToModel(vr)); if (k != null) stCivsSeleccionadas.add(String.valueOf(k)); }
+        if (stTendencias != null) stTendencias.repaint();
+        if (stMatriz != null) stMatriz.repaint();
+    }
+
     void statsPintar(VentanaStats v) {
         Map<String, CivAgg> agg = stats.agregarCivs(v, filtroStats.modo(), filtroStats.mapa(), filtroStats.tramo());
         long totalN = 0, totalD = 0; int totalW = 0;
@@ -506,10 +523,12 @@ public final class CivStatsView {
             }
         } finally { stRepintandoTabla = false; }
         stTituloTabla.setText(t("Winrate por civilización", "Win rate by civilization") + "  ·  " + modoNombre(filtroStats.modo()) + " · " + nombreMapaStats(v, filtroStats.mapa()) + " · " + tramoNombre(filtroStats.tramo()));
+        List<String> previas = new ArrayList<>(stCivsSeleccionadas);   // antes de que el oyente las rehaga con la primera
         boolean esta = false;
         if (filtroStats.civSeleccionada() != null) {
             for (int r = 0; r < stModelo.getRowCount(); r++) if (filtroStats.civSeleccionada().equals(stTabla.getClientProperty("civ" + r))) { int vr = stTabla.convertRowIndexToView(r); stTabla.setRowSelectionInterval(vr, vr); esta = true; break; }
             if (!esta) filtroStats.civSeleccionada(null);   // con estos filtros ya no sale en la tabla: como antes, sin civ elegida
+            else if (previas.size() > 1) restaurarOtrasCivs(previas);
         }
         if (!esta) stCivsSeleccionadas.clear();   // B1: ninguna fila restaurada (tampoco tras el cambio de modo, que borra la civ antes): sin civs en tendencias, como hacía el aviso de fila -1
         Color barra = temaOscuroActivo ? new Color(0x5a, 0x8f, 0xc7) : new Color(0x3b, 0x6e, 0xa8);

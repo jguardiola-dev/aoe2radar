@@ -120,12 +120,16 @@ class WorldsEdgeApiTest {
         assertEquals(1, red.cuantas("getRecentMatchHistory"));
     }
 
-    @Test void laPaginaDosNoExisteYNoVaALaRed() throws Exception {
-        PaginaPartidas p = we.pagina(271202, 2, 50);
-        assertTrue(p.partidas().isEmpty());
-        assertEquals(0, p.brutas());
-        assertFalse(we.partidas(271202L, 3, 50).iterator().hasNext());
-        assertTrue(red.pedidas.isEmpty());
+    @Test void lasPaginasSeHacenAquiSobreLoQueGuardaWorldsEdge() throws Exception {
+        List<Long> todas = new ArrayList<>();
+        for (Match m : we.pagina(271202, 1, 500).partidas()) todas.add(m.id);
+        PaginaPartidas p2 = we.pagina(271202, 2, 50);
+        assertEquals(50, p2.brutas());
+        assertEquals(todas.subList(50, 100), p2.partidas().stream().map(m -> m.id).toList());
+        PaginaPartidas p3 = we.pagina(271202, 3, 50);
+        assertEquals(18, p3.brutas(), "118 en total: la última, a medias (la paginación de la app para ahí)");
+        assertTrue(we.pagina(271202, 4, 50).partidas().isEmpty(), "pasado el final, vacía");
+        assertEquals(4, red.cuantas("getRecentMatchHistory"), "cada página vuelve a pedir la lista (sin caché)");
     }
 
     @Test void elCatalogoDeCivsSePideUnaVezPorSesion() throws Exception {

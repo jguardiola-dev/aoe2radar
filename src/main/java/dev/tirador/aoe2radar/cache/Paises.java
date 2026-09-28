@@ -66,6 +66,27 @@ public final class Paises {
         catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
 
+    private static final AtomicBoolean GANCHO_APAGADO = new AtomicBoolean(false);
+
+    /**
+     * Apagar Windows o cerrar sesión con la app abierta (1.4, resto de F13): la ventana no recibe windowClosing, así
+     * que alCerrar no guarda los países del último minuto. Un shutdown hook lo cubre cuando la JVM llega a correrlo
+     * (fin de sesión ordenado; si Windows mata el proceso antes, no hay remedio y el Timer de 60 s es el tope de lo
+     * perdido). Este hook no toca Swing (lo que llevó a descartarlo para la geometría en F11): solo guardarAlCerrar,
+     * con su espera de 2 s como mucho. En un cierre normal, alCerrar ya guardó y aquí no queda nada sucio. Una vez.
+     * <p>Ojo: el hook corre en TODAS las salidas, también en la de ImportarDatos, que sale sin el cierre normal para
+     * no pisar lo importado. Ahí no escribe porque util.Archivos sigue con las escrituras en pausa (escribirAtomico
+     * falla y guardarPaises solo lo anota en el log): si esa pausa cambia, hay que desactivar este hook antes.
+     */
+    public static void guardarAlApagar() {
+        if (!GANCHO_APAGADO.compareAndSet(false, true)) return;
+        try { Runtime.getRuntime().addShutdownHook(hiloApagado()); }
+        catch (IllegalStateException apagandoYa) { }   // la JVM ya está saliendo (p. ej. ImportarDatos): nada que registrar
+    }
+
+    /** El hilo del shutdown hook (paquete: PaisesTest lo corre sin registrarlo). */
+    static Thread hiloApagado() { return new Thread(() -> guardarAlCerrar(2000), "paises-apagado"); }
+
     public static void guardarPaises() {
         if (!paisesSucios) return;
         if (!GUARDANDO.compareAndSet(false, true)) return;   // ya hay un guardado en marcha: este disparo se salta

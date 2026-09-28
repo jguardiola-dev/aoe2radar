@@ -147,6 +147,9 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         boolean enCursoReal(Match m);
         /** api.CompanionApi.perfil/pagina, solo para la tarjeta de hover (hoy inerte). */
         Perfil perfilApi(long pid) throws Exception;
+        /** 1.4: la tarjeta de hover desde el nocturno (chispas de sfr-data), o null si no alcanza y hay que ir a
+         *  perfilApi/paginaApi. Puede ir a la red (baja las chispas la primera vez): nunca desde el EDT. */
+        default dev.tirador.aoe2radar.service.TarjetaPerfil.Datos tarjetaNocturna(long pid) { return null; }
         dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception;
         /** ui.DirectosView y ui.MiPartidaPanel se construyen DESPUÉS que la Watchlist (construirCentro): no se
          *  pueden inyectar por constructor sin capturar null. La ventana los llama por su nombre cuando ya existen. */

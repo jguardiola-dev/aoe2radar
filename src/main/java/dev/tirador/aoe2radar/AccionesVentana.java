@@ -116,6 +116,7 @@ final class AccionesVentana {
                     new javax.swing.Timer(60_000, ev -> {
                         Thread guardaPaises = new Thread(() -> guardarPaises(), "paises-guarda"); guardaPaises.setDaemon(true); guardaPaises.start();
                     }).start();
+                    dev.tirador.aoe2radar.cache.Paises.guardarAlApagar();   // 1.4: también al apagar Windows (sin windowClosing)
                 });
             }, "paises-carga");
             cargaPaises.setDaemon(true); cargaPaises.start();

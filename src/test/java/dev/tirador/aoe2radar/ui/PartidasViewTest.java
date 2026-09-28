@@ -77,8 +77,10 @@ class PartidasViewTest {
         final List<String> estados = Collections.synchronizedList(new ArrayList<>());
         volatile long opSerial;
         volatile boolean progreso;
-        volatile PartidasPresenter.Paginador paginador = (pid, pag, pp) -> List.of();
+        volatile PaginadorUno paginador = (pid, pag, pp) -> List.of();
+        /** Los ids pedidos, en orden (un lote apunta todos los suyos) y cuántas llamadas hubo. */
         final List<Long> pedidas = Collections.synchronizedList(new ArrayList<>());
+        final java.util.concurrent.atomic.AtomicInteger llamadas = new java.util.concurrent.atomic.AtomicInteger();
         final Path recs;
         AnfitrionFalso(Path recs) { this.recs = recs; }
         @Override public void estado(String texto) { estado = texto; estados.add(texto); }
@@ -132,9 +134,20 @@ class PartidasViewTest {
         @Override public boolean perfilAbierto() { return perfilAbierto; }
         @Override public String perfilNombreAbierto() { return perfilNombre; }
         @Override public void mostrarHistorialSiSigueAbierto(long pid, String nombre) { }
-        @Override public Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws java.io.IOException, InterruptedException {
-            pedidas.add(pid);
-            try { return paginador.pagina(pid, pagina, porPagina); }
+        /** Como /matches con varios profile_ids: las páginas de cada id, juntas, sin repetir y de la más reciente a la
+         *  más antigua por inicio (con un solo id, su página tal cual). Ojo: junta la página N de cada id, que no es
+         *  como pagina la API real (BuscarPorLotesTest sí la imita); vale para páginas cortas o vacías. */
+        @Override public Iterable<Match> paginaDePartidas(List<Long> pids, int pagina, int porPagina) throws java.io.IOException, InterruptedException {
+            pedidas.addAll(pids);
+            llamadas.incrementAndGet();
+            try {
+                if (pids.size() == 1) return paginador.pagina(pids.get(0), pagina, porPagina);
+                java.util.Map<Long, Match> juntas = new java.util.LinkedHashMap<>();
+                for (long pid : pids) for (Match m : paginador.pagina(pid, pagina, porPagina)) if (m != null) juntas.putIfAbsent(m.id, m);
+                List<Match> orden = new ArrayList<>(juntas.values());
+                orden.sort(java.util.Comparator.comparing((Match m) -> m.started, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
+                return orden;
+            }
             catch (java.io.IOException | InterruptedException | RuntimeException ex) { throw ex; }
             catch (Exception ex) { throw new java.io.IOException(ex); }
         }
@@ -143,6 +156,9 @@ class PartidasViewTest {
         @Override public void ajustarGrisesNota(boolean oscuro) { }
         @Override public void actualizarControlesTabla() { }
     }
+
+    /** Una página de partidas de UN jugador (lo que cada test sabe servir; el anfitrión falso junta las de un lote). */
+    interface PaginadorUno { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
 
     /** RecService sin red: cuenta las partidas que le piden y las da por descargadas. */
     static final class RecFalso implements dev.tirador.aoe2radar.service.RecService {
@@ -203,7 +219,11 @@ class PartidasViewTest {
         SwingUtilities.invokeAndWait(() -> {
             ventana = new JFrame();
             vista = new PartidasView(ventana, new WatchlistViewTest.MenusFalso(), null, new WatchlistViewTest.NavegacionFalsa(),
-                    null, rec, barrido, 50, 0, enlace, anfitrion);
+                    null, rec, barrido, 0, enlace, anfitrion);
+            // Estos tests miran el recorrido jugador a jugador (Detener, la × o un fallo entre uno y otro): lote de 1.
+            // El de lotes de 10 (el de la app) tiene los suyos (BuscarPorLotesTest, recorrer_porLotes_* de
+            // PartidasPresenterTest y buscar_enTopConMasDeQuince de PartidasLogicaTest).
+            vista.jugadoresPorLote = 1;
             vista.agregarFilaConsulta(new JPanel());
             vista.construirFilaNota();
             vista.construirTabla();
@@ -456,6 +476,8 @@ class PartidasViewTest {
         enEdt(() -> {
             assertEquals(1, avisos[0], "quien pidió la descarga se entera de que acabó (repinta su tabla)");
             assertNull(vista.descargas.alTerminarDescarga);
+            // 1.4 (decisión de Jorge): una operación de otro tipo ya no supera a la descarga: repone sus botones.
+            assertTrue(vista.dlSel.isEnabled() && vista.dlAll.isEnabled(), "la descarga no quedó superada por otra operación");
         });
         assertTrue(anfitrion.mostrarDirectos.isEmpty(), "sin cambiar de vista");
     }
@@ -542,7 +564,7 @@ class PartidasViewTest {
     @Test void applyFilters_miraElDiscoFueraDelEdtYAcabaPintandoLoMismo() throws Exception {
         Match enDisco = partida(8401, A, Instant.now().minusSeconds(600));
         Match sinRec = partida(8402, A, Instant.now().minusSeconds(900));
-        java.nio.file.Files.write(recs.resolve("8401.aoe2record"), new byte[10]);
+        java.nio.file.Files.write(recs.resolve("8401.aoe2record"), new byte[6000]);   // una rec sana (RecService.recSana)
         anfitrion.destinoEnEdt.clear();
         enEdt(() -> vista.cargarPartidasEnTabla(List.of(enDisco, sinRec), A, "grupo|General"));   // llama a applyFilters
         esperar(() -> enDisco.enDisco, "que llegue la marca «en disco»");
@@ -554,6 +576,47 @@ class PartidasViewTest {
             assertEquals("✓ en disco", vista.tableModel.getValueAt(vista.view.indexOf(enDisco), 7));
             assertNotEquals("✓ en disco", vista.tableModel.getValueAt(vista.view.indexOf(sinRec), 7));
         });
+    }
+
+    /** DEUDA (applyFilters, 1.4): un archivo que está pero no es una rec sana (truncado, o la página de error que
+     *  guardó una descarga rota) no se marca «en disco», así que no ofrece «Enviar al juego» con él; la sana sí. */
+    @Test void applyFilters_unaRecCorruptaNoSeMarcaEnDisco() throws Exception {
+        Match sana = partida(8411, A, Instant.now().minusSeconds(600));
+        Match truncada = partida(8412, A, Instant.now().minusSeconds(700));
+        Match paginaDeError = partida(8413, A, Instant.now().minusSeconds(800));
+        java.nio.file.Files.write(recs.resolve("8411.aoe2record"), new byte[6000]);
+        java.nio.file.Files.write(recs.resolve("8412.aoe2record"), new byte[100]);
+        byte[] html = new byte[6000];
+        html[0] = '<';
+        java.nio.file.Files.write(recs.resolve("8413.aoe2record"), html);
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(sana, truncada, paginaDeError), A, "grupo|General"));
+        esperar(() -> sana.enDisco, "que llegue la marca «en disco» de la sana");
+        asentar();
+        assertFalse(truncada.enDisco, "truncada: no está «en disco»");
+        assertFalse(paginaDeError.enDisco, "página de error guardada como rec: no está «en disco»");
+    }
+
+    /** Lo que cuesta mirar «en disco» con recSana en vez de Files.exists: 600 recs (el tope de «Buscar partidas»)
+     *  leyendo solo su cabecera. No es un test de rendimiento con umbral (sería frágil): deja la cifra en la salida. */
+    @Test void recSana_con600Recs_leeSoloLaCabecera() throws Exception {
+        java.util.List<Path> archivos = new ArrayList<>();
+        byte[] rec = new byte[200_000];   // una rec corta de verdad pesa cientos de KB: se leen 5000 B de cada una
+        for (int i = 0; i < 600; i++) {
+            Path p = recs.resolve("medida" + i + ".aoe2record");
+            java.nio.file.Files.write(p, rec);
+            archivos.add(p);
+        }
+        long t0 = System.nanoTime();
+        int sanas = 0;
+        for (Path p : archivos) if (dev.tirador.aoe2radar.service.RecService.recSana(p)) sanas++;
+        long recSanaMs = (System.nanoTime() - t0) / 1_000_000;
+        t0 = System.nanoTime();
+        int existen = 0;
+        for (Path p : archivos) if (java.nio.file.Files.exists(p)) existen++;
+        long existsMs = (System.nanoTime() - t0) / 1_000_000;
+        System.out.println("recSana x600: " + recSanaMs + " ms; Files.exists x600: " + existsMs + " ms");
+        assertEquals(600, sanas);
+        assertEquals(600, existen);
     }
 
     // ----- textos (revisión 1.3, v13_textos.md): en inglés, nada en español fijo -----

@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.ui;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Perfil;
+import dev.tirador.aoe2radar.service.TarjetaPerfil;
 
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
@@ -22,12 +23,9 @@ import java.awt.KeyboardFocusManager;
 import java.awt.Point;
 import java.awt.RenderingHints;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
-import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
-import static dev.tirador.aoe2radar.util.I18n.t;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
@@ -35,7 +33,8 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * La tarjeta de perfil flotante de la Watchlist (hoy inerte: el hover-timer nunca llega a dispararla, ver
  * el {@code if (false && ...)} del MouseMotionListener de la lista). Sale de WatchlistView tal cual en la 1.3:
  * mismo código, mismo SwingWorker; su estado (hoverCard, hoverTimer, hoverPid...) sigue en la fachada.
- * Hilos: todo en el EDT salvo el doInBackground de mostrarPerfilCard (red vía Anfitrion.perfilApi/paginaApi).
+ * Hilos: todo en el EDT salvo el doInBackground de mostrarPerfilCard (red vía Anfitrion.tarjetaNocturna, que puede bajar
+ * las chispas de sfr-data, y Anfitrion.perfilApi/paginaApi). El HTML y la regla de la gráfica viven en service.TarjetaPerfil.
  */
 final class WatchlistHoverCard {
 
@@ -71,6 +70,9 @@ final class WatchlistHoverCard {
         }
         new SwingWorker<Object[], Void>() {
             @Override protected Object[] doInBackground() {
+                // 1.4, nocturno primero: con las chispas de sfr-data, sin /profiles ni /matches (null → la API, como antes)
+                TarjetaPerfil.Datos noct = wv.anfitrion.tarjetaNocturna(pid);
+                if (noct != null) return new Object[]{ TarjetaPerfil.html(nombre, noct), noct.spark() };
                 String pais = "", clan = "";
                 long games = 0;
                 Integer rating = null, maxRating = null, wins = null, losses = null;
@@ -110,35 +112,13 @@ final class WatchlistHoverCard {
                                 if (mp.id == pid && mp.rating != null) serie.add(mp.rating);
                         }
                     }
-                    if (serie.size() > 10) serie = serie.subList(10, serie.size());   // sin la forma fresca
-                    if (serie.size() >= 4) {
-                        Collections.reverse(serie);   // cronológico
-                        spark = serie.stream().mapToInt(Integer::intValue).toArray();
-                    } else pocos1v1 = true;
+                    TarjetaPerfil.Chispa ch = TarjetaPerfil.chispa(serie);   // sin la forma fresca; cronológico
+                    spark = ch.spark();
+                    pocos1v1 = ch.pocos1v1();
                 } catch (Exception ex) {
                     log("perfil card: sparkline falló con " + pid + ": " + causa(ex));
                 }
-                StringBuilder h = new StringBuilder("<html><b>").append(escapeHtml(nombre)).append("</b>");
-                if (!pais.isBlank()) h.append("  \u00B7 ").append(pais);
-                if (!clan.isBlank()) h.append("  \u00B7 ").append(escapeHtml(clan));
-                h.append("<br>");
-                if (rating != null) h.append(t("ELO 1v1: <b>", "1v1 ELO: <b>")).append(rating).append("</b>");
-                if (maxRating != null) h.append(t("  \u00B7 máx ", "  \u00B7 peak ")).append(maxRating);
-                h.append("<br>");
-                if (wins != null && losses != null && wins + losses > 0)
-                    h.append(t("Winrate 1v1: ", "1v1 winrate: "))
-                     .append(Math.round(wins * 100.0 / (wins + losses))).append("% (")
-                     .append(wins + losses).append(t(" partidas)", " games)"));
-                else if (games > 0) h.append(games).append(t(" partidas jugadas", " games played"));
-                if (spark != null)
-                    h.append("<br><font size='2' color='gray'>")
-                     .append(t("Rating (hasta hace ~10 partidas):", "Rating (up to ~10 games ago):"))
-                     .append("</font>");
-                else if (pocos1v1)
-                    h.append("<br><font size='2' color='gray'>")
-                     .append(t("(pocos 1v1 recientes para la gráfica)", "(too few recent 1v1s for the chart)"))
-                     .append("</font>");
-                return new Object[]{ h.append("</html>").toString(), spark };
+                return new Object[]{ TarjetaPerfil.html(nombre, new TarjetaPerfil.Datos(pais, clan, games, rating, maxRating, wins, losses, spark, pocos1v1)), spark };
             }
             @Override protected void done() {
                 try {

@@ -37,6 +37,10 @@ final class WatchlistTrabajos {
         wv.refrescarCabeceraOrden();
     }
 
+    /** El número del último «Ver forma» lanzado (1.4, decisión de Jorge): solo otro «Ver forma» lo supera; una
+     *  búsqueda o una descarga empezadas mientras tanto no. Solo en el EDT. */
+    long serialForma;
+
     /** Consulta la forma de los jugadores dados (con caché de 10 min), con progreso y Detener. El SwingWorker es el
      *  transporte (hilo, publish/process, done); qué consultar y cómo, lo decide WatchlistPresenter. */
     void cargarForma(List<Player> objetivo, int horas, Runnable alTerminar) {
@@ -48,6 +52,7 @@ final class WatchlistTrabajos {
             if (ok != JOptionPane.OK_OPTION) return;
         }
         final long miSerial = wv.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
+        serialForma = miSerial;
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
                 wv.anfitrion.marcarHiloOperacionActual(miSerial);   // Detener corta la espera del freno de ESTA operación, no la de todos
@@ -63,7 +68,7 @@ final class WatchlistTrabajos {
             @Override protected void process(List<String> ch) { wv.status.setText(ch.get(ch.size() - 1)); }
             @Override protected void done() {
                 wv.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
-                if (miSerial != wv.anfitrion.opSerial()) return;
+                if (!PartidasPresenter.vigente(miSerial, serialForma)) return;   // solo otro «Ver forma» la supera (1.4)
                 wv.status.setText(t("Forma consultada.", "Recent form fetched."));
                 if (alTerminar != null) alTerminar.run();
             }

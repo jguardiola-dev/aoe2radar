@@ -70,10 +70,9 @@ class ServiciosTest {
         // Todo lo que se construye "DESPUÉS de COMPANION" (comentado en Servicios) debe envolver ese MISMO
         // CompanionApi, no uno nuevo: si no, el freno y la caché de sesión se partirían en dos.
         // 1.4: lo que tiene respaldo de World's Edge recibe el decorador (PARTIDAS, LADDER, PERFIL, BUSCAR, que envuelven
-        // COMPANION y WORLDS_EDGE); lo que no (partidas en curso, Twitch, vinculadas), el COMPANION de siempre.
+        // COMPANION y WORLDS_EDGE); lo que no (partidas en curso, «¿ya terminó?», Twitch, vinculadas), el COMPANION de siempre.
         assertSame(Servicios.API_CLIENTE, campo(Servicios.WORLDS_EDGE, "api"), "World's Edge por el mismo cliente (su cubo del freno)");
-        assertSame(Servicios.PARTIDAS, campo(Servicios.LIVE, "api"), "«¿ya terminó?» con respaldo");
-        assertSame(Servicios.COMPANION, campo(Servicios.LIVE, "barrido"), "el barrido de Live now, sin respaldo");
+        assertSame(Servicios.COMPANION, campo(Servicios.LIVE, "api"), "«¿ya terminó?» y Live now: sin respaldo (World's Edge no ve partidas en curso)");
         assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "fuente"), "vigilarTop (en curso), sin respaldo");
         assertSame(Servicios.LADDER, campo(Servicios.TOP_LADDER_SERVICE, "ladder"));
         assertSame(Servicios.PERFIL, campo(Servicios.SERVICIO_PERFIL, "api"));

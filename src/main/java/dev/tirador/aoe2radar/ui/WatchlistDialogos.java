@@ -38,6 +38,10 @@ final class WatchlistDialogos {
 
     WatchlistDialogos(WatchlistView wv) { this.wv = wv; }
 
+    /** El número de la última búsqueda de vinculadas lanzada (1.4, decisión de Jorge): solo otra búsqueda de
+     *  vinculadas la supera. Solo en el EDT. */
+    long serialVinculadas;
+
     /** Consulta las vinculadas de un seguido y casa las que YA sigues. */
     private void vincularExistentes(Player p) {
         wv.status.setText(t("Buscando cuentas vinculadas de ", "Looking up linked accounts of ") + p.name() + "…");
@@ -135,6 +139,7 @@ final class WatchlistDialogos {
                 t("Cuentas vinculadas", "Linked accounts"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
         if (r != JOptionPane.YES_OPTION) return;
         final long miSerial = wv.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
+        serialVinculadas = miSerial;
         final int[] anadidas = { 0 };
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
@@ -170,7 +175,7 @@ final class WatchlistDialogos {
             @Override protected void process(List<String> ch) { wv.status.setText(ch.get(ch.size() - 1)); }
             @Override protected void done() {
                 wv.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
-                if (miSerial != wv.anfitrion.opSerial()) return;
+                if (!PartidasPresenter.vigente(miSerial, serialVinculadas)) return;   // solo otra búsqueda de vinculadas la supera (1.4)
                 wv.savePlayers(); wv.rebuildGrupos(); wv.aplicarFiltroGrupo(); wv.refrescarWatchlist();
                 wv.status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + t("\u00bb.", "\u201D."));
             }

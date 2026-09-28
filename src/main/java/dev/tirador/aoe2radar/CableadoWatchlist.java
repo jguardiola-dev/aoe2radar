@@ -137,6 +137,13 @@ final class CableadoWatchlist {
             @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
             @Override public Perfil perfilApi(long pid) throws Exception { return PERFIL.perfilFresco(pid); }   // la tarjeta enseña el ELO de ahora: sin la caché por URL
             @Override public dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception { return PARTIDAS.pagina(pid, pagina, porPagina); }
+            @Override public dev.tirador.aoe2radar.service.TarjetaPerfil.Datos tarjetaNocturna(long pid) {   // nocturno primero (1.4)
+                dev.tirador.aoe2radar.sfrdata.ChispasNocturnas.Chispa c = dev.tirador.aoe2radar.sfrdata.Snapshots.CHISPAS.chispa(pid);
+                if (c == null) return null;
+                String[] nn = dev.tirador.aoe2radar.sfrdata.Snapshots.NOMBRES_AYER.get(pid);
+                return dev.tirador.aoe2radar.service.TarjetaPerfil.desdeNocturno(c.serie(), c.completo(), c.extra(), v.eloWatch.get(pid),
+                        dev.tirador.aoe2radar.sfrdata.Snapshots.ELO_AYER.get(pid), nn == null ? null : nn[1]);
+            }
             @Override public void reiniciarThrottleDirectos() { v.directos.reiniciarThrottle(); }
             @Override public void vigilarTwitchDirectos() { v.directos.vigilarTwitch(); }
             @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { v.miPartida.mostrarSuperposicion(texto, fichas, ms); }

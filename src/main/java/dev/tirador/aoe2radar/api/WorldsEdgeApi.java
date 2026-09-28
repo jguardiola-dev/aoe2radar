@@ -84,9 +84,11 @@ public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder, Fuente
     // ----- Partidas -----
 
     /**
-     * Las partidas recientes de los ids (CSV) de getRecentMatchHistory: ~10 por tipo de partida y jugador, sin
-     * paginación. Se ordenan de la más reciente a la más antigua (la API no las da en orden) y se devuelven las
-     * porPagina primeras; la página 2 en adelante sale vacía (el historial largo no existe aquí).
+     * Las partidas recientes de los ids (CSV) de getRecentMatchHistory: ~10 por tipo de partida y jugador, todas de una
+     * vez. Se ordenan de la más reciente a la más antigua (la API no las da en orden) y se PAGINAN aquí: la página p son
+     * las porPagina siguientes. Cada página vuelve a pedir la lista (sin caché: el respaldo es tiempo real); pasado el
+     * final, vacía. Así un lote de 10 jugadores de «Buscar partidas» (1.4) no pierde las que no caben en la página 1.
+     * Lo anterior a esas ~10 por tipo (el historial largo) no existe aquí.
      */
     @Override public Iterable<Match> partidas(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
         return pagina(ids, pagina, porPagina).partidas();
@@ -101,9 +103,9 @@ public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder, Fuente
     }
 
     private PaginaPartidas pagina(String ids, int pagina, int porPagina) throws IOException, InterruptedException {
-        if (pagina > 1) return new PaginaPartidas(List.of(), 0);   // sin paginación: no se pide nada
+        if (pagina < 1 || porPagina < 1) return new PaginaPartidas(List.of(), 0);
         Map<String, Object> root = pedir(urlRecientes(ids));
-        return aPagina(root, civs(), porPagina);
+        return aPagina(root, civs(), pagina, porPagina);
     }
 
     static String urlRecientes(String ids) {
@@ -122,8 +124,8 @@ public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder, Fuente
         return null;
     }
 
-    /** Raíz de getRecentMatchHistory → las porPagina más recientes (por inicio, descendente). Pura. */
-    static PaginaPartidas aPagina(Map<String, Object> root, Map<Integer, String> civs, int porPagina) {
+    /** Raíz de getRecentMatchHistory → la página «pagina» (desde 1) de porPagina, de la más reciente (por inicio) a la más antigua. Pura. */
+    static PaginaPartidas aPagina(Map<String, Object> root, Map<Integer, String> civs, int pagina, int porPagina) {
         Map<Long, Map<String, Object>> perfiles = perfilesPorPid(root);
         List<Match> todas = new ArrayList<>();
         for (Object o : arr(val(root, "matchHistoryStats"))) {
@@ -131,8 +133,10 @@ public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder, Fuente
             if (m != null) todas.add(m);
         }
         todas.sort(Comparator.comparing((Match m) -> m.started, Comparator.nullsLast(Comparator.reverseOrder())));
-        List<Match> pagina = List.copyOf(todas.subList(0, Math.min(Math.max(porPagina, 0), todas.size())));
-        return new PaginaPartidas(pagina, pagina.size());
+        long desde = (long) (pagina - 1) * porPagina;
+        if (desde >= todas.size()) return new PaginaPartidas(List.of(), 0);
+        List<Match> trozo = List.copyOf(todas.subList((int) desde, (int) Math.min(desde + porPagina, todas.size())));
+        return new PaginaPartidas(trozo, trozo.size());
     }
 
     /** «profiles» del historial: profile_id → su objeto (alias, país…). */
