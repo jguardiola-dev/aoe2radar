@@ -6,9 +6,14 @@ import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -25,8 +30,8 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * no en {@code ui} porque necesita el tipo api.SocketVivo: ui no puede importar api (ver tools/capas.py).
  * <p>Hilos: el socket llama a {@code conectado}/{@code eventos} en su propio hilo de fondo (nunca el EDT, ver
  * api.SocketVivo); {@code confirmarEventoSocket} abre otro hilo («socket-confirmar») para no bloquear al
- * socket con la llamada de red de LiveService; un matchRemoved programa con el Planificador una comprobación
- * diferida que corre en otro hilo («socket-quitada», ver comprobarQuitada). Ningún método de esta clase toca
+ * socket con la llamada de red de LiveService; un matchRemoved apunta la partida y programa con el Planificador una
+ * ronda diferida que las comprueba en lote en otro hilo («socket-quitada», ver rondaQuitadas). Ningún método de esta clase toca
  * Swing: la vuelta al EDT (SwingUtilities.invokeLater) la hace SIEMPRE la implementación de {@link Vistas} que pasa la ventana.
  */
 public final class EnlaceVivo {
@@ -67,6 +72,7 @@ public final class EnlaceVivo {
     private final LiveService live;
     private final Vistas vistas;
     private final SocketVivo.Planificador planificador;
+    private final Reloj reloj;
 
     public EnlaceVivo(EstadoVivo vivo, LiveService live, Vistas vistas) {
         this(vivo, live, vistas, SocketVivo.HTTP, Reloj.SISTEMA, SocketVivo.planificadorSistema());
@@ -79,6 +85,7 @@ public final class EnlaceVivo {
         this.live = live;
         this.vistas = vistas;
         this.planificador = planificador;
+        this.reloj = reloj;
         this.socketVivo = new SocketVivo(conector, new SocketVivo.Oyente() {
             @Override public void conectado(boolean trasCaida) { if (trasCaida) vistas.refrescarLiveNowSiAbierta(); }   // tras una caída, un barrido para reparar el estado
             @Override public void eventos(List<SocketVivo.Evento> eventos, Set<Long> ids) { procesarEventosSocket(eventos, ids); }
@@ -119,12 +126,179 @@ public final class EnlaceVivo {
     /** Tras un matchRemoved, la pregunta a la API espera 3 min: /matches marca finished unos 2 min después del
      *  final real (medido al calibrar EloSesion, ver DEUDA); antes la API diría casi siempre «sigue viva». */
     static final long ESPERA_QUITADA_MS = 3 * 60_000;
+    /** Jugadores por llamada del lote (como el barrido de la watchlist, BarridoVivos.lote). */
+    static final int PIDS_POR_LOTE = 25;
+    /** Partidas por llamada del lote: con 25 jugadores, unas 4 por cabeza (con uno solo, las 5 de siempre). */
+    static final int POR_PAGINA_LOTE = 100;
+    /** Tope de llamadas de las quitadas por minuto (lotes y preguntas sueltas), nuevo en la 1.4: lo que sobra espera su
+     *  turno. Es un presupuesto de esta función, no el freno global (ese sigue solo en api.Throttle/ApiClient); con
+     *  6 lotes de 25, más de 150 jugadores quitados en un minuto se confirman al ritmo de 150 por minuto. */
+    static final int TOPE_POR_MINUTO = 6;
 
     /** Partidas quitadas con una comprobación pendiente: un matchRemoved repetido no lanza otra llamada. */
     private final Set<Long> quitadasEnVuelo = ConcurrentHashMap.newKeySet();
 
+    /** Una quitada esperando su comprobación: el intento (1 o 2, ver resolverQuitada) y cuándo vence la espera. */
+    private record Pendiente(int intento, long venceMs) { }
+
+    // Estado del lote, bajo el monitor de pendientes: las quitadas que esperan (en orden de llegada), si hay una
+    // ronda programada en el Planificador O EN CURSO (una sola a la vez: se apaga al final de la ronda, en reprogramar,
+    // para que un matchRemoved que llega mientras la ronda está en la red no programe otra a +3 min y retrase las
+    // pendientes) y la hora de las llamadas del último minuto (tope).
+    private final Map<Long, Pendiente> pendientes = new LinkedHashMap<>();
+    private boolean rondaProgramada;
+    private final ArrayDeque<Long> llamadasRecientes = new ArrayDeque<>();
+
+    /** Apunta la partida para que se compruebe dentro de 3 min (sin programar nada: lo hace quien llama). */
+    private void apuntarQuitada(long matchId, int intento) {
+        synchronized (pendientes) { pendientes.put(matchId, new Pendiente(intento, reloj.ahoraMs() + ESPERA_QUITADA_MS)); }
+    }
+
+    /** Un matchRemoved nuevo: la apunta y programa una ronda si no la hay ya. Las quitadas que llegan juntas se
+     *  comprueban juntas, en una llamada por lote de hasta 25 jugadores. */
     private void programarQuitada(long matchId, int intento) {
-        planificador.despues(ESPERA_QUITADA_MS, () -> new Thread(() -> comprobarQuitada(matchId, intento), "socket-quitada").start());
+        boolean programar;
+        synchronized (pendientes) {
+            apuntarQuitada(matchId, intento);
+            programar = !rondaProgramada;
+            rondaProgramada = true;
+        }
+        if (!programar) return;
+        try { programarRonda(ESPERA_QUITADA_MS); }
+        catch (RuntimeException ex) { synchronized (pendientes) { pendientes.remove(matchId); } throw ex; }
+    }
+
+    /** La ronda corre en su propio hilo («socket-quitada»): va a la red. Quien llama ya puso rondaProgramada. */
+    private void programarRonda(long ms) {
+        try { planificador.despues(ms, () -> new Thread(this::rondaQuitadas, "socket-quitada").start()); }
+        catch (RuntimeException ex) { synchronized (pendientes) { rondaProgramada = false; } throw ex; }
+    }
+
+    /**
+     * Lo que hace el Planificador al vencer la espera: comprueba en lote las quitadas cuya espera de 3 min ya pasó
+     * (ninguna antes de su hora: la API tarda unos 2 min en marcar finished) y deja las demás para otra ronda, que
+     * programa al terminar. Va a la red: corre en el hilo «socket-quitada».
+     */
+    void rondaQuitadas() {
+        Map<Long, Pendiente> tanda = new LinkedHashMap<>();
+        synchronized (pendientes) {
+            long ahora = reloj.ahoraMs();
+            for (Iterator<Map.Entry<Long, Pendiente>> it = pendientes.entrySet().iterator(); it.hasNext(); ) {
+                Map.Entry<Long, Pendiente> e = it.next();
+                if (e.getValue().venceMs() <= ahora) { tanda.put(e.getKey(), e.getValue()); it.remove(); }
+            }
+        }
+        try { comprobarQuitadas(tanda); }
+        finally { reprogramar(true); }
+    }
+
+    /** Si quedan quitadas esperando y no hay ronda programada ni en curso, otra para cuando venza la primera (o
+     *  cuando el tope del minuto deje otra llamada). finRonda: la llama la ronda al terminar, y en el mismo bloque
+     *  sincronizado apaga su marca (así nadie programa otra en el hueco). */
+    private void reprogramar(boolean finRonda) {
+        long ms;
+        synchronized (pendientes) {
+            if (finRonda) rondaProgramada = false;
+            if (pendientes.isEmpty() || rondaProgramada) return;
+            long ahora = reloj.ahoraMs(), vence = Long.MAX_VALUE;
+            for (Pendiente p : pendientes.values()) vence = Math.min(vence, p.venceMs());
+            ms = Math.max(Math.max(vence - ahora, esperaTope(ahora)), 1_000);
+            rondaProgramada = true;
+        }
+        try { programarRonda(ms); }
+        catch (RuntimeException ex) {   // Planificador parado (la app se cierra): nada quedará esperando en vuelo
+            log("socket: no se pudo programar la comprobación de las quitadas: " + causa(ex));
+            synchronized (pendientes) { quitadasEnVuelo.removeAll(pendientes.keySet()); pendientes.clear(); }
+        }
+    }
+
+    /** Bajo el monitor de pendientes: ms hasta que el tope del minuto deje otra llamada (0 si ya la deja). */
+    private long esperaTope(long ahora) {
+        while (!llamadasRecientes.isEmpty() && llamadasRecientes.peekFirst() <= ahora - 60_000) llamadasRecientes.pollFirst();
+        return llamadasRecientes.size() < TOPE_POR_MINUTO ? 0 : llamadasRecientes.peekFirst() + 60_000 - ahora;
+    }
+
+    /** Reserva una llamada dentro del tope del minuto; false si ya se hicieron TOPE_POR_MINUTO. */
+    private boolean reservarLlamada() {
+        synchronized (pendientes) {
+            long ahora = reloj.ahoraMs();
+            if (esperaTope(ahora) > 0) return false;
+            llamadasRecientes.addLast(ahora);
+            return true;
+        }
+    }
+
+    /** Vuelve a la cola, ya vencida, una quitada que el tope del minuto no dejó comprobar: va en la próxima ronda. */
+    private void devolver(Caso caso) {
+        synchronized (pendientes) { pendientes.put(caso.matchId(), new Pendiente(caso.intento(), reloj.ahoraMs())); }
+    }
+
+    /** Una quitada lista para preguntar: los que solo tiene Live now (los marcados se leen al resolver) y por quién se pregunta. */
+    private record Caso(long matchId, int intento, List<Long> soloLive, long pid) { }
+
+    /** Una sola quitada, sin esperar a la ronda. Solo la usan los tests: el mismo camino que un lote de un solo jugador. */
+    void comprobarQuitada(long matchId, int intento) {
+        synchronized (pendientes) { pendientes.remove(matchId); }
+        Map<Long, Pendiente> una = new LinkedHashMap<>();
+        una.put(matchId, new Pendiente(intento, reloj.ahoraMs()));
+        try { comprobarQuitadas(una); }
+        finally { reprogramar(false); }
+    }
+
+    /**
+     * Comprueba una tanda de quitadas con el menor número de llamadas: una por lote de hasta 25 jugadores distintos
+     * (se pregunta por uno de cada partida; dos partidas del mismo jugador comparten pregunta). Con un solo jugador
+     * pide sus 5 últimas, como antes; con varios, sus 100 últimas juntas y, si una partida no vino (pudieron taparla
+     * las de los otros), se pregunta por ella sola, como antes: el veredicto es el mismo que con una llamada por
+     * partida. Lo que el tope del minuto no deja, vuelve a la cola. Va a la red.
+     */
+    private void comprobarQuitadas(Map<Long, Pendiente> tanda) {
+        // las de la tanda que aún no se resolvieron ni volvieron a la cola: si algo lanza, se liberan al salir (como antes)
+        Set<Long> abiertas = new HashSet<>(tanda.keySet());
+        boolean cambio = false;
+        try {
+            Map<Long, List<Caso>> porPid = new LinkedHashMap<>();
+            for (Map.Entry<Long, Pendiente> e : tanda.entrySet()) {
+                long matchId = e.getKey();
+                try {   // un fallo con una partida no tumba la tanda: esa se libera al salir, como cuando tenía su hilo
+                    List<Long> pids = vivo.jugadoresDe(matchId);
+                    // los que solo vio el barrido de Live now (no están marcados en EstadoVivo): también salen (revisión 1.3, F1)
+                    List<Long> soloLive = new ArrayList<>(vistas.jugadoresLiveNow(matchId)); soloLive.removeAll(pids);
+                    if (pids.isEmpty() && soloLive.isEmpty()) continue;   // ya salieron entretanto (un matchUpdated con finished o el barrido): se libera al salir, sin red
+                    long pid = !pids.isEmpty() ? pids.get(0) : soloLive.get(0);
+                    porPid.computeIfAbsent(pid, k -> new ArrayList<>()).add(new Caso(matchId, e.getValue().intento(), soloLive, pid));
+                } catch (RuntimeException ex) { log("socket: fallo al preparar la partida quitada " + matchId + ": " + causa(ex)); }
+            }
+            List<Long> todos = new ArrayList<>(porPid.keySet());
+            for (int desde = 0; desde < todos.size(); desde += PIDS_POR_LOTE) {
+                List<Long> lotePids = todos.subList(desde, Math.min(todos.size(), desde + PIDS_POR_LOTE));
+                List<Caso> casos = new ArrayList<>();
+                for (long pid : lotePids) casos.addAll(porPid.get(pid));
+                if (!reservarLlamada()) {   // tope del minuto: este lote y los siguientes esperan a la próxima ronda
+                    for (int i = desde; i < todos.size(); i++) for (Caso caso : porPid.get(todos.get(i))) { devolver(caso); abiertas.remove(caso.matchId()); }
+                    log("socket: tope de " + TOPE_POR_MINUTO + " comprobaciones por minuto: " + (todos.size() - desde) + " jugadores esperan a la próxima ronda");
+                    break;
+                }
+                int porPagina = lotePids.size() == 1 ? 5 : POR_PAGINA_LOTE;
+                if (casos.size() > 1) log("socket: " + casos.size() + " partidas quitadas comprobadas en una llamada (" + lotePids.size() + " jugadores)");
+                Map<Long, LiveService.Comprobacion> veredictos = live.comprobarVarias(lotePids, casos.stream().map(Caso::matchId).toList(), porPagina);
+                for (Caso caso : casos) {
+                    LiveService.Comprobacion comp = veredictos.get(caso.matchId());
+                    if (comp.veredicto() == LiveService.Veredicto.SIN_DATOS && comp.error() == null && lotePids.size() > 1) {
+                        // no vino en el lote: pudieron taparla las partidas de los otros; se pregunta por ella sola (sus 5
+                        // últimas, como antes), así el veredicto nunca es peor que con una llamada por partida
+                        if (!reservarLlamada()) { devolver(caso); abiertas.remove(caso.matchId()); continue; }
+                        comp = live.comprobar(caso.pid(), caso.matchId(), 5);
+                    }
+                    abiertas.remove(caso.matchId());   // resolverQuitada la libera o la vuelve a apuntar ella misma
+                    try { cambio |= resolverQuitada(caso, comp); }
+                    catch (RuntimeException ex) { log("socket: fallo al resolver la partida quitada " + caso.matchId() + ": " + causa(ex)); }
+                }
+            }
+        } finally {
+            quitadasEnVuelo.removeAll(abiertas);
+        }
+        if (cambio) vistas.avisarTrasCambio();
     }
 
     /**
@@ -134,30 +308,27 @@ public final class EnlaceVivo {
      * desde started, la API la da por TERMINADA. SIN_DATOS (la API no la tiene o falló): un reintento; si sigue sin
      * datos, salen SIN apuntarla como terminada (un fallo de red no puede bloquearla 3 h; un barrido puede volver a
      * marcarlos), para que nadie se quede «jugando» para siempre: los que solo vigila Live now no tienen otro
-     * barrido que los saque. Va a la red: se llama en el hilo «socket-quitada».
+     * barrido que los saque. Sin red (el veredicto ya llegó); true si salió alguien marcado (hay que avisar).
      */
-    void comprobarQuitada(long matchId, int intento) {
+    private boolean resolverQuitada(Caso caso, LiveService.Comprobacion comp) {
+        long matchId = caso.matchId();
+        int intento = caso.intento();
         boolean sigue = false;
         try {
-            List<Long> pids = vivo.jugadoresDe(matchId);
-            // los que solo vio el barrido de Live now (no están marcados en EstadoVivo): también salen (revisión 1.3, F1)
-            List<Long> soloLive = new ArrayList<>(vistas.jugadoresLiveNow(matchId)); soloLive.removeAll(pids);
-            if (pids.isEmpty() && soloLive.isEmpty()) return;   // ya salieron entretanto (un matchUpdated con finished o el barrido)
-            LiveService.Comprobacion c = live.comprobar(!pids.isEmpty() ? pids.get(0) : soloLive.get(0), matchId, 5);
-            if (c.error() != null) log("socket: no se pudo comprobar la partida quitada " + matchId + ": " + causa(c.error()));
-            if (c.veredicto() == LiveService.Veredicto.VIVA) {
+            if (comp.error() != null) log("socket: no se pudo comprobar la partida quitada " + matchId + ": " + causa(comp.error()));
+            if (comp.veredicto() == LiveService.Veredicto.VIVA) {
                 log("socket: matchRemoved de la partida " + matchId + ", pero la API la ve en curso: se mantiene y se mira en 3 min");
-                programarQuitada(matchId, intento);
+                apuntarQuitada(matchId, intento);   // la ronda la vuelve a programar al terminar
                 sigue = true;
-                return;
+                return false;
             }
             List<Long> fuera;
-            if (c.veredicto() == LiveService.Veredicto.SIN_DATOS) {
+            if (comp.veredicto() == LiveService.Veredicto.SIN_DATOS) {
                 if (intento < 2) {
                     log("socket: matchRemoved de la partida " + matchId + " sin datos de la API: se reintenta en 3 min");
-                    programarQuitada(matchId, intento + 1);
+                    apuntarQuitada(matchId, intento + 1);
                     sigue = true;
-                    return;
+                    return false;
                 }
                 log("socket: la partida " + matchId + " sigue sin datos de la API tras el reintento: salen sus jugadores, sin darla por terminada");
                 fuera = vivo.sacarDePartida(matchId);
@@ -167,11 +338,11 @@ public final class EnlaceVivo {
             boolean cambio = false;
             // TERMINADA: la partida que devolvió la API, con su hora de fin (si no, Live now pintaba «hace 0 min» hasta
             // que caducaba a las 2 h). Sin datos: null, como antes (Live now usa la que guardó al empezar). Revisión 1.3, F5.
-            Match fin = c.veredicto() == LiveService.Veredicto.TERMINADA ? c.partida() : null;
+            Match fin = comp.veredicto() == LiveService.Veredicto.TERMINADA ? comp.partida() : null;
             // con el matchId: si en el hueco el socket lo metió en otra partida, Live now no la suelta (menor del revisor)
             for (long pid : fuera) { vistas.liveTerminada(pid, matchId, fin); cambio = true; }
-            for (long pid : soloLive) vistas.liveTerminada(pid, matchId, fin);   // F1: solo Live now los tenía (sin repetir: se quitaron los marcados arriba)
-            if (cambio) vistas.avisarTrasCambio();
+            for (long pid : caso.soloLive()) vistas.liveTerminada(pid, matchId, fin);   // F1: solo Live now los tenía (sin repetir: se quitaron los marcados arriba)
+            return cambio;
         } finally {
             if (!sigue) quitadasEnVuelo.remove(matchId);
         }

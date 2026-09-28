@@ -57,7 +57,10 @@ class EnlaceVivoTest {
         String cuerpo = "{\"matches\":[]}";
         int estado = 200;
         volatile int llamadas;
-        @Override public Respuesta get(String url) { llamadas++; return new Respuesta(estado, cuerpo); }
+        final List<String> urls = java.util.Collections.synchronizedList(new ArrayList<>());
+        /** Si no es null, decide el cuerpo según la URL (lote CSV frente a pregunta suelta). */
+        java.util.function.Function<String, String> porUrl;
+        @Override public Respuesta get(String url) { llamadas++; urls.add(url); return new Respuesta(estado, porUrl != null ? porUrl.apply(url) : cuerpo); }
     }
     static final class ThrottleSinFreno implements Throttle {
         @Override public void adquirir(BooleanSupplier cancelar) { }
@@ -78,7 +81,8 @@ class EnlaceVivoTest {
         final java.util.Map<Long, List<Long>> liveNow = new java.util.HashMap<>();   // matchId → quiénes tiene Live now en ella
         final List<Long> idsTerminadaLive = new ArrayList<>();   // el matchId que llegó con cada liveTerminada
         @Override public void liveTerminada(long pid, long matchId, Match fin) { avisos.add("liveEvento:" + pid + ":true"); partidasLive.add(fin); idsTerminadaLive.add(matchId); }
-        @Override public List<Long> jugadoresLiveNow(long matchId) { return liveNow.getOrDefault(matchId, List.of()); }
+        Runnable alMirarLiveNow;   // si no es null, corre (una vez) cuando la ronda pregunta a Live now: simula un evento en ese hueco
+        @Override public List<Long> jugadoresLiveNow(long matchId) { Runnable r = alMirarLiveNow; alMirarLiveNow = null; if (r != null) r.run(); return liveNow.getOrDefault(matchId, List.of()); }
         @Override public void avisarSiCampana(long pid, Match m) { avisos.add("campana:" + pid); }
         @Override public void avisarMiPartida(long pid, Match m) { avisos.add("miPartida:" + pid); }
         @Override public void avisarTrasCambio() { avisos.add("avisarTrasCambio"); }
@@ -233,6 +237,7 @@ class EnlaceVivoTest {
         vivo.marcarJugando(7, 555);
         enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
         Runnable tarea; synchronized (planificador.esperas) { tarea = planificador.tareas.get(planificador.esperas.indexOf(EnlaceVivo.ESPERA_QUITADA_MS)); }
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);   // la ronda solo comprueba las que ya esperaron sus 3 min
         tarea.run();   // lo que hace el planificador al vencer: arranca el hilo «socket-quitada»
         esperarAvisos(vistas, 2);
         assertEquals(List.of("liveEvento:7:true", "avisarTrasCambio"), vistas.avisos);
@@ -250,7 +255,9 @@ class EnlaceVivoTest {
         assertEquals(0, red.llamadas);
         vivo.marcarJugando(7, 555);          // vuelve a marcarse (la partida no se apuntó como terminada)
         enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555)), Set.of(7L));
-        assertEquals(2, esperasQuitada().size(), "la segunda quitada se programa: la primera no la bloquea");
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();              // la ronda que ya estaba programada la recoge
+        assertEquals(1, red.llamadas, "la segunda quitada se comprueba: la primera no la bloquea");
     }
 
     @Test void quitadaSinDatosReintentaUnaVezYLuegoSaca() {
@@ -328,6 +335,161 @@ class EnlaceVivoTest {
         assertTrue(vistas.avisos.isEmpty());
         assertTrue(esperasQuitada().isEmpty());
         assertFalse(vivo.terminada(555));
+    }
+
+    // ===== 1.4: las quitadas se confirman en lote (una llamada por hasta 25 jugadores), con tope por minuto =====
+
+    /** n partidas 1000+i, con dos vigilados cada una (100+i y 5000+i), marcadas en EstadoVivo. */
+    void marcarPartidas(int n) { for (int i = 0; i < n; i++) { vivo.marcarJugando(100 + i, 1000 + i); vivo.marcarJugando(5000 + i, 1000 + i); } }
+    List<SocketVivo.Evento> quitadas(int n) { List<SocketVivo.Evento> l = new ArrayList<>(); for (int i = 0; i < n; i++) l.add(new SocketVivo.Quitada(1000 + i)); return l; }
+    static String terminadas(int n) { List<String> l = new ArrayList<>(); for (int i = 0; i < n; i++) l.add(partidaJson(1000 + i, Duration.ofMinutes(30), true)); return "{\"matches\":[" + String.join(",", l) + "]}"; }
+    /** n partidas 1000+i con un solo vigilado cada una (100+i). */
+    void marcarSolos(int n) { for (int i = 0; i < n; i++) vivo.marcarJugando(100 + i, 1000 + i); }
+    long avisosDe(String aviso) { return vistas.avisos.stream().filter(aviso::equals).count(); }
+
+    @Test void veinteQuitadasALaVezSeCompruebanEnUnaSolaLlamada() {
+        red.cuerpo = terminadas(20);
+        marcarPartidas(20);
+        enlace.procesarEventosSocket(quitadas(20), Set.of());
+        assertEquals(1, esperasQuitada().size(), "una ronda para las 20 (antes, 20 esperas)");
+        assertEquals(0, red.llamadas, "nada antes de los 3 min");
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(1, red.llamadas, "antes: 20 llamadas (una por partida); ahora: 1");
+        String url = red.urls.get(0);
+        assertTrue(url.contains("per_page=" + EnlaceVivo.POR_PAGINA_LOTE), url);
+        assertEquals(20, url.replaceAll(".*profile_ids=([0-9,]+)&.*", "$1").split(",").length, "un jugador por partida: " + url);
+        for (int i = 0; i < 20; i++) {
+            assertFalse(vivo.jugando(100 + i)); assertFalse(vivo.jugando(5000 + i));
+            assertTrue(vivo.terminada(1000 + i), "mismo resultado: todas terminadas, sin fantasmas");
+        }
+        assertEquals(40, vistas.avisos.stream().filter(a -> a.startsWith("liveEvento:") && a.endsWith(":true")).count(), "los 40 jugadores salen de Live now");
+        assertEquals(1, avisosDe("avisarTrasCambio"), "un solo repintado para toda la ronda");
+        assertTrue(esperasQuitada().size() == 1 && planificador.esperas.size() == 1, "resueltas todas: no queda otra ronda");
+    }
+
+    @Test void treintaPartidasVanEnDosLotesDeHasta25Jugadores() {
+        red.cuerpo = terminadas(30);
+        marcarPartidas(30);
+        enlace.procesarEventosSocket(quitadas(30), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(2, red.llamadas, "antes: 30; ahora: 25 + 5 jugadores");
+        for (int i = 0; i < 30; i++) assertTrue(vivo.terminada(1000 + i));
+    }
+
+    @Test void unaQuitadaQueLlegaMasTardeNoSeCompruebaAntesDeSusTresMinutos() {
+        red.cuerpo = terminadas(2);
+        marcarSolos(2);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(1000)), Set.of());
+        reloj.avanzar(60_000);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(1001)), Set.of());
+        assertEquals(1, esperasQuitada().size(), "ya hay una ronda programada: la segunda se apunta");
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS - 60_000);
+        enlace.rondaQuitadas();
+        assertEquals(1, red.llamadas);
+        assertTrue(red.urls.get(0).contains("profile_ids=100&"), "solo la vencida: " + red.urls.get(0));
+        assertTrue(vivo.terminada(1000));
+        assertEquals(1001L, vivo.matchDe(101), "la de 1 min después sigue esperando");
+        assertEquals(60_000L, planificador.esperas.get(planificador.esperas.size() - 1), "otra ronda para cuando venza (1 min)");
+        reloj.avanzar(60_000);
+        enlace.rondaQuitadas();
+        assertEquals(2, red.llamadas);
+        assertTrue(vivo.terminada(1001));
+    }
+
+    @Test void laVivaSeQuedaYSeVuelveAMirarEnLaSiguienteRonda() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(1000, Duration.ofMinutes(30), true) + "," + partidaJson(1001, Duration.ofMinutes(10), false) + "]}";
+        marcarPartidas(2);
+        enlace.procesarEventosSocket(quitadas(2), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(1, red.llamadas);
+        assertTrue(vivo.terminada(1000));
+        assertEquals(1001L, vivo.matchDe(101), "la viva no sale (no se cree al socket sin confirmar)");
+        assertEquals(2, esperasQuitada().size(), "se vuelve a mirar en 3 min");
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(1001)), Set.of());
+        assertEquals(2, esperasQuitada().size(), "sigue en vuelo: otro matchRemoved no la duplica");
+        red.cuerpo = terminadas(2);
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(2, red.llamadas);
+        assertTrue(vivo.terminada(1001));
+    }
+
+    @Test void siUnaPartidaNoVieneEnElLoteSePreguntaPorEllaSola() {
+        List<String> otras = new ArrayList<>();
+        for (int i = 0; i < EnlaceVivo.POR_PAGINA_LOTE - 1; i++) otras.add(partidaJson(9000 + i, Duration.ofMinutes(1), false));
+        String llena = "{\"matches\":[" + String.join(",", otras) + "," + partidaJson(1000, Duration.ofMinutes(30), true) + "]}";
+        String suelta = "{\"matches\":[" + partidaJson(1001, Duration.ofMinutes(30), true) + "]}";
+        red.porUrl = url -> url.contains(",") ? llena : suelta;   // la 1001 queda tapada en el lote
+        marcarSolos(2);
+        enlace.procesarEventosSocket(quitadas(2), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(2, red.llamadas, "el lote y una pregunta suelta por la tapada");
+        assertTrue(red.urls.get(1).contains("profile_ids=101&") && red.urls.get(1).contains("per_page=5"), red.urls.get(1));
+        assertTrue(vivo.terminada(1000));
+        assertTrue(vivo.terminada(1001), "mismo veredicto que con una llamada por partida");
+    }
+
+    /** Menor del revisor: un matchRemoved que llega mientras la ronda está en la red no retrasa a las pendientes. */
+    @Test void unaQuitadaDuranteLaRondaNoRetrasaALasPendientes() {
+        red.cuerpo = terminadas(3);
+        marcarSolos(3);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(1000)), Set.of());
+        reloj.avanzar(60_000);
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(1001)), Set.of());   // vence 1 min después que la 1000
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS - 60_000);
+        vistas.alMirarLiveNow = () -> enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(1002)), Set.of());   // llega en plena ronda
+        enlace.rondaQuitadas();
+        assertTrue(vivo.terminada(1000));
+        assertEquals(2, planificador.esperas.size(), "la del evento en plena ronda no programa otra a +3 min");
+        assertEquals(60_000L, planificador.esperas.get(1), "la siguiente, cuando vence la 1001 (antes: a los 3 min)");
+    }
+
+    @Test void dosPartidasDelMismoJugadorComparteUnaPregunta() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(555, Duration.ofMinutes(30), true) + "," + partidaJson(556, Duration.ofMinutes(60), true) + "]}";
+        vivo.marcarJugando(7, 555);
+        vistas.liveNow.put(556L, List.of(7L));   // Live now aún lo tiene en la vieja
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(555), new SocketVivo.Quitada(556)), Set.of(7L));
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(1, red.llamadas, "antes: 2");
+        assertTrue(red.urls.get(0).contains("profile_ids=7&") && red.urls.get(0).contains("per_page=5"), "un solo jugador: sus 5 últimas, como antes");
+        assertTrue(vivo.terminada(555) && vivo.terminada(556));
+    }
+
+    @Test void elTopePorMinutoDejaElRestoParaLaSiguienteRonda() {
+        int n = EnlaceVivo.PIDS_POR_LOTE * (EnlaceVivo.TOPE_POR_MINUTO + 2);   // 8 lotes: 6 ahora, 2 al minuto
+        red.cuerpo = terminadas(n);
+        marcarSolos(n);
+        enlace.procesarEventosSocket(quitadas(n), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(EnlaceVivo.TOPE_POR_MINUTO, red.llamadas);
+        assertEquals(1000L + n - 1, vivo.matchDe(100 + n - 1), "las del último lote esperan");
+        assertEquals(60_000L, planificador.esperas.get(planificador.esperas.size() - 1), "otra ronda cuando el tope deje");
+        enlace.procesarEventosSocket(List.of(new SocketVivo.Quitada(1000 + n - 1)), Set.of());
+        reloj.avanzar(60_000);
+        enlace.rondaQuitadas();
+        assertEquals(EnlaceVivo.TOPE_POR_MINUTO + 2, red.llamadas, "antes: " + n + " llamadas");
+        for (int i = 0; i < n; i++) assertTrue(vivo.terminada(1000 + i));
+    }
+
+    @Test void conLaApiCaidaElLoteReintentaUnaVezYLuegoSacaSinDarlasPorTerminadas() {
+        red.estado = 500;
+        marcarPartidas(20);
+        enlace.procesarEventosSocket(quitadas(20), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(1, red.llamadas);
+        assertEquals(1000L, vivo.matchDe(100), "sin datos: un reintento");
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas();
+        assertEquals(2, red.llamadas, "antes: 40 (20 partidas × 2 intentos)");
+        for (int i = 0; i < 20; i++) { assertFalse(vivo.jugando(100 + i)); assertFalse(vivo.terminada(1000 + i)); }
+        assertEquals(2, esperasQuitada().size(), "la ronda inicial y la del reintento: nada más");
     }
 
     // ===== sincronizarSocket: mismo orden de ids que la base =====
