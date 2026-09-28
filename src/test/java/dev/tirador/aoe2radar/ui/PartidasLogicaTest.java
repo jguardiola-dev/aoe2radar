@@ -85,7 +85,7 @@ class PartidasLogicaTest {
             PartidasView.SUJETOS.clear();
             ventana = new JFrame();
             vista = new PartidasView(ventana, new WatchlistViewTest.MenusFalso(), null, new WatchlistViewTest.NavegacionFalsa(),
-                    azar, rec, barrido, 50, 0, enlace, anfitrion);
+                    azar, rec, barrido, 0, enlace, anfitrion);
             vista.agregarFilaConsulta(new JPanel());
             vista.construirFilaNota();
             vista.construirTabla();
@@ -414,6 +414,7 @@ class PartidasLogicaTest {
     /** Lanza «Buscar partidas» (páginas vacías) y devuelve a quién se pidió, en orden. */
     List<Long> buscarYVerAQuien() throws Exception {
         anfitrion.pedidas.clear();
+        anfitrion.llamadas.set(0);
         anfitrion.paginador = (pid, pag, pp) -> List.of();
         enEdt(() -> vista.fetchMatches(vista.fetchBtn));
         esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
@@ -461,6 +462,7 @@ class PartidasLogicaTest {
         assertEquals(15, pedidas.size());
         assertEquals(7400L, pedidas.get(0));
         assertEquals(7414L, pedidas.get(14));
+        assertEquals(2, anfitrion.llamadas.get(), "1.4: en lotes de 10, 15 jugadores son 2 llamadas (antes, 15)");
         assertTrue(anfitrion.estados.stream().anyMatch(s -> s.contains("15 perfiles por tanda")), "estados: " + anfitrion.estados);
     }
 

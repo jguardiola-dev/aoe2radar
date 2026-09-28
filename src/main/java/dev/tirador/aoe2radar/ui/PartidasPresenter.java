@@ -502,18 +502,30 @@ public final class PartidasPresenter {
     // El recorrido de «Buscar partidas» (el doInBackground de fetchMatches, antes en BusquedasPartidas)
     // ======================================================================
 
-    /** Una página de partidas de un jugador (en la app, Anfitrion.paginaDePartidas: la red). */
-    interface Paginador { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
+    /** Jugadores por llamada de «Buscar partidas» (1.4): /matches admite varios profile_ids y devuelve sus partidas
+     *  juntas, de la más reciente a la más antigua por inicio, sin repetir la que comparten (comprobado contra la API
+     *  el 2026-09-28, con página 1 y 2). 10, como pedía el plan de la API: 30 jugadores = 3 lotes. */
+    public static final int JUGADORES_POR_LOTE = 10;
+    /** Partidas por página de cada lote (lo mismo que piden BarridoVivos, vigilarTop y Live now a /matches). */
+    public static final int PARTIDAS_POR_LOTE = 100;
+
+    /** Una página de las partidas de unos jugadores, juntas (en la app, Anfitrion.paginaDePartidas: la red). */
+    interface Paginador { Iterable<Match> pagina(List<Long> pids, int pagina, int porPagina) throws Exception; }
 
     /** Lo que deja el recorrido de fetchMatches: las partidas (la más reciente primero), si se tocó el tope, cuántos
      *  jugadores fallaron, quiénes respondieron entero, si se detuvo a medias (entonces la lista está incompleta) y
      *  cuántos jugadores se recorrieron enteros antes del corte (con o sin fallo: el «N de M» del aviso). */
     record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida, int recorridos) { }
 
-    /** El doInBackground de fetchMatches, sin Swing (para poder probarlo): páginas por jugador hasta la ventana,
-     *  tope 6 páginas / 600 partidas. {@code parar} se mira antes de cada jugador, antes de cada página y al fallar
-     *  una: si dice que sí, el recorrido acaba entero y vuelve con {@code detenida}. */
-    static Recorrido recorrer(List<Player> tracked, Instant cutoff, int perPage, long pausaMs, Paginador paginas,
+    /** El doInBackground de fetchMatches, sin Swing (para poder probarlo): los jugadores van en lotes de
+     *  {@code tamLote} (1.4: {@link #JUGADORES_POR_LOTE}, una llamada con sus ids juntos en vez de una por jugador);
+     *  cada lote pagina hasta la ventana (mientras la página venga llena y su partida más antigua sea posterior al
+     *  corte), tope 6 páginas por lote / 600 partidas en total. Con un lote de 1 es el recorrido de la 1.3, jugador a
+     *  jugador. Todo se cuenta en jugadores: un lote que falla cuenta sus jugadores como fallidos (y ninguno como
+     *  consultado, para no marcarlos «fuera»); uno entero, como recorridos. {@code parar} se mira antes de cada lote,
+     *  antes de cada página y al fallar una: si dice que sí, el recorrido acaba entero y vuelve con
+     *  {@code detenida} (el lote cortado a medias no cuenta como recorrido, pero lo leído de él se conserva). */
+    static Recorrido recorrer(List<Player> tracked, Instant cutoff, int tamLote, int perPage, long pausaMs, Paginador paginas,
                               java.util.function.Predicate<Match> enCursoReal, java.util.function.BooleanSupplier parar,
                               java.util.function.Consumer<String> progreso) {
         Map<Long, Match> unicos = new LinkedHashMap<>();
@@ -521,15 +533,19 @@ public final class PartidasPresenter {
         boolean topeAlcanzado = false, detenida = false;
         int fallos = 0, recorridos = 0;
         final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
-        for (Player pl : tracked) {
+        for (int inicio = 0; inicio < tracked.size(); inicio += Math.max(1, tamLote)) {
+            List<Player> lote = tracked.subList(inicio, Math.min(tracked.size(), inicio + Math.max(1, tamLote)));
+            List<Long> pids = ids(lote);
+            String quien = lote.get(0).name() + (lote.size() > 1
+                    ? t(" y " + (lote.size() - 1) + " más", " and " + (lote.size() - 1) + " more") : "");
             if (parar.getAsBoolean()) { detenida = true; break; }
             boolean fallo = false;
             for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
                 if (parar.getAsBoolean()) { detenida = true; break; }
-                progreso.accept(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
+                progreso.accept(t("Consultando ", "Checking ") + quien + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
                 boolean seguir = false;
                 try {
-                    Iterable<Match> leidas = paginas.pagina(pl.id(), pagina, perPage);
+                    Iterable<Match> leidas = paginas.pagina(pids, pagina, perPage);
                     int n = 0; Instant masAntigua = null;
                     for (Match m : leidas) {
                         if (m == null) continue;
@@ -548,14 +564,14 @@ public final class PartidasPresenter {
                     fallo = true;
                     if (parar.getAsBoolean()) { detenida = true; break; }   // el freno cortó la espera: se para todo
                     if (ex instanceof InterruptedException) break;
-                    fallos++;
-                    progreso.accept(t("Aviso: fallo con ", "Heads-up: failed with ") + pl.name() + " (" + causa(ex) + ")");
+                    fallos += lote.size();
+                    progreso.accept(t("Aviso: fallo con ", "Heads-up: failed with ") + quien + " (" + causa(ex) + ")");
                 }
                 if (!seguir) break;
             }
             if (detenida) break;
-            recorridos++;
-            if (!fallo) exitosos.add(pl.id());
+            recorridos += lote.size();
+            if (!fallo) exitosos.addAll(pids);
             if (unicos.size() >= MAX_TOTAL) break;
         }
         List<Match> lista = new ArrayList<>(unicos.values());

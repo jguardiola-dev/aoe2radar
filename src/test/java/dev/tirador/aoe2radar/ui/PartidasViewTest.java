@@ -77,8 +77,10 @@ class PartidasViewTest {
         final List<String> estados = Collections.synchronizedList(new ArrayList<>());
         volatile long opSerial;
         volatile boolean progreso;
-        volatile PartidasPresenter.Paginador paginador = (pid, pag, pp) -> List.of();
+        volatile PaginadorUno paginador = (pid, pag, pp) -> List.of();
+        /** Los ids pedidos, en orden (un lote apunta todos los suyos) y cuántas llamadas hubo. */
         final List<Long> pedidas = Collections.synchronizedList(new ArrayList<>());
+        final java.util.concurrent.atomic.AtomicInteger llamadas = new java.util.concurrent.atomic.AtomicInteger();
         final Path recs;
         AnfitrionFalso(Path recs) { this.recs = recs; }
         @Override public void estado(String texto) { estado = texto; estados.add(texto); }
@@ -132,9 +134,20 @@ class PartidasViewTest {
         @Override public boolean perfilAbierto() { return perfilAbierto; }
         @Override public String perfilNombreAbierto() { return perfilNombre; }
         @Override public void mostrarHistorialSiSigueAbierto(long pid, String nombre) { }
-        @Override public Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws java.io.IOException, InterruptedException {
-            pedidas.add(pid);
-            try { return paginador.pagina(pid, pagina, porPagina); }
+        /** Como /matches con varios profile_ids: las páginas de cada id, juntas, sin repetir y de la más reciente a la
+         *  más antigua por inicio (con un solo id, su página tal cual). Ojo: junta la página N de cada id, que no es
+         *  como pagina la API real (BuscarPorLotesTest sí la imita); vale para páginas cortas o vacías. */
+        @Override public Iterable<Match> paginaDePartidas(List<Long> pids, int pagina, int porPagina) throws java.io.IOException, InterruptedException {
+            pedidas.addAll(pids);
+            llamadas.incrementAndGet();
+            try {
+                if (pids.size() == 1) return paginador.pagina(pids.get(0), pagina, porPagina);
+                java.util.Map<Long, Match> juntas = new java.util.LinkedHashMap<>();
+                for (long pid : pids) for (Match m : paginador.pagina(pid, pagina, porPagina)) if (m != null) juntas.putIfAbsent(m.id, m);
+                List<Match> orden = new ArrayList<>(juntas.values());
+                orden.sort(java.util.Comparator.comparing((Match m) -> m.started, java.util.Comparator.nullsLast(java.util.Comparator.reverseOrder())));
+                return orden;
+            }
             catch (java.io.IOException | InterruptedException | RuntimeException ex) { throw ex; }
             catch (Exception ex) { throw new java.io.IOException(ex); }
         }
@@ -143,6 +156,9 @@ class PartidasViewTest {
         @Override public void ajustarGrisesNota(boolean oscuro) { }
         @Override public void actualizarControlesTabla() { }
     }
+
+    /** Una página de partidas de UN jugador (lo que cada test sabe servir; el anfitrión falso junta las de un lote). */
+    interface PaginadorUno { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
 
     /** RecService sin red: cuenta las partidas que le piden y las da por descargadas. */
     static final class RecFalso implements dev.tirador.aoe2radar.service.RecService {
@@ -203,7 +219,11 @@ class PartidasViewTest {
         SwingUtilities.invokeAndWait(() -> {
             ventana = new JFrame();
             vista = new PartidasView(ventana, new WatchlistViewTest.MenusFalso(), null, new WatchlistViewTest.NavegacionFalsa(),
-                    null, rec, barrido, 50, 0, enlace, anfitrion);
+                    null, rec, barrido, 0, enlace, anfitrion);
+            // Estos tests miran el recorrido jugador a jugador (Detener, la × o un fallo entre uno y otro): lote de 1.
+            // El de lotes de 10 (el de la app) tiene los suyos (BuscarPorLotesTest, recorrer_porLotes_* de
+            // PartidasPresenterTest y buscar_enTopConMasDeQuince de PartidasLogicaTest).
+            vista.jugadoresPorLote = 1;
             vista.agregarFilaConsulta(new JPanel());
             vista.construirFilaNota();
             vista.construirTabla();

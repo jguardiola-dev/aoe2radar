@@ -144,8 +144,9 @@ public final class PartidasView {
         boolean perfilAbierto();
         String perfilNombreAbierto();
         void mostrarHistorialSiSigueAbierto(long pid, String nombre);
-        /** La única llamada de red que queda aquí (CompanionApi.partidas): ui no puede importar api. */
-        Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException;
+        /** La única llamada de red que queda aquí (CompanionApi.partidas, con los ids juntos: una llamada para
+         *  todo el lote de «Buscar partidas»): ui no puede importar api. */
+        Iterable<Match> paginaDePartidas(List<Long> pids, int pagina, int porPagina) throws IOException, InterruptedException;
         boolean autoCopiarAlDescargar();
         void continuarDisponible(boolean visible);
         /** La nota sin-spoilers vuelve a su gris de siempre (delegado en ui.TemaApp, que conoce toda la ventana). */
@@ -161,8 +162,11 @@ public final class PartidasView {
     final AzarService azarService;
     final RecService recService;
     final BarridoVivos barridoVivos;
-    final int perPage;
     final long pausaMs;
+    /** Jugadores por llamada de «Buscar partidas» (PartidasPresenter.JUGADORES_POR_LOTE). Los tests que miran el
+     *  recorrido jugador a jugador (Detener entre uno y otro) lo ponen a 1: es una puerta para los tests, la app no
+     *  lo cambia. Solo en el EDT (fetchMatches lo copia al empezar, antes de crear el SwingWorker). */
+    int jugadoresPorLote = PartidasPresenter.JUGADORES_POR_LOTE;
     final EnlaceWatchlist enlaceWatchlist;
     final Anfitrion anfitrion;
     final PartidasTexto texto;
@@ -216,7 +220,7 @@ public final class PartidasView {
 
     public PartidasView(JFrame ventana, MenusJugador menus, DialogosJugador dialogos, Navegacion navegacion,
                          AzarService azarService, RecService recService, BarridoVivos barridoVivos,
-                         int perPage, long pausaMs, EnlaceWatchlist enlaceWatchlist, Anfitrion anfitrion) {
+                         long pausaMs, EnlaceWatchlist enlaceWatchlist, Anfitrion anfitrion) {
         this.ventana = ventana;
         this.menus = menus;
         this.dialogos = dialogos;
@@ -224,7 +228,6 @@ public final class PartidasView {
         this.azarService = azarService;
         this.recService = recService;
         this.barridoVivos = barridoVivos;
-        this.perPage = perPage;
         this.pausaMs = pausaMs;
         this.enlaceWatchlist = enlaceWatchlist;
         this.anfitrion = anfitrion;

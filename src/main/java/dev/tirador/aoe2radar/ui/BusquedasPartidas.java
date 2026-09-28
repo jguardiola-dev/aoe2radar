@@ -254,6 +254,7 @@ final class BusquedasPartidas {
         }
         List<Player> sel = eleccion.buscados();
         final List<Player> tracked = (vista.enlaceWatchlist.invitado() == null && !vista.enlaceWatchlist.modoTop()) ? vista.enlaceWatchlist.conFamilias(sel) : sel;
+        final int tamLote = vista.jugadoresPorLote;
         SwingWorker<?, ?> anterior = vista.fetchWorker;
         if (anterior != null) {   // la nueva sustituye a la que estaba en marcha (su done() ya no toca nada: ver abajo)
             log("buscar: nueva búsqueda con otra en marcha; se cancela la anterior");
@@ -287,7 +288,7 @@ final class BusquedasPartidas {
                     // Detener (el del botón, el de la barra de estado si es la última operación viva, o la × de
                     // «Partidas de:») corta el recorrido ENTERO, no solo la página en curso (revisión 1.3, general
                     // F4 / watchlist F6).
-                    return PartidasPresenter.recorrer(tracked, cutoff, vista.perPage, vista.pausaMs, vista.anfitrion::paginaDePartidas,
+                    return PartidasPresenter.recorrer(tracked, cutoff, tamLote, PartidasPresenter.PARTIDAS_POR_LOTE, vista.pausaMs, vista.anfitrion::paginaDePartidas,
                             vista.anfitrion::enCursoReal, () -> isCancelled() || vista.anfitrion.detenido(miSerial), this::publish);
                 } finally {
                     vista.anfitrion.soltarHiloOperacion();
