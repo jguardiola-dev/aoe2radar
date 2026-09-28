@@ -2,9 +2,16 @@ package dev.tirador.aoe2radar.app;
 
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.ConRespaldo;
+import dev.tirador.aoe2radar.api.FuenteBusqueda;
+import dev.tirador.aoe2radar.api.FuenteLadder;
+import dev.tirador.aoe2radar.api.FuentePartidas;
+import dev.tirador.aoe2radar.api.FuentePerfil;
+import dev.tirador.aoe2radar.api.WorldsEdgeApi;
 import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
+import dev.tirador.aoe2radar.service.ActualizadorService;
 import dev.tirador.aoe2radar.service.AnioDesdeSfr;
 import dev.tirador.aoe2radar.service.AnotacionesService;
 import dev.tirador.aoe2radar.service.BusquedaPerfiles;
@@ -21,6 +28,8 @@ import dev.tirador.aoe2radar.service.TopLadderService;
 import dev.tirador.aoe2radar.service.TwitchService;
 import dev.tirador.aoe2radar.service.TwitchServiceCompanion;
 import dev.tirador.aoe2radar.sfrdata.Snapshots;
+import dev.tirador.aoe2radar.util.Identidad;
+import dev.tirador.aoe2radar.util.Instalacion;
 import dev.tirador.aoe2radar.util.Reloj;
 
 import javax.swing.SwingUtilities;
@@ -33,6 +42,7 @@ import java.util.List;
 
 import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
+import static dev.tirador.aoe2radar.api.Freno.THROTTLE_WE;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.TRANSPORTE;
 import static dev.tirador.aoe2radar.api.Http.UA;
@@ -78,6 +88,7 @@ public class Servicios {
     public static void aprenderCatalogos(Collection<Match> ms) {
         boolean nm = false, nc = false;
         for (Match m : ms) {
+            if (m.deRespaldo) continue;   // World's Edge (1.4): nombres de mapa/civ reconstruidos, no se guardan en config
             if (esRankedRM(m.mode)
                     && m.map != null && !m.map.isBlank() && MAPAS_CAT.add(m.map.trim())) nm = true;
             for (MatchPlayer p : m.players)
@@ -108,15 +119,16 @@ public class Servicios {
     static void avisarPausa429(long seg) {
         SwingUtilities.invokeLater(() -> avisoPausa429.accept(seg));
     }
-    /** Camino hacia la barra de estado para el mensaje de control.json (arreglo F10 de la revisión 1.3): la ventana
-     *  lo fija en el EDT al construirse (CableadoCromo.configurarVentana), como avisoPausa429. Recibe el texto y lo
-     *  que hay que hacer cuando ya se ha enseñado (marcarlo como visto). Sin ventana, no se enseña ni se marca. */
-    public static volatile java.util.function.BiConsumer<String, Runnable> avisoControl = (txt, alMostrarse) -> {};
+    /** Camino hacia la franja de avisos (ui.FranjaAviso) para el mensaje de control.json (decisión de Jorge, 1.3): la
+     *  ventana lo fija en el EDT al construirse (CableadoCromo.montarVentana), como avisoPausa429. Recibe el texto y
+     *  lo que hay que hacer cuando el usuario lo cierra con su × (marcarlo como visto). Sin ventana, no se enseña ni
+     *  se marca. */
+    public static volatile java.util.function.BiConsumer<String, Runnable> avisoControl = (txt, alCerrar) -> {};
 
     /** Lee control.json (multiplicadores de intervalos, interruptores, mensaje) al arrancar y cada hora. La red y las
      *  reglas de aplicación viven en service.ControlService; aquí solo queda leer/guardar config y pasar el mensaje
-     *  a la ventana. Se marca visto solo cuando la barra lo ha enseñado con la ventana a la vista (F10), y en un
-     *  hilo aparte: el disco, fuera del EDT. Mientras no se enseñe, la recarga de cada hora lo vuelve a traer. */
+     *  a la ventana. Se marca visto solo cuando el usuario cierra la franja con la ×, y en un hilo aparte: el disco,
+     *  fuera del EDT. Mientras no la cierre, la recarga de cada hora lo vuelve a traer (la franja ignora el repetido). */
     public static void cargarControl() {
         String msg = CONTROL_SERVICE.cargarControl(leerConfig("control_msg_visto", ""));
         if (msg != null)
@@ -133,18 +145,63 @@ public class Servicios {
     };
     /** El «mando a distancia» y la comprobación de versión (service.ControlService). */
     public static final ControlService CONTROL_SERVICE = new ControlService(TRANSPORTE_CONTROL, TRANSPORTE);
-    /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
-    public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
+    /** Descarga binaria del actualizador propio (el jar de una release, unos MB): HttpURLConnection con 15 s para
+     *  conectar y 30 s como mucho entre bytes (el HttpClient solo pone plazo hasta las cabeceras: un cuerpo atascado
+     *  colgaría la descarga para siempre). Sigue la redirección de GitHub a su CDN (https a https). Sin freno: GitHub,
+     *  no el companion. */
+    static final ActualizadorService.Descarga DESCARGA_BINARIA = url -> {
+        java.net.HttpURLConnection c = (java.net.HttpURLConnection) URI.create(url).toURL().openConnection();
+        c.setConnectTimeout(15_000);
+        c.setReadTimeout(30_000);
+        c.setInstanceFollowRedirects(true);
+        c.setRequestProperty("User-Agent", UA);
+        int estado = c.getResponseCode();
+        if (estado != 200) { c.disconnect(); throw new java.io.IOException("HTTP " + estado); }
+        return c.getInputStream();
+    };
+    /** El actualizador propio de la app instalada (1.4): update.json y el jar de GitHub, y el disco (util.Instalacion).
+     *  Las rutas se piden en cada uso (Instalacion::actuales) y el constructor no toca disco ni red. update.json va por
+     *  TRANSPORTE (texto, sigue redirecciones). */
+    public static final ActualizadorService ACTUALIZADOR = new ActualizadorService(TRANSPORTE, DESCARGA_BINARIA,
+            Instalacion::actuales, Identidad.VERSION, System.getProperty("java.version"));
+    /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada.
+     *  Dos cubos (1.4): el del companion (THROTTLE) y el de World's Edge (THROTTLE_WE: respaldo y lobbies de Mi partida). */
+    public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, THROTTLE_WE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto.
      *  Con la caché por URL (1.3): fichas /profiles 10 min y páginas del ladder 14 min; lo que debe ser de ahora (ELO 1v1,
-     *  hover, recarga forzada del top) va por perfilFresco/clasificacionFresca. /matches, búsqueda y Twitch, nunca. */
+     *  recarga forzada del top) va por perfilFresco/clasificacionFresca; la tarjeta del hover (1.4), por perfil, con caché. /matches, búsqueda y Twitch, nunca. */
     public static final CompanionApi COMPANION = CompanionApi.conCache(API_CLIENTE, Reloj.SISTEMA);
+
+    // ----- Respaldo (1.4): World's Edge cuando el companion falla -------------
+    /** La API community de World's Edge (api.WorldsEdgeApi), por el mismo API_CLIENTE: su cubo del freno es THROTTLE_WE. */
+    public static final WorldsEdgeApi WORLDS_EDGE = new WorldsEdgeApi(API_CLIENTE);
+    /** Camino hacia la barra de estado para «Datos parciales (fuente de respaldo)»: true al servir algo de World's Edge,
+     *  false cuando el companion vuelve. La ventana lo fija en el EDT (CableadoCromo.configurarVentana), como avisoPausa429. */
+    public static volatile java.util.function.Consumer<Boolean> avisoRespaldo = enRespaldo -> {};
+
+    static void avisarRespaldo(boolean enRespaldo) {
+        SwingUtilities.invokeLater(() -> avisoRespaldo.accept(enRespaldo));
+    }
+    /** El estado «¿está caído el companion?», UNO para todas las fuentes con respaldo (api.ConRespaldo): 3 fallos seguidos
+     *  o su cortacircuitos abierto (pausa por 429, se pregunta sin esperar) → World's Edge 5 min; luego se prueba otra vez. */
+    public static final ConRespaldo.Estado RESPALDO = new ConRespaldo.Estado(Reloj.SISTEMA, () -> THROTTLE.pausaRestanteMs() > 0, Servicios::avisarRespaldo);
+    /** Partidas recientes con respaldo: «Buscar partidas» (recs, por lotes) y la tarjeta del hover. NO el «¿ya terminó?»
+     *  de LiveService (solo cuenta terminada si la API lo confirma, y World's Edge no ve partidas en curso), el historial
+     *  largo (HistorialPerfil), los barridos de partidas en curso (BarridoVivos, Live now, vigilarTop) ni «Al azar»: esos
+     *  siguen con COMPANION. */
+    public static final FuentePartidas PARTIDAS = ConRespaldo.partidas(RESPALDO, COMPANION, WORLDS_EDGE);
+    /** Ladder con respaldo: el top de la watchlist y las campanas (con filtro de país, World's Edge no sirve). */
+    public static final FuenteLadder LADDER = ConRespaldo.ladder(RESPALDO, COMPANION, WORLDS_EDGE);
+    /** Perfil/ELO con respaldo: ficha, ELO 1v1, tarjeta del hover y steamId (sin serie ni vinculadas en World's Edge). */
+    public static final FuentePerfil PERFIL = ConRespaldo.perfil(RESPALDO, COMPANION, WORLDS_EDGE);
+    /** Búsqueda de nicks con respaldo (en World's Edge, solo el alias exacto; el índice local de sfr-data sigue igual). */
+    public static final FuenteBusqueda BUSCAR = ConRespaldo.busqueda(RESPALDO, COMPANION, WORLDS_EDGE);
     /** Las reglas del directo que necesitan la API (ver service.LiveService). */
-    public static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);
+    public static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);   // sin respaldo: «¿ya terminó?» solo lo confirma el companion
     /** Los tops de la watchlist: red, decisión y disco de cargarTopLadder/cargarTopClan/vigilarTop (ver service.TopLadderService). */
-    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
+    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, LADDER, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
-    public static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
+    public static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(PERFIL, COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
             new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
                 @Override public String mapa(String clave) { return nombreMapaClave(clave); }
                 @Override public String civ(String clave) { return nombreCivStats(clave); }
@@ -153,7 +210,7 @@ public class Servicios {
             new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA));
     /** Búsqueda de perfiles por nick (service.BusquedaPerfiles), la usan los cinco buscadores de la interfaz. Va
      *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
-    public static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
+    public static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(BUSCAR, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
     /** El barrido de Twitch y sus miniaturas (ver service.TwitchService); usa dormir() entre las llamadas una a una. */
     public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms), pid -> VIVO.jugando(pid), Reloj.SISTEMA);
 

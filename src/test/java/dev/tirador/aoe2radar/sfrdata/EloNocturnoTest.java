@@ -310,4 +310,40 @@ class EloNocturnoTest {
         assertThrows(RejectedExecutionException.class, rechaza::cargar);
         assertThrows(RejectedExecutionException.class, rechaza::cargar, "no quedó «cargando»: lo vuelve a intentar");
     }
+
+    // ----- 1.4: rango y última partida (posiciones 6 y 7, sfr-data v2) -----
+
+    @Test void elFormatoNuevoTraeRangoYUltimaPartidaSinTocarLoDeSiempre() {
+        red.archivos.put(AYER, gz("{\"v\":2,\"fecha\":\"2026-09-24\",\"j\":{\"1\":[1905,300,2110,800,\"12Tirador\",\"es\",812,1790150493],"
+                + "\"2\":[0,0,1500,40,\"SoloEquipos\",\"fr\",0,0]}}"));
+        elo.cargar();
+        assertArrayEquals(new int[]{ 1905, 300, 2110, 800 }, elo.ayer.get(1L), "las cuatro de siempre, igual que con el formato de la 1.3");
+        assertArrayEquals(new String[]{ "12Tirador", "es" }, elo.nombres.get(1L));
+        assertArrayEquals(new long[]{ 812, 1790150493L }, elo.rangoUltima.get(1L));
+        assertFalse(elo.rangoUltima.containsKey(2L), "sin 1v1 (rango 0 y última 0): no se guarda");
+    }
+
+    @Test void conElFormatoDeLaTresQuedaVacio() {
+        elo.cargar();   // JSON_AYER: filas de 6
+        assertFalse(elo.ayer.isEmpty());
+        assertTrue(elo.rangoUltima.isEmpty(), "archivo anterior a la 1.4: sin rango, y quien lo use sigue como antes");
+    }
+
+    @Test void unArchivoViejoTrasUnoNuevoVaciaElRango() {
+        red.archivos.put(AYER, gz("{\"fecha\":\"2026-09-24\",\"j\":{\"1\":[1905,300,2110,800,\"12Tirador\",\"es\",812,1790150493]}}"));
+        elo.cargar();
+        assertEquals(1, elo.rangoUltima.size());
+        red.archivos.put(AYER, gz(JSON_AYER));
+        reloj.avanzar(13 * HORA);
+        elo.cargar();
+        assertTrue(elo.rangoUltima.isEmpty(), "no quedan rangos de otra noche");
+    }
+
+    @Test void elDeHaceSieteNoTocaElRango() {
+        red.archivos.put(AYER, gz("{\"fecha\":\"2026-09-24\",\"j\":{\"1\":[1905,300,2110,800,\"12Tirador\",\"es\",812,1790150493]}}"));
+        red.archivos.put(HACE7, gz("{\"j\":{\"1\":[1880,290,2100,790,\"12Tirador\",\"es\",900,1789000000],\"3\":[1,1,0,0,\"x\",\"y\",5,5]}}"));
+        elo.cargar();
+        assertArrayEquals(new long[]{ 812, 1790150493L }, elo.rangoUltima.get(1L), "el rango es el de ayer");
+        assertFalse(elo.rangoUltima.containsKey(3L));
+    }
 }

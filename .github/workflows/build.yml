@@ -1,0 +1,62 @@
+# Integración continua: en cada push y pull request a main o a una rama de fase, compila, pasa los tests
+# (todos menos el harness de capturas) y la regla de capas. Es lo mismo que `.\verificar.ps1 -Rapido`.
+#
+# - Runner Windows: la app es de Windows y varios tests lo dan por hecho (rutas con «C:\» y «\» en
+#   SistemaTest, EspectarTest y AvisoHarnessTest; el mensaje «Illegal char <<>» de las rutas de Windows en
+#   las pruebas de «Enviar al juego»; explorer.exe/tasklist). En Linux fallarían sin que la app esté mal.
+# - El harness de capturas (RegresionCapturas) NO corre aquí: toma la pantalla y sus referencias dependen de
+#   la resolución, el escalado y las fuentes del PC de Jorge. Ya se salta solo sin -Dharness=si
+#   (@EnabledIfSystemProperty); el -Dtest=!RegresionCapturas lo deja además explícito.
+# - Fin de línea: se deja el core.autocrlf=true por defecto del runner Windows, igual que en el PC de Jorge,
+#   donde la suite pasa; .gitattributes ya protege los datos de techtree que deben ir byte a byte.
+name: build
+
+on:
+  push:
+    branches: [main, 'fase-*']
+  pull_request:
+    branches: [main, 'fase-*']
+
+permissions:
+  contents: read
+
+# Un push nuevo a la misma rama cancela la ejecución anterior que siga en marcha.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Java 21 (Temurin) con caché de Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Python para la regla de capas
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Regla de capas (tools/capas.py)
+        run: python tools/capas.py
+
+      - name: Tests (sin el harness de capturas)
+        run: mvn -B test "-Dtest=!RegresionCapturas"
+
+      - name: Informes de Surefire si algo falla
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: target/surefire-reports/
+          if-no-files-found: ignore

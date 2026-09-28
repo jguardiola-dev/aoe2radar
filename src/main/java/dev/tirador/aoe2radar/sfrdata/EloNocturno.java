@@ -40,6 +40,14 @@ public final class EloNocturno {
     public final Map<Long, String[]> nombres = new ConcurrentHashMap<>();
     /** pid → {elo1v1, partidas1v1, eloEq, partidasEq}, de hace 7 días. */
     public final Map<Long, int[]> hace7 = new ConcurrentHashMap<>();
+    /**
+     * pid → {rango en rm_1v1, última partida 1v1 en epoch s (0 si no se sabe)}, del de ayer (un valor ilegible llega como
+     * -1, igual que en Json.lng: quien lo use descarta rangos <= 0). Solo lo traen los archivos v2 de
+     * sfr-data (1.4: posiciones 6 y 7 de cada fila); con uno anterior queda VACÍO y quien lo use sigue como antes (ver
+     * LadderNocturno). Se vuelca como los otros mapas: retainAll + putAll, también cuando el nuevo viene vacío (un archivo
+     * viejo tras uno nuevo no deja rangos de otra noche).
+     */
+    public final Map<Long, long[]> rangoUltima = new ConcurrentHashMap<>();
 
     private final SfrDataClient sfr;
     private final Executor segundoPlano;
@@ -137,17 +145,24 @@ public final class EloNocturno {
         if (!(m.get("j") instanceof Map<?, ?> jm)) { sfr.olvidarDiario(archivo); return false; }
         Map<Long, int[]> nuevo = new HashMap<>();
         Map<Long, String[]> nuevosNombres = fecha != null ? new HashMap<>() : null;
+        Map<Long, long[]> nuevoRangoUltima = fecha != null ? new HashMap<>() : null;
         for (Map.Entry<?, ?> en : jm.entrySet()) {
             List<Object> v = arr(en.getValue());
             long pid = Long.parseLong(String.valueOf(en.getKey()));
             nuevo.put(pid, new int[]{ (int) lng(v.get(0)), (int) lng(v.get(1)), (int) lng(v.get(2)), (int) lng(v.get(3)) });
             if (fecha != null) nuevosNombres.put(pid, new String[]{ String.valueOf(v.get(4)), String.valueOf(v.get(5)) });
+            if (fecha != null && v.size() >= 8) {   // v2 (1.4); la 1.3 no llega a mirar estas posiciones
+                long rango = lng(v.get(6)), ultima = lng(v.get(7));
+                if (rango > 0 || ultima > 0) nuevoRangoUltima.put(pid, new long[]{ rango, ultima });
+            }
         }
         destino.keySet().retainAll(nuevo.keySet());
         destino.putAll(nuevo);
         if (fecha != null) {
             nombres.keySet().retainAll(nuevosNombres.keySet());
             nombres.putAll(nuevosNombres);
+            rangoUltima.keySet().retainAll(nuevoRangoUltima.keySet());
+            rangoUltima.putAll(nuevoRangoUltima);
             fecha[0] = String.valueOf(m.get("fecha"));
         }
         return true;

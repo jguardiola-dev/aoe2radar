@@ -17,7 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 import static dev.tirador.aoe2radar.app.Servicios.ANOTACIONES;
-import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
+import static dev.tirador.aoe2radar.app.Servicios.PERFIL;
 import static dev.tirador.aoe2radar.app.Servicios.ELO_1V1;
 import static dev.tirador.aoe2radar.app.Servicios.PAUSA_MS;
 import static dev.tirador.aoe2radar.app.Servicios.SERVICIO_PERFIL;
@@ -44,7 +44,7 @@ final class CableadoJugador {
     static DialogosJugador dialogos(SpoilerFreeRecs v) {
         return new DialogosJugador(v, ANOTACIONES, SERVICIO_PERFIL,
                 new DialogosJugador.RedSteam() {
-                    @Override public String steamId(long pid) throws Exception { return COMPANION.perfil(pid).steamId(); }
+                    @Override public String steamId(long pid) throws Exception { return PERFIL.perfil(pid).steamId(); }
                     @Override public List<String[]> alias(String steamId) throws Exception { return v.steam.alias(steamId); }
                 },
                 new DialogosJugador.Anfitrion() {

@@ -51,6 +51,12 @@ public final class ThrottleCubo implements Throttle {
         }
     }
 
+    /** Lo que queda de la pausa vigente (0 si no hay), con el mismo tope que adquirir(). Sin candado: pausaHastaMs es volatile. */
+    @Override public long pausaRestanteMs() {
+        long queda = pausaHastaMs - reloj.ahoraMs();
+        return queda > 0 ? Math.min(queda, PAUSA_MAX_MS) : 0;
+    }
+
     /** Solo los ms: la lógica (y su porqué) está en registrarEpisodio429(). */
     @Override public long registrar429() { return registrarEpisodio429().ms(); }
 

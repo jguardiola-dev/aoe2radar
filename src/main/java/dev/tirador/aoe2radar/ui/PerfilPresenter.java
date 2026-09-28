@@ -91,8 +91,9 @@ public final class PerfilPresenter {
     private final Pantalla pantalla;
     /** F5 (1.3): testigo de la última carga lanzada (cargar o cargarMas). Solo la carga cuyo testigo sigue siendo el
      *  vigente apaga cargando(): la respuesta tardía de un perfil que ya se dejó no apaga la del que se está mirando.
-     *  Se lee y escribe solo en el EDT (al lanzar y en tareas.enUi), así que no necesita volatile. */
-    private long cargaToken;
+     *  Y solo ella pinta y sigue bajando (1.4, A→B→A: al volver a A, su primera carga ya no pasa por vigente aunque A
+     *  vuelva a estar abierto). Se escribe en el EDT; volatile porque la cancelación lo lee desde el hilo de la carga. */
+    private volatile long cargaToken;
     /** F4 (1.3): pids con «Actualizar hoy» en marcha (puede haber varios: A, luego B antes de que A vuelva). */
     private final java.util.Set<Long> hoyEnMarcha = new java.util.HashSet<>();
     /** F4 (3): pid → partidas nuevas del último «Actualizar hoy» terminado bien en esta sesión, aunque al terminar
@@ -155,26 +156,26 @@ public final class PerfilPresenter {
                     FichaPerfil ficha = perfilConocido != null ? perfilConocido : sintetico(pid, a, paisF);
                     tareas.enUi(() -> {
                         terminar(token);
-                        if (pantalla.pidAbierto() != pid) return;
+                        if (!vigente(pid, token)) return;
                         pantalla.cabecera(ficha);
                         pantalla.desdeSfr(a, hastaF);
                     });
                     return;
                 }
                 FichaPerfil ficha = fichaOConocida(pid);
-                tareas.enUi(() -> { if (pantalla.pidAbierto() == pid) pantalla.cabecera(ficha); });
+                tareas.enUi(() -> { if (vigente(pid, token)) pantalla.cabecera(ficha); });
                 int max = actualizar ? ACT_MAX_PAGINAS : ACT_PAGINAS_RAPIDAS;   // primero 100 partidas (2 páginas); hasta 1.000 al actualizar; el resto, con «Cargar más»
                 Actividad a = (fresco && base.completo()) ? base : perfiles.historial(pid, nombre, base, false, max, parcialA -> tareas.enUi(() -> {
-                    if (pantalla.pidAbierto() != pid) return;
+                    if (!vigente(pid, token)) return;
                     pantalla.progresoParcial(parcialA, max);   // F8: «página 1 de 2» en la carga rápida (antes decía «de 20»)
-                }), () -> pantalla.pidAbierto() != pid);
+                }), () -> !vigente(pid, token));
                 tareas.enUi(() -> {
                     terminar(token);
-                    if (pantalla.pidAbierto() != pid) return;
+                    if (!vigente(pid, token)) return;
                     pantalla.cargaCompletada(a);
                 });
             } catch (Exception ex) {
-                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.errorCarga(causa(ex)); });
+                tareas.enUi(() -> { terminar(token); if (vigente(pid, token)) pantalla.errorCarga(causa(ex)); });
             }
         });
     }
@@ -189,6 +190,13 @@ public final class PerfilPresenter {
     /** F5: fin de una carga (en el EDT). Solo apaga cargando() si ninguna carga posterior la ha relevado. */
     private void terminar(long token) {
         if (token == cargaToken) pantalla.cargando(false);
+    }
+
+    /** ¿Sigue mandando la carga token de pid? Su perfil está abierto y ninguna carga posterior la ha relevado (1.4,
+     *  A→B→A). Desde cualquier hilo: cargaToken es volatile y se lee primero, así también se ve el pid abierto que el
+     *  EDT fijó antes de subir el testigo. */
+    private boolean vigente(long pid, long token) {
+        return token == cargaToken && pantalla.pidAbierto() == pid;
     }
 
     /** «Actualizar hoy»: ficha + las 50 partidas más recientes, fundidas con lo que ya había. Hilo "perfil-hoy". */
@@ -226,12 +234,12 @@ public final class PerfilPresenter {
         tareas.enFondo("perfil-mas-" + pid, () -> {
             try {
                 Actividad a = perfiles.historial(pid, nombre, base, true, paginas, parcialA -> tareas.enUi(() -> {
-                    if (pantalla.pidAbierto() != pid) return;
+                    if (!vigente(pid, token)) return;
                     pantalla.masProgreso(parcialA, maxTotal);
-                }), () -> pantalla.pidAbierto() != pid);
-                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.masCompletado(a); });
+                }), () -> !vigente(pid, token));
+                tareas.enUi(() -> { terminar(token); if (vigente(pid, token)) pantalla.masCompletado(a); });
             } catch (Exception ex) {
-                tareas.enUi(() -> { terminar(token); if (pantalla.pidAbierto() == pid) pantalla.masError(causa(ex)); });
+                tareas.enUi(() -> { terminar(token); if (vigente(pid, token)) pantalla.masError(causa(ex)); });
             }
         });
     }

@@ -28,13 +28,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.app.Servicios.BUSQUEDA;
-import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
 import static dev.tirador.aoe2radar.app.Servicios.ELO_1V1;
+import static dev.tirador.aoe2radar.app.Servicios.PARTIDAS;
 import static dev.tirador.aoe2radar.app.Servicios.PAUSA_MS;
 import static dev.tirador.aoe2radar.app.Servicios.PER_PAGE;
+import static dev.tirador.aoe2radar.app.Servicios.PERFIL;
 import static dev.tirador.aoe2radar.app.Servicios.SERVICIO_PERFIL;
 import static dev.tirador.aoe2radar.app.Servicios.TOP_LADDER_SERVICE;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
@@ -62,6 +61,7 @@ final class CableadoWatchlist {
                     int i = locationToIndex(e.getPoint());
                     if (i >= 0 && getCellBounds(i, i).contains(e.getPoint())) return v.watchlist.tipForma(v.playersModel.get(i).id());
                 }
+                if (v.watchlist != null && v.watchlist.tarjetaVisible()) return null;   // con la tarjeta fuera, sin tooltip de fila: no se pisan (alias y nota van en la tarjeta)
                 return super.getToolTipText(e);
             }
         };
@@ -105,10 +105,12 @@ final class CableadoWatchlist {
             @Override public boolean clanesVacios() { return dev.tirador.aoe2radar.sfrdata.Ladder.clanes.isEmpty(); }
             @Override public void asegurarLadderEnFondo() { dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar(false); }
             @Override public List<Map.Entry<String, Integer>> sugerirClanes(String texto) { return dev.tirador.aoe2radar.service.ConsultasLadder.sugerirClanes(texto); }
-            @Override public void trabajando(boolean on) { v.barraEstado.trabajando(on); }
+            @Override public long empezarOperacion() { return v.barraEstado.empezarOperacion(); }
+            @Override public void terminarOperacion(long op) { v.barraEstado.terminarOperacion(op); }
             @Override public long opSerial() { return v.barraEstado.opSerial(); }
-            @Override public void marcarHiloOperacionActual() { hiloOperacion = Thread.currentThread(); }
-            @Override public boolean detenerOperacion() { return stopOperacion; }
+            @Override public void marcarHiloOperacionActual(long op) { v.barraEstado.operaciones().anotarHilo(op); }
+            @Override public void soltarHiloOperacion() { v.barraEstado.operaciones().soltarHilo(); }
+            @Override public boolean operacionDetenida(long op) { return v.barraEstado.operaciones().detenido(op); }
             @Override public void dormir(long ms) { Servicios.dormir(ms); }
             @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
             @Override public void espectar(Player p) { AccionesVentana.espectar(v, p); }
@@ -134,8 +136,14 @@ final class CableadoWatchlist {
             @Override public Icon iconoVista(String tipo) { return dev.tirador.aoe2radar.ui.Navegador.iconoVista(tipo); }
             @Override public void seleccionCambiada() { if (v.ratings != null) v.ratings.sincronizarSeleccion(); if (v.perfil != null) v.perfil.sincronizarSeleccion(); }
             @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-            @Override public Perfil perfilApi(long pid) throws Exception { return COMPANION.perfilFresco(pid); }   // la tarjeta enseña el ELO de ahora: sin la caché por URL
-            @Override public dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception { return COMPANION.pagina(pid, pagina, porPagina); }
+            @Override public Perfil perfilApi(long pid) throws Exception { return PERFIL.perfil(pid); }   // tarjeta sin chispas: una llamada, con la caché por URL (10 min), el freno y el respaldo de World's Edge
+            @Override public dev.tirador.aoe2radar.service.TarjetaPerfil.Datos tarjetaNocturna(long pid) {   // nocturno primero (1.4)
+                dev.tirador.aoe2radar.sfrdata.ChispasNocturnas.Chispa c = dev.tirador.aoe2radar.sfrdata.Snapshots.CHISPAS.chispa(pid);
+                if (c == null) return null;
+                String[] nn = dev.tirador.aoe2radar.sfrdata.Snapshots.NOMBRES_AYER.get(pid);
+                return dev.tirador.aoe2radar.service.TarjetaPerfil.desdeNocturno(c.serie(), c.completo(), c.extra(), v.eloWatch.get(pid),
+                        dev.tirador.aoe2radar.sfrdata.Snapshots.ELO_AYER.get(pid), nn == null ? null : nn[1]);
+            }
             @Override public void reiniciarThrottleDirectos() { v.directos.reiniciarThrottle(); }
             @Override public void vigilarTwitchDirectos() { v.directos.vigilarTwitch(); }
             @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { v.miPartida.mostrarSuperposicion(texto, fichas, ms); }

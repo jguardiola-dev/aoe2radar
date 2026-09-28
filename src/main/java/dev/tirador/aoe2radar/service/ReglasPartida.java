@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 
+import dev.tirador.aoe2radar.cache.ImagenesMapa;
 import dev.tirador.aoe2radar.cache.Vivos;
 
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
@@ -154,5 +155,21 @@ public final class ReglasPartida {
         String tam = n <= 2 ? "1v1" : (n / 2) + "v" + (n / 2);
         String tipo = modo.contains("empire") ? "EW" : modo.contains("death") || modo.contains(" dm") ? "DM" : modo.contains("unranked") || modo.contains("custom") ? t("Unranked", "Unranked") : "RM";
         return n > 2 && tipo.equals("RM") ? "TG " + tam : tam + " " + tipo;
+    }
+
+    /**
+     * ¿Es el mismo mapa? El socket lo nombra en el idioma de la app y la API en inglés (smoke test de la 1.3):
+     * «Islas» y «Islands» son el mismo. Sin la clave del mapa en Match (la pone api.Parseo, fuera de este
+     * cambio), se reconocen por la imagen que la API da con cada partida y que se recuerda por nombre
+     * (cache.ImagenesMapa): dos nombres con la misma imagen son el mismo mapa. Si no hay imagen, solo el nombre.
+     */
+    public static boolean mismoMapa(String a, String b) { return mismoMapa(a, b, ImagenesMapa.MAPA_IMG_URL::get); }
+
+    /** mismoMapa con la imagen de cada nombre (en minúsculas) a mano: los tests. */
+    static boolean mismoMapa(String a, String b, java.util.function.Function<String, String> imagen) {
+        if (a == null || b == null) return false;
+        if (a.equalsIgnoreCase(b)) return true;
+        String ia = imagen.apply(a.toLowerCase(Locale.ROOT).trim()), ib = imagen.apply(b.toLowerCase(Locale.ROOT).trim());
+        return ia != null && ia.equals(ib);
     }
 }

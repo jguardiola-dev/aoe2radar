@@ -61,6 +61,7 @@ import java.util.List;
 // Azar/Guess the ELO: la lógica vive en service.AzarService/AzarServiceCompanion.
 import dev.tirador.aoe2radar.service.AzarService;
 import dev.tirador.aoe2radar.service.AzarServiceCompanion;
+import dev.tirador.aoe2radar.service.LadderNocturno;
 // Barra de estado y semáforo de operación en curso: ver ui.BarraEstado.
 import dev.tirador.aoe2radar.ui.BarraEstado;
 // Raíz de composición: app.Servicios crea COMPANION/API_CLIENTE/... y PAUSA_MS/PER_PAGE, VIVO,
@@ -89,8 +90,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final dev.tirador.aoe2radar.ui.MenusJugador menus = CableadoJugador.menus(this);
 
     // «Al azar por ELO»/«Guess the ELO»: muestreo y caché de sesión en el servicio; techTree.claveCivDeNombre y dormir() como colaboradores.
+    // 1.4: muestra de anteayer y ladder de anoche (sfr-data) en vez de bisecar el leaderboard en vivo; con datos viejos, como antes.
     final AzarService azarService = new AzarServiceCompanion(COMPANION, civ -> SpoilerFreeRecs.this.techTree.claveCivDeNombre(civ),
-            Snapshots::muestraAyer, ms -> dormir(ms), PER_PAGE, PAUSA_MS);
+            Snapshots::muestraAyer, Snapshots::muestraAnteayer,
+            () -> { Snapshots.cargarEloAyer(); return LadderNocturno.de(Snapshots.ELO_AYER, Snapshots.ELO.rangoUltima); },
+            ms -> dormir(ms), PER_PAGE, PAUSA_MS);
 
     final List<Player> todosJugadores = new ArrayList<>();          // fuente de verdad (todos los grupos)
     final DefaultListModel<Player> playersModel = new DefaultListModel<>();
@@ -120,6 +124,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final JCheckBoxMenuItem autoSgItem = new JCheckBoxMenuItem(t("Enviar al juego al descargar", "Send to game after download"),
             Boolean.parseBoolean(leerConfig("autosavegame", "false")));
     MenuConfiguracion menuConfiguracion;   // ver ui.MenuConfiguracion: botón "Configuración ▾" + esquina "Mi perfil"
+    /** El actualizador propio (1.4) y su franja: ver ui.Actualizaciones. Lo fija montarVentana en el EDT; volatile porque
+     *  la comprobación (hilo «actualizaciones») y el Timer de 12 h lo leen desde otros hilos. */
+    volatile dev.tirador.aoe2radar.ui.Actualizaciones actualizaciones;
     Player invitado;
     String vistaDelInvitado = "";
     final CacheMemoria<Long, Object[]> perfilCardCache = CacheService.SISTEMA.memoria(Caducidad.TARJETA);   // pid -> { htmlDatos, int[] spark }
@@ -167,7 +174,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // Campanas (aviso al entrar en partida alguien de una vista marcada): red/config/deduplicación en service.Campanas, aquí solo Swing y estado compartido.
     // "watchlist" (más abajo) aún no existe al construir este campo: referencia de método, que solo se lee al llamarla (una lambda directa no compilaría).
-    final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig, this::esGrupoDeUsuarioWatchlist);
+    final Campanas campanas = new Campanas(LADDER, Config::leerConfig, Config::guardarConfig, this::esGrupoDeUsuarioWatchlist);
     private boolean esGrupoDeUsuarioWatchlist(String nombre) { return CableadoWatchlist.esGrupoDeUsuarioWatchlist(this, nombre); }   // lógica en CableadoWatchlist
     javax.swing.Timer campanasTimer;   // barrido de campanas (Watchlist); el toast que dispara vive en ui.BarraEstado
     void mostrarToast(String texto, long matchId) { barraEstado.mostrarToast(texto, matchId); }   // el aviso flotante «X ha empezado una partida»
@@ -277,7 +284,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     @Override public boolean mostrarResultados() { return partidas != null && partidas.mostrarResultados; }
 
     // Tamaño/posición guardados: ui.VentanaGuardada (aplicar lo llama ui.VentanaPrincipalAjustes al abrir; guardar, CableadoCromo al cerrar).
-    // trabajando (progreso, semáforo de operación): ui.BarraEstado (campo barraEstado, llamado directamente).
+    // empezarOperacion/terminarOperacion (progreso, un freno por operación): ui.BarraEstado (campo barraEstado, llamado directamente).
 
     // «Mi partida» (quién eres, aviso al encontrar partida, panel sobre el juego): ui.MiPartidaPanel + Presenter + service.MiPartidaServiceJuego; el
     // cableado (su Anfitrion) vive en CableadoCromo.miPartida. AccionesVentana/CableadoCromo llaman a miPartida.* directamente.
@@ -295,6 +302,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // CableadoCromo.configurarVentana y de crear la Watchlist, para que sus botones existan cuando construirBarraSuperior los necesite.
     final dev.tirador.aoe2radar.ui.PartidasView partidas = CableadoPartidas.construir(this);
 
-    // Persistencia/tabla (aplicarOrdenColumnas/guardarColumnas/MatchesTableModel): en ui.PartidasView. HTTP (avisarPausa429, cargarControl, la cadena
+    // Persistencia/tabla: aplicarOrdenColumnas/guardarColumnas en ui.PartidasTabla, el modelo en ui.MatchesTableModel. HTTP (avisarPausa429, cargarControl, la cadena
     // CONTROL_SERVICE → ... → TWITCH_SERVICE, dormir, buscarPerfiles): en app.Servicios, por el import static de arriba; ninguna llamada cambia.
 }

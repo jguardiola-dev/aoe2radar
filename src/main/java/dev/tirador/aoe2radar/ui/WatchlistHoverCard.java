@@ -1,8 +1,8 @@
 package dev.tirador.aoe2radar.ui;
 
-import dev.tirador.aoe2radar.model.Match;
-import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Perfil;
+import dev.tirador.aoe2radar.service.TarjetaPerfil;
+import dev.tirador.aoe2radar.service.TarjetaService;
 
 import javax.swing.BorderFactory;
 import javax.swing.JLabel;
@@ -10,6 +10,7 @@ import javax.swing.JPanel;
 import javax.swing.JWindow;
 import javax.swing.MenuSelectionManager;
 import javax.swing.SwingWorker;
+import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -21,33 +22,37 @@ import java.awt.Graphics2D;
 import java.awt.KeyboardFocusManager;
 import java.awt.Point;
 import java.awt.RenderingHints;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.List;
 
 import static dev.tirador.aoe2radar.ui.Tema.temaOscuroActivo;
-import static dev.tirador.aoe2radar.util.Formato.escapeHtml;
-import static dev.tirador.aoe2radar.util.I18n.t;
-import static dev.tirador.aoe2radar.util.Log.causa;
-import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
- * La tarjeta de perfil flotante de la Watchlist (hoy inerte: el hover-timer nunca llega a dispararla, ver
- * el {@code if (false && ...)} del MouseMotionListener de la lista). Sale de WatchlistView tal cual en la 1.3:
- * mismo código, mismo SwingWorker; su estado (hoverCard, hoverTimer, hoverPid...) sigue en la fachada.
- * Hilos: todo en el EDT salvo el doInBackground de mostrarPerfilCard (red vía Anfitrion.perfilApi/paginaApi).
+ * La tarjeta de perfil flotante de la Watchlist: sale tras 600 ms quieto sobre una fila (hoverTimer de WatchlistLista) y
+ * se oculta al salir de la lista, al pulsar, al hacer scroll, al rehacerse la lista (otro grupo, ★ top, país o clan, o
+ * un reordenado) y al perder el foco la ventana (un diálogo u otra aplicación). Apagada desde la 1.1 porque cada
+ * tarjeta costaba dos o tres llamadas; encendida en la 1.4: con las chispas nocturnas no cuesta ninguna y, si no,
+ * una (ver service.TarjetaService). Su estado (hoverCard, hoverTimer, hoverPid...) sigue en la fachada.
+ * Hilos: todo en el EDT salvo el doInBackground de mostrarPerfilCard (TarjetaService.cargar: chispas de sfr-data o
+ * /profiles). El HTML y la regla de la gráfica viven en service.TarjetaPerfil.
  */
 final class WatchlistHoverCard {
 
     private final WatchlistView wv;
+    /** Fuente de la tarjeta y una carga a la vez por pid (ver TarjetaService). */
+    private final TarjetaService tarjetas;
 
-    WatchlistHoverCard(WatchlistView wv) { this.wv = wv; }
+    WatchlistHoverCard(WatchlistView wv) {
+        this.wv = wv;
+        this.tarjetas = new TarjetaService(new TarjetaService.Fuentes() {
+            @Override public TarjetaPerfil.Datos nocturna(long pid) { return wv.anfitrion.tarjetaNocturna(pid); }
+            @Override public Perfil perfil(long pid) throws Exception { return wv.anfitrion.perfilApi(pid); }
+        });
+    }
 
     boolean hoverProcede() {
         Component c = wv.hoverAncla != null ? wv.hoverAncla : wv.playersList;
-        return KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow() == wv.ventana
-                && MenuSelectionManager.defaultManager().getSelectedPath().length == 0
-                && c.isShowing() && c.getMousePosition() != null;
+        return TarjetaService.procede(KeyboardFocusManager.getCurrentKeyboardFocusManager().getActiveWindow() == wv.ventana,
+                MenuSelectionManager.defaultManager().getSelectedPath().length != 0,
+                c.isShowing(), c.isShowing() && c.getMousePosition() != null);
     }
 
     public void ocultarHoverCard() { ocultarHoverCard(false); }
@@ -69,84 +74,28 @@ final class WatchlistHoverCard {
             pintarCard((String) cache[0], (int[]) cache[1], enPantalla, pid, fijar);
             return;
         }
-        new SwingWorker<Object[], Void>() {
-            @Override protected Object[] doInBackground() {
-                String pais = "", clan = "";
-                long games = 0;
-                Integer rating = null, maxRating = null, wins = null, losses = null;
-                try {
-                    Perfil pf = wv.anfitrion.perfilApi(pid);
-                    wv.anfitrion.aprenderCanal(pid, pf.canal());
-                    String c = pf.pais();
-                    wv.anfitrion.aprenderPais(pid, c);
-                    if (c != null && !"null".equals(c)) pais = c.toUpperCase();
-                    String cl = pf.clan();
-                    if (cl != null && !"null".equals(cl)) clan = cl;
-                    games = pf.partidas();
-                    for (Perfil.Ladder lb : pf.ladders()) {
-                        String lid = String.valueOf(lb.id());
-                        if (!"rm_1v1".equals(lid) && !"3".equals(lid)) continue;
-                        if (lb.rating() != null) rating = lb.rating();
-                        if (lb.ratingMax() != null) maxRating = lb.ratingMax();
-                        if (lb.ganadas() != null) wins = lb.ganadas();
-                        if (lb.perdidas() != null) losses = lb.perdidas();
-                        break;
-                    }
-                } catch (Exception ex) {
-                    log("perfil card: fallo con " + pid + ": " + causa(ex));
+        if (!tarjetas.reservar(pid)) return;   // ya se está cargando: su done() la pinta si el ratón sigue ahí
+        new SwingWorker<TarjetaService.Resultado, Void>() {
+            @Override protected TarjetaService.Resultado doInBackground() {
+                // nocturno primero; si no, una llamada, y solo si el ratón sigue en esa fila (hoverPid es volatile)
+                TarjetaService.Resultado r = tarjetas.cargar(pid, nombre, () -> fijar || wv.hoverPid == pid);
+                if (r != null && r.perfil() != null) {   // lo que la API enseña de paso, como antes
+                    wv.anfitrion.aprenderCanal(pid, r.perfil().canal());
+                    wv.anfitrion.aprenderPais(pid, r.perfil().pais());
                 }
-                int[] spark = null;
-                boolean pocos1v1 = false;
-                try {
-                    List<Integer> serie = new ArrayList<>();
-                    for (int pag = 1; pag <= 2 && serie.size() <= 15; pag++) {
-                        wv.anfitrion.dormir(wv.pausaMs / 2);
-                        dev.tirador.aoe2radar.model.PaginaPartidas ms = wv.anfitrion.paginaApi(pid, pag, wv.perPage);
-                        if (ms.brutas() == 0) break;
-                        for (Match m : ms.partidas()) {
-                            if (m.finished == null || m.players.size() != 2
-                                    || m.mode == null || !m.mode.startsWith("1v1 Random")) continue;
-                            for (MatchPlayer mp : m.players)
-                                if (mp.id == pid && mp.rating != null) serie.add(mp.rating);
-                        }
-                    }
-                    if (serie.size() > 10) serie = serie.subList(10, serie.size());   // sin la forma fresca
-                    if (serie.size() >= 4) {
-                        Collections.reverse(serie);   // cronológico
-                        spark = serie.stream().mapToInt(Integer::intValue).toArray();
-                    } else pocos1v1 = true;
-                } catch (Exception ex) {
-                    log("perfil card: sparkline falló con " + pid + ": " + causa(ex));
-                }
-                StringBuilder h = new StringBuilder("<html><b>").append(escapeHtml(nombre)).append("</b>");
-                if (!pais.isBlank()) h.append("  \u00B7 ").append(pais);
-                if (!clan.isBlank()) h.append("  \u00B7 ").append(escapeHtml(clan));
-                h.append("<br>");
-                if (rating != null) h.append(t("ELO 1v1: <b>", "1v1 ELO: <b>")).append(rating).append("</b>");
-                if (maxRating != null) h.append(t("  \u00B7 máx ", "  \u00B7 peak ")).append(maxRating);
-                h.append("<br>");
-                if (wins != null && losses != null && wins + losses > 0)
-                    h.append(t("Winrate 1v1: ", "1v1 winrate: "))
-                     .append(Math.round(wins * 100.0 / (wins + losses))).append("% (")
-                     .append(wins + losses).append(t(" partidas)", " games)"));
-                else if (games > 0) h.append(games).append(t(" partidas jugadas", " games played"));
-                if (spark != null)
-                    h.append("<br><font size='2' color='gray'>")
-                     .append(t("Rating (hasta hace ~10 partidas):", "Rating (up to ~10 games ago):"))
-                     .append("</font>");
-                else if (pocos1v1)
-                    h.append("<br><font size='2' color='gray'>")
-                     .append(t("(pocos 1v1 recientes para la gráfica)", "(too few recent 1v1s for the chart)"))
-                     .append("</font>");
-                return new Object[]{ h.append("</html>").toString(), spark };
+                return r;
             }
             @Override protected void done() {
                 try {
-                    Object[] r = get();
-                    wv.anfitrion.tarjetaPerfilGuardar(pid, new Object[]{ r[0], r[1] });
-                    if (fijar || ((wv.hoverPid == pid || wv.hoverPid == 0) && hoverProcede()))
-                        pintarCard((String) r[0], (int[]) r[1], enPantalla, pid, fijar);
-                } catch (Exception ignored) { }
+                    TarjetaService.Resultado r = get();
+                    if (r == null) return;   // ya no interesaba: ni llamada ni tarjeta (el finally libera el pid)
+                    if (r.guardar()) wv.anfitrion.tarjetaPerfilGuardar(pid, new Object[]{ r.html(), r.spark() });
+                    if (TarjetaService.pintarAlLlegar(pid, wv.hoverPid, fijar, hoverProcede()))
+                        pintarCard(r.html(), r.spark(), enPantalla, pid, fijar);
+                } catch (Exception ignored) {
+                } finally {
+                    tarjetas.liberar(pid);
+                }
             }
         }.execute();
     }
@@ -156,18 +105,24 @@ final class WatchlistHoverCard {
         wv.cardFijada = fijar;
         wv.hoverPid = pid;
         wv.hoverCard = new JWindow(wv.ventana);
+        wv.hoverCard.setFocusableWindowState(false);   // no roba el foco: si lo hiciera, alPerderFoco la ocultaría al momento
         JPanel p = new JPanel(new BorderLayout(0, 4));
         p.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(UIManager.getColor("Component.borderColor") != null
                         ? UIManager.getColor("Component.borderColor") : Color.GRAY),
                 BorderFactory.createEmptyBorder(8, 10, 8, 10)));
-        p.add(new JLabel(html), BorderLayout.CENTER);
+        p.add(new JLabel(TarjetaPerfil.conFila(html, wv.aliases.get(pid), wv.dialogos.notaDe(pid))), BorderLayout.CENTER);   // alias y nota: lo que decía el tooltip de la fila
         if (spark != null) p.add(new SparkPanel(spark), BorderLayout.SOUTH);
         wv.hoverCard.add(p);
         wv.hoverCard.pack();
         wv.hoverCard.setLocation(enPantalla.x + 14, enPantalla.y + 10);
         wv.hoverCard.setVisible(true);
+        ToolTipManager tm = ToolTipManager.sharedInstance();   // el tooltip de la fila (350 ms) ya puede estar fuera: se quita;
+        if (tm.isEnabled()) { tm.setEnabled(false); tm.setEnabled(true); }   // mientras se vea la tarjeta, la lista no da otro (tarjetaVisible)
     }
+
+    /** ¿Se ve la tarjeta? Mientras tanto la fila no da tooltip (lo que decía, alias y nota, va en la tarjeta). */
+    boolean tarjetaVisible() { return wv.hoverCard != null; }
 
     /** Panel con la mini gráfica del rating (termina 10 partidas atrás). */
     static class SparkPanel extends JPanel {

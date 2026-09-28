@@ -20,7 +20,7 @@ import static dev.tirador.aoe2radar.cache.ImagenesMapa.MAPA_IMG_URL;
 import static dev.tirador.aoe2radar.techtree.TechTreeDatos.TT_DIR;
 import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
-import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
+import static dev.tirador.aoe2radar.util.Sistema.enCarpetaApp;
 
 /**
  * Todo lo que, para pintar un icono de bandera, civ o mapa, toca disco o red: rutas fijas y la descarga de
@@ -30,8 +30,9 @@ import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
 public final class ImagenesJuego {
     private ImagenesJuego() { }
 
-    /** Carpeta de banderas (20×15, dominio público, Wikimedia vía hampusborgos/country-flags); el bat las deja junto al exe. */
-    public static final Path BANDERAS_DIR = enCarpetaBase("banderas");
+    /** Carpeta de banderas (20×15, dominio público, Wikimedia vía hampusborgos/country-flags); el bat las deja junto al exe.
+     *  Es un recurso de la app (solo lectura): cuelga de la carpeta del exe, no de la de datos. */
+    public static final Path BANDERAS_DIR = enCarpetaApp("banderas");
 
     /** Mapas cuya miniatura ya se está pidiendo al companion, para no duplicar la descarga. */
     private static final Set<String> MAPAS_PIDIENDO = ConcurrentHashMap.newKeySet();
@@ -80,6 +81,32 @@ public final class ImagenesJuego {
     /** Ruta del icono de civ en el tech tree (clave ya en minúsculas); no comprueba si existe, como hoy. */
     public static Path rutaIconoCiv(String k) {
         return TT_DIR.resolve("img/Civs/" + k + ".png");
+    }
+
+    /** ¿Hay un icono del tech tree en disco que no esté vacío? (1.4) Un PNG de 0 bytes (un corte de las versiones sin
+     *  escritura atómica) contaba como presente con Files.exists y ya no se volvía a pedir. */
+    public static boolean iconoEnDisco(Path p) {
+        try { return Files.size(p) > 0; } catch (IOException ex) { return false; }
+    }
+
+    /**
+     * Lee un icono PNG de disco (fuera del EDT). Si está vacío o no se decodifica (truncado por un corte), lo borra y
+     * devuelve null: al faltar, quien lo pidió lo vuelve a traer (del jar o de aoe2techtree), en vez de quedarse sin
+     * icono para siempre (1.4). Un fallo al LEER (el antivirus con el archivo abierto…) sale como IOException sin
+     * borrar nada, como leerJson en techtree.TechTreeDatos.
+     */
+    public static java.awt.image.BufferedImage leerIcono(Path p) throws IOException {
+        byte[] raw = Files.readAllBytes(p);   // fuera del try: un fallo de lectura no es un archivo dañado
+        java.awt.image.BufferedImage img = null;
+        if (raw.length > 0) {
+            try { img = javax.imageio.ImageIO.read(new java.io.ByteArrayInputStream(raw)); }
+            catch (IOException decodificar) { img = null; }
+        }
+        if (img == null) {
+            log("icono dañado, se borra para volver a traerlo: " + p.getFileName());
+            Files.deleteIfExists(p);
+        }
+        return img;
     }
 
     /** Clave de mapa a usar para buscar imagen: la del volcado o la del nombre, la que tenga URL conocida. */

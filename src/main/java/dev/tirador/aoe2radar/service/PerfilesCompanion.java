@@ -1,6 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuentePerfil;
 import dev.tirador.aoe2radar.cache.CacheMemoria;
 import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.AnioSfr;
@@ -32,17 +32,28 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * país) se entrega a quien aprende (en la app, cache.Canales y cache.Paises), como hacía perfilLadders.
  */
 public final class PerfilesCompanion implements ProfileService {
-    private final CompanionApi api;
+    private final FuentePerfil api;          // ficha y ELO 1v1 (en la app, con respaldo de World's Edge)
+    private final FuentePerfil apiVinculadas; // cuentas vinculadas: solo el companion las tiene (se guardan para la sesión)
     private final CacheMemoria<Long, FichaPerfil> fichas;
     private final BiConsumer<Long, Object> aprenderCanal, aprenderPais;
     private final AnioDesdeSfr anio;
     private final HistorialPerfil historial;
     private final EloSesion elosVinculadas;   // vid → ELO 1v1 (0: no tiene), con la regla del ELO actual
 
-    public PerfilesCompanion(CompanionApi api, CacheMemoria<Long, FichaPerfil> fichas,
+    public PerfilesCompanion(FuentePerfil api, CacheMemoria<Long, FichaPerfil> fichas,
                              BiConsumer<Long, Object> aprenderCanal, BiConsumer<Long, Object> aprenderPais,
                              AnioDesdeSfr anio, HistorialPerfil historial, EloSesion elosVinculadas) {
-        this.api = api; this.fichas = fichas; this.aprenderCanal = aprenderCanal; this.aprenderPais = aprenderPais;
+        this(api, api, fichas, aprenderCanal, aprenderPais, anio, historial, elosVinculadas);
+    }
+
+    /**
+     * apiVinculadas: de dónde salen las cuentas vinculadas (1.4). La app pasa el companion solo: World's Edge no las
+     * conoce y una lista vacía se guardaría como «no tiene» para toda la sesión (vinculadasSesion no caduca).
+     */
+    public PerfilesCompanion(FuentePerfil api, FuentePerfil apiVinculadas, CacheMemoria<Long, FichaPerfil> fichas,
+                             BiConsumer<Long, Object> aprenderCanal, BiConsumer<Long, Object> aprenderPais,
+                             AnioDesdeSfr anio, HistorialPerfil historial, EloSesion elosVinculadas) {
+        this.api = api; this.apiVinculadas = apiVinculadas; this.fichas = fichas; this.aprenderCanal = aprenderCanal; this.aprenderPais = aprenderPais;
         this.anio = anio; this.historial = historial; this.elosVinculadas = elosVinculadas;
     }
 
@@ -81,7 +92,7 @@ public final class PerfilesCompanion implements ProfileService {
 
     @Override public FichaPerfil fichaConocida(long pid) { return fichas.ultimo(pid); }
 
-    @Override public void olvidarFicha(long pid) { fichas.caducar(pid); api.invalidarPerfil(pid); }
+    @Override public void olvidarFicha(long pid) { fichas.caducar(pid); api.invalidarPerfil(pid); if (apiVinculadas != api) apiVinculadas.invalidarPerfil(pid); }
 
     @Override public Integer elo1v1(long pid) { return elo1v1Leido(pid).elo(); }   // null si no tiene o si falla, como la 1.1
 
@@ -107,7 +118,7 @@ public final class PerfilesCompanion implements ProfileService {
         avisarSiUi("ProfileService.vinculadas");
         List<Perfil.Vinculada> out = new ArrayList<>();
         try {
-            Perfil pf = api.perfil(profileId);
+            Perfil pf = apiVinculadas.perfil(profileId);
             aprenderCanal.accept(profileId, pf.canal());
             Set<Long> vistos = new HashSet<>();
             for (Perfil.Vinculada lp : pf.vinculadas()) {

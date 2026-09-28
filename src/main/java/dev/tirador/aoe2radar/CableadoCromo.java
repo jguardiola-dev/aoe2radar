@@ -7,9 +7,12 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.EnlaceVivo;
 import dev.tirador.aoe2radar.service.Juego;
 import dev.tirador.aoe2radar.service.MiPartidaServiceJuego;
+import dev.tirador.aoe2radar.ui.Actualizaciones;
 import dev.tirador.aoe2radar.ui.AutoScroll;
 import dev.tirador.aoe2radar.ui.BarraEstado;
 import dev.tirador.aoe2radar.ui.ClicEnFondo;
+import dev.tirador.aoe2radar.ui.FranjaActualizacion;
+import dev.tirador.aoe2radar.ui.FranjaAviso;
 import dev.tirador.aoe2radar.ui.MenuConfiguracion;
 import dev.tirador.aoe2radar.ui.MiPartidaPanel;
 import dev.tirador.aoe2radar.ui.Tareas;
@@ -18,10 +21,8 @@ import dev.tirador.aoe2radar.ui.VentanaGuardada;
 import dev.tirador.aoe2radar.ui.VentanaPrincipalAjustes;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Reloj;
+import dev.tirador.aoe2radar.util.Sistema;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
 import static dev.tirador.aoe2radar.app.Servicios.CONTROL_SERVICE;
@@ -63,15 +64,17 @@ final class CableadoCromo {
                 VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar();
                 Servicios.API_CLIENTE.volcarLlamadas();   // la cuenta de llamadas desde el último volcado horario, al log (sin red)
                 Paises.guardarAlCerrar(2000);   // F13 (1.3): los países del último minuto; retiene el cierre 2 s como mucho
+                // Lo último (1.4): aplicar la actualización descargada (y relanzar si se pidió «Reiniciar ahora»), ya con
+                // todo lo demás guardado. Retiene el cierre como mucho Actualizaciones.ESPERA_CIERRE_MS.
+                Actualizaciones act = v.actualizaciones;
+                if (act != null) act.alCerrar();
             }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
         });
         // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
         // barraEstado ya construido (es un inicializador de campo, corre antes que el cuerpo del constructor).
         Servicios.avisoPausa429 = v.barraEstado::mostrarPausaApi;
-        // El mensaje de control.json (arreglo F10 de la revisión 1.3): la barra lo enseña cuando la ventana está a
-        // la vista y solo entonces se marca como visto.
-        Servicios.avisoControl = v.barraEstado::mostrarAvisoCuandoSeVea;
+        Servicios.avisoRespaldo = v.barraEstado::mostrarRespaldo;   // «Datos parciales (fuente de respaldo)» (1.4), mismo camino
     }
 
     // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,
@@ -124,6 +127,12 @@ final class CableadoCromo {
             @Override public void mostrarMiPerfil() { v.miPartida.abrirMiPerfil(); }
             @Override public void cambiarCuentaPropia() { v.miPartida.preguntarMiNick(); }
             @Override public void mostrarAcercaDe() { v.showAbout(); }
+            @Override public boolean actualizadorPropio(boolean manual) {   // fuera del EDT (hilo «actualizaciones»)
+                Actualizaciones act = v.actualizaciones;
+                if (act == null || !act.activo()) return false;
+                act.comprobar(manual);
+                return true;
+            }
             @Override public java.util.List<String> gruposWatchlist() { return v.watchlist.gruposDelCombo(); }
             @Override public java.util.List<String> clanesGuardados() { return v.watchlist.clanesGuardados(); }
             @Override public java.util.List<dev.tirador.aoe2radar.model.PaisItem> paises() { return java.util.List.of(v.watchlist.PAISES); }
@@ -203,21 +212,40 @@ final class CableadoCromo {
             @Override public void limpiarSeleccionWatchlist() { v.playersList.clearSelection(); v.partidas.actualizarTextoBuscar(); }
         });
         v.add(split, BorderLayout.CENTER);
+        // El mensaje de control.json (decisión de Jorge, 1.3): una franja fina encima de todo, a lo ancho de la
+        // ventana, que nace oculta (sin mensaje no ocupa sitio) y se queda hasta que el usuario pulsa su ×; solo
+        // entonces se marca como visto. Se fija aquí, en el EDT y antes de AccionesVentana.arrancar, que es quien
+        // lanza la primera lectura de control.json.
+        FranjaAviso franja = new FranjaAviso();
+        // 1.4: debajo, la franja de las actualizaciones (ui.FranjaActualizacion), con el mismo estilo. Las dos nacen
+        // ocultas y un BoxLayout sin hijos visibles no mide nada: sin avisos, la ventana queda como antes.
+        FranjaActualizacion franjaAct = new FranjaActualizacion();
+        JPanel avisos = new JPanel();
+        avisos.setLayout(new BoxLayout(avisos, BoxLayout.Y_AXIS));
+        avisos.add(franja);
+        avisos.add(franjaAct);
+        v.add(avisos, BorderLayout.NORTH);
+        Servicios.avisoControl = franja::mostrar;
+        v.actualizaciones = new Actualizaciones(Servicios.ACTUALIZADOR, franjaAct, new Actualizaciones.Anfitrion() {
+            @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
+            @Override public void estado(String texto) { v.status.setText(texto); }
+            @Override public void cerrarVentana() {   // el cierre normal: windowClosing -> alCerrar -> EXIT_ON_CLOSE
+                v.dispatchEvent(new java.awt.event.WindowEvent(v, java.awt.event.WindowEvent.WINDOW_CLOSING));
+            }
+            @Override public boolean relanzar() { return Sistema.relanzar(); }
+        }, Tareas.SWING);
     }
 
-    /** Lo que ui.BarraEstado necesita del resto de la ventana: el freno de cancelación real (api.Cancelacion)
-     *  y la red (api.Http, java.net) viven aquí porque ui no puede importarlos; «operacionTerminada» reactiva
+    /** Lo que ui.BarraEstado necesita del resto de la ventana: la red (api.Http, java.net) vive aquí porque ui
+     *  no puede importarla (los frenos de las operaciones son util.Operaciones, de la barra); «operacionTerminada» reactiva
      *  los botones de ui.PartidasView, que tampoco son suyos. */
     static BarraEstado.Anfitrion barraEstadoAnfitrion(SpoilerFreeRecs v) {
         return new BarraEstado.Anfitrion() {
-            @Override public void iniciarOperacion() { stopOperacion = false; hiloOperacion = null; }
-            @Override public void marcarOperacionEnCurso(boolean on) { opEnCurso = on; }
             @Override public void operacionTerminada() {
                 v.partidas.fetchBtn.setEnabled(true); v.partidas.azarBtn.setEnabled(true); v.partidas.gteBtn.setEnabled(true);
                 if (v.partidas.dlSel != null) v.partidas.dlSel.setEnabled(true);
                 if (v.partidas.dlAll != null) v.partidas.dlAll.setEnabled(true);
             }
-            @Override public void pararOperacion() { stopOperacion = true; }
             @Override public void renovarHttp() { HTTP = nuevoHttp(); }
             @Override public void continuarBuscando() { v.partidas.buscarAleatorias(true); }
             @Override public void abrirTwitch() { AccionesVentana.abrirTwitch(v); }
@@ -275,7 +303,8 @@ final class CableadoCromo {
      *  hilo ("log-juego", "lobby-oficial", "mi-perfil"). */
     static MiPartidaPanel miPartida(SpoilerFreeRecs v) {
         return new MiPartidaPanel(
-                new MiPartidaServiceJuego(v.menus::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
+                new MiPartidaServiceJuego(v.menus::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego,
+                        Servicios.API_CLIENTE::texto),   // lobbies de World's Edge con su cubo del freno (1.4); un intento: la lista caduca en segundos
                 Tareas.SWING, v, v, new MiPartidaPanel.Anfitrion() {
                     @Override public List<String[]> buscarPerfiles(String nick) { return Servicios.buscarPerfiles(nick); }
                     @Override public void mostrarEstado(String texto) { v.status.setText(texto); }

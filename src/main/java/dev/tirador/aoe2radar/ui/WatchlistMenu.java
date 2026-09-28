@@ -15,7 +15,6 @@ import java.awt.event.MouseEvent;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -24,8 +23,8 @@ import static dev.tirador.aoe2radar.util.I18n.t;
 
 /**
  * El menú contextual de la Watchlist y de los tops (clic derecho sobre un jugador): en partida · perfil ·
- * watchlist · edición. Sale de WatchlistView tal cual en la 1.3; las altas, bajas y movimientos los sigue
- * haciendo la fachada (quitarDeWatchlist, ficharDesdeTop, moverJugador...). Hilos: todo en el EDT salvo
+ * watchlist · edición. Sale de WatchlistView tal cual en la 1.3; las altas, bajas y movimientos los hace el
+ * presentador (WatchlistPresenter: quitarDeWatchlist, ficharDesdeTop, moverJugador...). Hilos: todo en el EDT salvo
  * el hilo "elo-1v1" del submenú de cada jugador de la partida, que vuelve al EDT con invokeLater.
  */
 final class WatchlistMenu {
@@ -87,7 +86,7 @@ final class WatchlistMenu {
             boolean yaSeguido = wv.todosJugadores.stream().anyMatch(x -> x.id() == pid);
             if (yaSeguido) {
                 JMenuItem quitarW = new JMenuItem(t("Quitar de mi watchlist", "Remove from my watchlist"));
-                quitarW.addActionListener(a -> wv.quitarDeWatchlist(pid));
+                quitarW.addActionListener(a -> wv.presenter.quitarDeWatchlist(pid));
                 menu.add(quitarW);
             } else {
                 JMenu anadir = new JMenu(t("Añadir a mi watchlist", "Add to my watchlist"));
@@ -116,7 +115,7 @@ final class WatchlistMenu {
             JMenuItem nuevoG = new JMenuItem(t("Nuevo grupo…", "New group…"));
             nuevoG.addActionListener(a -> {
                 String nombreG = JOptionPane.showInputDialog(wv.ventana, t("Nombre del grupo nuevo:", "New group name:"), t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-                if (nombreG != null && !nombreG.isBlank()) { String limpio = WatchlistView.limpiarGrupo(nombreG); wv.registrarGrupo(limpio); wv.moverJugador(p, limpio); }
+                if (nombreG != null && !nombreG.isBlank()) { String limpio = WatchlistPresenter.limpiarGrupo(nombreG); wv.presenter.registrarGrupo(limpio); wv.moverJugador(p, limpio); }
             });
             if (mover.getItemCount() > 0) mover.addSeparator();
             mover.add(nuevoG);
@@ -127,19 +126,14 @@ final class WatchlistMenu {
             List<Player> selW = wv.playersList.getSelectedValuesList();
             if (selW.size() > 1 && selW.contains(p)) {   // varios seleccionados: mover o quitar de golpe
                 JMenu moverVarios = new JMenu(t("Mover los ", "Move the ") + selW.size() + t(" seleccionados a", " selected to"));
-                for (String g : wv.gruposDisponibles()) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> wv.moverVarios(selW, g)); moverVarios.add(it); }
+                for (String g : wv.gruposDisponibles()) { JMenuItem it = new JMenuItem(g); it.addActionListener(a -> wv.presenter.moverVarios(selW, g)); moverVarios.add(it); }
                 moverVarios.addSeparator();
                 JMenuItem nuevoGM = new JMenuItem(t("+ Nuevo grupo\u2026", "+ New group\u2026"));
-                nuevoGM.addActionListener(a -> { String g = wv.elegirGrupoDialog(selW.size() + t(" jugadores", " players")); if (g != null) wv.moverVarios(selW, g); });
+                nuevoGM.addActionListener(a -> { String g = wv.elegirGrupoDialog(selW.size() + t(" jugadores", " players")); if (g != null) wv.presenter.moverVarios(selW, g); });
                 moverVarios.add(nuevoGM);
                 menu.add(moverVarios);
                 JMenuItem quitarVarios = new JMenuItem(t("Quitar los ", "Remove the ") + selW.size() + t(" seleccionados de la Watchlist", " selected from the Watchlist"));
-                quitarVarios.addActionListener(a -> {
-                    Set<Long> ids = new HashSet<>(); for (Player x : selW) ids.add(x.id());
-                    wv.todosJugadores.removeIf(x -> ids.contains(x.id()));
-                    wv.savePlayers(); wv.rebuildGrupos(); wv.aplicarFiltroGrupo();
-                    wv.status.setText(ids.size() + t(" jugadores quitados.", " players removed."));
-                });
+                quitarVarios.addActionListener(a -> wv.presenter.quitarVarios(selW));
                 menu.add(quitarVarios);
             }
         }

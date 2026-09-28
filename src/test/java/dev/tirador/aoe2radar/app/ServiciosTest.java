@@ -4,6 +4,7 @@ import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.util.Operaciones;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
@@ -12,9 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongConsumer;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -71,12 +69,27 @@ class ServiciosTest {
         assertNotNull(campo(Servicios.COMPANION, "cache"), "COMPANION se construye con la caché por URL");
         // Todo lo que se construye "DESPUÉS de COMPANION" (comentado en Servicios) debe envolver ese MISMO
         // CompanionApi, no uno nuevo: si no, el freno y la caché de sesión se partirían en dos.
-        assertSame(Servicios.COMPANION, campo(Servicios.LIVE, "api"));
-        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "fuente"));   // sus dos fuentes (partidas y ladder), el mismo
-        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "ladder"));
-        assertSame(Servicios.COMPANION, campo(Servicios.SERVICIO_PERFIL, "api"));
-        assertSame(Servicios.COMPANION, campo(Servicios.BUSQUEDA, "api"));
+        // 1.4: lo que tiene respaldo de World's Edge recibe el decorador (PARTIDAS, LADDER, PERFIL, BUSCAR, que envuelven
+        // COMPANION y WORLDS_EDGE); lo que no (partidas en curso, «¿ya terminó?», Twitch, vinculadas), el COMPANION de siempre.
+        assertSame(Servicios.API_CLIENTE, campo(Servicios.WORLDS_EDGE, "api"), "World's Edge por el mismo cliente (su cubo del freno)");
+        assertSame(Servicios.COMPANION, campo(Servicios.LIVE, "api"), "«¿ya terminó?» y Live now: sin respaldo (World's Edge no ve partidas en curso)");
+        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "fuente"), "vigilarTop (en curso), sin respaldo");
+        assertSame(Servicios.LADDER, campo(Servicios.TOP_LADDER_SERVICE, "ladder"));
+        assertSame(Servicios.PERFIL, campo(Servicios.SERVICIO_PERFIL, "api"));
+        assertSame(Servicios.COMPANION, campo(Servicios.SERVICIO_PERFIL, "apiVinculadas"), "las vinculadas, solo del companion");
+        assertSame(Servicios.BUSCAR, campo(Servicios.BUSQUEDA, "api"));
         assertSame(Servicios.COMPANION, campo(Servicios.TWITCH_SERVICE, "api"));
+    }
+
+    @Test
+    void losCatalogosNoAprendenDeLoQueSirvioElRespaldo() {
+        // 1.4: los nombres de mapa y civ de World's Edge son reconstruidos; no se guardan en config (mapas_ranked, civs_vistas).
+        dev.tirador.aoe2radar.model.Match m = new dev.tirador.aoe2radar.model.Match();
+        m.deRespaldo = true; m.mode = "1v1 Random Map"; m.map = "Mapa Solo Del Respaldo";
+        dev.tirador.aoe2radar.model.MatchPlayer p = new dev.tirador.aoe2radar.model.MatchPlayer(); p.civ = "Civ Solo Del Respaldo"; m.players.add(p);
+        Servicios.aprenderCatalogos(java.util.List.of(m));
+        org.junit.jupiter.api.Assertions.assertFalse(dev.tirador.aoe2radar.cache.Catalogos.MAPAS_CAT.contains("Mapa Solo Del Respaldo"));
+        org.junit.jupiter.api.Assertions.assertFalse(dev.tirador.aoe2radar.cache.Catalogos.CIVS_CAT.contains("Civ Solo Del Respaldo"));
     }
 
     @Test
@@ -88,7 +101,7 @@ class ServiciosTest {
 
     @Test
     void dormirNoBloqueaConCero() {
-        // dormir(ms) es una pausa cooperativa (respeta stopOperacion/opEnCurso), no un Thread.sleep ciego: con
+        // dormir(ms) es una pausa cooperativa (respeta el freno de su operación), no un Thread.sleep ciego: con
         // 0 ms debe volver enseguida. Sin red: no se toca BUSQUEDA.buscar (esa sí llamaría al companion).
         long antes = System.currentTimeMillis();
         Servicios.dormir(0);
@@ -99,23 +112,27 @@ class ServiciosTest {
     void dormirSoloAcortaLaPausaParaElHiloDeLaOperacionCancelada() {
         // Fila 56 de DEUDA: antes, dormir miraba "stopOperacion && opEnCurso" sin comprobar el hilo, así que
         // pulsar Detener acortaba también las pausas de un barrido de fondo ajeno a la operación cancelada.
-        // Ahora usa Cancelacion.detieneEsteHilo(), que exige además que sea el hilo de esa operación.
-        stopOperacion = true;
-        opEnCurso = true;
+        // Ahora usa Cancelacion.detieneEsteHilo(), que exige además que sea el hilo de esa operación (desde la
+        // 1.3, con un freno por operación: util.Operaciones).
+        Operaciones ops = Operaciones.GLOBAL;
+        final long op = 930_001;   // lejos de los números de la barra
+        ops.empezar(op);
+        ops.detener(op);
         try {
-            hiloOperacion = new Thread();   // un hilo distinto al de este test: su pausa NO debe acortarse
+            // este hilo no es el de la operación (no la ha anotado): su pausa NO debe acortarse
             long antes = System.currentTimeMillis();
             Servicios.dormir(400);
             assertTrue(System.currentTimeMillis() - antes >= 350,
                     "un hilo ajeno a la operación cancelada no debe acortar su pausa");
 
-            hiloOperacion = Thread.currentThread();   // el hilo de la operación cancelada: sí debe acortarse
+            ops.anotarHilo(op);   // el hilo de la operación cancelada: sí debe acortarse
             antes = System.currentTimeMillis();
             Servicios.dormir(3000);
             assertTrue(System.currentTimeMillis() - antes < 300,
                     "el hilo de la operación cancelada sí debe acortar su pausa");
         } finally {
-            stopOperacion = false; opEnCurso = false; hiloOperacion = null;
+            ops.soltarHilo();
+            ops.terminar(op);
         }
     }
 

@@ -122,4 +122,49 @@ class MuestraNocturnaTest {
         red.archivos.put(MuestraNocturna.ARCHIVO, gz("{\"fecha\":\"2026-09-24\"}"));
         assertTrue(nueva().muestra().isEmpty(), "caracterización de la 1.1: vacía, no null");
     }
+
+    // ----- 1.4: la muestra de anteayer en el mismo archivo -----
+
+    @Test void anteayerSaleDeSuClaveYLaDeAyerNoCambia() {
+        red.archivos.put(MuestraNocturna.ARCHIVO, gz("{\"v\":2,\"fecha\":\"2026-09-24\",\"tramos\":{\"1000\":[[11,1]]},"
+                + "\"fecha_anteayer\":\"2026-09-23\",\"tramos_anteayer\":{\"1000\":[[21,1],[22,2]],\"2000\":[[23,3]]}}"));
+        MuestraNocturna m = nueva();
+        assertEquals(1, m.muestra().get("1000").size(), "«tramos» sigue siendo solo ayer");
+        assertEquals(2, m.anteayer().get("1000").size());
+        assertEquals(List.of(23.0, 3.0), m.anteayer().get("2000").get(0));
+        assertEquals(1, red.pedidos.size(), "las dos del mismo archivo: una sola descarga");
+    }
+
+    @Test void sinAnteayerEsNull() {
+        MuestraNocturna m = nueva();
+        assertNull(m.anteayer(), "archivo de la 1.3: solo ayer");
+        assertNotNull(m.muestra());
+    }
+
+    @Test void sinMuestraTampocoHayAnteayer() {
+        red.archivos.clear();
+        assertNull(nueva().anteayer());
+    }
+
+    static final String JSON_V2 = "{\"v\":2,\"fecha\":\"2026-09-24\",\"tramos\":{\"1000\":[[11,1]]},\"tramos_anteayer\":{\"1000\":[[21,1]]}}";
+
+    @Test void unArchivoViejoTrasUnoNuevoQuitaAnteayer() throws IOException {
+        red.archivos.put(MuestraNocturna.ARCHIVO, gz(JSON_V2));
+        MuestraNocturna m = nueva();
+        assertNotNull(m.anteayer());
+        red.archivos.put(MuestraNocturna.ARCHIVO, gz(JSON));
+        reloj.ahora = t0() + 13 * HORA;
+        assertNull(m.anteayer(), "la de anteayer no sobrevive a una recarga que no la trae");
+        assertEquals(2, m.muestra().get("1000").size(), "y la de ayer es la nueva");
+    }
+
+    @Test void unFalloTrasUnoNuevoQuitaAnteayer() throws IOException {
+        red.archivos.put(MuestraNocturna.ARCHIVO, gz(JSON_V2));
+        MuestraNocturna m = nueva();
+        assertNotNull(m.anteayer());
+        reloj.ahora = t0() + 12 * HORA;
+        red.archivos.clear();
+        assertNull(m.anteayer());
+        assertNull(m.muestra());
+    }
 }

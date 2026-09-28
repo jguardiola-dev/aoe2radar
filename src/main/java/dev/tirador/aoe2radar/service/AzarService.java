@@ -27,11 +27,15 @@ public interface AzarService {
      * fuentes, igual que hoy: (1) si hours >= 24, la muestra nocturna de sfr-data (si da 5 o más, cero llamadas al
      * companion); si no, (2) lo ya leído en esta sesión que cumpla los filtros de hoy; (3) el «río» de partidas
      * recientes del ladder, solo si el rango es una porción amplia y sin filtro de civ; (4) perfiles muestreados
-     * del tramo del ladder, sin repetir los ya consultados en los últimos 10 minutos.
+     * del tramo del ladder, sin repetir los ya consultados en los últimos 10 minutos. Desde la 1.4, con los datos
+     * nocturnos nuevos: si hours >= 48 la muestra de anteayer completa la de ayer, y el tramo (3-4) sale del ladder de
+     * anoche (sin llamadas al leaderboard); con datos anteriores, como antes.
      * <p>multAzar multiplica el número de pasadas de muestreo de perfiles (intensidad del diálogo). progreso recibe
      * los mismos textos que antes mostraba directamente el estado de la ventana (vía publish/process del
      * SwingWorker). serial es solo para identificar la operación en los mensajes de log.
-     * <p>Si se interrumpe (Detener) durante la búsqueda, devuelve lo encontrado hasta el corte, igual que hoy.
+     * <p>Si se interrumpe (Detener) durante la búsqueda, devuelve lo encontrado hasta el corte, igual que hoy. El
+     * freno es el de la operación de quien llama: debe apuntar su hilo (util.Operaciones.anotarHilo) antes, y este
+     * servicio lo mira con api.Cancelacion.detieneEsteHilo (lo mismo en buscarGte).
      */
     List<Match> buscarAleatorias(int lo, int hi, String mapaSel, String civSel, int hours, int multAzar,
                                   Instant cutoff, long serial, Consumer<String> progreso) throws Exception;
@@ -48,6 +52,19 @@ public interface AzarService {
      * perfiles nuevos que muestrear con esos filtros). Se consulta después de que buscarAleatorias termine.
      */
     boolean tramoAgotado();
+
+    /**
+     * True si la última tirada de buscarAleatorias salió entera de la muestra nocturna (partidas de ayer, sin mirar
+     * la ventana de horas). La vista lo avisa en el mensaje de estado (decisión de Jorge, 1.3). Se consulta después
+     * de que buscarAleatorias termine.
+     */
+    boolean deMuestra();
+
+    /**
+     * True si la última tirada salió de la muestra nocturna Y la de anteayer aportó alguna partida (1.4: ventana de 48 h
+     * o más y ayer no daba 10). La vista lo dice en el aviso («de ayer y anteayer»). Se consulta después de la tirada.
+     */
+    default boolean conAnteayer() { return false; }
 
     /**
      * El titular de una partida del azar: con filtro de civ, quien LA JUGÓ (si ambos, el de más ELO entre los que

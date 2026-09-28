@@ -1,0 +1,165 @@
+# Empaquetado de una versión en GitHub, para no depender del PC de Jorge. Adjunta a la release del tag:
+# - aoe2radar-X.Y-setup.exe: el instalador por usuario (Inno Setup, perfil «instalador» del pom).
+# - aoe2radar-X.Y-windows.zip: el app-image comprimido (mismo nombre y misma estructura, carpeta «aoe2radar/»
+#   dentro, que los zips de la 1.2 y la 1.3).
+# - aoe2radar-X.Y.jar y update.json: lo que lee el actualizador propio de la app instalada (1.4). update.json
+#   dice la versión, el jar, su sha256 y tamaño (calculados aquí) y el paquete para el que vale (runtime, resto
+#   del classpath, opciones de Java y clase principal, leídos del .cfg y del runtime que acaba de hacer jpackage):
+#   si no coinciden con los de la instalación, la app ofrece el instalador en vez del jar.
+#
+# Dos formas de lanzarlo:
+# - Al publicar una release en GitHub (Releases > Draft a new release > tag vX.Y > Publish): se construye
+#   el commit del tag y todo se adjunta a esa release.
+# - A mano (Actions > release > Run workflow, con el tag vX.Y): reconstruye y sustituye los archivos (--clobber).
+#   Si la release aún no existe, la crea como borrador para que Jorge escriba las notas y la publique.
+#
+# Comprobación de seguridad: el tag tiene que coincidir con la versión del pom (version.app, la misma que
+# enseña la app). Si alguien etiqueta v1.4 con el pom aún en 1.3.0, falla antes de subir nada.
+name: release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag de la versión (p. ej. v1.4)'
+        required: true
+        type: string
+
+permissions:
+  contents: write   # para subir los archivos a la release (y crearla en borrador si falta)
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  empaquetar:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+
+      # Versión del JDK FIJA: el runtime que jpackage mete en el paquete sale de aquí, y el actualizador compara su
+      # java.version con la de cada instalación. Cambiarla (p. ej., por un parche de seguridad de Java) hace que la
+      # siguiente versión se ofrezca con instalador («necesita reinstalar») en vez de cambiar solo el jar: es lo
+      # buscado, porque el runtime solo se renueva con el instalador.
+      - name: Java 21 (Temurin, trae jpackage) con caché de Maven
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21.0.9'
+          cache: maven
+
+      # Inno Setup 6: las imágenes windows-latest lo traen en Program Files (x86); si alguna no lo trae, choco.
+      - name: Inno Setup 6
+        id: inno
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE -ne 0) { throw "no se pudo instalar Inno Setup con choco" }
+          }
+          if (-not (Test-Path $iscc)) { throw "no encuentro ISCC.exe en $iscc" }
+          "Inno Setup " + (Get-Item $iscc).VersionInfo.ProductVersion   # sin ejecutar ISCC: su «uso» sale con código de error
+          "iscc=$iscc" >> $env:GITHUB_OUTPUT
+
+      - name: Empaquetar (jpackage) e instalador (Inno Setup)
+        env:
+          ISCC: ${{ steps.inno.outputs.iscc }}
+        run: |
+          mvn -B -Pempaquetar,instalador -DskipTests "-Discc=$env:ISCC" verify
+          if ($LASTEXITCODE -ne 0) { throw "falló el empaquetado" }
+
+      - name: El tag coincide con la versión del pom
+        id: version
+        run: |
+          $props = Get-Content target/classes/dev/tirador/aoe2radar/util/version.properties
+          $app = ($props | Where-Object { $_ -like 'version.app=*' }) -replace '^version\.app=', ''
+          if (-not $app) { throw "no encuentro version.app en version.properties" }
+          if ("v$app" -cne $env:TAG) { throw "el tag $env:TAG no coincide con la versión del pom (v$app): cambia <version> en pom.xml o el tag" }
+          # La misma regla que Instalacion.VERSION en la app: un update.json con otra forma de versión no lo leería.
+          if ($app -notmatch '^\d{1,4}(\.\d{1,4}){0,3}$') { throw "la versión $app no vale para el actualizador (solo cifras y puntos)" }
+          if (-not (Test-Path target/dist/aoe2radar/aoe2radar.exe)) { throw "jpackage no dejó target/dist/aoe2radar/aoe2radar.exe" }
+          if (-not (Test-Path "target/instalador/aoe2radar-$app-setup.exe")) { throw "ISCC no dejó target/instalador/aoe2radar-$app-setup.exe" }
+          Get-Content target/dist/aoe2radar/app/aoe2radar.cfg
+          "app=$app" >> $env:GITHUB_OUTPUT
+
+      - name: Comprimir, jar suelto y update.json
+        env:
+          APP: ${{ steps.version.outputs.app }}   # por env, no interpolado en el script
+        run: |
+          $zip = "aoe2radar-$env:APP-windows.zip"
+          Compress-Archive -Path target/dist/aoe2radar -DestinationPath $zip
+          Copy-Item "target/instalador/aoe2radar-$env:APP-setup.exe" .
+
+          # Lee el .cfg con las mismas reglas que util.CfgLanzador.leer: un solo jar de la app (aoe2radar-*.jar)
+          # en [Application], el resto del classpath, la clase principal y las java-options menos la de versión.
+          $seccion = ''; $jarApp = $null; $resto = @(); $opciones = @(); $main = $null
+          foreach ($linea in Get-Content target/dist/aoe2radar/app/aoe2radar.cfg) {
+            $t = $linea.Trim()
+            if ($t -match '^\[.*\]$') { $seccion = $t; continue }
+            if ($seccion -eq '[Application]' -and $t.StartsWith('app.classpath=')) {
+              $v = $t.Substring('app.classpath='.Length).Trim()
+              $n = if ($v.StartsWith('$APPDIR\', [StringComparison]::OrdinalIgnoreCase)) { $v.Substring('$APPDIR\'.Length) } else { $v }
+              if ($n -match '(?i)^aoe2radar-[0-9A-Za-z._-]+\.jar$') {
+                if ($jarApp) { throw "el .cfg tiene dos jars de la app: $jarApp y $n" }
+                $jarApp = $n
+              } else { $resto += $n }
+            } elseif ($seccion -eq '[Application]' -and $t.StartsWith('app.mainclass=')) {
+              $main = $t.Substring('app.mainclass='.Length).Trim()
+            } elseif ($seccion -eq '[JavaOptions]' -and $t.StartsWith('java-options=')) {
+              $o = $t.Substring('java-options='.Length).Trim()
+              if (-not $o.StartsWith('-Djpackage.app-version=')) { $opciones += $o }
+            }
+          }
+          if (-not $jarApp -or -not $main) { throw "el .cfg no tiene el formato esperado" }
+
+          # El jar suelto es EXACTAMENTE el del paquete (el mismo que lleva el instalador), con el nombre de la versión.
+          $jar = "aoe2radar-$env:APP.jar"
+          Copy-Item "target/dist/aoe2radar/app/$jarApp" $jar
+          $sha = (Get-FileHash $jar -Algorithm SHA256).Hash.ToLowerInvariant()
+          $size = (Get-Item $jar).Length
+          $release = Get-Content target/dist/aoe2radar/runtime/release | Where-Object { $_ -like 'JAVA_VERSION=*' }
+          $runtime = ($release -replace '^JAVA_VERSION=', '').Trim('"')
+          if (-not $runtime) { throw "no encuentro JAVA_VERSION en runtime/release" }
+
+          $info = [ordered]@{
+            version    = $env:APP
+            jar        = $jar
+            sha256     = $sha
+            size       = [long]$size
+            runtime    = $runtime
+            instalador = "aoe2radar-$env:APP-setup.exe"
+            classpath  = [string[]]$resto
+            opciones   = [string[]]$opciones
+            mainclass  = $main
+          }
+          $json = $info | ConvertTo-Json -Depth 3
+          [IO.File]::WriteAllText((Join-Path $PWD 'update.json'), $json, [Text.UTF8Encoding]::new($false))
+          Get-Content update.json
+          Get-Item $zip, "aoe2radar-$env:APP-setup.exe", $jar, update.json | Format-Table Name, Length
+
+      - name: Adjuntar a la release del tag
+        env:
+          APP: ${{ steps.version.outputs.app }}
+        run: |
+          gh release view $env:TAG *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $env:TAG --draft --verify-tag --title "aoe2radar $env:APP" --notes "Borrador creado por el workflow release: escribe las notas y publícala."
+            if ($LASTEXITCODE -ne 0) { throw "no se pudo crear la release $env:TAG" }
+          }
+          # update.json el ÚLTIMO: una app que lo lea mientras tanto ya encuentra el jar que nombra.
+          foreach ($f in @("aoe2radar-$env:APP-windows.zip", "aoe2radar-$env:APP-setup.exe", "aoe2radar-$env:APP.jar", "update.json")) {
+            gh release upload $env:TAG $f --clobber
+            if ($LASTEXITCODE -ne 0) { throw "no se pudo subir $f a la release $env:TAG" }
+          }

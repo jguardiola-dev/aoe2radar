@@ -8,7 +8,6 @@ import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
-import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.Player;
@@ -148,18 +147,21 @@ class WatchlistViewTest {
         @Override public boolean clanesVacios() { return true; }
         @Override public void asegurarLadderEnFondo() { }
         @Override public List<Map.Entry<String, Integer>> sugerirClanes(String texto) { return List.of(); }
-        @Override public void trabajando(boolean on) { trabajando.add(on ? "on" : "off"); }
+        @Override public long empezarOperacion() { trabajando.add("on"); return 0; }
+        @Override public void terminarOperacion(long op) { trabajando.add("off"); }
         @Override public long opSerial() { return 0; }
-        @Override public void marcarHiloOperacionActual() { }
-        @Override public boolean detenerOperacion() { return false; }
+        @Override public void marcarHiloOperacionActual(long op) { }
+        @Override public void soltarHiloOperacion() { }
+        @Override public boolean operacionDetenida(long op) { return false; }
         @Override public void dormir(long ms) { }
         @Override public void abrirUrl(String url) { }
         final List<String> espectarYCa = new ArrayList<>();   // el orden de «lanzar CaptureAge» y «espectar»
         @Override public void espectar(Player p) { espectarYCa.add("espectar"); }
         @Override public java.nio.file.Path rutaCaptureAge() { return null; }
         @Override public void lanzarCaptureAge(java.nio.file.Path rec) { espectarYCa.add("ca"); }
-        @Override public void mostrarToast(String texto, long matchId) { }
-        @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) { }
+        final List<String> avisos = new ArrayList<>();   // toasts, superposiciones y botones del toast, en orden
+        @Override public void mostrarToast(String texto, long matchId) { avisos.add("toast:" + texto + "#" + matchId); }
+        @Override public void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara) { avisos.add("acciones"); }
         @Override public void abrirPerfilYCaraACara(long pid, String miNombre, long rivalId, String rivalNombre) { }
         @Override public Object[] tarjetaPerfilCache(long pid) { return null; }
         @Override public void tarjetaPerfilGuardar(long pid, Object[] valor) { }
@@ -168,10 +170,13 @@ class WatchlistViewTest {
         @Override public void seleccionCambiada() { }
         @Override public boolean enCursoReal(Match m) { return false; }
         @Override public Perfil perfilApi(long pid) { return null; }
-        @Override public PaginaPartidas paginaApi(long pid, int pagina, int porPagina) { return null; }
         @Override public void reiniciarThrottleDirectos() { }
         @Override public void vigilarTwitchDirectos() { }
-        @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { }
+        @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) {
+            StringBuilder f = new StringBuilder();
+            for (Object[] x : fichas) f.append(" [").append(x[0]).append("|").append(x[1]).append("|").append(x[2]).append("]");
+            avisos.add("superposicion:" + texto + f + " " + ms);
+        }
         final List<Set<Long>> socketExtra = new ArrayList<>();
         @Override public void actualizarSocketExtra(Set<Long> ids) { ids.add(-1L); socketExtra.add(ids); }   // como el real: le suma el top de Live now (el set debe ser mutable)
         @Override public String ahoraNombre(long pid) { return String.valueOf(pid); }
@@ -266,7 +271,10 @@ class WatchlistViewTest {
      */
     private WatchlistView nuevaInstancia() { return nuevaInstancia(new ArrayList<>()); }
 
-    private WatchlistView nuevaInstancia(List<Player> jugadores) {
+    private WatchlistView nuevaInstancia(List<Player> jugadores) { return nuevaInstancia(jugadores, java.nio.file.Path.of("players_test2.txt")); }
+
+    /** Con el players.txt en una carpeta temporal: para los tests que guardan la lista (savePlayers). */
+    private WatchlistView nuevaInstancia(List<Player> jugadores, java.nio.file.Path playersFile) {
         Transporte redNunca = new TransporteNuncaLlamado();
         CompanionApi companion = new CompanionApi(new ApiClient(new ThrottleSinFreno(), redNunca, s -> { }, () -> false));
         TopLadderService topLadderService = new TopLadderService(companion, companion, new RelojFalso(), ms -> { }, 300);
@@ -306,7 +314,7 @@ class WatchlistViewTest {
                 jugadores, new DefaultListModel<>(), new JList<>(new DefaultListModel<>()),
                 new HashMap<>(), new HashMap<>(), new HashMap<>(), new HashMap<>(),
                 new JLabel(), new JProgressBar(), new ArrayList<>(), new javax.swing.JPanel(),
-                java.nio.file.Path.of("players_test2.txt"), java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50,
+                playersFile, java.nio.file.Path.of("top_cache_test2.txt"), 300L, 50,
                 (k, def) -> cfg.getOrDefault(k, def), cfg::put);
     }
 
@@ -549,6 +557,138 @@ class WatchlistViewTest {
         assertEquals("Amigos|", watchlist.vistaActualId());
     }
 
+    /** Caracterización (antes de pasar el modo de vista a WatchlistPresenter): el id interno de la campana de cada
+     *  vista, el país elegido y el clan escrito (recortado y en minúsculas). */
+    @Test void idVistaCampana_yPaisSel_porVista() {
+        watchlist.rebuildGrupos();
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(t("Todos", "All")), watchlist.grupoCombo);
+        assertEquals("grupo|Todos", watchlist.presenter.idVistaCampana());
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+        assertEquals("★ladder", watchlist.presenter.idVistaCampana());
+        watchlist.presenter.paisActual = new PaisItem("Francia", "fr");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top país"), watchlist.grupoCombo);
+        assertEquals("★pais|fr", watchlist.presenter.idVistaCampana());
+        assertEquals("fr", watchlist.paisSel());
+        assertEquals("★ Top país|fr", watchlist.vistaActualId());
+        watchlist.clanField.setText("  R1 ");
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
+        assertEquals("★clan|r1", watchlist.presenter.idVistaCampana());
+        assertEquals("R1", watchlist.clanBuscado());
+        assertEquals("★ Top clan · R1", watchlist.presenter.nombreVistaCampana());
+    }
+
+    /** Caracterización: elegir un grupo de usuario guarda grupo_activo y filtra la lista a ese grupo; los grupos del
+     *  combo son los de usuario, sin «Todos» ni las tres vistas ★. */
+    @Test void onGrupoElegido_grupoDeUsuarioGuardaYFiltra() {
+        todosJugadores.add(new Player(1L, "Uno", "Amigos"));
+        todosJugadores.add(new Player(2L, "Dos", "Pros"));
+        watchlist.rebuildGrupos();
+        assertEquals(List.of("Amigos", "Pros"), watchlist.gruposDelCombo());
+        watchlist.presenter.watchBarridos.add(2L);   // ya barrido: refrescarWatchlist no lanza nada (el test no tiene red)
+        watchlist.grupoCombo.setSelectedItem("Pros");   // con listeners: onGrupoElegido
+        assertEquals("Pros", cfg.get("grupo_activo"));
+        assertEquals(1, playersModel.size());
+        assertEquals(2L, playersModel.get(0).id());
+    }
+
+    // ===== operaciones de la lista (caracterización antes de pasarlas a WatchlistPresenter) ==========================
+
+    @org.junit.jupiter.api.io.TempDir java.nio.file.Path tmp;
+
+    /** Una Watchlist con Uno y Dos en «Amigos» y Tres en «Pros», ya barridos (sin red), en «Todos», guardando en tmp. */
+    private WatchlistView conTresJugadores() {
+        List<Player> js = new ArrayList<>(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos"), new Player(3L, "Tres", "Pros")));
+        WatchlistView w = nuevaInstancia(js, tmp.resolve("players.txt"));
+        w.presenter.watchBarridos.addAll(List.of(1L, 2L, 3L));
+        w.rebuildGrupos();
+        sinListeners(() -> w.grupoCombo.setSelectedItem("Todos"), w.grupoCombo);
+        w.aplicarFiltroGrupo();
+        return w;
+    }
+
+    @Test void moverJugador_mueveGuardaYAvisa() throws Exception {
+        WatchlistView w = conTresJugadores();
+        w.moverJugador(new Player(1L, "Uno", "Amigos"), "Nuevo");
+        assertEquals("Nuevo", w.grupoDeJugador(1L));
+        assertTrue(w.gruposDelCombo().contains("Nuevo"), "el combo se reconstruye");
+        assertTrue(Files.readString(tmp.resolve("players.txt")).contains("Nuevo"), "se guarda en players.txt");
+        assertEquals("Uno movido al grupo «Nuevo».", w.status.getText());
+    }
+
+    @Test void renombrarYBorrarGrupo() {
+        WatchlistView w = conTresJugadores();
+        w.presenter.renombrarGrupo("Amigos", "Colegas");
+        assertEquals("Colegas", w.grupoDeJugador(2L));
+        assertEquals(List.of("Colegas", "Pros"), w.gruposDelCombo());
+        w.presenter.borrarGrupo("Pros");
+        assertEquals(WatchlistView.GRUPO_GENERAL, w.grupoDeJugador(3L));
+        assertFalse(w.gruposDelCombo().contains("Pros"));
+    }
+
+    @Test void moverVarios_yQuitar() {
+        WatchlistView w = conTresJugadores();
+        w.presenter.moverVarios(List.of(new Player(1L, "Uno", "Amigos"), new Player(2L, "Dos", "Amigos"), new Player(1L, "Uno", "Amigos")), "Pros");
+        assertEquals("Pros", w.grupoDeJugador(2L));
+        assertEquals("2 jugadores movidos a «Pros».", w.status.getText(), "cuenta ids distintos");
+        w.presenter.quitarDeWatchlist(3L);
+        assertFalse(w.containsPlayerId(3L));
+        assertEquals(2, w.playersModel.size(), "la lista visible se rehace");
+        assertEquals("Quitado de tu watchlist.", w.status.getText());
+    }
+
+    @Test void ficharDesdeTop_soloSiNoEstaba() {
+        WatchlistView w = conTresJugadores();
+        w.status.setText("antes");
+        w.ficharDesdeTop(new Player(1L, "Uno", "Amigos"), "Pros");
+        assertEquals("antes", w.status.getText(), "ya seguido: no hace nada");
+        w.ficharDesdeTop(new Player(9L, "Nueve", WatchlistView.TOP_LADDER), "Pros");
+        assertEquals("Pros", w.grupoDeJugador(9L));
+        assertEquals("Nueve añadido a «Pros» de tu watchlist.", w.status.getText());
+    }
+
+    /** Caracterización (antes de pasar filtro y conteos a WatchlistPresenter): título, resumen y chip cuentan a los que
+     *  juegan en toda la lista y en el grupo elegido; el combo marca los grupos con alguien jugando. */
+    @Test void indicadoresVivos_cuentanEnLaListaYEnElGrupo() {
+        WatchlistView w = conTresJugadores();
+        sinListeners(() -> w.grupoCombo.setSelectedItem("Amigos"), w.grupoCombo);
+        w.aplicarFiltroGrupo();
+        try {
+            EstadoVivo.SISTEMA.marcarJugando(1L, 111L);
+            EstadoVivo.SISTEMA.marcarJugando(3L, 333L);
+            w.actualizarIndicadoresVivos();
+            assertEquals("Watchlist — 2 jugando", w.tituloWatch.getTitle());
+            assertEquals("2 jugadores · 1 jugando", w.resumenWatch.getText());
+            assertEquals("● Jugando (1)", w.soloVivosBtn.getText());
+            assertTrue(w.presenter.grupoTieneVivo("amigos"));
+            assertTrue(w.presenter.grupoTieneVivo(null));
+            EstadoVivo.SISTEMA.marcarFuera(1L);
+            assertFalse(w.presenter.grupoTieneVivo("Amigos"));
+            w.actualizarIndicadoresVivos();
+            assertEquals("● Jugando", w.soloVivosBtn.getText());
+        } finally { EstadoVivo.SISTEMA.marcarFuera(1L); EstadoVivo.SISTEMA.marcarFuera(3L); }
+    }
+
+    /** Caracterización: la cuenta hermana de una familia dice de quién es (la de más ELO); vincular guarda y refiltra. */
+    @Test void familias_tipCuentaVinculadaYMarcarVinculo() {
+        todosJugadores.add(new Player(1L, "Uno", "G", 42L));
+        todosJugadores.add(new Player(2L, "Otro", "G", 42L));
+        todosJugadores.add(new Player(3L, "Tres", "G"));
+        eloWatch.put(1L, 1500); eloWatch.put(2L, 1800);
+        Match m = new Match();
+        m.refId = 1L;   // EnlaceFalso.refNombre: «Uno»
+        assertEquals("Cuenta vinculada de Otro", watchlist.tipCuentaVinculada(m));
+        m.refId = 2L;   // «Otro»: la matriz es ella misma
+        assertNull(watchlist.tipCuentaVinculada(m));
+        watchlist.marcarVinculo(Set.of(2L, 3L));
+        assertEquals(todosJugadores.get(1).vinculo(), todosJugadores.get(2).vinculo(), "Tres entra en la familia");
+        assertEquals((Character) 'P', watchlist.presenter.marcaFila.get(2L), "marcarVinculo refiltra: Otro encabeza (más ELO)");
+        assertEquals(2, watchlist.conFamilias(List.of(todosJugadores.get(1))).size(), "la cabeza arrastra a su familia");
+        watchlist.presenter.vinculosExpandidos.add(2L);
+        watchlist.aplicarFiltroGrupo();
+        assertEquals((Character) 'H', watchlist.presenter.marcaFila.get(3L));
+        assertEquals(1, watchlist.conFamilias(List.of(todosJugadores.get(2))).size(), "una hija elegida va sola");
+    }
+
     @Test void containsPlayerId_reflejaTodosJugadores() {
         assertFalse(watchlist.containsPlayerId(7L));
         todosJugadores.add(new Player(7L, "Nick", WatchlistView.GRUPO_GENERAL));
@@ -644,6 +784,45 @@ class WatchlistViewTest {
 
         assertTrue(invocado.get(), "el hook debía dispararse: avisarSiCampana sí llega a leer todosJugadores");
         assertFalse(fueraDelEdt.get(), "todosJugadores no debe recorrerse fuera del EDT (tampoco tras el invokeLater)");
+    }
+
+    /** Caracterización (antes de pasar las campanas a WatchlistPresenter): el texto del aviso de campana (una vez por
+     *  partida) y el de «Tu partida ha empezado» (superposición, toast y sus dos accesos), ya en el EDT. */
+    @Test void avisos_campanaYMiPartida() throws Exception {
+        todosJugadores.add(new Player(1L, "Ana", "G"));
+        java.lang.reflect.Field campo = WatchlistView.class.getDeclaredField("campanaIds");
+        campo.setAccessible(true);
+        @SuppressWarnings("unchecked")
+        Map<String, Set<Long>> campanaIds = (Map<String, Set<Long>>) campo.get(watchlist);
+        campanaIds.put("grupo|G", Set.of(1L));
+        assertTrue(watchlist.campanaContiene(1L));
+        assertFalse(watchlist.campanaContiene(2L));
+        Match m = new Match();
+        m.id = 77L;
+        watchlist.avisarSiCampana(1L, m);
+        watchlist.avisarSiCampana(1L, m);   // la misma partida: un solo aviso
+        watchlist.avisarSiCampana(2L, m);   // sin campana
+        javax.swing.SwingUtilities.invokeAndWait(() -> { });
+        assertEquals(List.of("toast:● Ana ha empezado una partida · resumen#77"), anfitrion.avisos);
+
+        anfitrion.avisos.clear();
+        Map<String, String> cfgC = new HashMap<>(Map.of("mi_pid", "5"));
+        Campanas conMiPid = new Campanas(new CompanionApi(new ApiClient(new ThrottleSinFreno(), new TransporteNuncaLlamado(), s -> { }, () -> false)),
+                (k, def) -> cfgC.getOrDefault(k, def), cfgC::put, nombre -> false);
+        java.lang.reflect.Field campoCampanas = WatchlistView.class.getDeclaredField("campanas");
+        campoCampanas.setAccessible(true);
+        campoCampanas.set(watchlist, conMiPid);
+        Match mm = new Match();
+        mm.id = 88L; mm.map = "Arena";
+        MatchPlayer yo = new MatchPlayer(); yo.id = 5L; yo.name = "Yo"; yo.team = 1;
+        MatchPlayer rival = new MatchPlayer(); rival.id = 6L; rival.name = "Riv"; rival.team = 2; rival.rating = 1500; rival.civ = "Franks";
+        mm.players.add(yo); mm.players.add(rival);
+        watchlist.avisarMiPartida(6L, mm);   // no soy yo
+        watchlist.avisarMiPartida(5L, mm);
+        javax.swing.SwingUtilities.invokeAndWait(() -> { });
+        String modo = dev.tirador.aoe2radar.service.ReglasPartida.modoCorto(mm);
+        assertEquals(List.of("superposicion:● Tu partida empieza · Arena · " + modo + " [6|Riv  ·  Franks|1500] 60000",
+                "toast:● Tu partida ha empezado · Arena · " + modo + " · vs Riv (1500) Franks#88", "acciones"), anfitrion.avisos);
     }
 
     // ===== refrescarCampanas: campanaIds nunca se ve vacío a medias (fila 107 de DEUDA) =========================
@@ -746,12 +925,12 @@ class WatchlistViewTest {
         long pid = 987_654_321L;
         EstadoVivo.SISTEMA.marcarJugando(pid, 555L);   // el socket ya lo vio en partida
         try {
-            watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 42));
+            watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 42));
             assertTrue(EstadoVivo.SISTEMA.jugando(pid), "el snapshot no sabe si juega: el punto del socket se queda");
             assertNull(EstadoVivo.SISTEMA.finMs(pid), "ni fin de partida falso");
             assertEquals(1500, eloWatch.get(pid), "el ELO del snapshot sí se aplica");
 
-            watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1510, null));
+            watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1510, null));
             assertFalse(EstadoVivo.SISTEMA.jugando(pid), "el de la API sí manda: vivo null = fuera");
         } finally { EstadoVivo.SISTEMA.marcarFuera(pid); }
     }
@@ -761,12 +940,12 @@ class WatchlistViewTest {
      *  va por la vía exacta (porSerie). Un ELO fresco (API, leaderboard) vuelve a valer para la resta. */
     @Test void eloParaResta_elDelSnapshotNoValeComoEloActual() {
         long pid = 42L;
-        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 30));   // del snapshot
+        watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1500, 30));   // del snapshot
         assertEquals(1500, eloWatch.get(pid), "la lista sigue enseñando el ELO del snapshot");
-        assertNull(WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "restar anoche de anoche da 0: no vale");
+        assertNull(WatchlistPresenter.eloParaResta(pid, eloWatch, watchlist.presenter.eloDelSnapshot), "restar anoche de anoche da 0: no vale");
 
-        watchlist.trabajos.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1523, null));   // de la API
-        assertEquals(1523, WatchlistView.eloParaResta(pid, eloWatch, watchlist.eloDelSnapshot), "un ELO fresco sí vale para la resta");
+        watchlist.presenter.aplicarRefresco(new BarridoVivos.Refresco(pid, null, null, 1523, null));   // de la API
+        assertEquals(1523, WatchlistPresenter.eloParaResta(pid, eloWatch, watchlist.presenter.eloDelSnapshot), "un ELO fresco sí vale para la resta");
         EstadoVivo.SISTEMA.marcarFuera(pid);
     }
 
@@ -774,37 +953,84 @@ class WatchlistViewTest {
      *  ★ Top ladder antes de 10 min daba por fresca la lista del clan y enseñaba a sus miembros como el top. */
     @Test void aplicarTopClan_dejaSuFirmaYElLadderSeRecarga() {
         watchlist.rebuildGrupos();
-        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
-        watchlist.topFirma = "global";
-        watchlist.topCargado = new RelojFalso().ahora;   // el ladder se cargó ahora mismo (reloj del TopLadderService del test)
+        watchlist.presenter.top.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.presenter.top.topFirma = "global";
+        watchlist.presenter.top.topCargado = new RelojFalso().ahora;   // el ladder se cargó ahora mismo (reloj del TopLadderService del test)
         sinListeners(() -> watchlist.grupoCombo.setSelectedItem("★ Top clan"), watchlist.grupoCombo);
 
-        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+        watchlist.presenter.top.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
 
-        assertEquals(List.of(9L), watchlist.topLadder.stream().map(Player::id).toList());
-        assertFalse(watchlist.topLadderService.topFresco(false, "global", watchlist.topFirma, !watchlist.topLadder.isEmpty(), watchlist.topCargado),
+        assertEquals(List.of(9L), watchlist.presenter.top.topLadder.stream().map(Player::id).toList());
+        assertFalse(watchlist.presenter.top.servicio.topFresco(false, "global", watchlist.presenter.top.topFirma, !watchlist.presenter.top.topLadder.isEmpty(), watchlist.presenter.top.topCargado),
                 "con la lista del clan puesta, volver a ★ Top ladder tiene que recargar");
+    }
+
+    /** Caracterización (antes de pasar el top a WatchlistPresenter): con el top fresco (misma firma, menos de 10 min),
+     *  cargarTopLadder no recarga: pinta lo que hay y solo intenta vigilar (aquí, dentro del anti-solape de 45 s). */
+    @Test void cargarTopLadder_topFrescoNoRecarga() {
+        watchlist.rebuildGrupos();
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+        watchlist.presenter.top.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.presenter.top.topFirma = "global";
+        watchlist.presenter.top.topCargado = new RelojFalso().ahora;
+        watchlist.presenter.top.ultimoTopMs = System.currentTimeMillis();   // vigilarTop: dentro de los 45 s, no sale a la red
+        assertFalse(watchlist.topLadderVacio());
+        assertEquals(new RelojFalso().ahora, watchlist.topCargadoMs());
+        watchlist.cargarTopLadder(false);
+        assertFalse(watchlist.presenter.top.cargandoTop, "fresco: sin carga");
+        assertFalse(watchlist.presenter.top.vigilandoTop, "anti-solape: sin vigilancia");
+        assertEquals(List.of(1L), watchlist.topLadderSnapshot().stream().map(Player::id).toList());
+        assertEquals(1, playersModel.size(), "pinta el top que ya había");
+    }
+
+    @Test void cargarTopClan_sinTagLoPide() {
+        watchlist.clanField.setText("  ");
+        watchlist.cargarTopClan();
+        assertEquals("Escribe el tag del clan (p. ej. R1).", watchlist.status.getText());
     }
 
     @Test void aplicarTopClan_siElUsuarioYaSalioDelClanNoPinta() {
         watchlist.rebuildGrupos();
-        watchlist.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
-        watchlist.topFirma = "global";
+        watchlist.presenter.top.topLadder.add(new Player(1L, "Top1", WatchlistView.TOP_LADDER));
+        watchlist.presenter.top.topFirma = "global";
         sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
 
-        watchlist.trabajos.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
+        watchlist.presenter.top.aplicarTopClan("R1", new TopLadderService.ResultadoClan(null, List.of(new TopLadderService.FilaClan(9L, "Nueve", 1800))));
 
-        assertEquals(List.of(1L), watchlist.topLadder.stream().map(Player::id).toList(), "el top ladder ya pintado se queda");
-        assertEquals("global", watchlist.topFirma);
+        assertEquals(List.of(1L), watchlist.presenter.top.topLadder.stream().map(Player::id).toList(), "el top ladder ya pintado se queda");
+        assertEquals("global", watchlist.presenter.top.topFirma);
     }
 
     /** F12 de la revisión 1.3: la racha salía con «V»/«D» también con la app en inglés. */
     @Test void formaLarga_rachaTraducida() {
         Forma f = new Forma(25, 3, 0, 3, true, 3);
         IDIOMA = "en";
-        assertTrue(WatchlistView.formaLarga(f).endsWith("3W"), WatchlistView.formaLarga(f));
+        assertTrue(WatchlistPresenter.formaLarga(f).endsWith("3W"), WatchlistPresenter.formaLarga(f));
         IDIOMA = "es";
-        assertTrue(WatchlistView.formaLarga(f).endsWith("3V"), WatchlistView.formaLarga(f));
+        assertTrue(WatchlistPresenter.formaLarga(f).endsWith("3V"), WatchlistPresenter.formaLarga(f));
+    }
+
+    /** Caracterización (antes de pasar la forma a WatchlistPresenter): el tooltip de la celda Forma según lo
+     *  consultado, la ventana (24 h / 7 d) y, solo en los tops, la racha del ladder y las últimas 10. */
+    @Test void tipForma_textosSegunVentanaYModo() {
+        watchlist.rebuildGrupos();
+        sinListeners(() -> watchlist.grupoCombo.setSelectedItem("Todos"), watchlist.grupoCombo);
+        long pid = 424_242L;
+        assertEquals("Últimas 24 h: sin consultar (selecciónalo y pulsa Ver forma)", watchlist.tipForma(pid));
+        watchlist.presenter.forma24.put(pid, new Forma(0, 0, 0, 0, true, 0));
+        assertEquals("Últimas 24 h: sin partidas 1v1", watchlist.tipForma(pid));
+        watchlist.presenter.forma24.put(pid, new Forma(-12, 1, 3, 3, false, 4));
+        assertEquals("Últimas 24 h: 1-3 · -12 · 3 derrotas seguidas", watchlist.tipForma(pid));
+        watchlist.presenter.forma7d.put(pid, new Forma(30, 5, 2, 1, true, 7));
+        watchlist.presenter.ventanaForma = 24 * 7;
+        assertEquals("Últimos 7 días: 5-2 · +30", watchlist.tipForma(pid), "racha 1: no se cuenta; fuera de los tops no mira la del ladder");
+        WatchlistPresenter.TOP_STREAK.put(pid, 4);
+        WatchlistPresenter.TOP_LAST10.put(pid, new int[]{ 7, 3 });
+        try {
+            assertEquals("Últimos 7 días: 5-2 · +30", watchlist.tipForma(pid), "fuera de los tops, ni racha ni últimas 10 del ladder");
+            sinListeners(() -> watchlist.grupoCombo.setSelectedItem(WatchlistView.TOP_LADDER), watchlist.grupoCombo);
+            assertEquals("Últimos 7 días: 5-2 · +30 · 4 victorias seguidas · últimas 10: 7-3", watchlist.tipForma(pid));
+        } finally { WatchlistPresenter.TOP_STREAK.remove(pid); WatchlistPresenter.TOP_LAST10.remove(pid); }
     }
 
     /** F12 de la revisión 1.3: el aviso de campana enseñaba el id interno («★pais es», «grupo Amigos»). */
@@ -814,10 +1040,10 @@ class WatchlistViewTest {
         w.grupoCombo.addItem("Amigos");
         w.grupoCombo.addItem("★ Country top");
         sinListeners(() -> w.grupoCombo.setSelectedItem("Amigos"), w.grupoCombo);
-        assertEquals("Amigos", w.nombreVistaCampana(), "ni «grupo» ni «|»: el nombre del grupo, tal cual");
-        w.paisActual = new PaisItem("Spain", "es");
+        assertEquals("Amigos", w.presenter.nombreVistaCampana(), "ni «grupo» ni «|»: el nombre del grupo, tal cual");
+        w.presenter.paisActual = new PaisItem("Spain", "es");
         sinListeners(() -> w.grupoCombo.setSelectedItem("★ Country top"), w.grupoCombo);
-        assertEquals("★ Country top · Spain", w.nombreVistaCampana());
+        assertEquals("★ Country top · Spain", w.presenter.nombreVistaCampana());
     }
 
     /** Revisión 1.3 (dudoso confirmado): con «Usar CaptureAge», espectar ya lanza CA; el menú no debe lanzarlo otra vez. */
@@ -842,25 +1068,25 @@ class WatchlistViewTest {
 
     /** Revisor 1.3: un ELO fresco escrito desde fuera (ponerEloWatch de las vinculadas) quita la marca de «de anoche». */
     @Test void ponerEloFresco_quitaLaMarcaDeAnoche() {
-        watchlist.ponerEloDeAnoche(8L, 1400);
-        assertNull(WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+        watchlist.presenter.ponerEloDeAnoche(8L, 1400);
+        assertNull(WatchlistPresenter.eloParaResta(8L, eloWatch, watchlist.presenter.eloDelSnapshot));
         watchlist.ponerEloFresco(8L, 1450);
-        assertEquals(1450, WatchlistView.eloParaResta(8L, eloWatch, watchlist.eloDelSnapshot));
+        assertEquals(1450, WatchlistPresenter.eloParaResta(8L, eloWatch, watchlist.presenter.eloDelSnapshot));
     }
 
     /** Revisor 1.3: la marca no se acumula: quien sale de la Watchlist y del top la pierde (y se volverá a barrer si
      *  vuelve); quien sigue en la lista la conserva. */
     @Test void podarEloDelSnapshot_soloQuedanLosPresentes() {
         todosJugadores.add(new Player(1L, "Uno", "Amigos"));
-        watchlist.ponerEloDeAnoche(1L, 1500);
-        watchlist.ponerEloDeAnoche(2L, 1600);   // ya no está en ninguna lista
-        watchlist.watchBarridos.add(1L); watchlist.watchBarridos.add(2L);
+        watchlist.presenter.ponerEloDeAnoche(1L, 1500);
+        watchlist.presenter.ponerEloDeAnoche(2L, 1600);   // ya no está en ninguna lista
+        watchlist.presenter.watchBarridos.add(1L); watchlist.presenter.watchBarridos.add(2L);
 
         watchlist.aplicarFiltroGrupo();
 
-        assertEquals(Set.of(1L), watchlist.eloDelSnapshot);
-        assertTrue(watchlist.watchBarridos.contains(1L));
-        assertFalse(watchlist.watchBarridos.contains(2L), "si vuelve a la Watchlist, se barre y se vuelve a marcar");
+        assertEquals(Set.of(1L), watchlist.presenter.eloDelSnapshot);
+        assertTrue(watchlist.presenter.watchBarridos.contains(1L));
+        assertFalse(watchlist.presenter.watchBarridos.contains(2L), "si vuelve a la Watchlist, se barre y se vuelve a marcar");
     }
 
     @Test void sugerenciaCaducada_siElTextoCambio() {

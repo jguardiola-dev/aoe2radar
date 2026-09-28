@@ -26,7 +26,7 @@ import java.util.function.LongConsumer;
 import java.util.function.LongFunction;
 import java.util.function.LongPredicate;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
+import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.cache.Canales.aprenderCanal;
 import static dev.tirador.aoe2radar.cache.Paises.aprenderPais;
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
@@ -232,7 +232,7 @@ public final class TopLadderService {
         }
         // Confirmación individual: quien estaba en partida y ya no aparece en el lote, se consulta solo
         for (Player p : top) {
-            if (stopOperacion) break;
+            if (detieneEsteHilo()) break;   // solo si este hilo es el de una operación detenida (un barrido de fondo no lo es)
             if (!jugando.test(p.id()) || resultado.containsKey(p.id()) || !verificados.contains(p.id())) continue;
             try {
                 Iterable<Match> leidas = fuente.partidas(p.id(), 1, 3);

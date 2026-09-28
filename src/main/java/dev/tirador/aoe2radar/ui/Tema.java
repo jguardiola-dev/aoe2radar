@@ -10,4 +10,11 @@ public final class Tema {
 
     /** Último tema aplicado: true si es oscuro. */
     public static boolean temaOscuroActivo;
+
+    /** Granate de la franja de avisos del mando a distancia (ui.FranjaAviso): el oscuro, algo más claro, para que el
+     *  borde y el icono contrasten igual sobre el fondo gris del tema oscuro que el #8B1E2D sobre el claro. */
+    public static final java.awt.Color GRANATE_CLARO = new java.awt.Color(0x8B, 0x1E, 0x2D), GRANATE_OSCURO = new java.awt.Color(0xD0, 0x5A, 0x6E);
+
+    /** El granate que toca con el tema aplicado ahora mismo (se lee al pintar: sigue al cambio de tema). */
+    public static java.awt.Color granate() { return temaOscuroActivo ? GRANATE_OSCURO : GRANATE_CLARO; }
 }

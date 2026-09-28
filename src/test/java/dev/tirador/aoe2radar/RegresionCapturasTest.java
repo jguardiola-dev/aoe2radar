@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.awt.Color;
 import java.awt.image.BufferedImage;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -22,6 +23,25 @@ class RegresionCapturasTest {
         g.setColor(color); g.fillRect(0, 0, 50, 50);
         g.dispose();
         return img;
+    }
+
+    /** El harness no enseña el mensaje real de control.json: el aviso nulo se encola detrás de la construcción de la
+     *  ventana (que conecta la franja) y gana a la primera lectura de control.json. Se simula el orden de la app
+     *  sin pantalla: construcción encolada, silenciado desde el hilo del test, y el aviso como lo encola cargarControl. */
+    @Test void elHarnessSilenciaElMensajeDeControlDespuesDeConstruirLaVentana() throws Exception {
+        var antes = dev.tirador.aoe2radar.app.Servicios.avisoControl;
+        int[] mostrados = new int[1];
+        try {
+            javax.swing.SwingUtilities.invokeLater(() ->   // lo que hace CableadoCromo.montarVentana al construir la ventana
+                    dev.tirador.aoe2radar.app.Servicios.avisoControl = (texto, alCerrar) -> mostrados[0]++);
+            RegresionCapturas.silenciarMensajeControl();
+            javax.swing.SwingUtilities.invokeLater(() ->   // lo que encola Servicios.cargarControl al llegar un mensaje
+                    dev.tirador.aoe2radar.app.Servicios.avisoControl.accept("Mensaje real de sfr-data", () -> { }));
+            javax.swing.SwingUtilities.invokeAndWait(() -> { });
+            assertEquals(0, mostrados[0], "la franja no recibe el mensaje durante el harness");
+        } finally {
+            javax.swing.SwingUtilities.invokeAndWait(() -> dev.tirador.aoe2radar.app.Servicios.avisoControl = antes);
+        }
     }
 
     @Test void todaNegraConImagenNegraPuraDaTrue() {
@@ -42,5 +62,12 @@ class RegresionCapturasTest {
         BufferedImage img = imagen(Color.BLACK);
         img.setRGB(49, 49, Color.WHITE.getRGB());
         assertFalse(RegresionCapturas.todaNegra(img));
+    }
+
+    @Test void tituloSinVersion_quitaSoloElNumeroDeVersion() {
+        assertEquals("aoe2radar X.Y — tu radar", RegresionCapturas.tituloSinVersion("aoe2radar 1.3 — tu radar"));
+        assertEquals("aoe2radar X.Y — x", RegresionCapturas.tituloSinVersion("aoe2radar 1.4.1 — x"));
+        assertEquals("aoe2radar X.Y — 1.3", RegresionCapturas.tituloSinVersion("aoe2radar 0.0 — 1.3"));
+        assertEquals("Watchlist", RegresionCapturas.tituloSinVersion("Watchlist"));
     }
 }

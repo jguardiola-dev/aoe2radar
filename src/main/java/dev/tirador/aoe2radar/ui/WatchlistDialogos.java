@@ -38,6 +38,10 @@ final class WatchlistDialogos {
 
     WatchlistDialogos(WatchlistView wv) { this.wv = wv; }
 
+    /** El número de la última búsqueda de vinculadas lanzada (1.4, decisión de Jorge): solo otra búsqueda de
+     *  vinculadas la supera. Solo en el EDT. */
+    long serialVinculadas;
+
     /** Consulta las vinculadas de un seguido y casa las que YA sigues. */
     private void vincularExistentes(Player p) {
         wv.status.setText(t("Buscando cuentas vinculadas de ", "Looking up linked accounts of ") + p.name() + "…");
@@ -46,7 +50,7 @@ final class WatchlistDialogos {
             @Override protected void done() {
                 List<Perfil.Vinculada> vinc;
                 try { vinc = get(); } catch (Exception e) { vinc = List.of(); }
-                Set<Long> familia = wv.familiaSvc.vincularExistentes(p.id(), vinc, wv::containsPlayerId);
+                Set<Long> familia = wv.presenter.familiaSvc.vincularExistentes(p.id(), vinc, wv::containsPlayerId);
                 if (familia.size() < 2) {
                     wv.status.setText(t("No sigues ninguna otra cuenta vinculada de ", "You don't follow any other linked account of ")
                             + p.name() + t(". Usa «Cuentas vinculadas…» para añadirlas.", ". Use “Linked accounts…” to add them."));
@@ -77,14 +81,14 @@ final class WatchlistDialogos {
         nuevo.addActionListener(a -> {
             String n = JOptionPane.showInputDialog(wv.ventana, t("Nombre del grupo nuevo:", "New group name:"),
                     t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { wv.registrarGrupo(WatchlistView.limpiarGrupo(n)); recargar.run(); }
+            if (n != null && !n.isBlank()) { wv.presenter.registrarGrupo(WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
         });
         renombrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
             if (sel == null || sel.equalsIgnoreCase(WatchlistView.GRUPO_GENERAL)) return;
             String n = JOptionPane.showInputDialog(wv.ventana, t("Nuevo nombre para «", "New name for “") + sel + t("»:", "”:"),
                     t("Renombrar grupo", "Rename group"), JOptionPane.PLAIN_MESSAGE);
-            if (n != null && !n.isBlank()) { wv.renombrarGrupo(sel, WatchlistView.limpiarGrupo(n)); recargar.run(); }
+            if (n != null && !n.isBlank()) { wv.presenter.renombrarGrupo(sel, WatchlistPresenter.limpiarGrupo(n)); recargar.run(); }
         });
         borrar.addActionListener(a -> {
             String sel = lista.getSelectedValue();
@@ -94,7 +98,7 @@ final class WatchlistDialogos {
                             + t("». Sus jugadores pasarán a General. ¿Continuar?",
                                 "” will be deleted. Its players move to General. Continue?"),
                     t("Borrar grupo", "Delete group"), JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-            if (r == JOptionPane.YES_OPTION) { wv.borrarGrupo(sel); recargar.run(); }
+            if (r == JOptionPane.YES_OPTION) { wv.presenter.borrarGrupo(sel); recargar.run(); }
         });
         lista.addListSelectionListener(a -> {
             String sel = lista.getSelectedValue();
@@ -122,7 +126,7 @@ final class WatchlistDialogos {
      * estado siguen yendo por publish/process, como antes.
      */
     public void ficharVarios(List<Player> lista, String g) {
-        List<Player> nuevos = wv.listaSeguidos.ficharVarios(wv.todosJugadores, lista, g);
+        List<Player> nuevos = wv.presenter.listaSeguidos.ficharVarios(wv.todosJugadores, lista, g);
         wv.savePlayers();
         wv.rebuildGrupos();
         wv.aplicarFiltroGrupo();
@@ -134,14 +138,22 @@ final class WatchlistDialogos {
                         + t(" jugadores y añadirlas al grupo? (una consulta por jugador, en segundo plano)", " players and add them to the group? (one lookup per player, in the background)"),
                 t("Cuentas vinculadas", "Linked accounts"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
         if (r != JOptionPane.YES_OPTION) return;
-        wv.anfitrion.trabajando(true);
-        final long miSerial = wv.anfitrion.opSerial();
+        final long miSerial = wv.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
+        serialVinculadas = miSerial;
         final int[] anadidas = { 0 };
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
-                wv.anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
+                wv.anfitrion.marcarHiloOperacionActual(miSerial);   // Detener corta la espera del freno de ESTA operación, no la de todos
+                try {
+                    buscarVinculadas();
+                } finally {
+                    wv.anfitrion.soltarHiloOperacion();
+                }
+                return null;
+            }
+            private void buscarVinculadas() {
                 for (Player p : nuevos) {
-                    if (wv.anfitrion.detenerOperacion()) break;
+                    if (wv.anfitrion.operacionDetenida(miSerial)) break;
                     publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "\u2026");
                     try {
                         List<Perfil.Vinculada> vinc = wv.perfiles.vinculadas(p.id());
@@ -150,7 +162,7 @@ final class WatchlistDialogos {
                                 Set<Long> familia = new HashSet<>(); familia.add(p.id());
                                 for (Perfil.Vinculada v : vinc) {
                                     long vid = v.pid();
-                                    if (wv.listaSeguidos.ficharSiNuevo(wv.todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
+                                    if (wv.presenter.listaSeguidos.ficharSiNuevo(wv.todosJugadores, vid, v.nombre(), g)) anadidas[0]++;
                                     familia.add(vid);
                                 }
                                 if (familia.size() > 1) wv.marcarVinculo(familia);
@@ -159,12 +171,11 @@ final class WatchlistDialogos {
                     } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
                     wv.anfitrion.dormir(wv.pausaMs / 2);
                 }
-                return null;
             }
             @Override protected void process(List<String> ch) { wv.status.setText(ch.get(ch.size() - 1)); }
             @Override protected void done() {
-                if (miSerial != wv.anfitrion.opSerial()) return;
-                wv.anfitrion.trabajando(false);
+                wv.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
+                if (!PartidasPresenter.vigente(miSerial, serialVinculadas)) return;   // solo otra búsqueda de vinculadas la supera (1.4)
                 wv.savePlayers(); wv.rebuildGrupos(); wv.aplicarFiltroGrupo(); wv.refrescarWatchlist();
                 wv.status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + t("\u00bb.", "\u201D."));
             }
@@ -192,8 +203,8 @@ final class WatchlistDialogos {
             if (nombre == null || nombre.trim().isEmpty()) return null;
             // fila 102 de DEUDA: mismo camino que el resto de altas de grupo (limpiarGrupo + registrarGrupo, que
             // llama a listaSeguidos.registrarGrupo y escribe con ","), en vez de repetir aquí esa lógica a mano.
-            String limpio = WatchlistView.limpiarGrupo(nombre);
-            wv.registrarGrupo(limpio);
+            String limpio = WatchlistPresenter.limpiarGrupo(nombre);
+            wv.presenter.registrarGrupo(limpio);
             return limpio;
         }
         return sel;
@@ -204,9 +215,9 @@ final class WatchlistDialogos {
                 t("Nombre del grupo nuevo:", "New group name:"),
                 t("Nuevo grupo", "New group"), JOptionPane.PLAIN_MESSAGE);
         if (nombre == null || nombre.isBlank()) return;
-        String limpio = WatchlistView.limpiarGrupo(nombre);
+        String limpio = WatchlistPresenter.limpiarGrupo(nombre);
         wv.guardarCfg.accept("grupo_activo", limpio);
-        wv.registrarGrupo(limpio);
+        wv.presenter.registrarGrupo(limpio);
         wv.grupoCombo.setSelectedItem(limpio);
         wv.aplicarFiltroGrupo();
         wv.actualizarIndicadoresVivos();

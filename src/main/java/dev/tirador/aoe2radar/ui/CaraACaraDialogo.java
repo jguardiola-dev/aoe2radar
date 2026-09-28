@@ -165,7 +165,7 @@ public final class CaraACaraDialogo {
         busca = new JTextField(22);
         busca.putClientProperty("JTextField.placeholderText", t("Rival: escribe un nick (primero salen los de su historial)", "Opponent: type a nick (their history's opponents come first)"));
         busca.putClientProperty("JTextField.showClearButton", true);
-        popup = new JPopupMenu(); popup.setFocusable(false);
+        popup = TemaApp.registrarPopup(new JPopupMenu()); popup.setFocusable(false);
         debounce = new javax.swing.Timer(400, e -> sugerir()); debounce.setRepeats(false);
         busca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { debounce.restart(); }

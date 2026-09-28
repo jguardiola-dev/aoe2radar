@@ -76,18 +76,18 @@ final class WatchlistLista {
                                                                     boolean isSelected, boolean cellHasFocus) {
                 JLabel l = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                 if (value instanceof Player p) {
-                    char marca = wv.marcaFila.getOrDefault(p.id(), ' ');
+                    char marca = wv.presenter.marcaFila.getOrDefault(p.id(), ' ');
                     boolean vivo = WatchlistView.VIVO.jugando(p.id())
-                            || (marca != 'H' && wv.vivoFamilia.getOrDefault(p.id(), false));
+                            || (marca != 'H' && wv.presenter.vivoFamilia.getOrDefault(p.id(), false));
                     Integer elo = wv.eloWatch.get(p.id());
-                    Integer rank = wv.modoTop() ? wv.rankTop.get(p.id()) : null;
+                    Integer rank = wv.modoTop() ? wv.presenter.top.rankTop.get(p.id()) : null;
                     String punto = vivo ? "<font color='#" + colorVivoHex() + "'>\u25CF</font>" : "";
                     String col1 = rank != null ? "<font color='gray'>" + rank + ".</font>"
                             : marca == 'P' ? "\u25B8" : marca == 'E' ? "\u25BE" : "";
                     String eloTxt = (elo != null && wv.mostrarEloWatch) ? String.valueOf(elo) : "";
                     int w0 = Math.max(150, list.getWidth() - 22);
                     FontMetrics fmSub = l.getFontMetrics(l.getFont());   // para truncar sublíneas en píxeles reales
-                    int maxChars = Math.max(10, (w0 - 76 - WatchlistView.anchoCeldaElo(w0) - (wv.formaVisible ? 72 : 0)) / 7);
+                    int maxChars = Math.max(10, (w0 - 76 - WatchlistView.anchoCeldaElo(w0) - (wv.presenter.formaVisible ? 72 : 0)) / 7);
                     String nombreVis = wv.anfitrion.nombreVisible(p.id(), p.name());
                     String tip = wv.aliases.containsKey(p.id())
                             ? t("Nick real: ", "Real nick: ") + p.name() : null;
@@ -113,7 +113,7 @@ final class WatchlistLista {
                     if (marca == 'H')   // hija: sangría fija y un punto menos, legible
                         nick = "&nbsp;&nbsp;&nbsp;<span style='font-size:0.92em'>" + nick + "</span>";
                     l.setBorder(null);   // renderer compartido: se fija SIEMPRE
-                    String[] alt = marca == 'H' ? null : wv.mejorAlt(p.id());
+                    String[] alt = marca == 'H' ? null : wv.presenter.mejorAlt(p.id());
                     if (alt != null) {
                         eloTxt = eloTxt + " <font color='#8a8a8a'>\u21A5" + alt[1] + "</font>";
                         tip = (tip == null ? "" : tip + " \u2014 ")
@@ -129,7 +129,7 @@ final class WatchlistLista {
                             + "<td nowrap align='left'>" + nick + "</td>"
                             + "<td width='26' align='center'>" + (st != null
                                     ? "<font color='#9146FF'><b>TW</b></font>" : "") + "</td>"
-                            + (wv.formaVisible ? "<td width='72' align='center'>" + celdaForma(p.id()) + "</td>" : "")
+                            + (wv.presenter.formaVisible ? "<td width='72' align='center'>" + celdaForma(p.id()) + "</td>" : "")
                             + "<td width='" + WatchlistView.anchoCeldaElo(w0) + "' align='right'>" + eloTxt + "</td></tr>"
                             + "</table>"
                             // Las sublíneas van FUERA de la tabla, como bloques propios: un colspan dentro
@@ -162,14 +162,14 @@ final class WatchlistLista {
                         }
                         if (bajo.contains("\u270E") || sobreNota(idxH, e.getPoint())) { wv.dialogos.pedirNota(ph.id(), ph.name()); return; }
                         int wL = wv.playersList.getWidth() - 22, eloW = WatchlistView.anchoCeldaElo(wL);
-                        int formaW = wv.formaVisible ? 72 : 0;
+                        int formaW = wv.presenter.formaVisible ? 72 : 0;
                         boolean zonaTwFormula = e.getX() >= wL - eloW - formaW - 40 && e.getX() <= wL - eloW - formaW + 8;   // respaldo (la columna de forma desplaza el badge)
                         if (bajo.contains("TW") || (bajo.isEmpty() && zonaTwFormula)) {
                             String[] stT = wv.twitchLive.get(ph.id());
                             if (stT != null) { wv.anfitrion.abrirUrl("https://twitch.tv/" + stT[0]); return; }
                         }
-                        if (bajo.contains("\u21A5") && wv.marcaFila.getOrDefault(ph.id(), ' ') != 'H') {
-                            String[] altA = wv.mejorAlt(ph.id());
+                        if (bajo.contains("\u21A5") && wv.presenter.marcaFila.getOrDefault(ph.id(), ' ') != 'H') {
+                            String[] altA = wv.presenter.mejorAlt(ph.id());
                             if (altA != null && altA.length > 2) {
                                 try { wv.navegacion.abrirPerfil(Long.parseLong(altA[2]), altA[0]); return; }
                                 catch (NumberFormatException ignored) { }
@@ -183,9 +183,9 @@ final class WatchlistLista {
                     int idx = wv.playersList.locationToIndex(e.getPoint());
                     if (idx >= 0 && wv.playersList.getCellBounds(idx, idx).contains(e.getPoint())) {
                         Player p = wv.playersModel.get(idx);
-                        char m = wv.marcaFila.getOrDefault(p.id(), ' ');
+                        char m = wv.presenter.marcaFila.getOrDefault(p.id(), ' ');
                         if (m == 'P' || m == 'E') {
-                            if (!wv.vinculosExpandidos.remove(p.vinculo())) wv.vinculosExpandidos.add(p.vinculo());
+                            if (!wv.presenter.vinculosExpandidos.remove(p.vinculo())) wv.presenter.vinculosExpandidos.add(p.vinculo());
                             wv.aplicarFiltroGrupo();
                             return;
                         }
@@ -259,7 +259,7 @@ final class WatchlistLista {
                 int wC = wv.cabLabel.getWidth();
                 String actual = leerConfig("orden_watch", "elo");
                 String nuevo = e.getX() >= wC - 60 ? "elo"
-                        : (wv.formaVisible && e.getX() >= wC - 60 - 72 - 30) ? ("forma".equals(actual) ? "forma_asc" : "forma")   // 2.º clic: invierte
+                        : (wv.presenter.formaVisible && e.getX() >= wC - 60 - 72 - 30) ? ("forma".equals(actual) ? "forma_asc" : "forma")   // 2.º clic: invierte
                         : "alfa";
                 guardarConfig("orden_watch", nuevo);
                 wv.aplicarFiltroGrupo();
@@ -293,7 +293,7 @@ final class WatchlistLista {
                     if (wv.hoverCard != null) wv.ocultarHoverCard();
                     wv.hoverTimer.stop();
                     wv.hoverPid = pid;
-                    if (false && pid != 0) {   // tarjeta flotante desactivada: el ELO ya está en la lista y el perfil a un doble clic (y cada tarjeta era una llamada a la API)
+                    if (pid != 0) {   // tarjeta flotante (1.4): tras 600 ms quieto en la fila; nocturna sin llamadas, si no una (WatchlistHoverCard)
                         wv.hoverPantalla = e.getLocationOnScreen();
                         wv.hoverTimer.restart();
                     }
@@ -428,7 +428,7 @@ final class WatchlistLista {
     }
 
     private String celdaForma(long pid) {
-        Forma f = wv.formaActiva().get(pid);
+        Forma f = wv.presenter.formaActiva().get(pid);
         if (f == null) return "<font color='#8a8a8a'>\u2014</font>";   // sin consultar
         String col = f.diff() > 0 ? (temaOscuroActivo ? "#6abf69" : "#2e7d32") : f.diff() < 0 ? (temaOscuroActivo ? "#e57373" : "#c62828") : "#8a8a8a";
         return "<font color='" + col + "'>" + escapeHtml(f.corta()) + "</font>";
@@ -437,7 +437,7 @@ final class WatchlistLista {
     void refrescarCabeceraOrden() {
         if (wv.cabLabel == null) return;
         String ordenCfg = leerConfig("orden_watch", "elo");
-        boolean porForma = wv.formaVisible && ordenCfg.startsWith("forma");
+        boolean porForma = wv.presenter.formaVisible && ordenCfg.startsWith("forma");
         boolean formaAsc = "forma_asc".equals(ordenCfg);
         boolean porElo = !porForma && wv.mostrarEloWatch && "elo".equals(ordenCfg);
         String ordenable = " <font color='#8a8a8a'>\u21C5</font>";   // «⇅»: aquí también se puede ordenar
@@ -447,7 +447,7 @@ final class WatchlistLista {
         wv.cabLabel.setText("<html><table width='" + w + "' cellpadding='0' cellspacing='0'><tr>"
                 + "<td width='24'></td><td width='14'></td>"
                 + "<td><b>Nick" + (porElo || porForma ? ordenable : " \u2193") + "</b></td>"
-                + (wv.formaVisible ? "<td width='72' align='center'><b>" + t("Forma ", "Form ") + (wv.ventanaForma <= 24 ? "24h" : "7d")
+                + (wv.presenter.formaVisible ? "<td width='72' align='center'><b>" + t("Forma ", "Form ") + (wv.presenter.ventanaForma <= 24 ? "24h" : "7d")
                         + (porForma ? (formaAsc ? " \u2191" : " \u2193") : ordenable) + "</b></td>" : "")
                 + "<td width='" + WatchlistView.anchoCeldaElo(Math.max(150, wv.playersList.getWidth() - 22)) + "' align='right'><b>" + (wv.mostrarEloWatch ? "ELO" + (porElo ? " \u2193" : ordenable) : "") + "</b></td>"
                 + "</tr></table></html>");

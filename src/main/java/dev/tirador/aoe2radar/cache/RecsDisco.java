@@ -13,7 +13,7 @@ import java.util.TreeMap;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 
-import static dev.tirador.aoe2radar.util.Sistema.enCarpetaBase;
+import static dev.tirador.aoe2radar.util.Sistema.carpetaRecs;
 import static dev.tirador.aoe2radar.util.Config.leerConfig;
 import static dev.tirador.aoe2radar.util.Texto.limpiaNombre;
 import static dev.tirador.aoe2radar.util.Texto.recorta;
@@ -23,7 +23,8 @@ import static dev.tirador.aoe2radar.util.Texto.sanea;
 public final class RecsDisco {
     private RecsDisco() {}
 
-    public static final Path RECS_DIR = enCarpetaBase("recs");
+    /** Empaquetada, Documentos\aoe2radar\recs (o la carpeta_recs fijada en config); fuera del paquete, «recs» como siempre. */
+    public static final Path RECS_DIR = carpetaRecs();
 
     /** Nombre de archivo: empieza SIEMPRE por el jugador seguido de referencia
      *  (y su equipo), luego los rivales, mapa y hora:

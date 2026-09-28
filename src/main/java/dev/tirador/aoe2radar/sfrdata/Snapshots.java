@@ -9,7 +9,7 @@ import java.util.Map;
 
 import static dev.tirador.aoe2radar.api.Freno.CONTROL;
 
-/** Snapshots nocturnos de sfr-data: ELO de anoche y de hace 7 días, muestra de ayer y release «perfiles» (índice y archivos con caché en disco). */
+/** Snapshots nocturnos de sfr-data: ELO de anoche y de hace 7 días, muestra de ayer, chispas y release «perfiles» (índice y archivos con caché en disco). */
 public final class Snapshots {
     private Snapshots() {}
 
@@ -27,6 +27,10 @@ public final class Snapshots {
     public static final MuestraNocturna MUESTRA = new MuestraNocturna(SfrDataClient.SISTEMA, CacheService.SISTEMA);
     /** La muestra de ayer (Al azar por ELO y Guess the ELO sin API). null si no está disponible. */
     public static Map<String, List<List<Object>>> muestraAyer() { return MUESTRA.muestra(); }
+    /** La muestra de anteayer (sfr-data 1.4, mismo archivo). null si no está disponible. */
+    public static Map<String, List<List<Object>>> muestraAnteayer() { return MUESTRA.anteayer(); }
+    /** Las chispas de sfr-data (últimos ratings 1v1 por jugador, tarjeta del hover sin API). Ver ChispasNocturnas. */
+    public static final ChispasNocturnas CHISPAS = new ChispasNocturnas(SfrDataClient.SISTEMA, CacheService.SISTEMA);
 
     // ----- Perfiles precalculados (release «perfiles» de sfr-data): el año completo sin tocar la API -----
     /** Índice y paquetes de la release «perfiles» (ver PerfilesSfr). */

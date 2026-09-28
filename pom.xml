@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.tirador</groupId>
   <artifactId>aoe2radar</artifactId>
-  <version>1.3.0</version>
+  <version>1.4.0</version>
   <packaging>jar</packaging>
   <name>aoe2radar</name>
 
@@ -30,7 +30,46 @@
   </dependencies>
 
   <build>
+    <!-- Versión: UNA sola fuente, el <version> de arriba. version.properties (en resources-filtradas) se filtra
+         para que util.Identidad la lea al arrancar; el resto de recursos NO se filtra (banderas y techtree son
+         binarios o datos que deben ir byte a byte). Al declarar <resources>, Maven olvida el de por defecto:
+         por eso src/main/resources vuelve a aparecer aquí, sin filtrar. -->
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+        <filtering>false</filtering>
+      </resource>
+      <resource>
+        <directory>src/main/resources-filtradas</directory>
+        <filtering>true</filtering>
+      </resource>
+    </resources>
     <plugins>
+      <!-- version.app: la versión que enseña la app (título, Acerca de, comprobador de actualizaciones contra
+           los tags vX.Y) y la de jpackage. Regla (la misma que Identidad.versionCorta, que la prueba): se quita
+           el sufijo «-algo» y un tercer tramo «.0»: 1.3.0 -> 1.3, 1.3.1 -> 1.3.1, 1.4.0-SNAPSHOT -> 1.4.
+           Se calcula en «initialize», antes de filtrar recursos (process-resources) y de empaquetar. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.1</version>
+        <executions>
+          <execution>
+            <id>version-app</id>
+            <phase>initialize</phase>
+            <goals>
+              <goal>regex-property</goal>
+            </goals>
+            <configuration>
+              <name>version.app</name>
+              <value>${project.version}</value>
+              <regex>^(?:(\d+\.\d+)\.0|([^-]+))(?:-.*)?$</regex>
+              <replacement>$1$2</replacement>
+              <failIfNoMatch>true</failIfNoMatch>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-surefire-plugin</artifactId>
@@ -75,7 +114,8 @@
     crear_exe.bat (el script de la 1.1 que hacía este empaquetado) no está en el repo ni en el histórico de
     Git; no ha aparecido en C:\proyectos, el Escritorio ni Documentos. Sus parámetros están deducidos del
     propio código:
-      - Nombre/versión/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE y VERSION; el número de versión se fija allí).
+      - Nombre/autor: dev.tirador.aoe2radar.util.Identidad (NOMBRE). La versión sale del <version> de este pom
+        (propiedad version.app, calculada arriba en <build>), la misma que Identidad.VERSION.
       - Clase principal: dev.tirador.aoe2radar.SpoilerFreeRecs (la misma del manifest del jar).
       - Icono: AcercaDe.generarIco() documenta literalmente que
         "crear_exe.bat" generaba logo.ico así: java -cp build SpoilerFreeRecs, opción make-ico
@@ -89,8 +129,8 @@
     <profile>
       <id>empaquetar</id>
       <properties>
-        <!-- Se fija a mano: cambiarlo a la vez que util.Identidad.VERSION. -->
-        <jpackage.appVersion>1.3</jpackage.appVersion>
+        <!-- No se fija a mano: sale del <version> del pom (version.app, ver build-helper arriba). -->
+        <jpackage.appVersion>${version.app}</jpackage.appVersion>
         <jpackage.vendor>12Tirador</jpackage.vendor>
         <jpackage.entrada>${project.build.directory}/jpackage-input</jpackage.entrada>
       </properties>
@@ -221,6 +261,22 @@
             <version>3.1.0</version>
             <executions>
               <execution>
+                <!-- La carpeta de entrada de jpackage tampoco se limpiaba: cada versión dejaba allí su jar
+                     (aoe2radar-1.2.0-SNAPSHOT.jar seguía dentro del zip de la 1.3, y en el classpath del .cfg).
+                     Se vacía en process-classes, una fase ANTES de prepare-package, porque en prepare-package
+                     copiar-dependencias-runtime (plugin anterior en el pom) ya la está llenando. -->
+                <id>borrar-entrada-jpackage-anterior</id>
+                <phase>process-classes</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${jpackage.entrada}" quiet="true" />
+                  </target>
+                </configuration>
+              </execution>
+              <execution>
                 <id>borrar-dist-anterior</id>
                 <phase>prepare-package</phase>
                 <goals>
@@ -247,6 +303,49 @@
                       <fileset dir="${project.basedir}/src/main/resources/banderas" />
                     </copy>
                   </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <!--
+      Perfil del instalador (1.4): va SIEMPRE junto a «empaquetar» y en la fase verify, después de todo el
+      empaquetado (jpackage y la copia de banderas, en package):
+          mvn -Pempaquetar,instalador -DskipTests verify
+      Compila packaging/aoe2radar.iss con Inno Setup 6 (ISCC.exe) sobre target/dist/aoe2radar y deja
+      target/instalador/aoe2radar-X.Y-setup.exe. El zip (release.yml) sigue saliendo de target/dist como antes.
+      ISCC: por defecto el de una instalación por usuario de Inno Setup 6; en otra ruta, -Discc="C:\...\ISCC.exe".
+    -->
+    <profile>
+      <id>instalador</id>
+      <properties>
+        <iscc>${env.LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe</iscc>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>instalador-inno-setup</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${iscc}</executable>
+                  <arguments>
+                    <argument>/DAppVersion=${version.app}</argument>
+                    <argument>/DDistDir=${project.build.directory}\dist\aoe2radar</argument>
+                    <argument>/DOutputDir=${project.build.directory}\instalador</argument>
+                    <argument>/DIcono=${project.build.directory}\logo.ico</argument>
+                    <argument>${project.basedir}\packaging\aoe2radar.iss</argument>
+                  </arguments>
                 </configuration>
               </execution>
             </executions>

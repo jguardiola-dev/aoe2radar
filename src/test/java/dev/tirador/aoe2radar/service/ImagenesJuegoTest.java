@@ -129,4 +129,36 @@ class ImagenesJuegoTest {
         assertEquals(LADDER_DIR.resolve("mapas").resolve("rm_arabia.png"), rutaMapa("rm_arabia"));
         assertEquals(LADDER_DIR.resolve("mapas").resolve("black_forest.png"), rutaMapa("black forest"));
     }
+
+    // ----- 1.4: iconos del tech tree vacíos o truncados --------------------------------
+
+    private static byte[] pngDeVerdad() throws IOException {
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB), "png", out);
+        return out.toByteArray();
+    }
+
+    @Test void iconoEnDiscoNoCuentaElVacioNiElQueFalta(@org.junit.jupiter.api.io.TempDir Path tmp) throws IOException {
+        Path vacio = Files.write(tmp.resolve("vacio.png"), new byte[0]);
+        Path bueno = Files.write(tmp.resolve("bueno.png"), pngDeVerdad());
+        assertFalse(ImagenesJuego.iconoEnDisco(vacio), "0 bytes: hay que volver a pedirlo");
+        assertFalse(ImagenesJuego.iconoEnDisco(tmp.resolve("no_esta.png")));
+        assertTrue(ImagenesJuego.iconoEnDisco(bueno));
+    }
+
+    @Test void leerIconoTruncadoLoBorraYDevuelveNull(@org.junit.jupiter.api.io.TempDir Path tmp) throws IOException {
+        byte[] png = pngDeVerdad();
+        Path cortado = Files.write(tmp.resolve("cortado.png"), java.util.Arrays.copyOf(png, png.length / 2));
+        assertNull(ImagenesJuego.leerIcono(cortado));
+        assertFalse(Files.exists(cortado), "se borra para que se vuelva a traer");
+        Path vacio = Files.write(tmp.resolve("vacio.png"), new byte[0]);
+        assertNull(ImagenesJuego.leerIcono(vacio));
+        assertFalse(Files.exists(vacio));
+    }
+
+    @Test void leerIconoSanoLoDevuelveYNoBorraNada(@org.junit.jupiter.api.io.TempDir Path tmp) throws IOException {
+        Path bueno = Files.write(tmp.resolve("bueno.png"), pngDeVerdad());
+        assertNotNull(ImagenesJuego.leerIcono(bueno));
+        assertTrue(Files.exists(bueno));
+    }
 }

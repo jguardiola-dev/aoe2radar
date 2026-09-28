@@ -142,9 +142,7 @@ final class CabeceraSujetos {
                     if (e.getButton() != MouseEvent.BUTTON1) return;
                     if (e.getClickCount() == 2) { vista.navegacion.abrirPerfil(pid, nom); return; }
                     if (e.getClickCount() != 1) return;
-                    if (e.isControlDown()) { if (!vista.filtroSujetos.remove(pid)) vista.filtroSujetos.add(pid); }
-                    else if (vista.filtroSujetos.size() == 1 && vista.filtroSujetos.contains(pid)) vista.filtroSujetos.clear();
-                    else { vista.filtroSujetos.clear(); vista.filtroSujetos.add(pid); }
+                    PartidasPresenter.alternarFiltroSujeto(vista.filtroSujetos, pid, e.isControlDown());
                     refrescarSujetos(vista.ultimosSujetos, esInvitadoIn);
                     vista.applyFilters();
                 }
