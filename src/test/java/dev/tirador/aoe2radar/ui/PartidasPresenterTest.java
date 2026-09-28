@@ -590,6 +590,15 @@ class PartidasPresenterTest {
         assertEquals(1, r.recorridos(), "B, cortado a medias, no cuenta");
     }
 
+    @Test void conservaTablaAnterior_soloSiSeDetuvoSinLeerNada() {
+        Match m = PartidasViewTest.partida(1, A, Instant.now());
+        assertTrue(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(), false, 0, java.util.Set.of(), true, 0)));
+        assertFalse(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(m), false, 0, java.util.Set.of(A.id()), true, 1)),
+                "detenida con algo leído: se muestra como parcial");
+        assertFalse(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(), false, 0, java.util.Set.of(A.id()), false, 1)),
+                "entera y sin partidas: la tabla se vacía como siempre");
+    }
+
     @Test void recorrer_sinParar_recorreATodosYNoVuelveDetenida() {
         Instant fin = Instant.now().minusSeconds(600);
         PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(A, B), fin.minusSeconds(86_400), 50, 0,

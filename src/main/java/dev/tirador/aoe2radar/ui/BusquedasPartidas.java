@@ -328,6 +328,10 @@ final class BusquedasPartidas {
                     // están en exitosos, así que no se marcan «fuera».
                     if (r.detenida()) log("buscar #" + miSerial + ": detenida; " + r.lista().size() + " partidas de "
                             + r.recorridos() + "/" + tracked.size() + " jugadores, se muestran como parciales");
+                    if (PartidasPresenter.conservaTablaAnterior(r)) {   // nada leído: la tabla anterior se queda
+                        vista.anfitrion.estado(PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size()));
+                        return;
+                    }
                     List<Match> res = r.lista();
                     final boolean topeAlcanzado = r.topeAlcanzado();
                     final int fallosFetch = r.fallos();

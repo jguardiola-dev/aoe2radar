@@ -291,6 +291,12 @@ public final class PartidasPresenter {
                 + t(" de ", " of ") + buscados + t(" jugadores)", " players)");
     }
 
+    /** Una «Buscar partidas» detenida sin haber leído ninguna partida: la tabla anterior se conserva (como hace
+     *  «Al azar» detenido sin nada) y solo se escribe el estado. */
+    static boolean conservaTablaAnterior(Recorrido r) {
+        return r.detenida() && r.lista().isEmpty();
+    }
+
     /** «Al azar por ELO» detenido: lo encontrado hasta el corte (si algo) se aplica igual. */
     public static String mensajeAzarDetenido(int encontradas) {
         return t("Búsqueda detenida.", "Search stopped.")

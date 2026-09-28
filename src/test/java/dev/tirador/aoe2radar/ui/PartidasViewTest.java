@@ -795,4 +795,29 @@ class PartidasViewTest {
         esperar(() -> !anfitrion.progreso, "que la descarga termine");
         assertFalse(anfitrion.pedidas.contains(B.id()), "tras la × no se consulta a nadie más");
     }
+
+    @Test void botonBuscar_detenidaSinLeerNada_conservaLaTablaAnterior() throws Exception {
+        Match previa = partida(8601, C, Instant.now().minusSeconds(900));
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(previa), C, "grupo|General"));
+        enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) { enA.countDown(); soltarA.await(60, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        try {
+            enEdt(() -> vista.fetchBtn.doClick());
+            assertTrue(enA.await(5, TimeUnit.SECONDS));
+            enEdt(() -> vista.fetchBtn.doClick());   // «Detener» antes de leer nada
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+            asentar();
+        } finally {
+            soltarA.countDown();
+        }
+        enEdt(() -> {
+            assertEquals(List.of(previa), vista.all, "la tabla anterior se conserva (como en «Al azar»)");
+            assertEquals("Búsqueda detenida: resultados parciales (0 de 2 jugadores)", anfitrion.estado);
+        });
+    }
 }
