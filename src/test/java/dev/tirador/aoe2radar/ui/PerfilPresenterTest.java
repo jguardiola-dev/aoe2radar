@@ -304,6 +304,39 @@ class PerfilPresenterTest {
         assertFalse(pantalla.cargando);
     }
 
+    /** A→B→A (1.4, resto de F5): la primera carga de A sigue en vuelo cuando se vuelve a A. Antes su cancelación
+     *  (pidAbierto() != pid) volvía a ser false y seguía bajando a la vez que la nueva, y su vuelta pintaba encima. */
+    @Test void aba_la_carga_vieja_de_A_se_cancela_y_no_pinta_sobre_la_nueva() {
+        List<java.util.function.BooleanSupplier> cancelaciones = new ArrayList<>();
+        PerfilesFalso perf = new PerfilesFalso() {
+            @Override public Actividad historial(long pid, String nombre, Actividad base, boolean mas, int maxPaginas, Consumer<Actividad> parcial, java.util.function.BooleanSupplier cancelar) {
+                cancelaciones.add(cancelar);
+                parcial.accept(historialResultado);
+                return historialResultado;
+            }
+        };
+        TareasAplazadas tareasAplazadas = new TareasAplazadas();
+        PerfilPresenter p = new PerfilPresenter(perf, ratings, busqueda, tareasAplazadas, eloWatch, actividadCache, pantalla);
+        pantalla.pidAbierto = 7L;
+        p.cargar(7L, "Zutano", null, false);   // A, primera vez
+        pantalla.pidAbierto = 8L;
+        p.cargar(8L, "Mengano", null, false);  // B
+        pantalla.pidAbierto = 7L;
+        p.cargar(7L, "Zutano", null, false);   // A otra vez
+        Actividad vieja = actividad(7L, "Zutano", List.of()), nueva = actividad(7L, "Zutano", List.of());
+        perf.historialResultado = vieja;
+        tareasAplazadas.pendientesFondo.get(0).run();   // vuelve la primera de A
+        assertTrue(cancelaciones.get(0).getAsBoolean(), "la primera carga de A quedó relevada: debe darse por cancelada");
+        assertNull(pantalla.completadaPintada, "ni pinta su resultado");
+        assertNull(pantalla.parcialPintada, "ni su progreso");
+        assertTrue(pantalla.cargando, "la nueva sigue cargando");
+        perf.historialResultado = nueva;
+        tareasAplazadas.pendientesFondo.get(2).run();   // vuelve la nueva
+        assertFalse(cancelaciones.get(1).getAsBoolean(), "la vigente no se cancela");
+        assertSame(nueva, pantalla.completadaPintada);
+        assertFalse(pantalla.cargando);
+    }
+
     /** F5: «Cargar más» de A en vuelo y se abre B por la API: la vuelta de A tampoco apaga la carga de B. */
     @Test void cargar_mas_tardio_no_apaga_la_carga_de_otro_perfil() {
         TareasAplazadas tareasAplazadas = new TareasAplazadas();
