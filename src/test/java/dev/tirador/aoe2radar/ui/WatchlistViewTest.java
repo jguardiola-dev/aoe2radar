@@ -8,7 +8,6 @@ import dev.tirador.aoe2radar.model.Actividad;
 import dev.tirador.aoe2radar.model.Forma;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
-import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.model.PaisItem;
 import dev.tirador.aoe2radar.model.Perfil;
 import dev.tirador.aoe2radar.model.Player;
@@ -171,7 +170,6 @@ class WatchlistViewTest {
         @Override public void seleccionCambiada() { }
         @Override public boolean enCursoReal(Match m) { return false; }
         @Override public Perfil perfilApi(long pid) { return null; }
-        @Override public PaginaPartidas paginaApi(long pid, int pagina, int porPagina) { return null; }
         @Override public void reiniciarThrottleDirectos() { }
         @Override public void vigilarTwitchDirectos() { }
         @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) {

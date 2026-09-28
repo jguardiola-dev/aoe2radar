@@ -293,7 +293,7 @@ final class WatchlistLista {
                     if (wv.hoverCard != null) wv.ocultarHoverCard();
                     wv.hoverTimer.stop();
                     wv.hoverPid = pid;
-                    if (false && pid != 0) {   // tarjeta flotante desactivada: el ELO ya está en la lista y el perfil a un doble clic (y cada tarjeta era una llamada a la API)
+                    if (pid != 0) {   // tarjeta flotante (1.4): tras 600 ms quieto en la fila; nocturna sin llamadas, si no una (WatchlistHoverCard)
                         wv.hoverPantalla = e.getLocationOnScreen();
                         wv.hoverTimer.restart();
                     }

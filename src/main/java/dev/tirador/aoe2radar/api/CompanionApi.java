@@ -58,7 +58,8 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
     /**
      * CON caché de fichas y páginas del ladder (10 y 14 min, MAX_CACHE entradas). Reloj: Reloj.SISTEMA en la app, uno
      * falso en los tests. Quien pida datos que deben ser de ahora (el ELO 1v1, la tarjeta del hover, una recarga que
-     * pide el usuario) tiene que ir por perfilFresco / leaderboardFresca / clasificacionFresca. Un acierto respeta
+     * pide el usuario) tiene que ir por perfilFresco / leaderboardFresca / clasificacionFresca. La tarjeta del hover (1.4) usa
+     * perfil, CON caché: su ELO puede tener hasta ~20 min (esta caché más la de la tarjeta), y casi siempre sale del nocturno. Un acierto respeta
      * Detener (ApiClient.comprobarDetenida).
      */
     public static CompanionApi conCache(ApiClient api, Reloj reloj) {
