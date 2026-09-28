@@ -55,6 +55,8 @@ class PartidasLogicaTest {
         }
         @Override public List<Match> buscarGte(Instant cutoff, Consumer<String> progreso) { return new ArrayList<>(gte); }
         @Override public boolean tramoAgotado() { return agotado; }
+        volatile boolean deMuestra;
+        @Override public boolean deMuestra() { return deMuestra; }
     }
 
     @TempDir Path recs;
@@ -361,6 +363,16 @@ class PartidasLogicaTest {
             enEdt(() -> vista.buscarAleatorias(true));
             esperar(() -> !anfitrion.progreso && anfitrion.estado.startsWith("Nada"), "que el azar termine");
             assertEquals("Nada en 1800–1900 en las últimas 36 h. Detalle del muestreo en descargas.log.", anfitrion.estado);
+        });
+    }
+
+    @Test void azar_deLaMuestraNocturna_avisaEnElEstado() throws Exception {
+        azar.aleatorias = List.of(partidaDe(1, mp(10, "Uno", 1, 1850), mp(11, "Dos", 2, 1880)));
+        azar.deMuestra = true;
+        conEloConfig(() -> {
+            enEdt(() -> vista.buscarAleatorias(true));
+            esperar(() -> !anfitrion.progreso && anfitrion.estado.startsWith("1 "), "que el azar termine");
+            assertEquals("1 partidas 1v1 al azar, ELO 1800–1900, partidas de ayer (muestra nocturna).", anfitrion.estado);
         });
     }
 

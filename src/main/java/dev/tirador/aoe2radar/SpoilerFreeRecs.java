@@ -277,7 +277,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     @Override public boolean mostrarResultados() { return partidas != null && partidas.mostrarResultados; }
 
     // Tamaño/posición guardados: ui.VentanaGuardada (aplicar lo llama ui.VentanaPrincipalAjustes al abrir; guardar, CableadoCromo al cerrar).
-    // trabajando (progreso, semáforo de operación): ui.BarraEstado (campo barraEstado, llamado directamente).
+    // empezarOperacion/terminarOperacion (progreso, un freno por operación): ui.BarraEstado (campo barraEstado, llamado directamente).
 
     // «Mi partida» (quién eres, aviso al encontrar partida, panel sobre el juego): ui.MiPartidaPanel + Presenter + service.MiPartidaServiceJuego; el
     // cableado (su Anfitrion) vive en CableadoCromo.miPartida. AccionesVentana/CableadoCromo llaman a miPartida.* directamente.

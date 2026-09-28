@@ -6,6 +6,7 @@ import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.BarridoVivos;
+import dev.tirador.aoe2radar.util.Operaciones;
 import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,13 +71,12 @@ class PartidasViewTest {
     }
 
     /** Lo que la ventana pone de verdad (CableadoPartidas + BarraEstado), en pequeño: el semáforo de operación
-     *  (opSerial sube con cada trabajando(true), que también suelta el freno) y la última línea de estado. */
+     *  (opSerial sube con cada operación, que tiene su propio freno) y la última línea de estado. */
     static final class AnfitrionFalso implements PartidasView.Anfitrion {
         volatile String estado = "";
         final List<String> estados = Collections.synchronizedList(new ArrayList<>());
         volatile long opSerial;
         volatile boolean progreso;
-        volatile boolean stop;
         volatile PartidasPresenter.Paginador paginador = (pid, pag, pp) -> List.of();
         final List<Long> pedidas = Collections.synchronizedList(new ArrayList<>());
         final Path recs;
@@ -110,11 +110,17 @@ class PartidasViewTest {
             return recs.resolve(m.id + ".aoe2record");
         }
         @Override public Path recsDir() { return recs; }
-        @Override public void trabajando(boolean on) { progreso = on; if (on) { stop = false; opSerial++; } }
+        /** Los frenos de verdad (util.Operaciones), como la barra de la app: uno por operación. */
+        final Operaciones ops = new Operaciones();
+        @Override public long empezarOperacion() { opSerial++; ops.empezar(opSerial); progreso = ops.hayVivas(); return opSerial; }
+        @Override public void terminarOperacion(long op) { ops.terminar(op); progreso = ops.hayVivas(); }
         @Override public long operacionActual() { return opSerial; }
-        @Override public boolean detenido() { return stop; }
-        @Override public void pararOperacion() { stop = true; }
-        @Override public void anotarHiloOperacion() { }
+        @Override public boolean detenido(long op) { return ops.detenido(op); }
+        @Override public void pararOperacion(long op) { ops.detener(op); ops.interrumpir(op); }
+        @Override public void anotarHiloOperacion(long op, boolean interrumpible) { ops.anotarHilo(op, interrumpible); }
+        @Override public void soltarHiloOperacion() { ops.soltarHilo(); }
+        /** El «Detener» de la barra de estado: para SOLO la operación viva más reciente. */
+        long detenerDeLaBarra() { long op = ops.detenerUltima(); ops.interrumpir(op); return op; }
         @Override public void aprenderCatalogos(List<Match> res) { }
         @Override public List<String> mapasConocidos() { return List.of(); }
         @Override public List<String> civsConocidas() { return List.of(); }
@@ -249,23 +255,28 @@ class PartidasViewTest {
 
     // ----- general F4 / watchlist F6: Detener de la barra y la × paran la búsqueda -----
 
-    @Test void detenerDeLaBarra_paraLaBusquedaYNoPresentaLoParcialComoCompleto() throws Exception {
+    @Test void detenerDeLaBarra_paraLaBusquedaYMuestraLoLeidoComoParcial() throws Exception {
         enlace.jugadores.addAll(List.of(A, B, C));
         CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
         Instant fin = Instant.now().minusSeconds(600);
         anfitrion.paginador = (pid, pag, pp) -> {
-            if (pid == B.id()) { enB.countDown(); soltarB.await(5, TimeUnit.SECONDS); }
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }   // una petición que no acaba sola
             return List.of(partida(pid, pid == A.id() ? A : pid == B.id() ? B : C, fin));
         };
-        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
-        assertTrue(enB.await(5, TimeUnit.SECONDS));
-        anfitrion.pararOperacion();   // el «Detener» de la barra de estado: solo pone el freno (stopOperacion)
-        soltarB.countDown();          // la petición en vuelo de B acaba igual
-        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
-        asentar();
+        try {
+            enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+            assertTrue(enB.await(5, TimeUnit.SECONDS));
+            anfitrion.detenerDeLaBarra();   // el «Detener» de la barra: la búsqueda es la operación viva más reciente
+            // Sin soltar B: Detener interrumpe la petición en vuelo (esperar da 10 s; B esperaría 60).
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine sin esperar a B");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
         assertFalse(anfitrion.pedidas.contains(C.id()), "tras Detener no se consulta a nadie más");
-        assertTrue(vista.all.isEmpty(), "lo leído hasta el corte no se presenta como la búsqueda entera");
-        assertEquals("Búsqueda detenida.", anfitrion.estado);
+        enEdt(() -> assertEquals(1, vista.all.size(), "lo leído hasta el corte (A) se muestra (decisión de Jorge, 1.3)"));
+        assertEquals("Búsqueda detenida: resultados parciales (1 de 3 jugadores)", anfitrion.estado,
+                "avisa de que es parcial: no se presenta como la búsqueda entera");
     }
 
     @Test void cruzDePartidasDe_conBusquedaEnCurso_laTablaNoVuelveALlenarse() throws Exception {
@@ -362,7 +373,7 @@ class PartidasViewTest {
         };
         enEdt(() -> vista.fetchMatches(vista.fetchBtn));
         assertTrue(enA.await(5, TimeUnit.SECONDS));
-        enEdt(() -> anfitrion.trabajando(true));   // empieza otra operación (una descarga, «Ver forma»…): sube el opSerial
+        enEdt(() -> anfitrion.empezarOperacion());   // empieza otra operación (una descarga, «Ver forma»…): sube el opSerial
         soltarA.countDown();
         esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
         asentar();
@@ -439,7 +450,7 @@ class PartidasViewTest {
         int[] avisos = { 0 };
         enEdt(() -> vista.descargarSinCambiarVista(List.of(partida(8203, A, Instant.now().minusSeconds(600))), false, () -> avisos[0]++));
         assertTrue(rec.dentro.await(5, TimeUnit.SECONDS));
-        enEdt(() -> anfitrion.trabajando(true));   // otra operación se lleva el semáforo
+        enEdt(() -> anfitrion.empezarOperacion());   // otra operación empieza (y sigue viva)
         rec.soltar.countDown();
         asentar();
         enEdt(() -> {
@@ -640,22 +651,194 @@ class PartidasViewTest {
 
     @Test void botonBuscar_conUnaBusquedaEnMarcha_laDetiene() throws Exception {
         enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }   // una petición que no acaba sola
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        try {
+            enEdt(() -> vista.fetchBtn.doClick());
+            assertTrue(enB.await(5, TimeUnit.SECONDS));
+            enEdt(() -> vista.fetchBtn.doClick());   // el mismo botón, ahora «Detener»
+            // Sin soltar B: el botón interrumpe la petición en vuelo (esperar da 10 s; B esperaría 60).
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine sin esperar a B");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
+        enEdt(() -> {
+            assertEquals(1, vista.all.size(), "lo leído de A se muestra (decisión de Jorge, 1.3)");
+            assertEquals("Búsqueda detenida: resultados parciales (1 de 2 jugadores)", anfitrion.estado);
+            assertFalse(anfitrion.progreso);
+            assertTrue(vista.fetchBtn.isEnabled() && vista.azarBtn.isEnabled() && vista.gteBtn.isEnabled());
+        });
+    }
+
+    @Test void botonBuscar_trasDetener_unConsultandoPendienteNoPisaElDeteniendo() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        try {
+            // Todo en UNA tarea del EDT: el «Consultando Beto…» publicado mientras tanto queda en cola y llega a
+            // process() DESPUÉS de pulsar Detener.
+            enEdt(() -> {
+                vista.fetchBtn.doClick();
+                try { assertTrue(enB.await(5, TimeUnit.SECONDS)); } catch (InterruptedException e) { throw new AssertionError(e); }
+                vista.fetchBtn.doClick();
+            });
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
+        int desde = anfitrion.estados.indexOf("Deteniendo la búsqueda…");
+        assertTrue(desde >= 0, "estados: " + anfitrion.estados);
+        List<String> tras = new ArrayList<>(anfitrion.estados.subList(desde, anfitrion.estados.size()));
+        assertTrue(tras.stream().noneMatch(s -> s.startsWith("Consultando")), "estados tras Detener: " + tras);
+    }
+
+    // ----- Enter sin selección (decisión de Jorge, 1.3): vuelve a avisar -----
+
+    @Test void enter_sinSeleccion_avisaYNoDescarga() throws Exception {
+        Match m = partida(8102, A, Instant.now().minusSeconds(600));
+        enEdt(() -> {
+            vista.cargarPartidasEnTabla(List.of(m), A, "grupo|General");
+            vista.table.clearSelection();
+            anfitrion.estado = "";
+        });
+        long antes = anfitrion.opSerial;
+        enEdt(this::pulsarEnter);
+        assertEquals("No hay partidas seleccionadas.", anfitrion.estado, "Enter sin selección avisa");
+        assertEquals(antes, anfitrion.opSerial, "y no empieza ninguna descarga");
+        assertTrue(rec.procesadas.isEmpty());
+    }
+
+    // ----- un freno por operación (decisión de Jorge, 1.3): Detener de la barra para solo la última viva -----
+
+    @Test void detenerDeLaBarra_conUnaDescargaEmpezadaDuranteLaBusqueda_soloParaLaDescarga() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
         CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
         Instant fin = Instant.now().minusSeconds(600);
         anfitrion.paginador = (pid, pag, pp) -> {
             if (pid == A.id()) { enA.countDown(); soltarA.await(5, TimeUnit.SECONDS); }
             return List.of(partida(pid, pid == A.id() ? A : B, fin));
         };
-        enEdt(() -> vista.fetchBtn.doClick());
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
         assertTrue(enA.await(5, TimeUnit.SECONDS));
-        enEdt(() -> vista.fetchBtn.doClick());   // el mismo botón, ahora «Detener»
+        final long busqueda = anfitrion.opSerial;
+        rec.dentro = new CountDownLatch(1);
+        rec.soltar = new CountDownLatch(1);
+        enEdt(() -> vista.download(List.of(partida(8301, A, fin), partida(8302, A, fin))));
+        assertTrue(rec.dentro.await(5, TimeUnit.SECONDS));
+        final long descarga = anfitrion.opSerial;
+        assertEquals(descarga, anfitrion.detenerDeLaBarra(), "Detener va a la operación viva más reciente: la descarga");
+        rec.soltar.countDown();
         soltarA.countDown();
+        esperar(() -> vista.fetchWorker == null && !anfitrion.progreso, "que las dos terminen");
         asentar();
+        assertFalse(anfitrion.detenido(busqueda), "la búsqueda no se detuvo");
+        assertEquals(List.of(8301L), rec.procesadas, "la descarga se paró tras la primera");
+        assertTrue(anfitrion.estados.stream().anyMatch(s -> s.startsWith("Detenido. 1/2")), "estados: " + anfitrion.estados);
+        assertTrue(anfitrion.pedidas.contains(B.id()), "la búsqueda siguió con B");
+        enEdt(() -> assertEquals(2, vista.all.size(), "y se presenta entera"));
+    }
+
+    @Test void detenerDeLaBarra_trasAcabarLaDescarga_pasaALaBusquedaQueSigueViva() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) { enA.countDown(); soltarA.await(5, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+        assertTrue(enA.await(5, TimeUnit.SECONDS));
+        final long busqueda = anfitrion.opSerial;
+        enEdt(() -> vista.download(List.of(partida(8401, A, fin))));
+        esperar(() -> vista.dlSel.isEnabled(), "que la descarga termine");
+        enEdt(() -> assertTrue(anfitrion.progreso, "la búsqueda sigue viva: el progreso no se apaga"));
+        assertEquals(busqueda, anfitrion.detenerDeLaBarra(), "Detener pasa a la búsqueda");
+        soltarA.countDown();
+        esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+        asentar();
+        assertFalse(anfitrion.pedidas.contains(B.id()), "la búsqueda se detuvo tras A");
+        enEdt(() -> assertFalse(anfitrion.progreso));
+    }
+
+    @Test void cruzDePartidasDe_conUnaDescargaViva_noLaParaNiApagaSuProgreso() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) { enA.countDown(); soltarA.await(5, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+        assertTrue(enA.await(5, TimeUnit.SECONDS));
+        final long busqueda = anfitrion.opSerial;
+        rec.dentro = new CountDownLatch(1);
+        rec.soltar = new CountDownLatch(1);
+        enEdt(() -> vista.download(List.of(partida(8501, A, fin))));
+        assertTrue(rec.dentro.await(5, TimeUnit.SECONDS));
+        final long descarga = anfitrion.opSerial;
+        enEdt(vista::cerrarBusqueda);
+        assertTrue(anfitrion.detenido(busqueda), "la × para SU búsqueda aunque no sea la última operación");
+        assertFalse(anfitrion.detenido(descarga), "y no la descarga");
+        enEdt(() -> assertTrue(anfitrion.progreso, "la descarga sigue: su progreso no se apaga"));
+        rec.soltar.countDown();
+        soltarA.countDown();
+        esperar(() -> !anfitrion.progreso, "que la descarga termine");
+        assertFalse(anfitrion.pedidas.contains(B.id()), "tras la × no se consulta a nadie más");
+    }
+
+    @Test void botonBuscar_detenidaSinLeerNada_conservaLaTablaAnterior() throws Exception {
+        Match previa = partida(8601, C, Instant.now().minusSeconds(900));
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(previa), C, "grupo|General"));
+        enlace.jugadores.addAll(List.of(A, B));
+        CountDownLatch enA = new CountDownLatch(1), soltarA = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) { enA.countDown(); soltarA.await(60, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == A.id() ? A : B, fin));
+        };
+        try {
+            enEdt(() -> vista.fetchBtn.doClick());
+            assertTrue(enA.await(5, TimeUnit.SECONDS));
+            enEdt(() -> vista.fetchBtn.doClick());   // «Detener» antes de leer nada
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+            asentar();
+        } finally {
+            soltarA.countDown();
+        }
         enEdt(() -> {
-            assertNull(vista.fetchWorker);
-            assertTrue(vista.all.isEmpty());
-            assertEquals("Búsqueda detenida.", anfitrion.estado);
+            assertEquals(List.of(previa), vista.all, "la tabla anterior se conserva (como en «Al azar»)");
+            assertEquals("Búsqueda detenida: resultados parciales (0 de 2 jugadores)", anfitrion.estado);
         });
-        assertFalse(anfitrion.pedidas.contains(B.id()));
+    }
+
+    @Test void botonBuscar_detenidaTrasUnFallo_loDiceEnElAviso() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B, C));
+        CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) throw new java.io.IOException("HTTP 500");   // A falla antes del corte
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == B.id() ? B : C, fin));
+        };
+        try {
+            enEdt(() -> vista.fetchBtn.doClick());
+            assertTrue(enB.await(5, TimeUnit.SECONDS));
+            enEdt(() -> vista.fetchBtn.doClick());
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
+        assertEquals("Búsqueda detenida: resultados parciales (1 de 3 jugadores, 1 con error)", anfitrion.estado);
     }
 }

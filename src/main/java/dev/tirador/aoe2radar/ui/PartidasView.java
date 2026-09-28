@@ -124,11 +124,18 @@ public final class PartidasView {
         boolean enCursoReal(Match m);
         Path destino(Match m);
         Path recsDir();
-        void trabajando(boolean on);
+        /** Un freno por operación (ui.BarraEstado + util.Operaciones, decisión de Jorge 1.3): empezar devuelve el
+         *  número de la operación; terminar, detenido, parar y anotar el hilo van siempre con ESE número. */
+        long empezarOperacion();
+        void terminarOperacion(long op);
         long operacionActual();
-        boolean detenido();
-        void pararOperacion();
-        void anotarHiloOperacion();
+        boolean detenido(long op);
+        void pararOperacion(long op);
+        /** Al empezar el doInBackground de la operación (el freno de la red mira el hilo); {@code interrumpible}: Detener
+         *  además interrumpe el hilo (solo trabajo que no deja archivos a medias; ver util.Operaciones.anotarHilo)... */
+        void anotarHiloOperacion(long op, boolean interrumpible);
+        /** ...y al acabarlo, en un finally (el hilo del pool vuelve limpio). */
+        void soltarHiloOperacion();
         void aprenderCatalogos(List<Match> res);
         List<String> mapasConocidos();
         List<String> civsConocidas();

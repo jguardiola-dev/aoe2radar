@@ -134,14 +134,21 @@ final class WatchlistDialogos {
                         + t(" jugadores y añadirlas al grupo? (una consulta por jugador, en segundo plano)", " players and add them to the group? (one lookup per player, in the background)"),
                 t("Cuentas vinculadas", "Linked accounts"), JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
         if (r != JOptionPane.YES_OPTION) return;
-        wv.anfitrion.trabajando(true);
-        final long miSerial = wv.anfitrion.opSerial();
+        final long miSerial = wv.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         final int[] anadidas = { 0 };
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
-                wv.anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
+                wv.anfitrion.marcarHiloOperacionActual(miSerial);   // Detener corta la espera del freno de ESTA operación, no la de todos
+                try {
+                    buscarVinculadas();
+                } finally {
+                    wv.anfitrion.soltarHiloOperacion();
+                }
+                return null;
+            }
+            private void buscarVinculadas() {
                 for (Player p : nuevos) {
-                    if (wv.anfitrion.detenerOperacion()) break;
+                    if (wv.anfitrion.operacionDetenida(miSerial)) break;
                     publish(t("Vinculadas de ", "Linked accounts of ") + p.name() + "\u2026");
                     try {
                         List<Perfil.Vinculada> vinc = wv.perfiles.vinculadas(p.id());
@@ -159,12 +166,11 @@ final class WatchlistDialogos {
                     } catch (Exception ex) { log("vinculadas " + p.name() + ": " + causa(ex)); }
                     wv.anfitrion.dormir(wv.pausaMs / 2);
                 }
-                return null;
             }
             @Override protected void process(List<String> ch) { wv.status.setText(ch.get(ch.size() - 1)); }
             @Override protected void done() {
+                wv.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
                 if (miSerial != wv.anfitrion.opSerial()) return;
-                wv.anfitrion.trabajando(false);
                 wv.savePlayers(); wv.rebuildGrupos(); wv.aplicarFiltroGrupo(); wv.refrescarWatchlist();
                 wv.status.setText(anadidas[0] + t(" cuentas vinculadas añadidas a «", " linked accounts added to \u201C") + g + t("\u00bb.", "\u201D."));
             }

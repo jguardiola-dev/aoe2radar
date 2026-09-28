@@ -284,6 +284,21 @@ public final class PartidasPresenter {
                     : "");
     }
 
+    /** «Buscar partidas» detenida (decisión de Jorge, 1.3): lo leído hasta el corte se muestra, avisando de que es
+     *  parcial, de cuántos jugadores (de los buscados) se recorrieron enteros y, si alguno falló antes del corte,
+     *  de cuántos. */
+    public static String mensajeBusquedaDetenida(int recorridos, int buscados, int fallos) {
+        return t("Búsqueda detenida: resultados parciales (", "Search stopped: partial results (") + recorridos
+                + t(" de ", " of ") + buscados + t(" jugadores", " players")
+                + (fallos > 0 ? ", " + fallos + t(" con error", " failed") : "") + ")";
+    }
+
+    /** Una «Buscar partidas» detenida sin haber leído ninguna partida: la tabla anterior se conserva (como hace
+     *  «Al azar» detenido sin nada) y solo se escribe el estado. */
+    static boolean conservaTablaAnterior(Recorrido r) {
+        return r.detenida() && r.lista().isEmpty();
+    }
+
     /** «Al azar por ELO» detenido: lo encontrado hasta el corte (si algo) se aplica igual. */
     public static String mensajeAzarDetenido(int encontradas) {
         return t("Búsqueda detenida.", "Search stopped.")
@@ -299,8 +314,13 @@ public final class PartidasPresenter {
     }
 
     /** «Al azar por ELO» con resultado. Con menos de 10, dice si el tramo se agotó (entonces {@code tramoAgotado} se
-     *  consulta, y solo entonces, como antes) o si repetirla continúa donde lo dejó. */
-    public static String mensajeAzar(int n, int lo, int hi, int horas, java.util.function.BooleanSupplier tramoAgotado) {
+     *  consulta, y solo entonces, como antes) o si repetirla continúa donde lo dejó. Si salió de la muestra nocturna
+     *  ({@code deMuestra}: ventana de 24 h o más), avisa de que son partidas de ayer en vez de «últimas N h», sin esos
+     *  consejos, que son del muestreo por la API (decisión de Jorge, 1.3). */
+    public static String mensajeAzar(int n, int lo, int hi, int horas, boolean deMuestra, java.util.function.BooleanSupplier tramoAgotado) {
+        if (deMuestra)
+            return n + t(" partidas 1v1 al azar, ELO ", " random 1v1s, ELO ") + lo + "–" + hi
+                    + t(", partidas de ayer (muestra nocturna).", ", yesterday's games (nightly sample).");
         String extra = "";
         if (n < 10 && tramoAgotado.getAsBoolean())
             extra = t(" No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
@@ -463,6 +483,21 @@ public final class PartidasPresenter {
                 (yaEstaban > 0 ? " (" + yaEstaban + t(" ya estaban, actualizadas)", " were already there, refreshed)") : "") + ".";
     }
 
+    /** Qué hace Enter en la tabla de Partidas. */
+    public enum AccionEnter { DESCARGAR, AVISAR_SIN_SELECCION, NADA }
+
+    /** Enter en la tabla (decisión de Jorge, 1.3): con una descarga en curso no hace nada (no lanza otra); sin
+     *  descarga en curso, descarga la selección o, si no hay ninguna, avisa «No hay partidas seleccionadas.». */
+    public static AccionEnter accionEnter(boolean descargaEnCurso, int seleccionadas) {
+        if (descargaEnCurso) return AccionEnter.NADA;
+        return seleccionadas > 0 ? AccionEnter.DESCARGAR : AccionEnter.AVISAR_SIN_SELECCION;
+    }
+
+    /** El aviso de Enter (y de «Descargar seleccionadas») sin nada seleccionado. */
+    public static String mensajeSinSeleccion() {
+        return t("No hay partidas seleccionadas.", "No games selected.");
+    }
+
     // ======================================================================
     // El recorrido de «Buscar partidas» (el doInBackground de fetchMatches, antes en BusquedasPartidas)
     // ======================================================================
@@ -471,8 +506,9 @@ public final class PartidasPresenter {
     interface Paginador { Iterable<Match> pagina(long pid, int pagina, int porPagina) throws Exception; }
 
     /** Lo que deja el recorrido de fetchMatches: las partidas (la más reciente primero), si se tocó el tope, cuántos
-     *  jugadores fallaron, quiénes respondieron entero y si se detuvo a medias (entonces la lista está incompleta). */
-    record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida) { }
+     *  jugadores fallaron, quiénes respondieron entero, si se detuvo a medias (entonces la lista está incompleta) y
+     *  cuántos jugadores se recorrieron enteros antes del corte (con o sin fallo: el «N de M» del aviso). */
+    record Recorrido(List<Match> lista, boolean topeAlcanzado, int fallos, Set<Long> exitosos, boolean detenida, int recorridos) { }
 
     /** El doInBackground de fetchMatches, sin Swing (para poder probarlo): páginas por jugador hasta la ventana,
      *  tope 6 páginas / 600 partidas. {@code parar} se mira antes de cada jugador, antes de cada página y al fallar
@@ -483,7 +519,7 @@ public final class PartidasPresenter {
         Map<Long, Match> unicos = new LinkedHashMap<>();
         Set<Long> exitosos = new HashSet<>();
         boolean topeAlcanzado = false, detenida = false;
-        int fallos = 0;
+        int fallos = 0, recorridos = 0;
         final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
         for (Player pl : tracked) {
             if (parar.getAsBoolean()) { detenida = true; break; }
@@ -518,11 +554,12 @@ public final class PartidasPresenter {
                 if (!seguir) break;
             }
             if (detenida) break;
+            recorridos++;
             if (!fallo) exitosos.add(pl.id());
             if (unicos.size() >= MAX_TOTAL) break;
         }
         List<Match> lista = new ArrayList<>(unicos.values());
         lista.sort(Comparator.comparing((Match m) -> m.finished == null ? Instant.MAX : m.finished).reversed());
-        return new Recorrido(lista, topeAlcanzado, fallos, exitosos, detenida);
+        return new Recorrido(lista, topeAlcanzado, fallos, exitosos, detenida, recorridos);
     }
 }

@@ -380,13 +380,31 @@ class PartidasPresenterTest {
         assertEquals("Búsqueda detenida.  4 encontradas hasta el corte, aplicadas.", PartidasPresenter.mensajeAzarDetenido(4));
         assertEquals("Nada en 1800–1900 en las últimas 36 h. Detalle del muestreo en descargas.log.", PartidasPresenter.mensajeAzarNada(1800, 1900, 36));
         assertEquals("3 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h. Repite la búsqueda: continúa donde lo dejó.",
-                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, () -> false));
+                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, false, () -> false));
         assertEquals("3 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h. No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
-                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, () -> true));
+                PartidasPresenter.mensajeAzar(3, 1800, 1900, 36, false, () -> true));
         int[] consultas = { 0 };
         assertEquals("10 partidas 1v1 al azar, ELO 1800–1900, últimas 36 h.",
-                PartidasPresenter.mensajeAzar(10, 1800, 1900, 36, () -> { consultas[0]++; return true; }));
+                PartidasPresenter.mensajeAzar(10, 1800, 1900, 36, false, () -> { consultas[0]++; return true; }));
         assertEquals(0, consultas[0], "con 10 no se pregunta si el tramo se agotó");
+    }
+
+    @Test void mensajeBusquedaDetenida_resultadosParcialesEnLosDosIdiomas() {
+        assertEquals("Búsqueda detenida: resultados parciales (2 de 5 jugadores)", PartidasPresenter.mensajeBusquedaDetenida(2, 5, 0));
+        assertEquals("Búsqueda detenida: resultados parciales (3 de 5 jugadores, 1 con error)", PartidasPresenter.mensajeBusquedaDetenida(3, 5, 1));
+        IDIOMA = "en";
+        assertEquals("Search stopped: partial results (2 of 5 players)", PartidasPresenter.mensajeBusquedaDetenida(2, 5, 0));
+        assertEquals("Search stopped: partial results (3 of 5 players, 1 failed)", PartidasPresenter.mensajeBusquedaDetenida(3, 5, 1));
+    }
+
+    @Test void mensajeAzar_deLaMuestraNocturna_avisaDeQueSonPartidasDeAyer() {
+        int[] consultas = { 0 };
+        assertEquals("6 partidas 1v1 al azar, ELO 1800–1900, partidas de ayer (muestra nocturna).",
+                PartidasPresenter.mensajeAzar(6, 1800, 1900, 36, true, () -> { consultas[0]++; return true; }));
+        assertEquals(0, consultas[0], "de la muestra, ni «tramo agotado» ni «repite»: son consejos del muestreo por la API");
+        IDIOMA = "en";
+        assertEquals("6 random 1v1s, ELO 1800–1900, yesterday's games (nightly sample).",
+                PartidasPresenter.mensajeAzar(6, 1800, 1900, 36, true, () -> false));
     }
 
     @Test void mensajesDeGuessTheElo() {
@@ -553,6 +571,8 @@ class PartidasPresenterTest {
                 m -> false, () -> parar[0], s -> { });
         assertEquals(List.of(A.id()), pedidas, "Detener pulsado durante la página de A: ni B ni C se consultan");
         assertTrue(r.detenida());
+        assertEquals(1, r.recorridos(), "A se leyó entero antes del corte");
+        assertEquals(1, r.lista().size(), "lo leído de A se conserva (se muestra como parcial)");
     }
 
     @Test void recorrer_elFrenoCortaLaEspera_noSigueConElSiguienteJugador() {
@@ -569,6 +589,16 @@ class PartidasPresenterTest {
         assertEquals(List.of(A.id(), B.id()), pedidas, "el corte del freno en B no deja pasar a C");
         assertTrue(r.detenida());
         assertEquals(0, r.fallos(), "un corte pedido no es un fallo del servicio");
+        assertEquals(1, r.recorridos(), "B, cortado a medias, no cuenta");
+    }
+
+    @Test void conservaTablaAnterior_soloSiSeDetuvoSinLeerNada() {
+        Match m = PartidasViewTest.partida(1, A, Instant.now());
+        assertTrue(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(), false, 0, java.util.Set.of(), true, 0)));
+        assertFalse(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(m), false, 0, java.util.Set.of(A.id()), true, 1)),
+                "detenida con algo leído: se muestra como parcial");
+        assertFalse(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(), false, 0, java.util.Set.of(A.id()), false, 1)),
+                "entera y sin partidas: la tabla se vacía como siempre");
     }
 
     @Test void recorrer_sinParar_recorreATodosYNoVuelveDetenida() {
@@ -579,6 +609,7 @@ class PartidasPresenterTest {
         assertFalse(r.detenida());
         assertEquals(2, r.lista().size());
         assertEquals(java.util.Set.of(A.id(), B.id()), r.exitosos());
+        assertEquals(2, r.recorridos());
     }
 
     /** Partida terminada hace {@code minutos} de {@code pid} contra un rival fijo por partida. */
@@ -659,5 +690,21 @@ class PartidasPresenterTest {
         assertTrue(r.topeAlcanzado());
         assertEquals(600, r.lista().size(), "3 páginas de 200: justo el tope");
         assertEquals(List.of(1L, 1L, 1L), pedidos, "con 600 del primero ya no se pide al segundo");
+    }
+
+    // ----- Enter en la tabla (decisión de Jorge, 1.3): sin selección vuelve a avisar -----
+
+    @Test void accionEnter_sinSeleccionAvisa_conSeleccionDescarga_conDescargaEnCursoNada() {
+        assertEquals(PartidasPresenter.AccionEnter.AVISAR_SIN_SELECCION, PartidasPresenter.accionEnter(false, 0));
+        assertEquals(PartidasPresenter.AccionEnter.DESCARGAR, PartidasPresenter.accionEnter(false, 2));
+        assertEquals(PartidasPresenter.AccionEnter.NADA, PartidasPresenter.accionEnter(true, 2), "no lanza una segunda descarga");
+        assertEquals(PartidasPresenter.AccionEnter.NADA, PartidasPresenter.accionEnter(true, 0));
+    }
+
+    @Test void mensajeSinSeleccion_enLosDosIdiomas() {
+        IDIOMA = "es";
+        assertEquals("No hay partidas seleccionadas.", PartidasPresenter.mensajeSinSeleccion());
+        IDIOMA = "en";
+        assertEquals("No games selected.", PartidasPresenter.mensajeSinSeleccion());
     }
 }

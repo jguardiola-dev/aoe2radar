@@ -4,6 +4,7 @@ import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.service.EloSesion;
 import dev.tirador.aoe2radar.service.EstadoVivo;
+import dev.tirador.aoe2radar.util.Operaciones;
 import org.junit.jupiter.api.Test;
 
 import javax.swing.SwingUtilities;
@@ -12,9 +13,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongConsumer;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.opEnCurso;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -88,7 +86,7 @@ class ServiciosTest {
 
     @Test
     void dormirNoBloqueaConCero() {
-        // dormir(ms) es una pausa cooperativa (respeta stopOperacion/opEnCurso), no un Thread.sleep ciego: con
+        // dormir(ms) es una pausa cooperativa (respeta el freno de su operación), no un Thread.sleep ciego: con
         // 0 ms debe volver enseguida. Sin red: no se toca BUSQUEDA.buscar (esa sí llamaría al companion).
         long antes = System.currentTimeMillis();
         Servicios.dormir(0);
@@ -99,23 +97,27 @@ class ServiciosTest {
     void dormirSoloAcortaLaPausaParaElHiloDeLaOperacionCancelada() {
         // Fila 56 de DEUDA: antes, dormir miraba "stopOperacion && opEnCurso" sin comprobar el hilo, así que
         // pulsar Detener acortaba también las pausas de un barrido de fondo ajeno a la operación cancelada.
-        // Ahora usa Cancelacion.detieneEsteHilo(), que exige además que sea el hilo de esa operación.
-        stopOperacion = true;
-        opEnCurso = true;
+        // Ahora usa Cancelacion.detieneEsteHilo(), que exige además que sea el hilo de esa operación (desde la
+        // 1.3, con un freno por operación: util.Operaciones).
+        Operaciones ops = Operaciones.GLOBAL;
+        final long op = 930_001;   // lejos de los números de la barra
+        ops.empezar(op);
+        ops.detener(op);
         try {
-            hiloOperacion = new Thread();   // un hilo distinto al de este test: su pausa NO debe acortarse
+            // este hilo no es el de la operación (no la ha anotado): su pausa NO debe acortarse
             long antes = System.currentTimeMillis();
             Servicios.dormir(400);
             assertTrue(System.currentTimeMillis() - antes >= 350,
                     "un hilo ajeno a la operación cancelada no debe acortar su pausa");
 
-            hiloOperacion = Thread.currentThread();   // el hilo de la operación cancelada: sí debe acortarse
+            ops.anotarHilo(op);   // el hilo de la operación cancelada: sí debe acortarse
             antes = System.currentTimeMillis();
             Servicios.dormir(3000);
             assertTrue(System.currentTimeMillis() - antes < 300,
                     "el hilo de la operación cancelada sí debe acortar su pausa");
         } finally {
-            stopOperacion = false; opEnCurso = false; hiloOperacion = null;
+            ops.soltarHilo();
+            ops.terminar(op);
         }
     }
 

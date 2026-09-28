@@ -142,7 +142,12 @@ final class PartidasTabla {
                 .put(KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, 0), "sfrDescargar");
         vista.table.getActionMap().put("sfrDescargar", new AbstractAction() {
             @Override public void actionPerformed(java.awt.event.ActionEvent e) {
-                if (vista.dlSel.isEnabled() && !selectedRows().isEmpty()) vista.download(selectedRows());
+                // Qué hacer lo decide PartidasPresenter.accionEnter: sin selección vuelve a avisar (DEUDA, 1.3).
+                switch (PartidasPresenter.accionEnter(!vista.dlSel.isEnabled(), selectedRows().size())) {
+                    case DESCARGAR -> vista.download(selectedRows());
+                    case AVISAR_SIN_SELECCION -> vista.anfitrion.estado(PartidasPresenter.mensajeSinSeleccion());
+                    case NADA -> { }
+                }
             }
         });
         vista.ventana.getRootPane().getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW)

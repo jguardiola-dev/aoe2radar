@@ -28,8 +28,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static dev.tirador.aoe2radar.api.Cancelacion.hiloOperacion;
-import static dev.tirador.aoe2radar.api.Cancelacion.stopOperacion;
 import static dev.tirador.aoe2radar.app.Servicios.BUSQUEDA;
 import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
 import static dev.tirador.aoe2radar.app.Servicios.ELO_1V1;
@@ -105,10 +103,12 @@ final class CableadoWatchlist {
             @Override public boolean clanesVacios() { return dev.tirador.aoe2radar.sfrdata.Ladder.clanes.isEmpty(); }
             @Override public void asegurarLadderEnFondo() { dev.tirador.aoe2radar.sfrdata.Ladder.ladderAsegurar(false); }
             @Override public List<Map.Entry<String, Integer>> sugerirClanes(String texto) { return dev.tirador.aoe2radar.service.ConsultasLadder.sugerirClanes(texto); }
-            @Override public void trabajando(boolean on) { v.barraEstado.trabajando(on); }
+            @Override public long empezarOperacion() { return v.barraEstado.empezarOperacion(); }
+            @Override public void terminarOperacion(long op) { v.barraEstado.terminarOperacion(op); }
             @Override public long opSerial() { return v.barraEstado.opSerial(); }
-            @Override public void marcarHiloOperacionActual() { hiloOperacion = Thread.currentThread(); }
-            @Override public boolean detenerOperacion() { return stopOperacion; }
+            @Override public void marcarHiloOperacionActual(long op) { v.barraEstado.operaciones().anotarHilo(op); }
+            @Override public void soltarHiloOperacion() { v.barraEstado.operaciones().soltarHilo(); }
+            @Override public boolean operacionDetenida(long op) { return v.barraEstado.operaciones().detenido(op); }
             @Override public void dormir(long ms) { Servicios.dormir(ms); }
             @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
             @Override public void espectar(Player p) { AccionesVentana.espectar(v, p); }

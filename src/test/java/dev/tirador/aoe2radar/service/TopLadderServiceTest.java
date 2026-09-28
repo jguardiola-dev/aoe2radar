@@ -1,7 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
 import dev.tirador.aoe2radar.api.ApiClient;
-import dev.tirador.aoe2radar.api.Cancelacion;
 import dev.tirador.aoe2radar.api.CompanionApi;
 import dev.tirador.aoe2radar.api.Throttle;
 import dev.tirador.aoe2radar.api.Transporte;
@@ -13,6 +12,7 @@ import dev.tirador.aoe2radar.model.LadderRow;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.sfrdata.Ladder;
+import dev.tirador.aoe2radar.util.Operaciones;
 import dev.tirador.aoe2radar.util.RelojFalso;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -366,14 +366,34 @@ class TopLadderServiceTest {
         assertEquals(List.of(PAUSA_MS / 2, PAUSA_MS / 2), pausas, "una pausa de cortesía por lote");
     }
 
-    @Test void vigilarTop_paraConStopOperacionAntesDeLaPrimeraConfirmacion() {
+    @Test void vigilarTop_enElHiloDeUnaOperacionDetenida_paraAntesDeLaPrimeraConfirmacion() {
         List<Player> top = jugadores(1L, 2L);
         red.responder("per_page=100", matches());   // ninguno en el río: los dos entrarían a confirmación
-        Cancelacion.stopOperacion = true;
+        Operaciones ops = Operaciones.GLOBAL;
+        final long op = 940_001;   // lejos de los números de la barra
+        ops.empezar(op);
+        ops.anotarHilo(op);
+        ops.detener(op);
         try {
             nuevo().vigilarTop(top, pid -> true, pid -> null, (pid, m) -> { }, (pid, m) -> { });
-        } finally { Cancelacion.stopOperacion = false; }
-        assertTrue(red.pedidas.stream().noneMatch(u -> u.contains("per_page=3")), "stopOperacion corta el bucle antes de la primera llamada de confirmación");
+        } finally { ops.soltarHilo(); ops.terminar(op); }
+        assertTrue(red.pedidas.stream().noneMatch(u -> u.contains("per_page=3")), "el freno de su operación corta el bucle antes de la primera llamada de confirmación");
+    }
+
+    @Test void vigilarTop_comoBarridoDeFondo_noLoParaElDetenerDeUnaOperacion() {
+        // Un freno por operación (1.3): antes, un Detener cualquiera (stopOperacion global) cortaba también este
+        // barrido de fondo, que no es una operación de la barra.
+        List<Player> top = jugadores(1L, 2L);
+        red.responder("per_page=100", matches());
+        red.responder("per_page=3", matches());
+        Operaciones ops = Operaciones.GLOBAL;
+        final long op = 940_002;
+        ops.empezar(op);
+        ops.detenerUltima();   // Detener de la barra, con la operación corriendo en otro hilo
+        try {
+            nuevo().vigilarTop(top, pid -> true, pid -> null, (pid, m) -> { }, (pid, m) -> { });
+        } finally { ops.terminar(op); }
+        assertEquals(2, red.pedidas.stream().filter(u -> u.contains("per_page=3")).count(), "confirma a los dos: el Detener no era suyo");
     }
 
     @Test void vigilarTop_confirmacionFallidaConservaElPuntoDeMatchDe() {

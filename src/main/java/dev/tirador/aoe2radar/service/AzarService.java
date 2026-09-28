@@ -31,7 +31,9 @@ public interface AzarService {
      * <p>multAzar multiplica el número de pasadas de muestreo de perfiles (intensidad del diálogo). progreso recibe
      * los mismos textos que antes mostraba directamente el estado de la ventana (vía publish/process del
      * SwingWorker). serial es solo para identificar la operación en los mensajes de log.
-     * <p>Si se interrumpe (Detener) durante la búsqueda, devuelve lo encontrado hasta el corte, igual que hoy.
+     * <p>Si se interrumpe (Detener) durante la búsqueda, devuelve lo encontrado hasta el corte, igual que hoy. El
+     * freno es el de la operación de quien llama: debe apuntar su hilo (util.Operaciones.anotarHilo) antes, y este
+     * servicio lo mira con api.Cancelacion.detieneEsteHilo (lo mismo en buscarGte).
      */
     List<Match> buscarAleatorias(int lo, int hi, String mapaSel, String civSel, int hours, int multAzar,
                                   Instant cutoff, long serial, Consumer<String> progreso) throws Exception;
@@ -48,6 +50,13 @@ public interface AzarService {
      * perfiles nuevos que muestrear con esos filtros). Se consulta después de que buscarAleatorias termine.
      */
     boolean tramoAgotado();
+
+    /**
+     * True si la última tirada de buscarAleatorias salió entera de la muestra nocturna (partidas de ayer, sin mirar
+     * la ventana de horas). La vista lo avisa en el mensaje de estado (decisión de Jorge, 1.3). Se consulta después
+     * de que buscarAleatorias termine.
+     */
+    boolean deMuestra();
 
     /**
      * El titular de una partida del azar: con filtro de civ, quien LA JUGÓ (si ambos, el de más ELO entre los que

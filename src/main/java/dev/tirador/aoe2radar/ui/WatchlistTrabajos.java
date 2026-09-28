@@ -47,20 +47,23 @@ final class WatchlistTrabajos {
                     t("Forma reciente", "Recent form"), JOptionPane.OK_CANCEL_OPTION, JOptionPane.INFORMATION_MESSAGE);
             if (ok != JOptionPane.OK_OPTION) return;
         }
-        wv.anfitrion.trabajando(true);
-        final long miSerial = wv.anfitrion.opSerial();
+        final long miSerial = wv.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         new SwingWorker<Void, String>() {
             @Override protected Void doInBackground() {
-                wv.anfitrion.marcarHiloOperacionActual();   // Detener corta la espera del freno de ESTA operación, no la de todos
-                wv.anfitrion.cargarEloAyer();
-                wv.presenter.consultarForma(pendientes, horas, wv.presenter::eloParaResta,
-                        this::publish, wv.anfitrion::detenerOperacion);
+                wv.anfitrion.marcarHiloOperacionActual(miSerial);   // Detener corta la espera del freno de ESTA operación, no la de todos
+                try {
+                    wv.anfitrion.cargarEloAyer();
+                    wv.presenter.consultarForma(pendientes, horas, wv.presenter::eloParaResta,
+                            this::publish, () -> wv.anfitrion.operacionDetenida(miSerial));
+                } finally {
+                    wv.anfitrion.soltarHiloOperacion();
+                }
                 return null;
             }
             @Override protected void process(List<String> ch) { wv.status.setText(ch.get(ch.size() - 1)); }
             @Override protected void done() {
+                wv.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
                 if (miSerial != wv.anfitrion.opSerial()) return;
-                wv.anfitrion.trabajando(false);
                 wv.status.setText(t("Forma consultada.", "Recent form fetched."));
                 if (alTerminar != null) alTerminar.run();
             }

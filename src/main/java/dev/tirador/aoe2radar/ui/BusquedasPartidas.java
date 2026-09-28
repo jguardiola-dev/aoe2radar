@@ -39,8 +39,8 @@ import static dev.tirador.aoe2radar.util.Texto.esCualquiera;
  */
 final class BusquedasPartidas {
 
-    /** El opSerial de la última «Buscar partidas» lanzada: la × lo mira para saber si el progreso sigue siendo
-     *  de la búsqueda (y apagarlo) o ya es de otra operación (y dejarlo). Solo en el EDT. */
+    /** El número de operación de la última «Buscar partidas» lanzada: la × (y una búsqueda nueva que la sustituye)
+     *  paran y terminan ESA operación, sin tocar el freno de las demás. Solo en el EDT. */
     long serialBusqueda;
 
     private final PartidasView vista;
@@ -106,19 +106,25 @@ final class BusquedasPartidas {
         PartidasView.SUJETOS.clear();
         vista.refrescarSujetos(List.of(), false);
         vista.taparResultados();
-        vista.anfitrion.trabajando(true);
-        final long miSerial = vista.anfitrion.operacionActual();
+        final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         final int hours = Integer.parseInt(leerConfig("elo_horas", "48"));
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         vista.anfitrion.estado(t("Buscando partidas al azar ", "Searching random games ") + lo + "–" + hi + "…");
         log("azar #" + miSerial + ": inicio " + lo + "-" + hi + " h=" + hours + " mapa=" + mapaSel + " civ=" + civSel
-                + " x" + multAzar + " continuar=" + continuar + " stop=" + vista.anfitrion.detenido());
+                + " x" + multAzar + " continuar=" + continuar + " stop=" + vista.anfitrion.detenido(miSerial));
         new SwingWorker<List<Match>, String>() {
             @Override protected List<Match> doInBackground() throws Exception {
-                return vista.azarService.buscarAleatorias(lo, hi, mapaSel, civSel, hours, multAzar, cutoff, miSerial, this::publish);
+                vista.anfitrion.anotarHiloOperacion(miSerial, false);   // Detener corta la espera del freno de ESTA operación, no la de todos
+                try {
+                    return vista.azarService.buscarAleatorias(lo, hi, mapaSel, civSel, hours, multAzar, cutoff, miSerial, this::publish);
+                } finally {
+                    vista.anfitrion.soltarHiloOperacion();
+                }
             }
             @Override protected void process(List<String> msgs) { vista.anfitrion.estado(msgs.get(msgs.size() - 1)); }
             @Override protected void done() {
+                final boolean parada = vista.anfitrion.detenido(miSerial);
+                vista.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
                 if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) {
                     log("azar #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual() + "; resultado ignorado");
                     return;
@@ -126,13 +132,12 @@ final class BusquedasPartidas {
                 vista.fetchBtn.setEnabled(true);
                 vista.azarBtn.setEnabled(true);
                 vista.gteBtn.setEnabled(true);
-                vista.anfitrion.trabajando(false);
                 vista.anfitrion.continuarDisponible(true);
                 try {
                     List<Match> res = get();
-                    log("azar #" + miSerial + ": done, " + res.size() + " partidas, stop=" + vista.anfitrion.detenido());
+                    log("azar #" + miSerial + ": done, " + res.size() + " partidas, stop=" + parada);
                     vista.anfitrion.aprenderCatalogos(res);
-                    if (vista.anfitrion.detenido()) {
+                    if (parada) {
                         vista.anfitrion.estado(PartidasPresenter.mensajeAzarDetenido(res.size()));
                         if (res.isEmpty()) return;
                     } else if (res.isEmpty()) {
@@ -149,9 +154,9 @@ final class BusquedasPartidas {
                     vista.enlaceWatchlist.limpiarSeleccion();
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(PartidasPresenter.mensajeAzar(res.size(), lo, hi, hours, vista.azarService::tramoAgotado));
+                    vista.anfitrion.estado(PartidasPresenter.mensajeAzar(res.size(), lo, hi, hours, vista.azarService.deMuestra(), vista.azarService::tramoAgotado));
                 } catch (Exception ex) {
-                    vista.anfitrion.estado(vista.anfitrion.detenido() ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
+                    vista.anfitrion.estado(parada ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("al azar por ELO: ERROR " + causa(ex));
                 }
             }
@@ -166,22 +171,27 @@ final class BusquedasPartidas {
         PartidasView.SUJETOS.clear();
         vista.refrescarSujetos(List.of(), false);
         vista.taparResultados();
-        vista.anfitrion.trabajando(true);
-        final long miSerial = vista.anfitrion.operacionActual();
+        final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         int hours = Integer.parseInt(leerConfig("elo_horas", "48"));
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         vista.anfitrion.estado(t("Preparando Guess the ELO…", "Preparing Guess the ELO…"));
         new SwingWorker<List<Match>, String>() {
             @Override protected List<Match> doInBackground() throws Exception {
-                return vista.azarService.buscarGte(cutoff, this::publish);
+                vista.anfitrion.anotarHiloOperacion(miSerial, false);   // Detener corta la espera del freno de ESTA operación, no la de todos
+                try {
+                    return vista.azarService.buscarGte(cutoff, this::publish);
+                } finally {
+                    vista.anfitrion.soltarHiloOperacion();
+                }
             }
             @Override protected void process(List<String> msgs) { vista.anfitrion.estado(msgs.get(msgs.size() - 1)); }
             @Override protected void done() {
+                final boolean parada = vista.anfitrion.detenido(miSerial);
+                vista.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
                 if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) { log("gte #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual()); return; }
                 vista.fetchBtn.setEnabled(true);
                 vista.azarBtn.setEnabled(true);
                 vista.gteBtn.setEnabled(true);
-                vista.anfitrion.trabajando(false);
                 try {
                     List<Match> res = get();
                     vista.anfitrion.aprenderCatalogos(res);
@@ -196,7 +206,7 @@ final class BusquedasPartidas {
                     vista.applyFilters();
                     vista.anfitrion.estado(PartidasPresenter.mensajeGte(res));
                 } catch (Exception ex) {
-                    vista.anfitrion.estado(vista.anfitrion.detenido() ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
+                    vista.anfitrion.estado(parada ? t("Detenido.", "Stopped.") : "Error: " + causa(ex));
                     log("Guess the ELO: ERROR " + causa(ex));
                 }
             }
@@ -204,10 +214,13 @@ final class BusquedasPartidas {
     }
 
     /** El botón «Buscar partidas» (y la guía, que lo pulsa): con una búsqueda en marcha dice «Detener» y la
-     *  cancela; si no, busca. */
+     *  para; si no, busca. Parar = poner SU freno e interrumpir su hilo (no cancelar el SwingWorker): la página en
+     *  vuelo o la pausa se cortan al momento (esa página se descarta) y su done() muestra lo leído hasta ahí como
+     *  resultados parciales (decisión de Jorge, 1.3). */
     public void alternar(JButton btn) {
         if (vista.fetchWorker != null) {
-            vista.fetchWorker.cancel(true);
+            vista.anfitrion.pararOperacion(serialBusqueda);
+            vista.anfitrion.estado(t("Deteniendo la búsqueda…", "Stopping the search…"));
             return;
         }
         fetchMatches(btn);
@@ -246,6 +259,7 @@ final class BusquedasPartidas {
             log("buscar: nueva búsqueda con otra en marcha; se cancela la anterior");
             vista.fetchWorker = null;
             anterior.cancel(true);
+            vista.anfitrion.terminarOperacion(serialBusqueda);   // su operación acaba aquí (su done() puede llegar tarde)
         }
         PartidasView.SUJETOS.clear();
         vista.filtroSujetos.clear();
@@ -262,25 +276,31 @@ final class BusquedasPartidas {
         btn.setToolTipText(t("Detiene la búsqueda en curso", "Stops the current search"));
         vista.azarBtn.setEnabled(false);
         vista.gteBtn.setEnabled(false);
-        vista.anfitrion.trabajando(true);
-        final long miSerial = vista.anfitrion.operacionActual();
+        final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         serialBusqueda = miSerial;
         int hours = vista.enlaceWatchlist.horasVentana();
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
         SwingWorker<PartidasPresenter.Recorrido, String> fw = new SwingWorker<>() {
             @Override protected PartidasPresenter.Recorrido doInBackground() {
-                vista.anfitrion.anotarHiloOperacion();
-                // Detener (el del botón, el de la barra de estado o la × de «Partidas de:») corta el recorrido
-                // ENTERO, no solo la página en curso (revisión 1.3, general F4 / watchlist F6).
-                return PartidasPresenter.recorrer(tracked, cutoff, vista.perPage, vista.pausaMs, vista.anfitrion::paginaDePartidas,
-                        vista.anfitrion::enCursoReal, () -> isCancelled() || vista.anfitrion.detenido(), this::publish);
+                vista.anfitrion.anotarHiloOperacion(miSerial, true);   // interrumpible: Detener corta al momento la página en vuelo o la pausa
+                try {
+                    // Detener (el del botón, el de la barra de estado si es la última operación viva, o la × de
+                    // «Partidas de:») corta el recorrido ENTERO, no solo la página en curso (revisión 1.3, general
+                    // F4 / watchlist F6).
+                    return PartidasPresenter.recorrer(tracked, cutoff, vista.perPage, vista.pausaMs, vista.anfitrion::paginaDePartidas,
+                            vista.anfitrion::enCursoReal, () -> isCancelled() || vista.anfitrion.detenido(miSerial), this::publish);
+                } finally {
+                    vista.anfitrion.soltarHiloOperacion();
+                }
             }
             @Override protected void process(List<String> msgs) {
-                // Un «Consultando…» tardío de una búsqueda cancelada, cerrada con la × o sustituida no tapa nada.
-                if (isCancelled() || vista.fetchWorker != this) return;
+                // Un «Consultando…» tardío de una búsqueda cancelada, cerrada con la ×, sustituida o ya detenida no tapa
+                // nada (tampoco el «Deteniendo…» del botón).
+                if (isCancelled() || vista.fetchWorker != this || vista.anfitrion.detenido(miSerial)) return;
                 vista.anfitrion.estado(msgs.get(msgs.size() - 1));
             }
             @Override protected void done() {
+                vista.anfitrion.terminarOperacion(miSerial);   // siempre (repetirlo no hace nada): deja de contar para «Detener»
                 if (vista.fetchWorker != this) {
                     // Otra búsqueda la sustituyó (fetchMatches con una en marcha; fetchWorker es de la nueva, o ya
                     // null si la nueva acabó antes), o la cerró la × (soltarPorLaCruz, que ya repuso botones y
@@ -288,29 +308,28 @@ final class BusquedasPartidas {
                     log("buscar #" + miSerial + ": sustituida o cerrada; resultado ignorado");
                     return;
                 }
-                // Otra operación de otro tipo (una descarga, «Ver forma»…) pudo empezar mientras tanto y llevarse el
-                // semáforo: la búsqueda NO se descarta por eso (revisión 1.3, watchlist F7); solo deja el progreso
-                // y el «Detener» de la barra a esa operación, que es la suya ahora.
-                final boolean semaforoPropio = PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual());
-                if (!semaforoPropio) log("buscar #" + miSerial + ": la op #" + vista.anfitrion.operacionActual() + " empezó durante la búsqueda; el resultado se aplica igual");
+                // Otra operación de otro tipo (una descarga, «Ver forma»…) pudo empezar mientras tanto: la búsqueda
+                // NO se descarta por eso (revisión 1.3, watchlist F7). El progreso y el «Detener» de la barra siguen
+                // mientras esa siga viva (terminarOperacion solo quita esta).
+                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual()))
+                    log("buscar #" + miSerial + ": la op #" + vista.anfitrion.operacionActual() + " empezó durante la búsqueda; el resultado se aplica igual");
                 vista.fetchWorker = null;
                 vista.actualizarTextoBuscar();
                 btn.setToolTipText(null);
                 btn.setEnabled(true);
                 vista.azarBtn.setEnabled(true);
                 vista.gteBtn.setEnabled(true);
-                if (semaforoPropio) vista.anfitrion.trabajando(false);
-                if (isCancelled()) {
-                    vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));   // el botón «Detener»
-                    return;
-                }
+                // (Ya no hay rama «isCancelled()» aquí: solo cancelan la × y una búsqueda nueva, y las dos ponen
+                // fetchWorker = null antes, así que salen por arriba; el botón «Detener» pone el freno, no cancela.)
                 try {
                     PartidasPresenter.Recorrido r = get();
-                    if (r.detenida()) {
-                        // Lo leído hasta el corte está incompleto: no se presenta como si fuera la búsqueda entera
-                        // (misma salida que el botón «Detener»: la tabla anterior se queda como estaba).
-                        log("buscar #" + miSerial + ": detenida; " + r.lista().size() + " partidas leídas hasta el corte, descartadas");
-                        vista.anfitrion.estado(t("Búsqueda detenida.", "Search stopped."));
+                    // Detenida (el botón, la barra o el freno): lo leído hasta el corte se muestra igual, con un aviso
+                    // de que es parcial (decisión de Jorge, 1.3; antes se descartaba). Los no consultados no
+                    // están en exitosos, así que no se marcan «fuera».
+                    if (r.detenida()) log("buscar #" + miSerial + ": detenida; " + r.lista().size() + " partidas de "
+                            + r.recorridos() + "/" + tracked.size() + " jugadores, se muestran como parciales");
+                    if (PartidasPresenter.conservaTablaAnterior(r)) {   // nada leído: la tabla anterior se queda
+                        vista.anfitrion.estado(PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size(), r.fallos()));
                         return;
                     }
                     List<Match> res = r.lista();
@@ -329,7 +348,9 @@ final class BusquedasPartidas {
                     vista.all.addAll(res);
                     vista.refreshModeCombo();
                     vista.applyFilters();
-                    vista.anfitrion.estado(PartidasPresenter.mensajeBusqueda(vista.view.size(), vista.all.size(), hours, topeAlcanzado, fallosFetch));
+                    vista.anfitrion.estado(r.detenida()
+                            ? PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size(), r.fallos())
+                            : PartidasPresenter.mensajeBusqueda(vista.view.size(), vista.all.size(), hours, topeAlcanzado, fallosFetch));
                 } catch (Exception ex) {
                     vista.anfitrion.estado("Error: " + causa(ex));
                 }
@@ -348,14 +369,13 @@ final class BusquedasPartidas {
         SwingWorker<?, ?> enCurso = vista.fetchWorker;
         if (enCurso == null) return;
         vista.fetchWorker = null;
-        boolean semaforoPropio = PartidasPresenter.vigente(serialBusqueda, vista.anfitrion.operacionActual());
-        if (semaforoPropio) vista.anfitrion.pararOperacion();   // corta la espera del freno; si el semáforo ya es de otra operación, no se la para
+        vista.anfitrion.pararOperacion(serialBusqueda);   // SU freno (corta su espera en el freno de la red), sea o no la última operación
         enCurso.cancel(true);
         vista.fetchBtn.setToolTipText(null);
         vista.fetchBtn.setEnabled(true);
         vista.azarBtn.setEnabled(true);
         vista.gteBtn.setEnabled(true);
-        if (semaforoPropio) vista.anfitrion.trabajando(false);
+        vista.anfitrion.terminarOperacion(serialBusqueda);   // si queda otra viva, el progreso y «Detener» pasan a ella
         log("buscar #" + serialBusqueda + ": cerrada con la ×");
     }
 }

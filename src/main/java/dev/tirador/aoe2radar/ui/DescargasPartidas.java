@@ -258,8 +258,7 @@ final class DescargasPartidas {
         if (objetivo.isEmpty()) { vista.anfitrion.estado(t("No hay partidas seleccionadas.", "No games selected.")); return; }
         if (!sinCambiarVista) vista.anfitrion.mostrarDirectos(false);
         vista.dlSel.setEnabled(false); vista.dlAll.setEnabled(false);
-        vista.anfitrion.trabajando(true);
-        final long miSerial = vista.anfitrion.operacionActual();
+        final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         Set<Long> trackedIds = PartidasPresenter.idsDeLaLista(vista.enlaceWatchlist);
         final boolean autoCopiar = vista.anfitrion.autoCopiarAlDescargar();
         final boolean autoCopiarFinal = autoCopiar || enviarSiempre;
@@ -276,13 +275,21 @@ final class DescargasPartidas {
 
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() {
-                vista.anfitrion.anotarHiloOperacion();
+                vista.anfitrion.anotarHiloOperacion(miSerial, false);   // NO interrumpible: una rec escrita a medias quedaría truncada
+                try {
+                    descargarTodas();
+                } finally {
+                    vista.anfitrion.soltarHiloOperacion();
+                }
+                return null;
+            }
+            private void descargarTodas() {
                 try { Files.createDirectories(vista.anfitrion.recsDir()); } catch (IOException ignored) {}
                 int ok = 0, copiadas = 0;
                 for (Match m : objetivo) {
-                    if (vista.anfitrion.detenido()) break;
+                    if (vista.anfitrion.detenido(miSerial)) break;
                     vista.setEstado(m, t("descargando…", "downloading…"));
-                    RecService.Resultado r = vista.recService.procesar(m, trackedIds, autoCopiarFinal, sgAuto, vista.anfitrion::detenido);
+                    RecService.Resultado r = vista.recService.procesar(m, trackedIds, autoCopiarFinal, sgAuto, () -> vista.anfitrion.detenido(miSerial));
                     boolean hecho = r.estado() != RecService.Estado.FALLO;
                     if (hecho) {
                         m.enDisco = true;
@@ -298,18 +305,17 @@ final class DescargasPartidas {
                     if (!r.reutilizada()) vista.anfitrion.dormir(vista.pausaMs);
                 }
                 final int n = ok, tot = objetivo.size(), cop = copiadas;
-                final boolean parada = vista.anfitrion.detenido();
+                final boolean parada = vista.anfitrion.detenido(miSerial);
                 SwingUtilities.invokeLater(() ->
                         vista.anfitrion.estado(PartidasPresenter.mensajeDescarga(parada, n, tot, vista.anfitrion.recsDir(), cop)));
-                return null;
             }
             @Override protected void done() {
+                vista.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
                 if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) {
                     log("descargas #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual());
                 } else {
                     vista.dlSel.setEnabled(true);
                     vista.dlAll.setEnabled(true);
-                    vista.anfitrion.trabajando(false);
                 }
                 // Si una búsqueda cambió la tabla durante la descarga, sus filas son otros Match: se vuelve a mirar
                 // en el disco qué está ya bajado o en el juego (fuera del EDT, y sube la generación).
