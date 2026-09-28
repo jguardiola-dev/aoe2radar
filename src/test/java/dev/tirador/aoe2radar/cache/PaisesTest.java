@@ -128,4 +128,17 @@ class PaisesTest {
             Paises.paisesSucios = suciosPrevio;
         }
     }
+
+    /** 1.4 (resto de F13): el hilo del shutdown hook guarda lo pendiente, como el cierre de la ventana. Se corre
+     *  sin registrarlo (registrarlo en el test lo dejaría enganchado a la JVM de Maven). */
+    @Test void elHiloDeApagadoGuardaLosPaisesPendientes() throws Exception {
+        conPaisesAislados(() -> {
+            Paises.paisesCargados = true;
+            Thread h = Paises.hiloApagado();
+            h.start();
+            h.join(5000);
+            assertEquals("999=es", Files.readString(Paises.PAISES_FILE).trim());
+            assertFalse(Paises.paisesSucios);
+        });
+    }
 }

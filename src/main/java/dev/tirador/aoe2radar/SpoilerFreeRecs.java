@@ -298,6 +298,6 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // CableadoCromo.configurarVentana y de crear la Watchlist, para que sus botones existan cuando construirBarraSuperior los necesite.
     final dev.tirador.aoe2radar.ui.PartidasView partidas = CableadoPartidas.construir(this);
 
-    // Persistencia/tabla (aplicarOrdenColumnas/guardarColumnas/MatchesTableModel): en ui.PartidasView. HTTP (avisarPausa429, cargarControl, la cadena
+    // Persistencia/tabla: aplicarOrdenColumnas/guardarColumnas en ui.PartidasTabla, el modelo en ui.MatchesTableModel. HTTP (avisarPausa429, cargarControl, la cadena
     // CONTROL_SERVICE → ... → TWITCH_SERVICE, dormir, buscarPerfiles): en app.Servicios, por el import static de arriba; ninguna llamada cambia.
 }

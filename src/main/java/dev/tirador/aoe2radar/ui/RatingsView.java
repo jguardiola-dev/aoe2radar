@@ -250,7 +250,7 @@ public final class RatingsView implements RatingsPresenter.Pantalla {
         ladderBusca = new JTextField(18);
         ladderBusca.putClientProperty("JTextField.placeholderText", t("Buscar jugador… o selecciona en la watchlist", "Search a player… or select in the watchlist"));
         ladderBusca.putClientProperty("JTextField.showClearButton", true);
-        ladderPopup = new JPopupMenu(); ladderPopup.setFocusable(false);
+        ladderPopup = TemaApp.registrarPopup(new JPopupMenu()); ladderPopup.setFocusable(false);
         ladderDebounce = new javax.swing.Timer(450, e -> ladderSugerir());
         ladderDebounce.setRepeats(false);
         ladderBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {

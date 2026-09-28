@@ -52,6 +52,7 @@ public final class TemaApp {
             if (ventana != null) {
                 SwingUtilities.updateComponentTreeUI(ventana.raiz());
                 if (ventana.configMenu() != null) SwingUtilities.updateComponentTreeUI(ventana.configMenu());
+                refrescarSueltos(ventana.raiz(), java.util.Arrays.asList(java.awt.Window.getWindows()), new java.util.ArrayList<>(POPUPS_SUELTOS));
                 ajustarGrises(ventana, oscuro);
                 ajustarBotonesEspeciales(ventana, oscuro);
                 ajustarFuentesSecundarias(ventana);
@@ -60,6 +61,33 @@ public final class TemaApp {
         } catch (Throwable t) {      // sin el jar: ClassNotFoundException
             return false;
         }
+    }
+
+    /** Popups guardados en campos que el cambio de tema no alcanza recorriendo ventanas: mientras están ocultos no
+     *  cuelgan de ninguna. Referencias débiles: registrar uno no lo retiene. Solo en el EDT. */
+    private static final java.util.Set<javax.swing.JPopupMenu> POPUPS_SUELTOS =
+            java.util.Collections.newSetFromMap(new java.util.WeakHashMap<>());
+
+    /** Apunta un popup que se guarda en un campo y se reutiliza (el de clan, el de nick…) para que un cambio de tema
+     *  en caliente también le llegue (F12 de la revisión general). Los que se crean en cada clic no hace falta. EDT. */
+    public static javax.swing.JPopupMenu registrarPopup(javax.swing.JPopupMenu popup) {
+        if (popup != null) POPUPS_SUELTOS.add(popup);
+        return popup;
+    }
+
+    /**
+     * El cambio de tema en caliente, más allá del árbol de la ventana principal (F12 de la revisión general; ya en la
+     * 1.1 se quedaban con el tema viejo): las demás ventanas vivas, visibles u ocultas (diálogos guardados en campos,
+     * la tarjeta flotante de la Watchlist, «Mi partida»…) y los popups registrados. EDT.
+     */
+    static void refrescarSueltos(java.awt.Component raiz, java.util.Collection<? extends java.awt.Window> ventanas,
+                                 java.util.Collection<javax.swing.JPopupMenu> popups) {
+        // Cada una en su try: un fallo en una ventana secundaria no debe cortar el resto del cambio de tema (grises,
+        // botones, fuentes) ni hacer que aplicarTema devuelva false, que significa «no hay FlatLaf».
+        for (java.awt.Window w : ventanas)
+            if (w != raiz) try { SwingUtilities.updateComponentTreeUI(w); } catch (RuntimeException ex) { dev.tirador.aoe2radar.util.Log.log("tema: ventana " + w.getName() + ": " + ex); }
+        for (javax.swing.JPopupMenu pm : popups)
+            try { SwingUtilities.updateComponentTreeUI(pm); } catch (RuntimeException ex) { dev.tirador.aoe2radar.util.Log.log("tema: popup: " + ex); }
     }
 
     /** Windows: AppsUseLightTheme = 0 -> apps en modo oscuro.

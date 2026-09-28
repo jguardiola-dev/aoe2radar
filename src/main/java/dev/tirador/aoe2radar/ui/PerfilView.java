@@ -452,7 +452,7 @@ public final class PerfilView implements PerfilPresenter.Pantalla {
         perfilBusca = new JTextField(18);
         perfilBusca.putClientProperty("JTextField.placeholderText", t("Buscar jugador… o selecciona en la watchlist", "Search a player… or select in the watchlist"));
         perfilBusca.putClientProperty("JTextField.showClearButton", true);
-        perfilPopup = new JPopupMenu(); perfilPopup.setFocusable(false);
+        perfilPopup = TemaApp.registrarPopup(new JPopupMenu()); perfilPopup.setFocusable(false);
         perfilDebounce = new javax.swing.Timer(450, e -> perfilSugerir());
         perfilDebounce.setRepeats(false);
         perfilBusca.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {

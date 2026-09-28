@@ -3,6 +3,7 @@ package dev.tirador.aoe2radar.ui;
 import dev.tirador.aoe2radar.model.CivAgg;
 import dev.tirador.aoe2radar.model.CivFila;
 import dev.tirador.aoe2radar.model.VentanaStats;
+import dev.tirador.aoe2radar.service.ImagenesJuego;
 import dev.tirador.aoe2radar.service.NombresStats;
 import dev.tirador.aoe2radar.service.StatsService;
 import dev.tirador.aoe2radar.service.TechTreeService;
@@ -347,7 +348,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
     static String ttPlano(String s) { return s == null ? "" : s.replaceAll("(?i)</?[bi]>", "").replaceAll("(?i)<br\\s*/?>", " ").replace("\n", " ").replaceAll("\\s{2,}", " ").trim(); }
 
     static String ttImgHtml(Path p, int px) {
-        return Files.exists(p) ? "<img src='" + p.toUri() + "' width='" + px + "' height='" + px + "'>" : "";
+        return ImagenesJuego.iconoEnDisco(p) ? "<img src='" + p.toUri() + "' width='" + px + "' height='" + px + "'>" : "";
     }
 
     /** Icono (px) de img/<tipo>/<id>.png: memoria → disco → red (cola del presentador, 4 hilos). */
@@ -358,7 +359,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         Path p = tt.rutaIcono(tipo, id);
         if (Files.exists(p)) {
             try {
-                BufferedImage img = ImageIO.read(p.toFile());
+                BufferedImage img = ImagenesJuego.leerIcono(p);   // vacío o truncado: lo borra y se vuelve a pedir abajo (1.4)
                 if (img != null) { ic = new ImageIcon(img.getScaledInstance(px, px, Image.SCALE_SMOOTH)); ttIconos.put(clave, ic); return ic; }
             } catch (Exception ignored) { }
         }
@@ -714,7 +715,7 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         String col = fg == null ? "#cccccc" : String.format("#%02x%02x%02x", fg.getRed(), fg.getGreen(), fg.getBlue());
         StringBuilder h = new StringBuilder("<html><body style='font-family:sans-serif;font-size:11px;color:" + col + "'>");
         Path ic = tt.dir().resolve("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
-        if (!Files.exists(ic)) presenter.pedirIcono("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
+        if (!ImagenesJuego.iconoEnDisco(ic)) presenter.pedirIcono("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
         h.append("<div>").append(ttImgHtml(ic, 56)).append(" <span style='font-size:17px'><b>").append(escapeHtml(tt.nombreCiv(civ))).append("</b></span></div>");
         ttActualizarBanda();
         if (ayuda != null) h.append("<p>").append(ttHtml(ayuda)).append("</p>");
@@ -760,8 +761,8 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
             String nombreEdad = a < ageIds.size() && tt.str(ageIds.get(a)) != null ? tt.nombre(ageIds.get(a)) : nombres[a];
             JLabel e = new JLabel("<html><div style='text-align:center'><b>" + escapeHtml(nombreEdad).replace(" de los ", "<br>de los ").replace("Alta Edad Media", "Alta<br>Edad Media") + "</b></div></html>");
             Path pe = tt.dir().resolve("img/Ages/" + edadImg[a] + ".png");
-            if (!Files.exists(pe)) presenter.pedirIcono("img/Ages/" + edadImg[a] + ".png");
-            else try { int px = Math.min(64, 2 * (TT_CELDA + TT_VGAP) - 40); e.setIcon(new ImageIcon(ImageIO.read(pe.toFile()).getScaledInstance(px, px, Image.SCALE_SMOOTH))); } catch (Exception ignored) { }
+            if (!ImagenesJuego.iconoEnDisco(pe)) presenter.pedirIcono("img/Ages/" + edadImg[a] + ".png");
+            else try { int px = Math.min(64, 2 * (TT_CELDA + TT_VGAP) - 40); e.setIcon(new ImageIcon(ImagenesJuego.leerIcono(pe).getScaledInstance(px, px, Image.SCALE_SMOOTH))); } catch (Exception ignored) { }
             e.setVerticalTextPosition(SwingConstants.BOTTOM); e.setHorizontalTextPosition(SwingConstants.CENTER);
             e.setHorizontalAlignment(SwingConstants.CENTER); e.setVerticalAlignment(SwingConstants.CENTER);
             e.setForeground(gris);

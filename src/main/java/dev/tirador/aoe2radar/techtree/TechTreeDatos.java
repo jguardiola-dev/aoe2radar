@@ -107,10 +107,19 @@ public final class TechTreeDatos {
      * Trae rel a la carpeta techtree: del jar si lo trae y vale (ver jarVale), si no de aoe2techtree. Se copia a disco
      * (no se lee del jar en cada uso) porque todo el que pinta el tech tree trabaja con rutas de disco. Si data.json
      * sale del jar, se olvida el ETag guardado: era de otra copia, y con él la comprobación diaria podría recibir un
-     * 304 y quedarse para siempre con la del jar aunque aoe2techtree tenga una más nueva.
+     * 304 y quedarse para siempre con la del jar aunque aoe2techtree tenga una más nueva. También se pone a cero la
+     * hora de la última comprobación (1.4): si no, un data.json restaurado del jar esperaba hasta 24 h a comprobarse.
      */
     public static void ttDescargar(String rel) throws Exception {
-        if (descargar(TT_DIR, rel, JAR, RED) && DATA_JSON.equals(rel)) guardarConfig("techtree_etag", "");
+        traer(TT_DIR, rel, JAR, RED, dev.tirador.aoe2radar.util.Config::guardarConfig);
+    }
+
+    /** ttDescargar con la carpeta, las fuentes y la config a mano (los tests). */
+    static void traer(Path dir, String rel, Fuente jar, Fuente red, java.util.function.BiConsumer<String, String> config) throws Exception {
+        if (descargar(dir, rel, jar, red) && DATA_JSON.equals(rel)) {
+            config.accept("techtree_etag", "");
+            config.accept("techtree_check", "0");
+        }
     }
 
     /** Baja rel a dir con escritura atómica (util.Archivos): un corte a mitad no deja un archivo truncado que, al

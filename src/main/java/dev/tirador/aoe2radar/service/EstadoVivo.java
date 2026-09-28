@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.Objects;
 
 import static dev.tirador.aoe2radar.cache.Vivos.enCursoReal;
-import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
  * Quién está en partida AHORA, con un solo dueño. Lo escriben el socket, la confirmación de fantasmas y los barridos
@@ -23,7 +22,7 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * candado y cada cambio que la app hacía en varios mapas seguidos es UNA operación.
  * <p>Por jugador: el id de la partida en la que está (el «punto» de la lista), el texto de la sublínea, la partida
  * completa (para el menú «En partida ahora»; no se borra al salir, como en la 1.1), el rival de un 1v1 y la última vez
- * que se le vio en partida.
+ * que se le vio en partida. De quien ya no juega, el texto y el «visto» se podan pasado un tiempo (ver podar).
  */
 public final class EstadoVivo {
     /** El de la app. */
@@ -42,8 +41,23 @@ public final class EstadoVivo {
     private final Map<Long, Long> finMs = new HashMap<>();
     /** Partidas que se sabe que terminaron (id → cuándo se supo), 3 h: una partida terminada no vuelve a estar en curso. */
     private final Map<Long, Long> terminadas = new LinkedHashMap<>();
+    /** Cuándo se puso el texto de cada jugador (para podar los textos viejos de quien ya no juega: ver podar). */
+    private final Map<Long, Long> infoMs = new HashMap<>();
+    /** Rechazos de marcarJugando por partida terminada (id → cuántos). Solo el primero va al log: ver anotarRechazo. */
+    private final Map<Long, Integer> rechazos = new HashMap<>();
+    /** Última poda (ms): se poda como mucho una vez cada PODA_CADA, desde las escrituras. */
+    private long ultimaPodaMs;
+    private final java.util.function.Consumer<String> log;
 
-    public EstadoVivo(Reloj reloj) { this.reloj = reloj; }
+    /** Cada cuánto se poda como mucho, y cuánto duran «visto» y el texto de quien ya no está en partida (1.4). */
+    static final long PODA_CADA_MS = Duration.ofMinutes(10).toMillis();
+    static final long VISTO_DURA_MS = Duration.ofHours(48).toMillis();
+    static final long INFO_DURA_MS = Duration.ofHours(3).toMillis();
+
+    public EstadoVivo(Reloj reloj) { this(reloj, dev.tirador.aoe2radar.util.Log::log); }
+
+    /** Con otro destino para el log (los tests, para no escribir en descargas.log). */
+    EstadoVivo(Reloj reloj, java.util.function.Consumer<String> log) { this.reloj = reloj; this.log = log; }
 
     // ----- escrituras -----
 
@@ -65,16 +79,49 @@ public final class EstadoVivo {
         return true;
     }
 
-    /** Para medir en uso real si el companion manda «terminada» de partidas vivas (el riesgo de esta regla, ver DEUDA). */
-    private static void anotarRechazo(long pid, long matchId) {
-        log("vivo: la partida " + matchId + " ya se dio por terminada: no se marca a " + pid + " como jugando");
+    /**
+     * Para medir en uso real si el companion manda «terminada» de partidas vivas (el riesgo de esta regla, ver DEUDA).
+     * Solo el primer rechazo de cada partida va al log (antes, uno por jugador y por barrido: mucho ruido en
+     * descargas.log); los demás se cuentan y el total sale en una línea cuando la partida se olvida (apuntarTerminada).
+     * Esa línea necesita otra apuntarTerminada 3 h después: si la app se cierra antes, no sale (el primer aviso, sí).
+     * Con el candado cogido.
+     */
+    private void anotarRechazo(long pid, long matchId) {
+        if (rechazos.merge(matchId, 1, Integer::sum) == 1)
+            log.accept("vivo: la partida " + matchId + " ya se dio por terminada: no se marca a " + pid + " como jugando");
     }
 
     /** Se sabe que la partida matchId ha terminado (y no vuelve): la recuerda 3 h, lo que dura una partida «en curso». */
     public synchronized void apuntarTerminada(long matchId) {
         long ahora = reloj.ahoraMs();
         terminadas.put(matchId, ahora);
-        terminadas.values().removeIf(ms -> ahora - ms >= Duration.ofHours(3).toMillis());
+        terminadas.entrySet().removeIf(e -> {
+            if (ahora - e.getValue() < Duration.ofHours(3).toMillis()) return false;
+            Integer n = rechazos.remove(e.getKey());
+            if (n != null && n > 1) log.accept("vivo: la partida " + e.getKey() + " se rechazó " + n + " veces en total (ya se olvida)");
+            return true;
+        });
+        podar(ahora);
+    }
+
+    /**
+     * Poda lo que ya no sirve de quien NO está en partida (1.4, antes duraba toda la sesión): el «visto» de hace más de
+     * VISTO_DURA_MS (48 h: el perfil lo compara con el volcado nocturno, que va un día por detrás) y el texto de la
+     * sublínea de hace más de INFO_DURA_MS (el texto solo se enseña con el jugador en partida; puede llegar un momento
+     * antes de marcarlo, por eso no se borra en cuanto no juega). Se queda: la partida completa (la leen el menú y la
+     * regla de fantasmas; en la 1.1 no se borraba) y finMs (EloSesion.caducado lo necesita para saber que el ELO
+     * recordado quedó viejo; sin él, un ELO de antes de esa partida no se renovaría). Como mucho una vez cada
+     * PODA_CADA_MS. Con el candado cogido.
+     */
+    private void podar(long ahora) {
+        if (ahora - ultimaPodaMs < PODA_CADA_MS) return;
+        ultimaPodaMs = ahora;
+        vistoMs.entrySet().removeIf(e -> !matchDe.containsKey(e.getKey()) && ahora - e.getValue() >= VISTO_DURA_MS);
+        infoMs.entrySet().removeIf(e -> {
+            if (matchDe.containsKey(e.getKey()) || ahora - e.getValue() < INFO_DURA_MS) return false;
+            info.remove(e.getKey());
+            return true;
+        });
     }
 
     /** ¿Se sabe que la partida matchId terminó? */
@@ -84,14 +131,19 @@ public final class EstadoVivo {
     public synchronized void ponerInfo(long pid, String texto) { ponerInfoSinCandado(pid, texto); }
 
     private void ponerInfoSinCandado(long pid, String texto) {
-        if (texto == null) info.remove(pid); else info.put(pid, texto);
+        if (texto == null) { info.remove(pid); infoMs.remove(pid); }
+        else { info.put(pid, texto); infoMs.put(pid, reloj.ahoraMs()); }
     }
 
-    /** Ya no está en partida: se van su punto, su texto y su rival (la partida completa y el «visto» se quedan). */
+    /** Ya no está en partida: se van su punto, su texto y su rival (la partida completa y el «visto» se quedan; el
+     *  «visto», hasta la poda). */
     public synchronized void marcarFuera(long pid) {
-        if (matchDe.remove(pid) != null) finMs.put(pid, reloj.ahoraMs());   // estaba jugando: su partida acaba de terminar
+        long ahora = reloj.ahoraMs();
+        if (matchDe.remove(pid) != null) finMs.put(pid, ahora);   // estaba jugando: su partida acaba de terminar
         info.remove(pid);
+        infoMs.remove(pid);
         rival.remove(pid);
+        podar(ahora);
     }
 
     /**
@@ -153,6 +205,7 @@ public final class EstadoVivo {
                 if (riv != null) rival.put(pid, new Rival(riv.id, riv.name));
             }
         } catch (Exception ignored) { }   // como en la 1.1: una partida rara no rompe nada
+        podar(ahora);
     }
 
     // ----- lecturas (sin red, desde cualquier hilo) -----

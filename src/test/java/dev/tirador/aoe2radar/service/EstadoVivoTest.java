@@ -407,4 +407,60 @@ class EstadoVivoTest {
         assertSame(b, e.soltarPartidaDe(1, 556));
         assertNull(e.partida(1));
     }
+
+    // ===== 1.4: poda de lo que ya no sirve y menos ruido en el log =====
+
+    @Test void podaElVistoDe48hYElTextoDe3hDeQuienYaNoJuega_yDejaPartidaYFin() {
+        RelojFalso r = reloj();
+        EstadoVivo e = new EstadoVivo(r, linea -> { });
+        Match m = partidaConJugadores(ahora().minus(Duration.ofMinutes(5)), null, false, jugador(1, "Yo"), jugador(2, "Rival"));
+        m.id = 700;
+        e.registrar(m, 1);
+        e.marcarJugando(1, 700, "jugando");
+        e.marcarFuera(1);                                  // terminó: queda su fin, su partida y su «visto»
+        e.ponerInfo(3, "texto suelto");                    // un texto de alguien que no llegó a marcarse
+        e.registrar(m, 2);
+        e.marcarJugando(2, 700);                           // 2 sigue en partida: lo suyo no se poda
+        e.ponerInfo(2, "sigue");
+
+        r.avanzar(EstadoVivo.INFO_DURA_MS + EstadoVivo.PODA_CADA_MS);
+        e.marcarFuera(99);                                 // una escritura cualquiera dispara la poda
+        assertNull(e.info(3), "texto de hace más de 3 h de quien no juega: fuera");
+        assertEquals("sigue", e.info(2), "quien sigue en partida conserva su texto");
+        assertNotNull(e.vistoMs(1), "el «visto» dura 48 h");
+
+        r.avanzar(EstadoVivo.VISTO_DURA_MS);
+        e.marcarFuera(99);
+        assertNull(e.vistoMs(1), "«visto» de hace más de 48 h de quien no juega: fuera");
+        assertNotNull(e.vistoMs(2), "quien sigue en partida conserva su «visto»");
+        assertEquals(HORA, e.finMs(1), "finMs se queda (EloSesion)");
+        assertSame(m, e.partida(1), "la partida completa se queda (como en la 1.1)");
+    }
+
+    @Test void unTextoRecienPuestoNoSePodaAunqueTodaviaNoEsteJugando() {
+        RelojFalso r = reloj();
+        EstadoVivo e = new EstadoVivo(r, linea -> { });
+        e.ponerInfo(5, "llega antes que el punto");
+        e.marcarFuera(99);                                 // la primera escritura poda (ultimaPodaMs empieza en 0)
+        assertEquals("llega antes que el punto", e.info(5));
+    }
+
+    @Test void soloElPrimerRechazoDeCadaPartidaVaAlLog_yElTotalAlOlvidarla() {
+        RelojFalso r = reloj();
+        List<String> lineas = new ArrayList<>();
+        EstadoVivo e = new EstadoVivo(r, lineas::add);
+        e.apuntarTerminada(800);
+        e.apuntarTerminada(802);
+        for (int i = 0; i < 5; i++) assertFalse(e.marcarJugando(i, 800));
+        assertFalse(e.marcarJugando(9, 800, "texto"));
+        assertFalse(e.marcarJugando(1, 802));             // 802: un solo rechazo
+        assertEquals(2, lineas.size(), () -> "un aviso por partida: " + lineas);
+        assertTrue(lineas.get(0).contains("800") && lineas.get(1).contains("802"), () -> String.valueOf(lineas));
+
+        r.avanzar(Duration.ofHours(3).toMillis());
+        e.apuntarTerminada(801);                           // 800 y 802 se olvidan: total solo de la que tuvo más de uno
+        assertEquals(3, lineas.size(), () -> String.valueOf(lineas));
+        assertTrue(lineas.get(2).contains("800") && lineas.get(2).contains("6 veces"), lineas.get(2));
+        assertTrue(e.marcarJugando(1, 800), "olvidada, ya se puede marcar");
+    }
 }

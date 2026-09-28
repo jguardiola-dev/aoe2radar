@@ -15,6 +15,7 @@ import static dev.tirador.aoe2radar.service.ImagenesJuego.pedirMapa;
 import static dev.tirador.aoe2radar.service.ImagenesJuego.bytesBandera;
 import static dev.tirador.aoe2radar.service.ImagenesJuego.urlBandera;
 import static dev.tirador.aoe2radar.service.ImagenesJuego.rutaIconoCiv;
+import static dev.tirador.aoe2radar.service.ImagenesJuego.leerIcono;
 import static dev.tirador.aoe2radar.service.ImagenesJuego.rutaMapa;
 
 /**
@@ -74,7 +75,7 @@ public final class Iconos {
         Path p = rutaIconoCiv(k);
         if (!Files.exists(p)) return null;
         try {
-            BufferedImage img = ImageIO.read(p.toFile());
+            BufferedImage img = leerIcono(p);   // vacío o truncado: lo borra y la precarga del tech tree lo vuelve a traer (1.4)
             if (img == null) return null;
             ic = new ImageIcon(img.getScaledInstance(px, px, Image.SCALE_SMOOTH));
             ICONOS_CIV.put(kk, ic);
