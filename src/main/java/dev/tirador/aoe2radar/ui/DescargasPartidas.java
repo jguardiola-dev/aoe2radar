@@ -33,6 +33,9 @@ final class DescargasPartidas {
      *  los desarma al empezar (siempre). Solo los usa esta clase (antes eran campos públicos de la fachada). */
     boolean descargaSinCambiarVista;
     Runnable alTerminarDescarga;
+    /** El número de la última descarga lanzada (1.4, decisión de Jorge): solo otra descarga la supera; una búsqueda,
+     *  «Al azar» o «Ver forma» empezadas mientras tanto no. Solo en el EDT. */
+    long serialDescarga;
 
     private final PartidasView vista;
 
@@ -259,6 +262,7 @@ final class DescargasPartidas {
         if (!sinCambiarVista) vista.anfitrion.mostrarDirectos(false);
         vista.dlSel.setEnabled(false); vista.dlAll.setEnabled(false);
         final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
+        serialDescarga = miSerial;
         Set<Long> trackedIds = PartidasPresenter.idsDeLaLista(vista.enlaceWatchlist);
         final boolean autoCopiar = vista.anfitrion.autoCopiarAlDescargar();
         final boolean autoCopiarFinal = autoCopiar || enviarSiempre;
@@ -311,8 +315,8 @@ final class DescargasPartidas {
             }
             @Override protected void done() {
                 vista.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
-                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) {
-                    log("descargas #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual());
+                if (!PartidasPresenter.vigente(miSerial, serialDescarga)) {   // solo otra descarga la supera (1.4)
+                    log("descargas #" + miSerial + ": terminó superada por la descarga #" + serialDescarga);
                 } else {
                     vista.dlSel.setEnabled(true);
                     vista.dlAll.setEnabled(true);

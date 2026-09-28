@@ -72,8 +72,13 @@ public final class PartidasPresenter {
         String perfilNombreAbierto();
     }
 
-    /** true si la operación que acaba de terminar (miSerial) sigue siendo la vigente: nadie la ha superado
-     *  mientras corría (equivalente a {@code miSerial == opSerial} en el código de la 1.1). */
+    /** true si la operación que acaba de terminar (miSerial) sigue siendo la vigente de SU tipo: no ha empezado otra
+     *  del mismo tipo mientras corría. {@code serialActual} es el número de la última operación lanzada de ese tipo
+     *  (serialAzar, serialGte, serialDescarga, serialForma, serialVinculadas; «Buscar partidas» usa fetchWorker).
+     *  Decisión de Jorge (1.4): un resultado solo se descarta si empieza otra operación del MISMO tipo; hasta la 1.3,
+     *  cualquier operación nueva lo descartaba (se comparaba con el opSerial global). Si dos resultados de tipos
+     *  distintos que pintan la tabla (buscar, azar, GTE) llegan, pinta el último que llega, con su cabecera
+     *  (BusquedasPartidas.cabeceras). */
     public static boolean vigente(long miSerial, long serialActual) {
         return miSerial == serialActual;
     }

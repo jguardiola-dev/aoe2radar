@@ -43,6 +43,24 @@ final class BusquedasPartidas {
      *  paran y terminan ESA operación, sin tocar el freno de las demás. Solo en el EDT. */
     long serialBusqueda;
 
+    /** El número de la última «Al azar» y de la última «Guess the ELO» lanzadas (1.4, decisión de Jorge): un resultado
+     *  solo se descarta si empezó OTRA operación de su mismo tipo (otra «Al azar» sustituye a la «Al azar»); una
+     *  descarga, una búsqueda, «Ver forma» o las vinculadas no le afectan. Solo en el EDT (se escriben al lanzar y
+     *  se leen en done()). */
+    long serialAzar, serialGte;
+
+    /** «Al azar» y «Guess the ELO» lanzadas cuyo done() aún no ha corrido (las superadas incluidas). Con
+     *  {@code vista.fetchWorker}, dice si queda alguna búsqueda de la familia en marcha: los tres botones solo se
+     *  reponen cuando no queda ninguna (ver {@link #reponerBotones}). Solo en el EDT. */
+    int enVuelo;
+
+    /** Sube cada vez que una búsqueda de la familia (buscar, azar, GTE) pone SU cabecera «Partidas de:». La tabla es
+     *  una sola: si dos resultados de tipos distintos llegan, pinta el último que llega (regla de la 1.4), y al pintar
+     *  cada uno repone su cabecera si otro de los tres la cambió desde que la puso (así la tabla y «Partidas de:» no
+     *  quedan de dos búsquedas distintas de la familia). Los demás que tocan la cabecera (la ×, el Perfil que vuelca
+     *  sus partidas, la watchlist) no lo suben: con ellos sigue como en la 1.3. Solo en el EDT. */
+    int cabeceras;
+
     private final PartidasView vista;
 
     BusquedasPartidas(PartidasView vista) { this.vista = vista; }
@@ -109,6 +127,10 @@ final class BusquedasPartidas {
         final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         final int hours = Integer.parseInt(leerConfig("elo_horas", "48"));
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
+        // Los contadores, cuando ya nada puede lanzar antes del execute(): un enVuelo sin su done() apagaría los botones.
+        serialAzar = miSerial;
+        enVuelo++;
+        cabeceras++;   // ha vaciado «Partidas de:»
         vista.anfitrion.estado(t("Buscando partidas al azar ", "Searching random games ") + lo + "–" + hi + "…");
         log("azar #" + miSerial + ": inicio " + lo + "-" + hi + " h=" + hours + " mapa=" + mapaSel + " civ=" + civSel
                 + " x" + multAzar + " continuar=" + continuar + " stop=" + vista.anfitrion.detenido(miSerial));
@@ -125,13 +147,15 @@ final class BusquedasPartidas {
             @Override protected void done() {
                 final boolean parada = vista.anfitrion.detenido(miSerial);
                 vista.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
-                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) {
-                    log("azar #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual() + "; resultado ignorado");
+                enVuelo--;
+                if (!PartidasPresenter.vigente(miSerial, serialAzar)) {   // solo otra «Al azar» la supera (1.4)
+                    log("azar #" + miSerial + ": terminó superada por otra «Al azar» (#" + serialAzar + "); resultado ignorado");
+                    reponerBotones();
                     return;
                 }
-                vista.fetchBtn.setEnabled(true);
-                vista.azarBtn.setEnabled(true);
-                vista.gteBtn.setEnabled(true);
+                if (miSerial != vista.anfitrion.operacionActual())
+                    log("azar #" + miSerial + ": la op #" + vista.anfitrion.operacionActual() + " empezó durante el azar; el resultado se aplica igual");
+                reponerBotones();
                 vista.anfitrion.continuarDisponible(true);
                 try {
                     List<Match> res = get();
@@ -149,6 +173,7 @@ final class BusquedasPartidas {
                     PartidasView.SUJETOS.addAll(sujetos.refIds());
                     vista.vistaDeSujetos = vista.enlaceWatchlist.vistaActualId();
                     vista.refrescarSujetos(sujetos.refs(), false);
+                    cabeceras++;
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.enlaceWatchlist.limpiarSeleccion();
@@ -174,6 +199,10 @@ final class BusquedasPartidas {
         final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
         int hours = Integer.parseInt(leerConfig("elo_horas", "48"));
         Instant cutoff = Instant.now().minus(Duration.ofHours(hours));
+        // Los contadores, cuando ya nada puede lanzar antes del execute(): un enVuelo sin su done() apagaría los botones.
+        serialGte = miSerial;
+        enVuelo++;
+        final int miCabecera = ++cabeceras;   // la suya: «Partidas de:» vacía
         vista.anfitrion.estado(t("Preparando Guess the ELO…", "Preparing Guess the ELO…"));
         new SwingWorker<List<Match>, String>() {
             @Override protected List<Match> doInBackground() throws Exception {
@@ -188,16 +217,24 @@ final class BusquedasPartidas {
             @Override protected void done() {
                 final boolean parada = vista.anfitrion.detenido(miSerial);
                 vista.anfitrion.terminarOperacion(miSerial);   // siempre: aunque otra la haya superado, deja de contar para «Detener»
-                if (!PartidasPresenter.vigente(miSerial, vista.anfitrion.operacionActual())) { log("gte #" + miSerial + ": terminó superada por la op #" + vista.anfitrion.operacionActual()); return; }
-                vista.fetchBtn.setEnabled(true);
-                vista.azarBtn.setEnabled(true);
-                vista.gteBtn.setEnabled(true);
+                enVuelo--;
+                if (!PartidasPresenter.vigente(miSerial, serialGte)) {   // solo otra «Guess the ELO» la supera (1.4)
+                    log("gte #" + miSerial + ": terminó superada por otra Guess the ELO (#" + serialGte + ")");
+                    reponerBotones();
+                    return;
+                }
+                reponerBotones();
                 try {
                     List<Match> res = get();
                     vista.anfitrion.aprenderCatalogos(res);
                     if (res.isEmpty()) {
                         vista.anfitrion.estado(PartidasPresenter.mensajeGteNada(hours));
                         return;
+                    }
+                    if (cabeceras != miCabecera) {   // otra búsqueda puso su «Partidas de:» mientras tanto: vuelve la vacía
+                        PartidasView.SUJETOS.clear();
+                        vista.refrescarSujetos(List.of(), false);
+                        cabeceras++;
                     }
                     vista.all.clear();
                     vista.all.addAll(res);
@@ -269,12 +306,16 @@ final class BusquedasPartidas {
         vista.taparResultados();
         for (Player px : tracked) PartidasView.SUJETOS.add(px.id());
         vista.vistaDeSujetos = vista.enlaceWatchlist.vistaActualId();
-        vista.refrescarSujetos(tracked, vista.enlaceWatchlist.invitado() != null);
+        final String vistaSujetos = vista.vistaDeSujetos;
+        final boolean esInvitado = vista.enlaceWatchlist.invitado() != null;
+        vista.refrescarSujetos(tracked, esInvitado);
+        final int miCabecera = ++cabeceras;
 
         vista.anfitrion.mostrarDirectos(false);
         vista.enlaceWatchlist.guardarVentanaHoras();
         btn.setText(t("Detener", "Stop"));
         btn.setToolTipText(t("Detiene la búsqueda en curso", "Stops the current search"));
+        btn.setEnabled(true);   // «Detener» aunque la lanzara un doble clic con «Al azar» en marcha (que lo apagó)
         vista.azarBtn.setEnabled(false);
         vista.gteBtn.setEnabled(false);
         final long miSerial = vista.anfitrion.empezarOperacion();   // su propio freno (un Detener de otra no la para)
@@ -317,9 +358,7 @@ final class BusquedasPartidas {
                 vista.fetchWorker = null;
                 vista.actualizarTextoBuscar();
                 btn.setToolTipText(null);
-                btn.setEnabled(true);
-                vista.azarBtn.setEnabled(true);
-                vista.gteBtn.setEnabled(true);
+                reponerBotones();   // con «Al azar» o Guess the ELO aún en marcha, se quedan apagados hasta que acabe
                 // (Ya no hay rama «isCancelled()» aquí: solo cancelan la × y una búsqueda nueva, y las dos ponen
                 // fetchWorker = null antes, así que salen por arriba; el botón «Detener» pone el freno, no cancela.)
                 try {
@@ -345,6 +384,14 @@ final class BusquedasPartidas {
                     // su estado («descargando…», «✓ guardada»…) se conserva por id de partida. enDisco/enJuego los
                     // vuelve a mirar applyFilters (y otra vez la descarga al acabar).
                     PartidasPresenter.conservarEstados(vista.all, res);
+                    if (cabeceras != miCabecera) {   // «Al azar» o GTE pintaron mientras tanto: vuelve la cabecera de esta búsqueda
+                        PartidasView.SUJETOS.clear();
+                        vista.filtroSujetos.clear();
+                        for (Player px : tracked) PartidasView.SUJETOS.add(px.id());
+                        vista.vistaDeSujetos = vistaSujetos;
+                        vista.refrescarSujetos(tracked, esInvitado);
+                        cabeceras++;
+                    }
                     vista.all.clear();
                     vista.all.addAll(res);
                     vista.refreshModeCombo();
@@ -373,10 +420,18 @@ final class BusquedasPartidas {
         vista.anfitrion.pararOperacion(serialBusqueda);   // SU freno (corta su espera en el freno de la red), sea o no la última operación
         enCurso.cancel(true);
         vista.fetchBtn.setToolTipText(null);
-        vista.fetchBtn.setEnabled(true);
-        vista.azarBtn.setEnabled(true);
-        vista.gteBtn.setEnabled(true);
+        reponerBotones();
         vista.anfitrion.terminarOperacion(serialBusqueda);   // si queda otra viva, el progreso y «Detener» pasan a ella
         log("buscar #" + serialBusqueda + ": cerrada con la ×");
+    }
+
+    /** Los botones «Buscar partidas», «Al azar» y «Guess the ELO» al acabar una de ellas: todos encendidos si no
+     *  queda ninguna en marcha; con una búsqueda en marcha, el suyo («Detener») sí y los otros dos no; con solo «Al azar»
+     *  o GTE en marcha, ninguno (como al lanzarlas). Sin nada más en marcha es lo de siempre: los tres encendidos. EDT. */
+    void reponerBotones() {
+        boolean libre = vista.fetchWorker == null && enVuelo == 0;
+        vista.fetchBtn.setEnabled(vista.fetchWorker != null || enVuelo == 0);   // con búsqueda en marcha, su «Detener»
+        vista.azarBtn.setEnabled(libre);
+        vista.gteBtn.setEnabled(libre);
     }
 }

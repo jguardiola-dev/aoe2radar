@@ -476,6 +476,8 @@ class PartidasViewTest {
         enEdt(() -> {
             assertEquals(1, avisos[0], "quien pidió la descarga se entera de que acabó (repinta su tabla)");
             assertNull(vista.descargas.alTerminarDescarga);
+            // 1.4 (decisión de Jorge): una operación de otro tipo ya no supera a la descarga: repone sus botones.
+            assertTrue(vista.dlSel.isEnabled() && vista.dlAll.isEnabled(), "la descarga no quedó superada por otra operación");
         });
         assertTrue(anfitrion.mostrarDirectos.isEmpty(), "sin cambiar de vista");
     }
