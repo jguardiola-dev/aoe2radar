@@ -190,7 +190,7 @@ public final class BarraEstado {
         actualizarBtn.setFocusable(false);
         actualizarBtn.setToolTipText(t("Abre la página de descarga de la versión nueva", "Opens the new version's download page"));
         actualizarBtn.addActionListener(e -> anfitrion.abrirUrl(RELEASES_URL));
-        este.add(actualizarBtn); este.add(cafeBtn); este.add(firma);
+        este.add(respaldo); este.add(actualizarBtn); este.add(cafeBtn); este.add(firma);
 
         progreso.setIndeterminate(true);
         progreso.setVisible(false);
@@ -259,6 +259,28 @@ public final class BarraEstado {
     }
 
     public void ocultarToast() { if (toast != null) { ventana.getLayeredPane().remove(toast); ventana.getLayeredPane().repaint(); toast = null; } }
+
+    /** «Datos parciales (fuente de respaldo)»: visible solo mientras algo se sirve de World's Edge porque el companion
+     *  falla (1.4, api.ConRespaldo). Oculta al empezar: sin respaldo, la barra es la de siempre. Paquete: BarraEstadoTest. */
+    final JLabel respaldo = new JLabel(t("Datos parciales (fuente de respaldo)", "Partial data (fallback source)"));
+    {
+        respaldo.setVisible(false);
+        respaldo.setFont(respaldo.getFont().deriveFont(Font.BOLD, 11f));
+        respaldo.setToolTipText(t("<html>El companion no responde: algunos datos vienen de la API del juego (World's Edge).<br>"
+                        + "Faltan la serie de ELO, las cuentas vinculadas, Twitch, el historial largo y las partidas en curso.<br>"
+                        + "Se vuelve al companion solo, en cuanto responda.</html>",
+                "<html>The companion is not responding: some data comes from the game's API (World's Edge).<br>"
+                        + "Missing: ELO history, linked accounts, Twitch, long history and live games.<br>"
+                        + "It switches back to the companion by itself as soon as it responds.</html>"));
+    }
+
+    /** true: se enseña «Datos parciales (fuente de respaldo)»; false: se quita. Sin diálogos. EDT. */
+    public void mostrarRespaldo(boolean enRespaldo) {
+        if (respaldo.isVisible() == enRespaldo) return;
+        respaldo.setVisible(enRespaldo);
+        java.awt.Container padre = respaldo.getParent();
+        if (padre != null) { padre.revalidate(); padre.repaint(); }
+    }
 
     // ======================================================================
     // Aviso de pausa por 429 (decisión de Jorge, DEUDA 45): "Buscar" y Twitch se quedaban en "Consultando..."

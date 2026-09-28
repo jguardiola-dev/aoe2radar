@@ -498,4 +498,23 @@ class PerfilesCompanionTest {
         s.elo1v1Leido(9_001L);
         assertEquals(3, peticiones(9_001L), "cada petición de ELO sale a la red, como siempre");
     }
+
+    // ----- 1.4: las vinculadas salen solo de su fuente (el companion), no de la del respaldo
+
+    @Test void lasVinculadasSalenDeSuPropiaFuente() {
+        List<Long> pedidasFicha = new ArrayList<>();
+        dev.tirador.aoe2radar.api.FuentePerfil sinVinculadas = pid -> {
+            pedidasFicha.add(pid);
+            return new Perfil(null, null, -1, null, null, List.of(), List.of(), List.of());
+        };
+        red.cuerpo = "{\"linked_profiles\":[{\"profile_id\":2,\"name\":\"Alt\",\"country\":\"es\",\"games\":5}]}";
+        PerfilesCompanion s = new PerfilesCompanion(sinVinculadas, api, fichas, (pid, v) -> { }, (pid, v) -> { }, null, null,
+                new EloSesion(estadoVivo, reloj, EloSesion.ESPERA));
+        List<Perfil.Vinculada> v = s.vinculadas(1L);
+        assertEquals(1, v.size());
+        assertEquals(2L, v.get(0).pid());
+        assertTrue(pedidasFicha.isEmpty(), "la fuente con respaldo no se usa para las vinculadas");
+        s.ficha(1L);
+        assertEquals(List.of(1L), pedidasFicha, "la ficha, sí");
+    }
 }

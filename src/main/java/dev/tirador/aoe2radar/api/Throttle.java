@@ -34,4 +34,11 @@ public interface Throttle {
      * este; si no, los dos se llaman entre sí sin fin.
      */
     default Pausa429 registrarEpisodio429() { return new Pausa429(registrar429(), true); }
+
+    /**
+     * ¿Está abierto el cortacircuitos? Los ms que quedan de la pausa por 429 (0 si no hay pausa). Sin esperar ni
+     * consumir ficha: para quien quiere decidir ANTES de llamar (la fuente de respaldo, ConRespaldo, pasa a World's Edge
+     * en vez de dormirse la pausa del companion). Por defecto 0: un Throttle que no lo sabe nunca está abierto.
+     */
+    default long pausaRestanteMs() { return 0; }
 }

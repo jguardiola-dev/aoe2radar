@@ -17,6 +17,7 @@ public final class Match {
     public boolean fantasma;             // «en curso» según la API pero imposible: el mismo jugador tiene otra partida posterior
     public String mapaClave;             // clave del mapa (rm_arabia) cuando viene de un paquete de sfr-data
     public int gte;                      // > 0: partida «Guess the ELO» nº gte (anónima en la app)     // la rec ya existe en ./recs
+    public boolean deRespaldo;           // vino de World's Edge (1.4, api.WorldsEdgeApi): fuente parcial que NO ve partidas en curso ni da nombres idénticos al companion; no sirve para decidir quién juega ni para aprender catálogos
 
     public String civDe(long pid) {
         if (gte > 0) return "";

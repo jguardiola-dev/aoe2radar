@@ -707,6 +707,43 @@ class PartidasPresenterTest {
         assertEquals(1, r.recorridos(), "B, cortado a medias, no cuenta");
     }
 
+    @Test void recorrer_loQueSirvioElRespaldoNoCuentaComoConsultado() {
+        // 1.4: World's Edge no ve partidas en curso; si su página contara como «consultado con éxito», decidirVivos
+        // sacaría de partida a quien está jugando (EstadoVivo.marcarFuera). Se trata como un fallo: su estado no se toca.
+        Instant fin = Instant.now().minusSeconds(600);
+        PartidasPresenter.Recorrido r = recorrerUno(List.of(A, B), fin.minusSeconds(86_400), 50, 0,
+                (pid, pag, pp) -> {
+                    Match m = PartidasViewTest.partida(pid, pid == A.id() ? A : B, fin);
+                    m.deRespaldo = pid == B.id();
+                    return List.of(m);
+                },
+                m -> false, () -> false, s -> { });
+        assertEquals(java.util.Set.of(A.id()), r.exitosos(), "B vino del respaldo: fuera de exitosos");
+        assertEquals(2, r.lista().size(), "pero sus partidas se muestran");
+        assertEquals(0, r.fallos(), "y no es un fallo que avisar");
+    }
+
+    @Test void recorrer_porLotes_unLoteDelRespaldoNoCuentaNingunoDeSusJugadores() {
+        // Lotes de 10 (1.4): una llamada por lote; si esa página la sirvió World's Edge, ninguno de sus 10 cuenta como
+        // consultado (decidirVivos no los marca «fuera»), aunque solo algunos tengan partidas en ella.
+        Instant ahora = Instant.now().minusSeconds(600);
+        List<Player> js = jugadores(12);
+        List<Integer> llamadas = new ArrayList<>();
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(js, ahora.minusSeconds(86_400), 10, 100, 0,
+                (pids, pag, pp) -> {
+                    llamadas.add(pids.size());
+                    Match m = PartidasViewTest.partida(pids.get(0), js.get(0), ahora);
+                    m.id = 1000 + pids.get(0);
+                    m.deRespaldo = pids.size() == 10;   // el primer lote, del respaldo; el segundo (2), del companion
+                    return List.of(m);
+                },
+                m -> false, () -> false, s -> { });
+        assertEquals(List.of(10, 2), llamadas, "una página por lote");
+        assertEquals(java.util.Set.copyOf(PartidasPresenter.ids(js.subList(10, 12))), r.exitosos(), "solo el lote del companion");
+        assertEquals(12, r.recorridos());
+        assertEquals(0, r.fallos());
+    }
+
     @Test void conservaTablaAnterior_soloSiSeDetuvoSinLeerNada() {
         Match m = PartidasViewTest.partida(1, A, Instant.now());
         assertTrue(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(), false, 0, java.util.Set.of(), true, 0)));

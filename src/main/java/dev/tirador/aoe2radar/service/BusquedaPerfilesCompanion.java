@@ -1,6 +1,6 @@
 package dev.tirador.aoe2radar.service;
 
-import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.FuenteBusqueda;
 import dev.tirador.aoe2radar.model.PerfilEncontrado;
 
 import java.util.ArrayList;
@@ -23,12 +23,12 @@ import static dev.tirador.aoe2radar.util.Log.log;
  * PerfilesCompanion.
  */
 public final class BusquedaPerfilesCompanion implements BusquedaPerfiles {
-    private final CompanionApi api;
+    private final FuenteBusqueda api;   // en la app, companion con respaldo de World's Edge (alias exacto)
     private final Map<Long, String[]> nombresAyer;   // pid → {nombre, país}
     private final Map<Long, int[]> eloAyer;          // pid → {elo1v1, partidas1v1, eloEq, partidasEq}
     private final BiConsumer<Long, String> aprenderPais;
 
-    public BusquedaPerfilesCompanion(CompanionApi api, Map<Long, String[]> nombresAyer, Map<Long, int[]> eloAyer,
+    public BusquedaPerfilesCompanion(FuenteBusqueda api, Map<Long, String[]> nombresAyer, Map<Long, int[]> eloAyer,
                                       BiConsumer<Long, String> aprenderPais) {
         this.api = api; this.nombresAyer = nombresAyer; this.eloAyer = eloAyer; this.aprenderPais = aprenderPais;
     }

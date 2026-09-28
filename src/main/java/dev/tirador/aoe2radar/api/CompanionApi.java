@@ -36,7 +36,7 @@ import static dev.tirador.aoe2radar.util.Json.when;
  * y no inventan valores: lo que falta queda null (textos, Integer) o -1 (ids y contadores long); cada pantalla decide
  * lo suyo. Fuera de aquí solo lee JSON del companion el socket (LiveService).
  */
-public final class CompanionApi implements FuentePartidas, FuenteLadder {
+public final class CompanionApi implements FuentePartidas, FuenteLadder, FuentePerfil, FuenteBusqueda {
     public static final String TWITCH_LIVE = "https://api.aoe2companion.com/twitch/live";
 
     /** Cuánto vale una ficha /profiles/{pid} guardada: ELO, vinculadas y steamId no cambian en minutos. */
@@ -92,7 +92,7 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
     public void invalidar(String url) { if (cache != null) cache.invalidar(url); }
 
     /** Olvida la ficha guardada de pid (p. ej. tras «Actualizar hoy», para que el ELO de la ficha no sea el de antes). */
-    public void invalidarPerfil(long pid) { invalidar(urlPerfil(pid)); }
+    @Override public void invalidarPerfil(long pid) { invalidar(urlPerfil(pid)); }
 
     /** Lecturas que la caché ha ahorrado a la red desde el arranque. */
     public long aciertosCache() { return cache == null ? 0 : cache.aciertos(); }
@@ -160,12 +160,12 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
     }
 
     /** GET /profiles/{pid}, ya convertido (ver aPerfil). Si hay caché (conCache), 10 min (TTL_PERFIL_MS). */
-    public Perfil perfil(long pid) throws IOException, InterruptedException {
+    @Override public Perfil perfil(long pid) throws IOException, InterruptedException {
         return aPerfil(obj(jsonConCache(urlPerfil(pid), TTL_PERFIL_MS)));
     }
 
     /** Como perfil(pid), pero siempre a la red (y renueva la caché): para lo que el usuario pide «forzar». */
-    public Perfil perfilFresco(long pid) throws IOException, InterruptedException {
+    @Override public Perfil perfilFresco(long pid) throws IOException, InterruptedException {
         return aPerfil(obj(jsonFresco(urlPerfil(pid), TTL_PERFIL_MS)));
     }
 
@@ -281,7 +281,7 @@ public final class CompanionApi implements FuentePartidas, FuenteLadder {
      * GET /profiles?search=…&page=1 (q sin espacios en los extremos, codificado en UTF-8). SIN reintento ante 429 (por
      * texto(), que sí lo cuenta al freno): es la búsqueda de nicks; si falla, la siguiente tecla o búsqueda lo repite.
      */
-    public List<PerfilEncontrado> buscarPerfiles(String q) throws IOException, InterruptedException {
+    @Override public List<PerfilEncontrado> buscarPerfiles(String q) throws IOException, InterruptedException {
         Object root = Json.parse(api.texto(Http.API + "/profiles?search=" + java.net.URLEncoder.encode(q.trim(), java.nio.charset.StandardCharsets.UTF_8) + "&page=1"));
         List<PerfilEncontrado> out = new ArrayList<>();
         for (Object o : arr(val(obj(root), "profiles"))) {

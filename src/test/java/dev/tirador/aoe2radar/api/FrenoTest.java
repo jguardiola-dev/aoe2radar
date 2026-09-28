@@ -3,9 +3,10 @@ package dev.tirador.aoe2radar.api;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** Qué URLs pasan por el freno: todas las del companion, y solo esas. */
+/** Qué URLs pasan por el freno: las del companion por su cubo, las de World's Edge por el suyo (1.4), y ninguna más. */
 class FrenoTest {
 
     @Test void laApiDeDatosDelCompanionPasaPorElFreno() {
@@ -36,6 +37,18 @@ class FrenoTest {
         assertFalse(Freno.aplicaA("https://x@evil.com/api"), "userinfo: el host real no lo es");
         assertFalse(Freno.aplicaA("https://104.21.0.1/api"), "IP");
         assertFalse(Freno.aplicaA("/api/matches"), "relativa: sin host");
+    }
+
+    @Test void worldsEdgeTieneSuPropioCubo() {
+        assertTrue(Freno.aplicaAWorldsEdge("https://aoe-api.worldsedgelink.com/community/leaderboard/getLeaderBoard2?title=age2"));
+        assertTrue(Freno.aplicaAWorldsEdge("HTTPS://PB-LIVE-RELEASE1-API.WORLDSEDGELINK.COM/game/x"), "otro subdominio, mayúsculas");
+        assertTrue(Freno.aplicaAWorldsEdge(dev.tirador.aoe2radar.service.Juego.OFICIAL_LOBBIES), "los lobbies de Mi partida");
+        assertFalse(Freno.aplicaA("https://aoe-api.worldsedgelink.com/community/x"), "no es del companion");
+        assertFalse(Freno.aplicaAWorldsEdge(Http.API + "/matches"), "el companion no es World's Edge");
+        assertFalse(Freno.aplicaAWorldsEdge("https://worldsedgelink.com.ejemplo.net/x"));
+        assertFalse(Freno.aplicaAWorldsEdge("https://falso-worldsedgelink.com/x"));
+        assertFalse(Freno.aplicaAWorldsEdge("no es una url"));
+        assertNotSame(Freno.THROTTLE, Freno.THROTTLE_WE, "dos cubos, dos estados");
     }
 
     @Test void urlsRarasNoRompenNada() {

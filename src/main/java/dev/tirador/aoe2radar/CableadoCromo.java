@@ -74,6 +74,7 @@ final class CableadoCromo {
         // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
         // barraEstado ya construido (es un inicializador de campo, corre antes que el cuerpo del constructor).
         Servicios.avisoPausa429 = v.barraEstado::mostrarPausaApi;
+        Servicios.avisoRespaldo = v.barraEstado::mostrarRespaldo;   // «Datos parciales (fuente de respaldo)» (1.4), mismo camino
     }
 
     // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,
@@ -302,7 +303,8 @@ final class CableadoCromo {
      *  hilo ("log-juego", "lobby-oficial", "mi-perfil"). */
     static MiPartidaPanel miPartida(SpoilerFreeRecs v) {
         return new MiPartidaPanel(
-                new MiPartidaServiceJuego(v.menus::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
+                new MiPartidaServiceJuego(v.menus::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego,
+                        Servicios.API_CLIENTE::texto),   // lobbies de World's Edge con su cubo del freno (1.4); un intento: la lista caduca en segundos
                 Tareas.SWING, v, v, new MiPartidaPanel.Anfitrion() {
                     @Override public List<String[]> buscarPerfiles(String nick) { return Servicios.buscarPerfiles(nick); }
                     @Override public void mostrarEstado(String texto) { v.status.setText(texto); }

@@ -29,10 +29,11 @@ import java.util.Map;
 import java.util.Set;
 
 import static dev.tirador.aoe2radar.app.Servicios.BUSQUEDA;
-import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
 import static dev.tirador.aoe2radar.app.Servicios.ELO_1V1;
+import static dev.tirador.aoe2radar.app.Servicios.PARTIDAS;
 import static dev.tirador.aoe2radar.app.Servicios.PAUSA_MS;
 import static dev.tirador.aoe2radar.app.Servicios.PER_PAGE;
+import static dev.tirador.aoe2radar.app.Servicios.PERFIL;
 import static dev.tirador.aoe2radar.app.Servicios.SERVICIO_PERFIL;
 import static dev.tirador.aoe2radar.app.Servicios.TOP_LADDER_SERVICE;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
@@ -134,7 +135,7 @@ final class CableadoWatchlist {
             @Override public Icon iconoVista(String tipo) { return dev.tirador.aoe2radar.ui.Navegador.iconoVista(tipo); }
             @Override public void seleccionCambiada() { if (v.ratings != null) v.ratings.sincronizarSeleccion(); if (v.perfil != null) v.perfil.sincronizarSeleccion(); }
             @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-            @Override public Perfil perfilApi(long pid) throws Exception { return COMPANION.perfil(pid); }   // tarjeta sin chispas: una llamada, con la caché por URL (10 min) y el freno
+            @Override public Perfil perfilApi(long pid) throws Exception { return PERFIL.perfil(pid); }   // tarjeta sin chispas: una llamada, con la caché por URL (10 min), el freno y el respaldo de World's Edge
             @Override public dev.tirador.aoe2radar.service.TarjetaPerfil.Datos tarjetaNocturna(long pid) {   // nocturno primero (1.4)
                 dev.tirador.aoe2radar.sfrdata.ChispasNocturnas.Chispa c = dev.tirador.aoe2radar.sfrdata.Snapshots.CHISPAS.chispa(pid);
                 if (c == null) return null;

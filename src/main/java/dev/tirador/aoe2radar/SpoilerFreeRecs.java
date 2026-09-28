@@ -174,7 +174,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
 
     // Campanas (aviso al entrar en partida alguien de una vista marcada): red/config/deduplicación en service.Campanas, aquí solo Swing y estado compartido.
     // "watchlist" (más abajo) aún no existe al construir este campo: referencia de método, que solo se lee al llamarla (una lambda directa no compilaría).
-    final Campanas campanas = new Campanas(COMPANION, Config::leerConfig, Config::guardarConfig, this::esGrupoDeUsuarioWatchlist);
+    final Campanas campanas = new Campanas(LADDER, Config::leerConfig, Config::guardarConfig, this::esGrupoDeUsuarioWatchlist);
     private boolean esGrupoDeUsuarioWatchlist(String nombre) { return CableadoWatchlist.esGrupoDeUsuarioWatchlist(this, nombre); }   // lógica en CableadoWatchlist
     javax.swing.Timer campanasTimer;   // barrido de campanas (Watchlist); el toast que dispara vive en ui.BarraEstado
     void mostrarToast(String texto, long matchId) { barraEstado.mostrarToast(texto, matchId); }   // el aviso flotante «X ha empezado una partida»
