@@ -523,7 +523,7 @@ public final class PartidasPresenter {
         final int MAX_PAGINAS = 6, MAX_TOTAL = 600;
         for (Player pl : tracked) {
             if (parar.getAsBoolean()) { detenida = true; break; }
-            boolean fallo = false;
+            boolean fallo = false, deRespaldo = false;
             for (int pagina = 1; pagina <= MAX_PAGINAS; pagina++) {
                 if (parar.getAsBoolean()) { detenida = true; break; }
                 progreso.accept(t("Consultando ", "Checking ") + pl.name() + (pagina > 1 ? " (" + t("pág. ", "p. ") + pagina + ")" : "") + "…");
@@ -533,6 +533,7 @@ public final class PartidasPresenter {
                     int n = 0; Instant masAntigua = null;
                     for (Match m : leidas) {
                         if (m == null) continue;
+                        if (m.deRespaldo) deRespaldo = true;
                         n++;
                         Instant ref = m.finished != null ? m.finished : m.started;
                         if (ref != null && (masAntigua == null || ref.isBefore(masAntigua))) masAntigua = ref;
@@ -555,7 +556,9 @@ public final class PartidasPresenter {
             }
             if (detenida) break;
             recorridos++;
-            if (!fallo) exitosos.add(pl.id());
+            // Solo lo que respondió el companion: World's Edge (respaldo, 1.4) no ve partidas en curso, así que «no aparece
+            // en curso» no quiere decir «ya no juega» (decidirVivos lo marcaría fuera). Como un fallo: no se toca su estado.
+            if (!fallo && !deRespaldo) exitosos.add(pl.id());
             if (unicos.size() >= MAX_TOTAL) break;
         }
         List<Match> lista = new ArrayList<>(unicos.values());

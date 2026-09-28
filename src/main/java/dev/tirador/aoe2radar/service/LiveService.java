@@ -23,10 +23,20 @@ public final class LiveService {
     /** El veredicto, con la partida tal como la da la API (si apareció) o el error (si falló). */
     public record Comprobacion(Veredicto veredicto, Match partida, Exception error) { }
 
-    private final FuentePartidas api;
+    private final FuentePartidas api;       // comprobar: «¿ya terminó?» (en la app, con respaldo de World's Edge)
+    private final FuentePartidas barrido;   // partidas(…): el barrido de Live now busca partidas EN CURSO (solo companion)
     private final Reloj reloj;
 
-    public LiveService(FuentePartidas api, Reloj reloj) { this.api = api; this.reloj = reloj; }
+    public LiveService(FuentePartidas api, Reloj reloj) { this(api, api, reloj); }
+
+    /**
+     * comprobacion para comprobar(…) y barrido para partidas(…). Separadas desde la 1.4: World's Edge solo conoce
+     * partidas terminadas, así que sirve de respaldo para «¿ya terminó?» (una partida que no aparece queda SIN_DATOS),
+     * pero no para el barrido, que busca las que están en curso: ahí, sin companion, mejor un error que «nadie juega».
+     */
+    public LiveService(FuentePartidas comprobacion, FuentePartidas barrido, Reloj reloj) {
+        this.api = comprobacion; this.barrido = barrido; this.reloj = reloj;
+    }
 
     /**
      * ¿Sigue en curso la partida matchId? Mira las `ultimas` partidas de pid (una llamada): si aparece, decide
@@ -48,9 +58,9 @@ public final class LiveService {
 
     /** Las últimas partidas de un jugador, tal cual las da la API (sin decidir nada): el barrido de Live now
      *  hace su propio enCursoReal por lote. ui no puede importar api directamente, de ahí este paso. Va a la red. */
-    public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException { return api.partidas(pid, pagina, porPagina); }
+    public Iterable<Match> partidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException { return barrido.partidas(pid, pagina, porPagina); }
 
     /** Igual que {@link #partidas(long, int, int)} pero para varios pids a la vez (CSV), como hace el barrido
      *  por lotes de Live now (una llamada por lote de hasta 15 pids). Va a la red. */
-    public Iterable<Match> partidas(String pidsCsv, int pagina, int porPagina) throws IOException, InterruptedException { return api.partidas(pidsCsv, pagina, porPagina); }
+    public Iterable<Match> partidas(String pidsCsv, int pagina, int porPagina) throws IOException, InterruptedException { return barrido.partidas(pidsCsv, pagina, porPagina); }
 }

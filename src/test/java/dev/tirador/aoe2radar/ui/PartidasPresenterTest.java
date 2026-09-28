@@ -592,6 +592,22 @@ class PartidasPresenterTest {
         assertEquals(1, r.recorridos(), "B, cortado a medias, no cuenta");
     }
 
+    @Test void recorrer_loQueSirvioElRespaldoNoCuentaComoConsultado() {
+        // 1.4: World's Edge no ve partidas en curso; si su página contara como «consultado con éxito», decidirVivos
+        // sacaría de partida a quien está jugando (EstadoVivo.marcarFuera). Se trata como un fallo: su estado no se toca.
+        Instant fin = Instant.now().minusSeconds(600);
+        PartidasPresenter.Recorrido r = PartidasPresenter.recorrer(List.of(A, B), fin.minusSeconds(86_400), 50, 0,
+                (pid, pag, pp) -> {
+                    Match m = PartidasViewTest.partida(pid, pid == A.id() ? A : B, fin);
+                    m.deRespaldo = pid == B.id();
+                    return List.of(m);
+                },
+                m -> false, () -> false, s -> { });
+        assertEquals(java.util.Set.of(A.id()), r.exitosos(), "B vino del respaldo: fuera de exitosos");
+        assertEquals(2, r.lista().size(), "pero sus partidas se muestran");
+        assertEquals(0, r.fallos(), "y no es un fallo que avisar");
+    }
+
     @Test void conservaTablaAnterior_soloSiSeDetuvoSinLeerNada() {
         Match m = PartidasViewTest.partida(1, A, Instant.now());
         assertTrue(PartidasPresenter.conservaTablaAnterior(new PartidasPresenter.Recorrido(List.of(), false, 0, java.util.Set.of(), true, 0)));

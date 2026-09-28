@@ -29,10 +29,11 @@ import java.util.Map;
 import java.util.Set;
 
 import static dev.tirador.aoe2radar.app.Servicios.BUSQUEDA;
-import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
 import static dev.tirador.aoe2radar.app.Servicios.ELO_1V1;
+import static dev.tirador.aoe2radar.app.Servicios.PARTIDAS;
 import static dev.tirador.aoe2radar.app.Servicios.PAUSA_MS;
 import static dev.tirador.aoe2radar.app.Servicios.PER_PAGE;
+import static dev.tirador.aoe2radar.app.Servicios.PERFIL;
 import static dev.tirador.aoe2radar.app.Servicios.SERVICIO_PERFIL;
 import static dev.tirador.aoe2radar.app.Servicios.TOP_LADDER_SERVICE;
 import static dev.tirador.aoe2radar.cache.Anotaciones.ALIASES;
@@ -134,8 +135,8 @@ final class CableadoWatchlist {
             @Override public Icon iconoVista(String tipo) { return dev.tirador.aoe2radar.ui.Navegador.iconoVista(tipo); }
             @Override public void seleccionCambiada() { if (v.ratings != null) v.ratings.sincronizarSeleccion(); if (v.perfil != null) v.perfil.sincronizarSeleccion(); }
             @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-            @Override public Perfil perfilApi(long pid) throws Exception { return COMPANION.perfilFresco(pid); }   // la tarjeta enseña el ELO de ahora: sin la caché por URL
-            @Override public dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception { return COMPANION.pagina(pid, pagina, porPagina); }
+            @Override public Perfil perfilApi(long pid) throws Exception { return PERFIL.perfilFresco(pid); }   // la tarjeta enseña el ELO de ahora: sin la caché por URL
+            @Override public dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception { return PARTIDAS.pagina(pid, pagina, porPagina); }
             @Override public void reiniciarThrottleDirectos() { v.directos.reiniciarThrottle(); }
             @Override public void vigilarTwitchDirectos() { v.directos.vigilarTwitch(); }
             @Override public void mostrarSuperposicion(String texto, List<Object[]> fichas, int ms) { v.miPartida.mostrarSuperposicion(texto, fichas, ms); }

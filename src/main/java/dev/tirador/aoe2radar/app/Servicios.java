@@ -2,6 +2,12 @@ package dev.tirador.aoe2radar.app;
 
 import dev.tirador.aoe2radar.api.ApiClient;
 import dev.tirador.aoe2radar.api.CompanionApi;
+import dev.tirador.aoe2radar.api.ConRespaldo;
+import dev.tirador.aoe2radar.api.FuenteBusqueda;
+import dev.tirador.aoe2radar.api.FuenteLadder;
+import dev.tirador.aoe2radar.api.FuentePartidas;
+import dev.tirador.aoe2radar.api.FuentePerfil;
+import dev.tirador.aoe2radar.api.WorldsEdgeApi;
 import dev.tirador.aoe2radar.api.Transporte;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
@@ -82,6 +88,7 @@ public class Servicios {
     public static void aprenderCatalogos(Collection<Match> ms) {
         boolean nm = false, nc = false;
         for (Match m : ms) {
+            if (m.deRespaldo) continue;   // World's Edge (1.4): nombres de mapa/civ reconstruidos, no se guardan en config
             if (esRankedRM(m.mode)
                     && m.map != null && !m.map.isBlank() && MAPAS_CAT.add(m.map.trim())) nm = true;
             for (MatchPlayer p : m.players)
@@ -164,12 +171,36 @@ public class Servicios {
      *  Con la caché por URL (1.3): fichas /profiles 10 min y páginas del ladder 14 min; lo que debe ser de ahora (ELO 1v1,
      *  hover, recarga forzada del top) va por perfilFresco/clasificacionFresca. /matches, búsqueda y Twitch, nunca. */
     public static final CompanionApi COMPANION = CompanionApi.conCache(API_CLIENTE, Reloj.SISTEMA);
+
+    // ----- Respaldo (1.4): World's Edge cuando el companion falla -------------
+    /** La API community de World's Edge (api.WorldsEdgeApi), por el mismo API_CLIENTE: su cubo del freno es THROTTLE_WE. */
+    public static final WorldsEdgeApi WORLDS_EDGE = new WorldsEdgeApi(API_CLIENTE);
+    /** Camino hacia la barra de estado para «Datos parciales (fuente de respaldo)»: true al servir algo de World's Edge,
+     *  false cuando el companion vuelve. La ventana lo fija en el EDT (CableadoCromo.configurarVentana), como avisoPausa429. */
+    public static volatile java.util.function.Consumer<Boolean> avisoRespaldo = enRespaldo -> {};
+
+    static void avisarRespaldo(boolean enRespaldo) {
+        SwingUtilities.invokeLater(() -> avisoRespaldo.accept(enRespaldo));
+    }
+    /** El estado «¿está caído el companion?», UNO para todas las fuentes con respaldo (api.ConRespaldo): 3 fallos seguidos
+     *  o su cortacircuitos abierto (pausa por 429, se pregunta sin esperar) → World's Edge 5 min; luego se prueba otra vez. */
+    public static final ConRespaldo.Estado RESPALDO = new ConRespaldo.Estado(Reloj.SISTEMA, () -> THROTTLE.pausaRestanteMs() > 0, Servicios::avisarRespaldo);
+    /** Partidas recientes con respaldo: «Buscar partidas» (recs), la tarjeta del hover y el «¿ya terminó?» de LiveService.
+     *  NO el historial largo (HistorialPerfil), los barridos de partidas en curso (BarridoVivos, Live now, vigilarTop) ni
+     *  «Al azar»: esos siguen con COMPANION (World's Edge no pagina ni ve partidas en curso). */
+    public static final FuentePartidas PARTIDAS = ConRespaldo.partidas(RESPALDO, COMPANION, WORLDS_EDGE);
+    /** Ladder con respaldo: el top de la watchlist y las campanas (con filtro de país, World's Edge no sirve). */
+    public static final FuenteLadder LADDER = ConRespaldo.ladder(RESPALDO, COMPANION, WORLDS_EDGE);
+    /** Perfil/ELO con respaldo: ficha, ELO 1v1, tarjeta del hover y steamId (sin serie ni vinculadas en World's Edge). */
+    public static final FuentePerfil PERFIL = ConRespaldo.perfil(RESPALDO, COMPANION, WORLDS_EDGE);
+    /** Búsqueda de nicks con respaldo (en World's Edge, solo el alias exacto; el índice local de sfr-data sigue igual). */
+    public static final FuenteBusqueda BUSCAR = ConRespaldo.busqueda(RESPALDO, COMPANION, WORLDS_EDGE);
     /** Las reglas del directo que necesitan la API (ver service.LiveService). */
-    public static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);
+    public static final LiveService LIVE = new LiveService(PARTIDAS, COMPANION, Reloj.SISTEMA);   // «¿ya terminó?» con respaldo; el barrido de Live now, no
     /** Los tops de la watchlist: red, decisión y disco de cargarTopLadder/cargarTopClan/vigilarTop (ver service.TopLadderService). */
-    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, COMPANION, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
+    public static final TopLadderService TOP_LADDER_SERVICE = new TopLadderService(COMPANION, LADDER, Reloj.SISTEMA, ms -> dormir(ms), PAUSA_MS);
     /** El perfil de un jugador (ver service.ProfileService); guarda sus fichas en PERFIL_CACHE */
-    public static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
+    public static final ProfileService SERVICIO_PERFIL = new PerfilesCompanion(PERFIL, COMPANION, PERFIL_CACHE, (pid, c) -> aprenderCanal(pid, c), (pid, c) -> aprenderPais(pid, c),
             new AnioDesdeSfr(Snapshots.ELO, Snapshots.PERFILES, PAIS_DE, new NombresJuego() {
                 @Override public String mapa(String clave) { return nombreMapaClave(clave); }
                 @Override public String civ(String clave) { return nombreCivStats(clave); }
@@ -178,7 +209,7 @@ public class Servicios {
             new EloSesion(VIVO, Reloj.SISTEMA, EloSesion.ESPERA));
     /** Búsqueda de perfiles por nick (service.BusquedaPerfiles), la usan los cinco buscadores de la interfaz. Va
      *  DESPUÉS de COMPANION: los static final se inicializan en orden de texto. */
-    public static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(COMPANION, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
+    public static final BusquedaPerfiles BUSQUEDA = new BusquedaPerfilesCompanion(BUSCAR, NOMBRES_AYER, ELO_AYER, (pid, pais) -> aprenderPais(pid, pais));
     /** El barrido de Twitch y sus miniaturas (ver service.TwitchService); usa dormir() entre las llamadas una a una. */
     public static final TwitchService TWITCH_SERVICE = new TwitchServiceCompanion(COMPANION, ms -> dormir(ms), pid -> VIVO.jugando(pid), Reloj.SISTEMA);
 

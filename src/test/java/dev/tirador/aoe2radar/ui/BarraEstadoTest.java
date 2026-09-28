@@ -384,4 +384,26 @@ class BarraEstadoTest {
             else if (comp instanceof java.awt.Container cc) buscar(cc, out);
         }
     }
+
+    // ----- 1.4: «Datos parciales (fuente de respaldo)»
+
+    @Test void elAvisoDeRespaldoEstaOcultoHastaQueHaceFaltaYSeQuitaSolo() throws Exception {
+        AnfitrionFalso anf = new AnfitrionFalso();
+        JFrame ventana = new JFrame();
+        BarraEstado b = nuevo(anf, ventana);
+        SwingUtilities.invokeAndWait(() -> {
+            assertFalse(b.respaldo.isVisible(), "sin respaldo, la barra de siempre (las capturas no cambian)");
+            org.junit.jupiter.api.Assertions.assertNotNull(b.respaldo.getParent(), "está en la fila de estado");
+            String antes = b.status.getText();
+            b.mostrarRespaldo(true);
+            assertTrue(b.respaldo.isVisible());
+            assertEquals(antes, b.status.getText(), "no pisa el mensaje de estado");
+            b.mostrarRespaldo(true);
+            assertTrue(b.respaldo.isVisible());
+            b.mostrarRespaldo(false);
+            assertFalse(b.respaldo.isVisible());
+            assertTrue(anf.secuencia.isEmpty(), "sin diálogos ni avisos al anfitrión");
+        });
+        cerrar(b, ventana);
+    }
 }

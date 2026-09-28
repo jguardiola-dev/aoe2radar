@@ -14,7 +14,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
-import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
+import static dev.tirador.aoe2radar.app.Servicios.PARTIDAS;
 import static dev.tirador.aoe2radar.app.Servicios.PAUSA_MS;
 import static dev.tirador.aoe2radar.app.Servicios.PER_PAGE;
 import static dev.tirador.aoe2radar.cache.Catalogos.CIVS_CAT;
@@ -105,7 +105,7 @@ final class CableadoPartidas {
                         tt.setRepeats(false); tt.start();
                     }
                     @Override public Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
-                        return COMPANION.partidas(pid, pagina, porPagina);
+                        return PARTIDAS.partidas(pid, pagina, porPagina);   // con respaldo de World's Edge (solo la página 1)
                     }
                     @Override public boolean autoCopiarAlDescargar() { return v.autoSgItem.isSelected(); }
                     @Override public void continuarDisponible(boolean visible) { if (v.continuarBtn != null) v.continuarBtn.setVisible(visible); }

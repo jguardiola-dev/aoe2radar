@@ -74,6 +74,7 @@ final class CableadoCromo {
         // Camino explícito para el aviso de pausa por 429 (limpieza 1, fase 4): se fija aquí, en el EDT y con
         // barraEstado ya construido (es un inicializador de campo, corre antes que el cuerpo del constructor).
         Servicios.avisoPausa429 = v.barraEstado::mostrarPausaApi;
+        Servicios.avisoRespaldo = v.barraEstado::mostrarRespaldo;   // «Datos parciales (fuente de respaldo)» (1.4), mismo camino
     }
 
     // La barra de arriba: ventana de horas/buscar, filtros, pestañas de vistas,

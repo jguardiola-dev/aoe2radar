@@ -69,12 +69,28 @@ class ServiciosTest {
         assertNotNull(campo(Servicios.COMPANION, "cache"), "COMPANION se construye con la caché por URL");
         // Todo lo que se construye "DESPUÉS de COMPANION" (comentado en Servicios) debe envolver ese MISMO
         // CompanionApi, no uno nuevo: si no, el freno y la caché de sesión se partirían en dos.
-        assertSame(Servicios.COMPANION, campo(Servicios.LIVE, "api"));
-        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "fuente"));   // sus dos fuentes (partidas y ladder), el mismo
-        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "ladder"));
-        assertSame(Servicios.COMPANION, campo(Servicios.SERVICIO_PERFIL, "api"));
-        assertSame(Servicios.COMPANION, campo(Servicios.BUSQUEDA, "api"));
+        // 1.4: lo que tiene respaldo de World's Edge recibe el decorador (PARTIDAS, LADDER, PERFIL, BUSCAR, que envuelven
+        // COMPANION y WORLDS_EDGE); lo que no (partidas en curso, Twitch, vinculadas), el COMPANION de siempre.
+        assertSame(Servicios.API_CLIENTE, campo(Servicios.WORLDS_EDGE, "api"), "World's Edge por el mismo cliente (su cubo del freno)");
+        assertSame(Servicios.PARTIDAS, campo(Servicios.LIVE, "api"), "«¿ya terminó?» con respaldo");
+        assertSame(Servicios.COMPANION, campo(Servicios.LIVE, "barrido"), "el barrido de Live now, sin respaldo");
+        assertSame(Servicios.COMPANION, campo(Servicios.TOP_LADDER_SERVICE, "fuente"), "vigilarTop (en curso), sin respaldo");
+        assertSame(Servicios.LADDER, campo(Servicios.TOP_LADDER_SERVICE, "ladder"));
+        assertSame(Servicios.PERFIL, campo(Servicios.SERVICIO_PERFIL, "api"));
+        assertSame(Servicios.COMPANION, campo(Servicios.SERVICIO_PERFIL, "apiVinculadas"), "las vinculadas, solo del companion");
+        assertSame(Servicios.BUSCAR, campo(Servicios.BUSQUEDA, "api"));
         assertSame(Servicios.COMPANION, campo(Servicios.TWITCH_SERVICE, "api"));
+    }
+
+    @Test
+    void losCatalogosNoAprendenDeLoQueSirvioElRespaldo() {
+        // 1.4: los nombres de mapa y civ de World's Edge son reconstruidos; no se guardan en config (mapas_ranked, civs_vistas).
+        dev.tirador.aoe2radar.model.Match m = new dev.tirador.aoe2radar.model.Match();
+        m.deRespaldo = true; m.mode = "1v1 Random Map"; m.map = "Mapa Solo Del Respaldo";
+        dev.tirador.aoe2radar.model.MatchPlayer p = new dev.tirador.aoe2radar.model.MatchPlayer(); p.civ = "Civ Solo Del Respaldo"; m.players.add(p);
+        Servicios.aprenderCatalogos(java.util.List.of(m));
+        org.junit.jupiter.api.Assertions.assertFalse(dev.tirador.aoe2radar.cache.Catalogos.MAPAS_CAT.contains("Mapa Solo Del Respaldo"));
+        org.junit.jupiter.api.Assertions.assertFalse(dev.tirador.aoe2radar.cache.Catalogos.CIVS_CAT.contains("Civ Solo Del Respaldo"));
     }
 
     @Test

@@ -88,4 +88,19 @@ class LiveServiceTest {
         String url = red.pedidas.get(0);
         assertTrue(url.contains("profile_ids=7") && url.contains("page=1") && url.contains("per_page=50"), url);
     }
+
+    // ----- 1.4: «¿ya terminó?» con respaldo; el barrido de Live now (partidas en curso), solo con el companion
+
+    @Test void comprobarYBarridoVanCadaUnoASuFuente() throws Exception {
+        TransporteFalso otra = new TransporteFalso();
+        LiveService dos = new LiveService(new CompanionApi(new ApiClient(new ThrottleSinFreno(), red, s -> { }, () -> false)),
+                new CompanionApi(new ApiClient(new ThrottleSinFreno(), otra, s -> { }, () -> false)), reloj);
+        dos.comprobar(7, 555, 5);
+        assertEquals(1, red.pedidas.size());
+        assertTrue(otra.pedidas.isEmpty());
+        dos.partidas(7L, 1, 10);
+        dos.partidas("7,8", 1, 10);
+        assertEquals(1, red.pedidas.size(), "el barrido no usa la fuente de comprobar");
+        assertEquals(2, otra.pedidas.size());
+    }
 }
