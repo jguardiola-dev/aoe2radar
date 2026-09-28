@@ -131,12 +131,25 @@ What the installer does:
   `%LOCALAPPDATA%\Programs\aoe2radar` (`{userpf}`), Start menu entry for the user, optional desktop shortcut
   (unchecked box). Wizard in English or Spanish, following the Windows UI language (English otherwise).
 - **Fixed `AppId`**: installing a newer version over an older one replaces it in place. Never change it.
-- If the app is open, the wizard closes it first (Restart Manager, `CloseApplications`, also watching `*.jar`).
-  Not verified yet whether Java takes that as its normal close (`windowClosing`, which may apply a pending
-  self-update just before the installer overwrites `app\`) or as a shutdown without it (nothing applied, window
-  geometry not saved). Either way the result is the installer's: its `[InstallDelete]` removes every
-  `app\aoe2radar-*.jar` so only the new `.cfg`'s jar remains, and the app's startup discards a stale update
-  marker. (Check once: install over an open app and look at `descargas.log`.)
+- If the app is open, the wizard (and the uninstaller) closes it first, **without the Restart Manager**
+  (`CloseApplications=no`). The jpackage launcher runs the app as **two `aoe2radar.exe` processes**: the launcher
+  and a child (the same exe) that hosts the JVM and the window; the launcher exits by itself when its child ends.
+  Tested on the real PC: the Restart Manager finds both, cannot close them, and a `/VERYSILENT` setup exits with
+  code 5 leaving the app open; a `WM_CLOSE` to the launcher (`taskkill /IM aoe2radar.exe` without `/F`) closes
+  the Java window but breaks the launcher («GetMessage() failed. System error 1400», then it hangs). So
+  `PrepareToInstall` / `InitializeUninstall` run `packaging/cerrar_aoe2radar.ps1` (installed into `{app}` too, for
+  the uninstaller): among the `aoe2radar.exe` running from `{app}`, it asks only those that are not the parent of
+  another one to close with `taskkill /PID <pid>` without `/F` — the same as clicking × (the app saves and applies
+  a pending self-update) — and waits up to 20 s for none to remain. A launcher still alive 5 s after losing its
+  child gets `/F` (it has nothing to save); a process with a window never does. If the app is still open:
+  interactive, «Close aoe2radar and click Retry» (Retry/Cancel); silent, an error line in the Inno log and a
+  non-zero exit code (7). What the script says goes into the Inno log (`/LOG`). The installer's
+  `[InstallDelete]` then removes every `app\aoe2radar-*.jar` so only the new `.cfg`'s jar remains, and the app's
+  startup discards a stale update marker.
+- At the end, an **Open aoe2radar** box (ticked by default) starts the app; in silent mode it is not started.
+- `Sistema.relanzar` (Restart now, import, revert) runs in the child process: it never touches the launcher and
+  starts the exe from `jpackage.app-path` (falling back to its own command). Tested with a jpackage app-image: the
+  relaunched process survives both old processes exiting.
 - The uninstaller removes the program (including jars the self-updater added, and the autostart registry
   value) but **not** the data folder or the recs, and says so in a final message with both paths.
 - Needs Inno Setup **6.3 or later** (`ArchitecturesAllowed=x64compatible`); the CI installs the latest.

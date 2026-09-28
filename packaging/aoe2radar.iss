@@ -5,8 +5,10 @@
 ;   acceso en el menú Inicio del usuario y, si se marca la casilla, en el escritorio.
 ; - AppId FIJO: instalar una versión nueva encima sustituye a la anterior (misma carpeta, mismo desinstalador).
 ;   NO CAMBIARLO NUNCA: con otro AppId Windows lo vería como otro programa.
-; - Si la app está abierta, el asistente la cierra (Restart Manager). Sin comprobar aún si Java lo recibe como su
-;   cierre normal (windowClosing) o como un apagado sin él: en los dos casos el [InstallDelete] y el .cfg nuevo mandan.
+; - Si la app está abierta, el asistente (y el desinstalador) la cierra como la × antes de tocar nada:
+;   cerrar_aoe2radar.ps1. NO se usa el Restart Manager: el lanzador de jpackage son DOS procesos aoe2radar.exe
+;   (lanzador + hijo con la JVM y la ventana), el Restart Manager no los cierra y un WM_CLOSE al lanzador lo rompe
+;   («GetMessage() failed. System error 1400»). Ver README_TECNICO.
 ; - El desinstalador NO borra los datos (%APPDATA%\aoe2radar) ni las recs (Documentos\aoe2radar\recs), y lo dice.
 ; - Idioma del asistente: el de Windows (español o inglés; cualquier otro, inglés).
 ; - Este archivo va en UTF-8 CON BOM: sin él, ISCC lo leería como ANSI y las tildes saldrían mal.
@@ -55,9 +57,9 @@ SolidCompression=yes
 WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; La app abierta tiene en uso el exe, las DLL del runtime y los jars de app\: el asistente la cierra antes de copiar.
-CloseApplications=yes
-CloseApplicationsFilter=*.exe,*.dll,*.jar
+; La app abierta tiene en uso el exe, las DLL del runtime y los jars de app\: la cierra PrepareToInstall (abajo), no
+; el Restart Manager.
+CloseApplications=no
 RestartApplications=no
 ShowLanguageDialog=no
 LanguageDetectionMethod=uilanguage
@@ -70,6 +72,12 @@ Name: "es"; MessagesFile: "compiler:Languages\Spanish.isl"
 [CustomMessages]
 en.IconoEscritorio=Create a &desktop shortcut
 es.IconoEscritorio=Crear un acceso directo en el &escritorio
+en.AbrirApp=Open aoe2radar
+es.AbrirApp=Abrir aoe2radar
+en.CierraLaApp=aoe2radar is still open. Close it and click Retry.
+es.CierraLaApp=aoe2radar sigue abierta. Ciérrala y pulsa Reintentar.
+en.SigueAbierta=aoe2radar is still open: close it and run the installer again.
+es.SigueAbierta=aoe2radar sigue abierta: ciérrala y vuelve a ejecutar el instalador.
 en.DatosConservados=aoe2radar has been removed, but your data has not been deleted:%n%n%1%n%2 (or the recs folder you chose)%n%nDelete those folders by hand if you no longer want them.
 es.DatosConservados=aoe2radar se ha desinstalado, pero tus datos no se han borrado:%n%n%1%n%2 (o la carpeta de recs que elegiste)%n%nBorra esas carpetas a mano si ya no las quieres.
 
@@ -83,6 +91,8 @@ Type: files; Name: "{app}\app\aoe2radar-*.jar"
 
 [Files]
 Source: "{#DistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+; El que cierra la app antes de instalar (se extrae a {tmp}) y de desinstalar (el que quedó en {app}).
+Source: "cerrar_aoe2radar.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppNombre}"; Filename: "{app}\{#AppExe}"
@@ -94,7 +104,8 @@ Name: "{autodesktop}\{#AppNombre}"; Filename: "{app}\{#AppExe}"; Tasks: escritor
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#AppNombre}"; Flags: uninsdeletevalue dontcreatekey
 
 [Run]
-Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppNombre}}"; Flags: nowait postinstall skipifsilent
+; Casilla marcada por defecto al final del asistente; en modo silencioso no se abre.
+Filename: "{app}\{#AppExe}"; Description: "{cm:AbrirApp}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; Lo que el actualizador propio puso en app\ después de instalar (el desinstalador solo conoce lo que copió él).
@@ -106,6 +117,76 @@ Type: dirifempty; Name: "{app}"
 
 [Code]
 // Ojo: en esta sección ninguna línea puede empezar por «[» (ISCC la tomaría por una sección nueva).
+
+// Cierra la app (todas las copias que corren desde Dir) como la ×, con cerrar_aoe2radar.ps1: True si ya no queda
+// ninguna. Lo que dice el script queda en el log de Inno (/LOG).
+function CerrarApp(Script, Dir: String): Boolean;
+var
+  Salida, Params: String;
+  Codigo, I: Integer;
+  Lineas: TArrayOfString;
+begin
+  Result := True;
+  if not FileExists(Script) then begin
+    Log('cerrar_aoe2radar.ps1 no está: ' + Script);
+    Exit;
+  end;
+  // GetTempDir y no {tmp}: vale igual en el instalador y en el desinstalador. Rutas entre comillas dobles (una ruta
+  // de Windows no puede tenerlas, y {app} no acaba en barra).
+  Salida := AddBackslash(GetTempDir) + 'aoe2radar_cerrar.txt';
+  DeleteFile(Salida);
+  Params := '-NoProfile -ExecutionPolicy Bypass -File "' + Script + '" -Dir "' + Dir + '" -Salida "' + Salida + '"';
+  if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, Codigo) then begin
+    Log('no se pudo ejecutar PowerShell para cerrar la app (' + SysErrorMessage(Codigo) + ')');
+    Codigo := 1;
+  end;
+  if LoadStringsFromFile(Salida, Lineas) then
+    for I := 0 to GetArrayLength(Lineas) - 1 do Log('cerrar app: ' + Lineas[I]);
+  DeleteFile(Salida);
+  Result := Codigo = 0;
+end;
+
+// Instalar encima con la app abierta: se cierra antes de copiar. Interactivo: Reintentar/Cancelar mientras siga
+// abierta. Silencioso: error en el log y el setup sale con código distinto de 0 (7: PrepareToInstall falló).
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Script: String;
+begin
+  Result := '';
+  ExtractTemporaryFile('cerrar_aoe2radar.ps1');
+  Script := ExpandConstant('{tmp}\cerrar_aoe2radar.ps1');
+  while not CerrarApp(Script, ExpandConstant('{app}')) do begin
+    if WizardSilent then begin
+      Log('ERROR: aoe2radar sigue abierta; no se instala');
+      Result := CustomMessage('SigueAbierta');
+      Exit;
+    end;
+    if MsgBox(CustomMessage('CierraLaApp'), mbError, MB_RETRYCANCEL) <> IDRETRY then begin
+      Result := CustomMessage('SigueAbierta');
+      Exit;
+    end;
+  end;
+end;
+
+// Desinstalar con la app abierta: lo mismo, con el script que quedó instalado en {app}.
+function InitializeUninstall(): Boolean;
+var
+  Script: String;
+begin
+  Result := True;
+  Script := ExpandConstant('{app}\cerrar_aoe2radar.ps1');
+  while not CerrarApp(Script, ExpandConstant('{app}')) do begin
+    if UninstallSilent then begin
+      Log('ERROR: aoe2radar sigue abierta; no se desinstala');
+      Result := False;
+      Exit;
+    end;
+    if MsgBox(CustomMessage('CierraLaApp'), mbError, MB_RETRYCANCEL) <> IDRETRY then begin
+      Result := False;
+      Exit;
+    end;
+  end;
+end;
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   Datos, Recs: String;
