@@ -80,6 +80,7 @@ public final class AzarServiceCompanion implements AzarService {
     private final Map<Long, Match> cacheAzar = new HashMap<>();      // partidas ya descargadas del API
     private final Map<Long, Long> perfilVistoAzar = new HashMap<>(); // perfil -> última consulta (TTL 10 min)
     private volatile boolean azarTramoAgotado;
+    private volatile boolean azarConAnteayer;   // ...y la muestra de anteayer aportó alguna (ver conAnteayer())
     private volatile boolean azarDeMuestra;   // la última tirada salió de la muestra nocturna (ver deMuestra())
     private final Set<Long> azarEnsenadas = new HashSet<>();
 
@@ -117,11 +118,13 @@ public final class AzarServiceCompanion implements AzarService {
         Hilos.avisarSiUi("AzarService.buscarAleatorias");
         Random rnd = new Random();
         azarDeMuestra = false;
+        azarConAnteayer = false;
         if (hours >= 24) {   // la muestra nocturna cubre «ayer»: si da para una tanda, cero llamadas
             List<Match> deMuestra = azarDesdeMuestra(muestraAyer.get(), lo, hi, mapaSel, civSel, rnd, 10);
+            int deAyer = deMuestra.size();
             if (hours >= 48 && deMuestra.size() < 10)   // la ventana cubre anteayer: se completa con su muestra (1.4)
                 deMuestra.addAll(azarDesdeMuestra(muestraAnteayer.get(), lo, hi, mapaSel, civSel, rnd, 10 - deMuestra.size()));
-            if (deMuestra.size() >= 5) { for (Match m : deMuestra) { m.azar = true; AzarService.ajustarRefAzar(m, civSel); } azarDeMuestra = true; return deMuestra; }
+            if (deMuestra.size() >= 5) { for (Match m : deMuestra) { m.azar = true; AzarService.ajustarRefAzar(m, civSel); } azarDeMuestra = true; azarConAnteayer = deMuestra.size() > deAyer; return deMuestra; }
         }
         long ahora = System.currentTimeMillis();
         String firmaRango = lo + "|" + hi;
@@ -357,6 +360,11 @@ public final class AzarServiceCompanion implements AzarService {
     @Override
     public boolean deMuestra() {
         return azarDeMuestra;
+    }
+
+    @Override
+    public boolean conAnteayer() {
+        return azarConAnteayer;
     }
 
     /** Partida de la muestra → Match (jugadores con nombre, civ, rating y resultado; sin revelar nada en pantalla hasta que se pida). */

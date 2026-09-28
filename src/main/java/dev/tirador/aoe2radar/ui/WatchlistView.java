@@ -134,7 +134,7 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         void agregarAccionesToast(Runnable accionPerfil, Runnable accionCaraACara);
         /** abrirPerfil(pid, miNombre) y, pasados 1200 ms, si sigue abierto ese perfil, el cara a cara con el rival. */
         void abrirPerfilYCaraACara(long pid, String miNombre, long rivalId, String rivalNombre);
-        /** Tarjeta de perfil del hover (hoy inerte): la caché vive en cache.CacheMemoria, que ui no puede importar. */
+        /** Tarjeta de perfil del hover: la caché vive en cache.CacheMemoria, que ui no puede importar. */
         Object[] tarjetaPerfilCache(long pid);
         void tarjetaPerfilGuardar(long pid, Object[] valor);
         /** ¿La pestaña Perfil está abierta? (perfil.abierto()): cambia el flujo de jugadorElegido/addPlayerDialog. */
@@ -145,12 +145,12 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         void seleccionCambiada();
         /** ¿La partida sigue realmente en curso? (cache.Vivos.enCursoReal, ui no puede importar cache). */
         boolean enCursoReal(Match m);
-        /** api.CompanionApi.perfil/pagina, solo para la tarjeta de hover (hoy inerte). */
+        /** api.CompanionApi.perfil (con caché por URL y detrás del freno), solo para la tarjeta de hover cuando las chispas
+         *  nocturnas no alcanzan: una llamada por tarjeta. */
         Perfil perfilApi(long pid) throws Exception;
         /** 1.4: la tarjeta de hover desde el nocturno (chispas de sfr-data), o null si no alcanza y hay que ir a
-         *  perfilApi/paginaApi. Puede ir a la red (baja las chispas la primera vez): nunca desde el EDT. */
+         *  perfilApi. Puede ir a la red (baja las chispas la primera vez): nunca desde el EDT. */
         default dev.tirador.aoe2radar.service.TarjetaPerfil.Datos tarjetaNocturna(long pid) { return null; }
-        dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception;
         /** ui.DirectosView y ui.MiPartidaPanel se construyen DESPUÉS que la Watchlist (construirCentro): no se
          *  pueden inyectar por constructor sin capturar null. La ventana los llama por su nombre cuando ya existen. */
         void reiniciarThrottleDirectos();
@@ -265,11 +265,11 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     public JToggleButton campanaBtn;   // visible para RegresionCapturas
     private final Map<String, Set<Long>> campanaIds = new java.util.concurrent.ConcurrentHashMap<>();   // id de vista → jugadores vigilados
 
-    // ----- hover card (hoy inerte: se conserva igual) -----
+    // ----- tarjeta flotante (encendida en la 1.4, ver WatchlistHoverCard) -----
     JWindow hoverCard;
     boolean cardFijada;
     javax.swing.Timer hoverTimer;
-    long hoverPid;
+    volatile long hoverPid;   // lo escribe el EDT; la carga de la tarjeta lo lee en segundo plano (¿sigue interesando?)
     Point hoverPantalla;
     /** ¿Es buen momento para enseñar la hover-card? Nunca sobre diálogos,
      *  menús abiertos o con el ratón ya fuera de la lista. */
@@ -555,6 +555,7 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
         if (igual) return;   // nada que redibujar: la selección del usuario se conserva
         Set<Long> selPrevia = new HashSet<>();
         for (Player p : playersList.getSelectedValuesList()) selPrevia.add(p.id());
+        tarjetaHover.ocultarHoverCard();   // las filas cambian bajo el ratón: la tarjeta sería de otro (se vuelve a pedir al moverlo)
         playersModel.clear();
         for (Player p : vis) playersModel.addElement(p);
         enlacePartidas.actualizarTextoBuscar();
@@ -648,7 +649,7 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
 
     public void menuContextualWatchlist(Player p, MouseEvent e) { menuLista.menuContextualWatchlist(p, e); }
 
-    // ===== Tarjeta de perfil flotante (hoy inerte: el hover-timer nunca dispara) ==========================
+    // ===== Tarjeta de perfil flotante (ver WatchlistHoverCard) ==============================================
 
     boolean hoverProcede() { return tarjetaHover.hoverProcede(); }
     public void ocultarHoverCard() { tarjetaHover.ocultarHoverCard(); }

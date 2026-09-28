@@ -160,7 +160,7 @@ public class Servicios {
     public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto.
      *  Con la caché por URL (1.3): fichas /profiles 10 min y páginas del ladder 14 min; lo que debe ser de ahora (ELO 1v1,
-     *  hover, recarga forzada del top) va por perfilFresco/clasificacionFresca. /matches, búsqueda y Twitch, nunca. */
+     *  recarga forzada del top) va por perfilFresco/clasificacionFresca; la tarjeta del hover (1.4), por perfil, con caché. /matches, búsqueda y Twitch, nunca. */
     public static final CompanionApi COMPANION = CompanionApi.conCache(API_CLIENTE, Reloj.SISTEMA);
     /** Las reglas del directo que necesitan la API (ver service.LiveService). */
     public static final LiveService LIVE = new LiveService(COMPANION, Reloj.SISTEMA);

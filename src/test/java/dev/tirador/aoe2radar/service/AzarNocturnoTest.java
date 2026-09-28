@@ -156,6 +156,7 @@ class AzarNocturnoTest {
         assertEquals(10, res.size());
         assertEquals(3, res.stream().filter(m -> m.id < 2000).count(), "primero todas las de ayer");
         assertTrue(s.deMuestra());
+        assertTrue(s.conAnteayer(), "el aviso dirá «de ayer y anteayer»");
         assertEquals(0, red.totalLlamadas());
     }
 
@@ -171,6 +172,7 @@ class AzarNocturnoTest {
         s.buscarAleatorias(1000, 2000, null, null, 24, 1, Instant.now().minus(Duration.ofHours(24)), 1, m -> { });
         assertEquals(0, pedidasAnteayer.get(), "24 h: la ventana no llega a anteayer");
         assertFalse(s.deMuestra(), "3 de ayer no bastan: la tirada sigue como antes (API)");
+        assertFalse(s.conAnteayer());
     }
 
     @Test void conAyerSuficienteAnteayerNiSeMira() throws Exception {
@@ -180,6 +182,7 @@ class AzarNocturnoTest {
         assertEquals(10, res.size());
         assertTrue(res.stream().allMatch(m -> m.id < 2000));
         assertEquals(0, pedidasAnteayer.get());
+        assertFalse(s.conAnteayer(), "todas de ayer: el aviso de siempre");
     }
 
     @Test void gteConAyerYaVistaSacaLaDeAnteayer() throws Exception {

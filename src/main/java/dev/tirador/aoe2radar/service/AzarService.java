@@ -61,6 +61,12 @@ public interface AzarService {
     boolean deMuestra();
 
     /**
+     * True si la última tirada salió de la muestra nocturna Y la de anteayer aportó alguna partida (1.4: ventana de 48 h
+     * o más y ayer no daba 10). La vista lo dice en el aviso («de ayer y anteayer»). Se consulta después de la tirada.
+     */
+    default boolean conAnteayer() { return false; }
+
+    /**
      * El titular de una partida del azar: con filtro de civ, quien LA JUGÓ (si ambos, el de más ELO entre los que
      * cumplen); sin filtro, el de más ELO de la partida como siempre. Pura: no toca red ni caché de sesión.
      */

@@ -134,8 +134,7 @@ final class CableadoWatchlist {
             @Override public Icon iconoVista(String tipo) { return dev.tirador.aoe2radar.ui.Navegador.iconoVista(tipo); }
             @Override public void seleccionCambiada() { if (v.ratings != null) v.ratings.sincronizarSeleccion(); if (v.perfil != null) v.perfil.sincronizarSeleccion(); }
             @Override public boolean enCursoReal(Match m) { return dev.tirador.aoe2radar.cache.Vivos.enCursoReal(m); }
-            @Override public Perfil perfilApi(long pid) throws Exception { return COMPANION.perfilFresco(pid); }   // la tarjeta enseña el ELO de ahora: sin la caché por URL
-            @Override public dev.tirador.aoe2radar.model.PaginaPartidas paginaApi(long pid, int pagina, int porPagina) throws Exception { return COMPANION.pagina(pid, pagina, porPagina); }
+            @Override public Perfil perfilApi(long pid) throws Exception { return COMPANION.perfil(pid); }   // tarjeta sin chispas: una llamada, con la caché por URL (10 min) y el freno
             @Override public dev.tirador.aoe2radar.service.TarjetaPerfil.Datos tarjetaNocturna(long pid) {   // nocturno primero (1.4)
                 dev.tirador.aoe2radar.sfrdata.ChispasNocturnas.Chispa c = dev.tirador.aoe2radar.sfrdata.Snapshots.CHISPAS.chispa(pid);
                 if (c == null) return null;

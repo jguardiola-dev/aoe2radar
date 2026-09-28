@@ -323,9 +323,15 @@ public final class PartidasPresenter {
      *  ({@code deMuestra}: ventana de 24 h o más), avisa de que son partidas de ayer en vez de «últimas N h», sin esos
      *  consejos, que son del muestreo por la API (decisión de Jorge, 1.3). */
     public static String mensajeAzar(int n, int lo, int hi, int horas, boolean deMuestra, java.util.function.BooleanSupplier tramoAgotado) {
+        return mensajeAzar(n, lo, hi, horas, deMuestra, false, tramoAgotado);
+    }
+
+    /** Igual, y si la muestra de anteayer completó la tirada ({@code conAnteayer}, 1.4), lo dice: «de ayer y anteayer». */
+    public static String mensajeAzar(int n, int lo, int hi, int horas, boolean deMuestra, boolean conAnteayer, java.util.function.BooleanSupplier tramoAgotado) {
         if (deMuestra)
             return n + t(" partidas 1v1 al azar, ELO ", " random 1v1s, ELO ") + lo + "–" + hi
-                    + t(", partidas de ayer (muestra nocturna).", ", yesterday's games (nightly sample).");
+                    + (conAnteayer ? t(", partidas de ayer y anteayer (muestra nocturna).", ", yesterday's and the day before's games (nightly sample).")
+                                   : t(", partidas de ayer (muestra nocturna).", ", yesterday's games (nightly sample)."));
         String extra = "";
         if (n < 10 && tramoAgotado.getAsBoolean())
             extra = t(" No hay más con esos filtros: tramo entero revisado (amplía horas o rango).",
