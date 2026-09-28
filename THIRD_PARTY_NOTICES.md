@@ -74,8 +74,9 @@ https://openjdk.org/projects/jdk-updates/.
 ## Country flags — public domain
 
 The 20×15 flag images in `banderas/` (next to the executable, and inside the application jar) are small
-PNG renderings of national flags from [hampusborgos/country-flags](https://github.com/hampusborgos/country-flags),
-whose sources come from Wikimedia Commons. As that project states: "The flags are not under copyright
+PNG renderings of national flags, attributed to
+[hampusborgos/country-flags](https://github.com/hampusborgos/country-flags), whose sources come from
+Wikimedia Commons. As that project states: "The flags are not under copyright
 protection since flags are in public domain (there may be other restrictions on how the flag can be used
 though)."
 
