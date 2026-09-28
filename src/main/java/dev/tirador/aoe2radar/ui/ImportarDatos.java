@@ -74,39 +74,61 @@ public final class ImportarDatos {
                 return;
             }
             if (!ImportacionDatos.debeOfrecer(Sistema.datosNuevos(), leerConfig(ImportacionDatos.CLAVE_OFRECIDA, "false"))) return;
-            BusquedaDatos.Candidata c = detectar(Sistema.carpetasDeBusqueda(), excluidas(),
+            List<Path> raices = Sistema.carpetasDeBusqueda();
+            List<BusquedaDatos.Candidata> cs = detectar(raices, excluidas(),
                     System.nanoTime() + TimeUnit.SECONDS.toNanos(PLAZO_DETECCION_S));
-            SwingUtilities.invokeLater(() -> ofrecer(padre, c));
+            SwingUtilities.invokeLater(() -> ofrecer(padre, cs, raices));
         }, "importar-oferta").start();
     }
 
     /** Carpetas que nunca son origen: la de datos y la de la app. */
     static List<Path> excluidas() { return List.of(Sistema.carpetaBase(), Sistema.carpetaApp()); }
 
-    /** La candidata más reciente en las raíces (Escritorio, Descargas, Documentos), o null; lo encontrado, al log. */
-    static BusquedaDatos.Candidata detectar(List<Path> raices, List<Path> excluir, long limiteNanos) {
+    /** Las candidatas en las raíces (Escritorio, Descargas, Documentos), la preferida primero (versión mayor…);
+     *  lo encontrado, al log. */
+    static List<BusquedaDatos.Candidata> detectar(List<Path> raices, List<Path> excluir, long limiteNanos) {
         List<BusquedaDatos.Candidata> cs = BusquedaDatos.buscar(raices, BusquedaDatos.PROFUNDIDAD, BusquedaDatos.TOPE_CARPETAS,
                 limiteNanos, excluir);
         log("importar: búsqueda de 1.x en " + raices + ": " + (cs.isEmpty() ? "ninguna"
-                : cs.size() + " candidata(s): " + cs.stream().map(x -> x.carpeta().toString()).toList()));
-        return cs.isEmpty() ? null : cs.get(0);
+                : cs.size() + " candidata(s), por preferencia: " + cs.stream().map(x -> x.nombre() + " " + x.carpeta()).toList()));
+        return cs;
     }
 
-    /** Texto de la oferta con una 1.x encontrada. */
-    static String textoEncontrada(BusquedaDatos.Candidata c) {
+    /** Texto de la oferta: la propuesta (la primera), con su versión, y cuántas copias hay si son varias. */
+    static String textoEncontrada(List<BusquedaDatos.Candidata> cs) {
+        BusquedaDatos.Candidata c = cs.get(0);
         String fecha = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm").withZone(ZoneId.systemDefault())
                 .format(c.modificado().toInstant());
-        return t("He encontrado " + NOMBRE + " 1.x en\n" + c.carpeta() + "\n(modificado " + fecha + ").\n¿Importar sus grupos y ajustes?",
-                "Found " + NOMBRE + " 1.x in\n" + c.carpeta() + "\n(modified " + fecha + ").\nImport its groups and settings?");
+        String v = c.version() != null ? c.version() : "?";
+        if (cs.size() == 1)
+            return t("He encontrado " + c.nombre() + " en\n" + c.carpeta() + "\n(modificada " + fecha + ").\n¿Importar sus grupos y ajustes?",
+                    "Found " + c.nombre() + " in\n" + c.carpeta() + "\n(modified " + fecha + ").\nImport its groups and settings?");
+        String cual = c.aoe2radar() ? "" : " (SpoilerFreeRecs)";
+        return t("He encontrado " + cs.size() + " copias de " + NOMBRE + " 1.x. La más nueva es la " + v + cual + " en\n"
+                        + c.carpeta() + "\n(modificada " + fecha + ").\n¿Importar sus grupos y ajustes?",
+                "Found " + cs.size() + " copies of " + NOMBRE + " 1.x. The newest is " + v + cual + " in\n"
+                        + c.carpeta() + "\n(modified " + fecha + ").\nImport its groups and settings?");
+    }
+
+    /** Dónde abre «Elegir otra carpeta…»: la raíz de búsqueda (Escritorio, Descargas…) que contiene a la propuesta;
+     *  si ninguna la contiene, la carpeta de encima de la propuesta. */
+    static Path carpetaInicial(BusquedaDatos.Candidata c, List<Path> raices) {
+        Path p = c.carpeta().toAbsolutePath().normalize();
+        for (Path r : raices) {
+            Path x = r.toAbsolutePath().normalize();
+            if (p.startsWith(x) && !p.equals(x)) return x;
+        }
+        return p.getParent() != null ? p.getParent() : p;
     }
 
     /** La oferta, una sola vez: con la 1.x encontrada ([Importar] [Elegir otra carpeta…] [No, gracias]) o sin ella
      *  ([Elegir carpeta…] [No, gracias]). La respuesta (también cerrar con la X) se recuerda. En el EDT. */
-    static void ofrecer(Component padre, BusquedaDatos.Candidata c) {
+    static void ofrecer(Component padre, List<BusquedaDatos.Candidata> cs, List<Path> raices) {
+        BusquedaDatos.Candidata c = cs.isEmpty() ? null : cs.get(0);
         int r;
         if (c != null) {
             Object[] op = { t("Importar", "Import"), t("Elegir otra carpeta…", "Choose another folder…"), t("No, gracias", "No, thanks") };
-            r = JOptionPane.showOptionDialog(padre, textoEncontrada(c), NOMBRE, JOptionPane.DEFAULT_OPTION,
+            r = JOptionPane.showOptionDialog(padre, textoEncontrada(cs), NOMBRE, JOptionPane.DEFAULT_OPTION,
                     JOptionPane.QUESTION_MESSAGE, null, op, op[0]);
         } else {
             Object[] op = { t("Elegir carpeta…", "Choose folder…"), t("No, gracias", "No, thanks") };
@@ -119,17 +141,21 @@ public final class ImportarDatos {
             r = x == 0 ? 1 : x == 1 ? 2 : -1;   // mismas respuestas que la de arriba: 1 elegir, 2 no
         }
         String resp = r == 0 ? "importar la encontrada" : r == 1 ? "elegir carpeta" : r == 2 ? "no, gracias" : "cerrada sin contestar";
-        log("importar: oferta del primer arranque mostrada (" + (c != null ? "encontrada " + c.carpeta() : "sin candidata")
+        log("importar: oferta del primer arranque mostrada (" + (c != null ? cs.size() + " encontrada(s), propuesta "
+                + c.nombre() + " en " + c.carpeta() : "sin candidata")
                 + "); respuesta: " + resp);
         guardarConfig(ImportacionDatos.CLAVE_OFRECIDA, "true");
         if (r == 0) validarYConfirmar(padre, c.carpeta(), true);
-        else if (r == 1) elegirEImportar(padre);
+        else if (r == 1) elegirEImportar(padre, c != null ? carpetaInicial(c, raices) : null);
     }
 
     /** Selector de carpeta y, con lo elegido, validar y confirmar. En el EDT. */
-    public static void elegirEImportar(Component padre) {
+    public static void elegirEImportar(Component padre) { elegirEImportar(padre, null); }
+
+    /** Igual, con el selector abierto en inicial (null: la carpeta por defecto). */
+    static void elegirEImportar(Component padre, Path inicial) {
         if (IMPORTANDO.get()) { log("importar: ya hay una en marcha; no se lanza otra"); avisarEnMarcha(padre); return; }
-        JFileChooser fc = new JFileChooser();
+        JFileChooser fc = inicial != null ? new JFileChooser(inicial.toFile()) : new JFileChooser();
         fc.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         fc.setDialogTitle(t("Carpeta de la versión anterior de " + NOMBRE, "Folder of the previous " + NOMBRE + " version"));
         if (fc.showOpenDialog(padre) != JFileChooser.APPROVE_OPTION || fc.getSelectedFile() == null) {

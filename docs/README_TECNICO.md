@@ -211,12 +211,32 @@ An installed app cannot know where the old zip was, so there is no automatic mig
 
 - `Sistema.datosNuevos()`: when packaged (not portable), the data folder had neither `config.properties` nor
   `players.txt` at startup (decided before anything writes `config.properties`).
-- If so, and `importar_ofrecido` is not set, `AccionesVentana.arrancar` asks once, after the window is up:
-  "Coming from aoe2radar 1.x (zip)?" with **Choose folder…** / **No, thanks**. Either answer is remembered.
-  The same action is in Settings → **Import data from another version…** (only when packaged, so the
-  harness menu capture does not change).
-- The chosen folder must contain `config.properties` or `players.txt` and must not be (or contain, or be
-  inside) the data folder. If the data folder already has user data, the app asks for confirmation first and
+- If so, and `importar_ofrecido` is not set, `ImportarDatos.alArrancar` (called by `AccionesVentana.arrancar`
+  after the window is up) first looks for old copies, on a background thread with an 8 s limit, in the real
+  Desktop, Downloads and Documents (`Sistema.carpetasDeBusqueda`: the `Desktop`, Downloads GUID and `Personal`
+  values of User Shell Folders, which follow OneDrive; fallback `user.home\Desktop|Downloads|Documents`).
+- **Candidates** (`util.BusquedaDatos`): a folder with `config.properties` or `players.txt` next to
+  `aoe2radar.exe` / `SpoilerFreeRecs.exe` (1.0), or next to `app/` or `runtime/`. Breadth-first, up to 4 levels,
+  never following symlinks or junctions (`NOFOLLOW_LINKS`: a junction is not a "directory"), at most 20,000
+  folders, never the data folder or the app folder. Real 1.x folders are nested after unzipping
+  (`…\aoe2radar\app\aoe2radar\`), which is why a plain check of the chosen folder was not enough.
+- **Preference order** (`BusquedaDatos.PREFERENCIA`): app version, highest first, compared numerically
+  (`1.10` > `1.9`), read from `app/*.cfg` (`java-options=-Djpackage.app-version=X.Y`) or from the jar name
+  (`aoe2radar-X.Y*.jar`, `SpoilerFreeRecs*.jar`), unknown last; then aoe2radar before SpoilerFreeRecs; then a
+  `players.txt` with players before one without; then the most recent `players.txt`/`config.properties`. Sorting
+  by date alone proposed an old 1.0 whose config had been touched recently.
+- The offer: with one copy, "Found aoe2radar 1.3 in <path> (modified <date>)"; with several, "Found N copies of
+  aoe2radar 1.x. The newest is 1.3 in <path> (modified <date>)"; buttons **Import** / **Choose another folder…**
+  (the chooser opens in the search root that contains the proposal, e.g. the Desktop) / **No, thanks**. With no
+  copy, "Coming from aoe2radar 1.x (zip)?" with **Choose folder…** / **No, thanks**. Either answer is remembered.
+  The same action is in Settings → **Import data from another version…** (only when packaged, so the harness
+  menu capture does not change).
+- A folder chosen by hand goes through `BusquedaDatos.resolverElegida`: the folder itself if it has data, else
+  the preferred candidate inside it; if that is not the chosen folder or there were several, the confirmation
+  shows "Import from: <path>". If there is none, the warning suggests looking for the folder that contains
+  `aoe2radar.exe`. It must not be (or contain, or be inside) the data folder.
+- Every step goes to the log (`descargas.log`): candidates found, offer shown and the answer, chooser cancelled,
+  chosen folder, the resolved path or why it was rejected, confirmation refused, import already running, start. If the data folder already has user data, the app asks for confirmation first and
   says where the copy of the current data will go.
 - **Step 1, prepare** (`ImportacionDatos.preparar`, background thread, the app keeps running): `sfrdata/`,
   `top_cache.txt`, `players.txt` and `config.properties` are copied to a `.importando` staging folder inside
