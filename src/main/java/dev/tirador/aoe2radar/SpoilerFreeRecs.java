@@ -61,6 +61,7 @@ import java.util.List;
 // Azar/Guess the ELO: la lógica vive en service.AzarService/AzarServiceCompanion.
 import dev.tirador.aoe2radar.service.AzarService;
 import dev.tirador.aoe2radar.service.AzarServiceCompanion;
+import dev.tirador.aoe2radar.service.LadderNocturno;
 // Barra de estado y semáforo de operación en curso: ver ui.BarraEstado.
 import dev.tirador.aoe2radar.ui.BarraEstado;
 // Raíz de composición: app.Servicios crea COMPANION/API_CLIENTE/... y PAUSA_MS/PER_PAGE, VIVO,
@@ -89,8 +90,11 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final dev.tirador.aoe2radar.ui.MenusJugador menus = CableadoJugador.menus(this);
 
     // «Al azar por ELO»/«Guess the ELO»: muestreo y caché de sesión en el servicio; techTree.claveCivDeNombre y dormir() como colaboradores.
+    // 1.4: muestra de anteayer y ladder de anoche (sfr-data) en vez de bisecar el leaderboard en vivo; con datos viejos, como antes.
     final AzarService azarService = new AzarServiceCompanion(COMPANION, civ -> SpoilerFreeRecs.this.techTree.claveCivDeNombre(civ),
-            Snapshots::muestraAyer, ms -> dormir(ms), PER_PAGE, PAUSA_MS);
+            Snapshots::muestraAyer, Snapshots::muestraAnteayer,
+            () -> { Snapshots.cargarEloAyer(); return LadderNocturno.de(Snapshots.ELO_AYER, Snapshots.ELO.rangoUltima); },
+            ms -> dormir(ms), PER_PAGE, PAUSA_MS);
 
     final List<Player> todosJugadores = new ArrayList<>();          // fuente de verdad (todos los grupos)
     final DefaultListModel<Player> playersModel = new DefaultListModel<>();

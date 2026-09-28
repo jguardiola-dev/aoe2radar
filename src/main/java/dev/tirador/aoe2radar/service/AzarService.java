@@ -27,7 +27,9 @@ public interface AzarService {
      * fuentes, igual que hoy: (1) si hours >= 24, la muestra nocturna de sfr-data (si da 5 o más, cero llamadas al
      * companion); si no, (2) lo ya leído en esta sesión que cumpla los filtros de hoy; (3) el «río» de partidas
      * recientes del ladder, solo si el rango es una porción amplia y sin filtro de civ; (4) perfiles muestreados
-     * del tramo del ladder, sin repetir los ya consultados en los últimos 10 minutos.
+     * del tramo del ladder, sin repetir los ya consultados en los últimos 10 minutos. Desde la 1.4, con los datos
+     * nocturnos nuevos: si hours >= 48 la muestra de anteayer completa la de ayer, y el tramo (3-4) sale del ladder de
+     * anoche (sin llamadas al leaderboard); con datos anteriores, como antes.
      * <p>multAzar multiplica el número de pasadas de muestreo de perfiles (intensidad del diálogo). progreso recibe
      * los mismos textos que antes mostraba directamente el estado de la ventana (vía publish/process del
      * SwingWorker). serial es solo para identificar la operación en los mensajes de log.
