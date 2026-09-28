@@ -51,8 +51,13 @@ class PartidasLogicaTest {
         volatile boolean agotado;
         @Override public List<Match> buscarAleatorias(int lo, int hi, String mapaSel, String civSel, int hours, int multAzar,
                                                       Instant cutoff, long serial, Consumer<String> progreso) {
-            return new ArrayList<>(aleatorias);
+            int n = llamadasAzar.incrementAndGet();
+            java.util.function.IntFunction<List<Match>> f = porLlamada;
+            return new ArrayList<>(f != null ? f.apply(n) : aleatorias);
         }
+        /** Si está puesto, decide cada tirada por su número (1, 2…) y puede esperar a un cerrojo (una tirada «en curso»). */
+        volatile java.util.function.IntFunction<List<Match>> porLlamada;
+        final java.util.concurrent.atomic.AtomicInteger llamadasAzar = new java.util.concurrent.atomic.AtomicInteger();
         @Override public List<Match> buscarGte(Instant cutoff, Consumer<String> progreso) { return new ArrayList<>(gte); }
         @Override public boolean tramoAgotado() { return agotado; }
         volatile boolean deMuestra;
@@ -85,7 +90,7 @@ class PartidasLogicaTest {
             PartidasView.SUJETOS.clear();
             ventana = new JFrame();
             vista = new PartidasView(ventana, new WatchlistViewTest.MenusFalso(), null, new WatchlistViewTest.NavegacionFalsa(),
-                    azar, rec, barrido, 50, 0, enlace, anfitrion);
+                    azar, rec, barrido, 0, enlace, anfitrion);
             vista.agregarFilaConsulta(new JPanel());
             vista.construirFilaNota();
             vista.construirTabla();
@@ -391,6 +396,138 @@ class PartidasLogicaTest {
         });
     }
 
+    // ----- «vigente» por tipo de operación (decisión de Jorge, 1.4) -----
+
+    static void aguardar(java.util.concurrent.CountDownLatch cerrojo) {
+        try { cerrojo.await(10, java.util.concurrent.TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+
+    static boolean tresBotones(PartidasView v) { return v.fetchBtn.isEnabled() && v.azarBtn.isEnabled() && v.gteBtn.isEnabled(); }
+
+    /** DEUDA «vigente across operation types»: una descarga empezada durante «Al azar» ya no descarta la tirada. */
+    @Test void vigente_unaDescargaDuranteElAzar_noLoDescarta() throws Exception {
+        Match m1 = partidaDe(1, mp(10, "Uno", 1, 1850), mp(11, "Dos", 2, 1880));
+        java.util.concurrent.CountDownLatch dentro = new java.util.concurrent.CountDownLatch(1), soltar = new java.util.concurrent.CountDownLatch(1);
+        azar.porLlamada = n -> { dentro.countDown(); aguardar(soltar); return List.of(m1); };
+        conEloConfig(() -> {
+            try {
+                enEdt(() -> vista.buscarAleatorias(true));
+                assertTrue(dentro.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                enEdt(() -> vista.download(List.of(partida(8601, A, Instant.now().minusSeconds(600)))));
+                esperar(() -> anfitrion.estado.contains("recs guardadas"), "que la descarga termine");
+            } finally {
+                soltar.countDown();
+            }
+            esperar(() -> !anfitrion.progreso, "que el azar termine");
+            asentar();
+        });
+        enEdt(() -> {
+            assertEquals(List.of(m1), vista.all, "la tirada se aplica aunque empezara una descarga");
+            assertEquals(java.util.Set.of(11L), PartidasView.SUJETOS);
+            assertTrue(anfitrion.estado.startsWith("1 partidas 1v1 al azar"), "estado: " + anfitrion.estado);
+            assertTrue(tresBotones(vista));
+            assertTrue(vista.dlSel.isEnabled(), "y la descarga repuso los suyos");
+        });
+    }
+
+    @Test void vigente_otroAzarDuranteElAzar_descartaElPrimero() throws Exception {
+        Match m1 = partidaDe(1, mp(10, "Uno", 1, 1850), mp(11, "Dos", 2, 1880));
+        Match m2 = partidaDe(2, mp(20, "Veinte", 1, 1850), mp(21, "Veintiuno", 2, 1810));
+        java.util.concurrent.CountDownLatch dentro = new java.util.concurrent.CountDownLatch(1), soltar = new java.util.concurrent.CountDownLatch(1);
+        azar.porLlamada = n -> { if (n == 1) { dentro.countDown(); aguardar(soltar); return List.of(m1); } return List.of(m2); };
+        conEloConfig(() -> {
+            try {
+                enEdt(() -> vista.buscarAleatorias(true));
+                assertTrue(dentro.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                enEdt(() -> vista.buscarAleatorias(true));   // «Continuar» con la primera aún en marcha
+                esperar(() -> vista.all.equals(List.of(m2)), "que la segunda tirada pinte");
+                enEdt(() -> assertFalse(tresBotones(vista), "con la primera aún en marcha, los botones siguen apagados"));
+            } finally {
+                soltar.countDown();
+            }
+            esperar(() -> !anfitrion.progreso, "que la primera termine");
+            asentar();
+        });
+        enEdt(() -> {
+            assertEquals(List.of(m2), vista.all, "la primera, superada por otra «Al azar», no pinta");
+            assertEquals(java.util.Set.of(20L), PartidasView.SUJETOS);
+            assertTrue(tresBotones(vista));
+        });
+    }
+
+    /** La regla de la tabla (1.4): con dos resultados de tipos distintos, pinta el último que llega, con su cabecera. */
+    @Test void vigente_buscarDuranteElAzar_elAzarQueLlegaDespuesPintaConSuCabecera() throws Exception {
+        enlace.jugadores.add(A);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> List.of(partida(8701, A, fin));
+        Match m1 = partidaDe(1, mp(10, "Uno", 1, 1850), mp(11, "Dos", 2, 1880));
+        java.util.concurrent.CountDownLatch dentro = new java.util.concurrent.CountDownLatch(1), soltar = new java.util.concurrent.CountDownLatch(1);
+        azar.porLlamada = n -> { dentro.countDown(); aguardar(soltar); return List.of(m1); };
+        conEloConfig(() -> {
+            try {
+                enEdt(() -> vista.buscarAleatorias(true));
+                assertTrue(dentro.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                enEdt(() -> vista.fetchMatches(vista.fetchBtn));   // doble clic en un jugador con el azar en marcha
+                esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+                asentar();
+                enEdt(() -> {
+                    assertEquals(8701L, vista.all.get(0).id, "la búsqueda pinta al llegar");
+                    assertEquals(java.util.Set.of(A.id()), PartidasView.SUJETOS);
+                    assertFalse(vista.azarBtn.isEnabled() || vista.gteBtn.isEnabled() || vista.fetchBtn.isEnabled(),
+                            "con «Al azar» en marcha, los botones siguen apagados");
+                });
+            } finally {
+                soltar.countDown();
+            }
+            esperar(() -> !anfitrion.progreso, "que el azar termine");
+            asentar();
+        });
+        enEdt(() -> {
+            assertEquals(List.of(m1), vista.all, "el azar llega después y pinta (no lo descarta una búsqueda)");
+            assertEquals(java.util.Set.of(11L), PartidasView.SUJETOS, "con su cabecera");
+            assertEquals(List.of(11L), vista.ultimosSujetos.stream().map(Player::id).toList());
+            assertTrue(anfitrion.estado.startsWith("1 partidas 1v1 al azar"), "estado: " + anfitrion.estado);
+            assertTrue(tresBotones(vista), "ya no queda nada en marcha");
+        });
+    }
+
+    @Test void vigente_elAzarPintaDuranteLaBusqueda_yLaBusquedaVuelveConSuCabecera() throws Exception {
+        enlace.jugadores.add(A);
+        Instant fin = Instant.now().minusSeconds(600);
+        java.util.concurrent.CountDownLatch enA = new java.util.concurrent.CountDownLatch(1), soltarA = new java.util.concurrent.CountDownLatch(1);
+        anfitrion.paginador = (pid, pag, pp) -> { enA.countDown(); soltarA.await(10, java.util.concurrent.TimeUnit.SECONDS); return List.of(partida(8702, A, fin)); };
+        Match m1 = partidaDe(1, mp(10, "Uno", 1, 1850), mp(11, "Dos", 2, 1880));
+        java.util.concurrent.CountDownLatch dentro = new java.util.concurrent.CountDownLatch(1), soltar = new java.util.concurrent.CountDownLatch(1);
+        azar.porLlamada = n -> { dentro.countDown(); aguardar(soltar); return List.of(m1); };
+        conEloConfig(() -> {
+            try {
+                enEdt(() -> vista.buscarAleatorias(true));
+                assertTrue(dentro.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                enEdt(() -> vista.fetchMatches(vista.fetchBtn));
+                assertTrue(enA.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                soltar.countDown();   // el azar acaba primero, con la búsqueda en marcha
+                esperar(() -> vista.all.equals(List.of(m1)), "que el azar pinte");
+                enEdt(() -> {
+                    assertEquals(java.util.Set.of(11L), PartidasView.SUJETOS);
+                    assertTrue(vista.fetchBtn.isEnabled(), "«Detener» de la búsqueda sigue a mano");
+                    assertFalse(vista.azarBtn.isEnabled() || vista.gteBtn.isEnabled(), "con la búsqueda en marcha, azar y GTE apagados");
+                });
+            } finally {
+                soltar.countDown();
+                soltarA.countDown();
+            }
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+            asentar();
+        });
+        enEdt(() -> {
+            assertEquals(8702L, vista.all.get(0).id, "la búsqueda llega después y pinta");
+            assertEquals(java.util.Set.of(A.id()), PartidasView.SUJETOS, "con SU cabecera, no la del azar");
+            assertEquals(List.of(A), vista.ultimosSujetos);
+            assertEquals("grupo|General", vista.vistaDeSujetos);
+            assertTrue(tresBotones(vista));
+        });
+    }
+
     // ----- descargar: las partidas en directo no se descargan -----
 
     @Test void descargar_separaLasPartidasEnDirecto() throws Exception {
@@ -414,6 +551,7 @@ class PartidasLogicaTest {
     /** Lanza «Buscar partidas» (páginas vacías) y devuelve a quién se pidió, en orden. */
     List<Long> buscarYVerAQuien() throws Exception {
         anfitrion.pedidas.clear();
+        anfitrion.llamadas.set(0);
         anfitrion.paginador = (pid, pag, pp) -> List.of();
         enEdt(() -> vista.fetchMatches(vista.fetchBtn));
         esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
@@ -461,6 +599,7 @@ class PartidasLogicaTest {
         assertEquals(15, pedidas.size());
         assertEquals(7400L, pedidas.get(0));
         assertEquals(7414L, pedidas.get(14));
+        assertEquals(2, anfitrion.llamadas.get(), "1.4: en lotes de 10, 15 jugadores son 2 llamadas (antes, 15)");
         assertTrue(anfitrion.estados.stream().anyMatch(s -> s.contains("15 perfiles por tanda")), "estados: " + anfitrion.estados);
     }
 

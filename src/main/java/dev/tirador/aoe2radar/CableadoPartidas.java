@@ -16,7 +16,6 @@ import java.util.List;
 
 import static dev.tirador.aoe2radar.app.Servicios.COMPANION;
 import static dev.tirador.aoe2radar.app.Servicios.PAUSA_MS;
-import static dev.tirador.aoe2radar.app.Servicios.PER_PAGE;
 import static dev.tirador.aoe2radar.cache.Catalogos.CIVS_CAT;
 import static dev.tirador.aoe2radar.cache.Catalogos.MAPAS_CAT;
 import static dev.tirador.aoe2radar.cache.RecsDisco.RECS_DIR;
@@ -37,7 +36,7 @@ final class CableadoPartidas {
 
     static PartidasView construir(SpoilerFreeRecs v) {
         return new PartidasView(v, v.menus, v.dialogos, v,
-                v.azarService, v.recService, v.barridoVivos, PER_PAGE, PAUSA_MS,
+                v.azarService, v.recService, v.barridoVivos, PAUSA_MS,
                 new PartidasView.EnlaceWatchlist() {
                     @Override public List<Player> seleccion() { return v.playersList.getSelectedValuesList(); }
                     @Override public int seleccionSize() { return v.playersList.getSelectedIndices().length; }
@@ -104,8 +103,10 @@ final class CableadoPartidas {
                         javax.swing.Timer tt = new javax.swing.Timer(900, ev -> { if (v.perfil.pidAbierto() == pid) v.perfil.mostrarHistorialPerfil(pid, nombre); });
                         tt.setRepeats(false); tt.start();
                     }
-                    @Override public Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException {
-                        return COMPANION.partidas(pid, pagina, porPagina);
+                    @Override public Iterable<Match> paginaDePartidas(List<Long> pids, int pagina, int porPagina) throws IOException, InterruptedException {
+                        StringBuilder csv = new StringBuilder();
+                        for (Long pid : pids) { if (csv.length() > 0) csv.append(','); csv.append(pid); }
+                        return COMPANION.partidas(csv.toString(), pagina, porPagina);
                     }
                     @Override public boolean autoCopiarAlDescargar() { return v.autoSgItem.isSelected(); }
                     @Override public void continuarDisponible(boolean visible) { if (v.continuarBtn != null) v.continuarBtn.setVisible(visible); }

@@ -144,8 +144,9 @@ public final class PartidasView {
         boolean perfilAbierto();
         String perfilNombreAbierto();
         void mostrarHistorialSiSigueAbierto(long pid, String nombre);
-        /** La única llamada de red que queda aquí (CompanionApi.partidas): ui no puede importar api. */
-        Iterable<Match> paginaDePartidas(long pid, int pagina, int porPagina) throws IOException, InterruptedException;
+        /** La única llamada de red que queda aquí (CompanionApi.partidas, con los ids juntos: una llamada para
+         *  todo el lote de «Buscar partidas»): ui no puede importar api. */
+        Iterable<Match> paginaDePartidas(List<Long> pids, int pagina, int porPagina) throws IOException, InterruptedException;
         boolean autoCopiarAlDescargar();
         void continuarDisponible(boolean visible);
         /** La nota sin-spoilers vuelve a su gris de siempre (delegado en ui.TemaApp, que conoce toda la ventana). */
@@ -161,8 +162,11 @@ public final class PartidasView {
     final AzarService azarService;
     final RecService recService;
     final BarridoVivos barridoVivos;
-    final int perPage;
     final long pausaMs;
+    /** Jugadores por llamada de «Buscar partidas» (PartidasPresenter.JUGADORES_POR_LOTE). Los tests que miran el
+     *  recorrido jugador a jugador (Detener entre uno y otro) lo ponen a 1: es una puerta para los tests, la app no
+     *  lo cambia. Solo en el EDT (fetchMatches lo copia al empezar, antes de crear el SwingWorker). */
+    int jugadoresPorLote = PartidasPresenter.JUGADORES_POR_LOTE;
     final EnlaceWatchlist enlaceWatchlist;
     final Anfitrion anfitrion;
     final PartidasTexto texto;
@@ -216,7 +220,7 @@ public final class PartidasView {
 
     public PartidasView(JFrame ventana, MenusJugador menus, DialogosJugador dialogos, Navegacion navegacion,
                          AzarService azarService, RecService recService, BarridoVivos barridoVivos,
-                         int perPage, long pausaMs, EnlaceWatchlist enlaceWatchlist, Anfitrion anfitrion) {
+                         long pausaMs, EnlaceWatchlist enlaceWatchlist, Anfitrion anfitrion) {
         this.ventana = ventana;
         this.menus = menus;
         this.dialogos = dialogos;
@@ -224,7 +228,6 @@ public final class PartidasView {
         this.azarService = azarService;
         this.recService = recService;
         this.barridoVivos = barridoVivos;
-        this.perPage = perPage;
         this.pausaMs = pausaMs;
         this.enlaceWatchlist = enlaceWatchlist;
         this.anfitrion = anfitrion;
@@ -259,7 +262,7 @@ public final class PartidasView {
         rivalField.putClientProperty("JTextField.showClearButton", true);
         rivalField.setToolTipText(t("Filtra la tabla por el rival (en equipos, cualquiera del equipo contrario). Escribe para ver sugerencias.",
                 "Filters the table by opponent (in team games, anyone on the other team). Type to see suggestions."));
-        rivalPopup = new JPopupMenu();
+        rivalPopup = TemaApp.registrarPopup(new JPopupMenu());   // guardado en un campo: que le llegue el cambio de tema
         rivalPopup.setFocusable(false);
         rivalField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             void cambio() { filtroRival = normalizarNick(rivalField.getText()); applyFilters(); sugerirRivales(); }
@@ -545,7 +548,10 @@ public final class PartidasView {
     /** «✓ en disco» / «✓✓ en juego» de cada fila terminada: antes eran dos Files.exists por partida en el EDT (hasta
      *  1.200 con el tope de 600) más leer config.properties; ahora se miran en un hilo de fondo y las filas se
      *  repintan al llegar (sin tocar la selección). Lo que se pinta al final es lo mismo que antes; en el primer
-     *  instante, las filas nuevas enseñan su «N POV»/«¿?» hasta que llega la respuesta del disco (revisión 1.3). */
+     *  instante, las filas nuevas enseñan su «N POV»/«¿?» hasta que llega la respuesta del disco (revisión 1.3).
+     *  Desde la 1.4, «en disco» es RecService.recSana (lee solo la cabecera, 5000 B), la misma regla con la que la
+     *  descarga decide reutilizar el archivo: una rec corrupta o truncada ya no enseña «✓ en disco» ni «Enviar al
+     *  juego». «En juego» sigue siendo Files.exists: al savegame solo se copia una rec sana. */
     void marcarEnDiscoEnFondo(List<Match> terminadas) {
         if (terminadas.isEmpty()) return;
         final long gen = ++generacionEnDisco;
@@ -557,7 +563,7 @@ public final class PartidasView {
                 boolean[][] marcas = new boolean[filas.size()][2];
                 for (int i = 0; i < filas.size(); i++) {
                     Path destino = anfitrion.destino(filas.get(i));
-                    marcas[i][0] = Files.exists(destino);
+                    marcas[i][0] = RecService.recSana(destino);   // sana, no solo presente: una rec corrupta no ofrece «Enviar al juego»
                     marcas[i][1] = sgConocida != null && Files.exists(sgConocida.resolve(destino.getFileName().toString()));
                 }
                 return marcas;
