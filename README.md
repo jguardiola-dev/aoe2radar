@@ -65,9 +65,12 @@ you that a version is available, with an **Update** button.
 
 ### Coming from a 1.x zip
 
-Install with the installer as above. The first time it starts, the app asks whether you want to import your
-data: click **Choose folder…** and pick the folder where the old `aoe2radar.exe` was. Your groups, settings,
-caches and recs are copied (the old folder is left untouched, and you can delete it afterwards). You can also do
+Install with the installer as above. The first time it starts, the app looks for old copies of aoe2radar 1.x
+(or SpoilerFreeRecs) on your Desktop, in Downloads and in Documents, up to four folders deep. If it finds any, it
+proposes the newest version ("Found 28 copies of aoe2radar 1.x. The newest is 1.3 in …") with **Import**,
+**Choose another folder…** and **No, thanks**. If it finds none, click **Choose folder…** and pick the old
+folder: the one you unzipped is enough, the app finds the data inside it. Your groups, settings, caches and
+recs are copied (the old folder is left untouched, and you can delete it afterwards). You can also do
 it later in **Configuración** → **Import data from another version…**; if you already have data in the new
 version, it asks first and keeps a copy of it in `%APPDATA%\aoe2radar\.antes_de_importar`. The app then
 restarts. If the old version started with Windows, turn that off in it (or delete it) so you don't get both.
@@ -188,8 +191,9 @@ arranque con la nueva falla, vuelve sola a la anterior. Si una versión necesita
 se publica el zip, para quien no quiera instalador.
 
 Tus datos (configuración, jugadores, log y cachés) se guardan en `%APPDATA%\aoe2radar`, y las recs en
-`Documentos\aoe2radar\recs`. Si vienes de una 1.x en zip, el primer arranque te ofrece importar: elige la
-carpeta donde estaba el `aoe2radar.exe` viejo (también en **Configuración** → **Importar datos de otra
-versión…**). Modo portátil: crea un archivo vacío `portable` (o `portable.txt`) junto a `aoe2radar.exe` y
+`Documentos\aoe2radar\recs`. Si vienes de una 1.x en zip, el primer arranque busca copias viejas en el
+Escritorio, Descargas y Documentos y te propone la versión más nueva; si no encuentra ninguna, elige la
+carpeta vieja (basta la que descomprimiste). También en **Configuración** → **Importar datos de otra
+versión…**. Modo portátil: crea un archivo vacío `portable` (o `portable.txt`) junto a `aoe2radar.exe` y
 todo se queda en esa carpeta, como antes. Privacidad, créditos y licencia: ver las secciones en inglés de
 arriba.

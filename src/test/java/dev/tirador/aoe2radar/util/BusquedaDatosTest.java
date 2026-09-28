@@ -99,6 +99,67 @@ class BusquedaDatosTest {
         assertTrue(Files.exists(fuera.resolve("players.txt")));
     }
 
+    /** Una copia en dir: exe, datos y, si version != null, el .cfg de jpackage (o el jar si porJar). */
+    private Path copia(Path dir, String exe, String version, boolean porJar, String players, long haceSegundos) throws IOException {
+        Files.createDirectories(dir);
+        Files.writeString(dir.resolve(exe), "exe");
+        Path dato = players != null ? dir.resolve("players.txt") : dir.resolve("config.properties");
+        Files.writeString(dato, players != null ? players : "idioma=es\n");
+        Files.setLastModifiedTime(dato, FileTime.from(Instant.now().minusSeconds(haceSegundos)));
+        if (version != null) {
+            Path app = Files.createDirectories(dir.resolve("app"));
+            if (porJar) Files.writeString(app.resolve("aoe2radar-" + version + ".jar"), "jar");
+            else Files.writeString(app.resolve("aoe2radar.cfg"), "[JavaOptions]\njava-options=-Djpackage.app-version=" + version + "\n");
+        }
+        return dir;
+    }
+
+    @Test void comparaVersionesPorNumero() {
+        assertTrue(BusquedaDatos.compararVersiones("1.10", "1.9") > 0);
+        assertTrue(BusquedaDatos.compararVersiones("1.3", "1.2.5") > 0);
+        assertEquals(0, BusquedaDatos.compararVersiones("1.3", "1.3.0"));
+        assertTrue(BusquedaDatos.compararVersiones("1.0", "1.1") < 0);
+    }
+
+    @Test void leeLaVersionDelCfgODelJarYSiEsSpoilerFreeRecs() throws IOException {
+        BusquedaDatos.Candidata cfg = BusquedaDatos.leer(copia(tmp.resolve("a"), "aoe2radar.exe", "1.3", false, "1;Ana\n", 1));
+        assertEquals("1.3", cfg.version());
+        assertTrue(cfg.aoe2radar());
+        assertTrue(cfg.conJugadores());
+        assertEquals("aoe2radar 1.3", cfg.nombre());
+        BusquedaDatos.Candidata jar = BusquedaDatos.leer(copia(tmp.resolve("b"), "aoe2radar.exe", "1.2", true, "# vacío\n\n", 1));
+        assertEquals("1.2", jar.version());
+        assertFalse(jar.conJugadores(), "sin jugadores: solo comentarios y líneas vacías");
+        Path sfr = copia(tmp.resolve("c"), "SpoilerFreeRecs.exe", null, false, null, 1);
+        Files.createDirectories(sfr.resolve("app"));
+        Files.writeString(sfr.resolve("app").resolve("SpoilerFreeRecs.jar"), "jar");
+        BusquedaDatos.Candidata s = BusquedaDatos.leer(sfr);
+        assertFalse(s.aoe2radar());
+        assertNull(s.version());
+    }
+
+    @Test void comoEnElPcDeJorgeGanaLaVersionMayorNoLaConfigMasReciente() throws IOException {
+        Path esc = Files.createDirectories(tmp.resolve("Escritorio"));
+        Path sfr4 = copia(esc.resolve("SFR4").resolve("app").resolve("SpoilerFreeRecs"), "SpoilerFreeRecs.exe", null, false, null, 10);
+        Path v2 = copia(esc.resolve("aoe2radar v2").resolve("app").resolve("aoe2radar"), "aoe2radar.exe", "1.1", false, "1;x\n", 100);
+        Path v9 = copia(esc.resolve("aoe2radar v9").resolve("app").resolve("aoe2radar"), "aoe2radar.exe", "1.3", false, "1;x\n", 86_400);
+        Path v10 = copia(esc.resolve("aoe2radar v10").resolve("app").resolve("aoe2radar"), "aoe2radar.exe", "1.10", true, "1;x\n", 90_000);
+        Path prueba = copia(esc.resolve("prueba").resolve("aoe2radar"), "aoe2radar.exe", "1.10", false, "", 5);   // sin jugadores
+        List<Path> orden = BusquedaDatos.buscar(List.of(esc), 4, 1000, limite(), List.of())
+                .stream().map(BusquedaDatos.Candidata::carpeta).toList();
+        assertEquals(List.of(v10, prueba, v9, v2, sfr4), orden,
+                "1.10 > 1.3 (numérico); a igual versión, con jugadores primero; SFR 1.0 sin versión, la última");
+        assertEquals(v10, BusquedaDatos.resolverElegida(esc, List.of(), limite(), null));
+    }
+
+    @Test void aIgualVersionAoe2radarAntesQueSpoilerFreeRecs() throws IOException {
+        Path esc = Files.createDirectories(tmp.resolve("E"));
+        Path sfr = copia(esc.resolve("sfr"), "SpoilerFreeRecs.exe", null, false, "1;x\n", 1);
+        Path aoe = copia(esc.resolve("aoe"), "aoe2radar.exe", null, false, "1;x\n", 1000);
+        assertEquals(aoe, BusquedaDatos.buscar(List.of(esc), 4, 1000, limite(), List.of()).get(0).carpeta());
+        assertTrue(Files.exists(sfr));
+    }
+
     @Test void respetaElTopeElPlazoYLasExcluidas() throws IOException {
         Path raiz = Files.createDirectories(tmp.resolve("r"));
         Path d = anidada(raiz, "aoe2radar.exe", "players.txt", 1);
