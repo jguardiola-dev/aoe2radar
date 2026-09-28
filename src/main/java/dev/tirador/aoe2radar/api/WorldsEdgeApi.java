@@ -42,7 +42,7 @@ import static dev.tirador.aoe2radar.util.Json.val;
  * personalizados («my map»). API no documentada (ingeniería inversa): si cambia, lo dirán WorldsEdgeApiTest y
  * tools/grabar_worldsedge.py. Va a la red: nunca en el EDT.
  */
-public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder {
+public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder, FuentePerfil, FuenteBusqueda {
     /** El host, en un solo sitio (ya cambió una vez: aoe-api.reliclink.com). También lo usa service.Juego (lobbies). */
     public static final String HOST = "https://aoe-api.worldsedgelink.com";
     public static final String COMMUNITY = HOST + "/community";
@@ -153,6 +153,7 @@ public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder {
         Match m = new Match();
         m.id = lng(val(j, "id"));
         if (m.id <= 0) return null;
+        m.deRespaldo = true;   // para quien decide o guarda con estas partidas (vivos, catálogos): fuente parcial
         m.started = segundos(val(j, "startgametime"));
         m.finished = segundos(val(j, "completiontime"));
         String mapa = nombreMapa(str(val(j, "mapname")));
@@ -262,7 +263,7 @@ public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder {
     // ----- Perfil -----
 
     /** getPersonalStat de un jugador, ya convertido (ver aPerfil). */
-    public Perfil perfil(long pid) throws IOException, InterruptedException {
+    @Override public Perfil perfil(long pid) throws IOException, InterruptedException {
         return aPerfil(pedir(LEADERBOARD + "/getPersonalStat?title=age2&profile_ids=" + lista(String.valueOf(pid))), pid);
     }
 
@@ -366,7 +367,7 @@ public final class WorldsEdgeApi implements FuentePartidas, FuenteLadder {
      * Búsqueda por alias EXACTO (getPersonalStat?aliases=["…"]): distingue mayúsculas y no busca subcadenas. Un alias
      * desconocido (código 9, UNKNOWN_ALIASES) es una lista vacía, no un error. partidas = victorias + derrotas.
      */
-    public List<PerfilEncontrado> buscarPerfiles(String q) throws IOException, InterruptedException {
+    @Override public List<PerfilEncontrado> buscarPerfiles(String q) throws IOException, InterruptedException {
         String alias = q.trim().replace("\\", "\\\\").replace("\"", "\\\"");
         String url = LEADERBOARD + "/getPersonalStat?title=age2&aliases="
                 + URLEncoder.encode("[\"" + alias + "\"]", StandardCharsets.UTF_8);

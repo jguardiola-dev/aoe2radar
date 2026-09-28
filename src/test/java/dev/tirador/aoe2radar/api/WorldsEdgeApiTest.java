@@ -108,6 +108,7 @@ class WorldsEdgeApiTest {
         assertEquals(-5, rival.ratingDiff);
         assertEquals(Boolean.FALSE, rival.won);
         assertNull(yo.color); assertNull(yo.slot); assertNull(yo.social);
+        assertTrue(m.deRespaldo, "marcada: fuente parcial (no decide vivos ni catálogos)");
         assertSame(yo, m.players.get(0), "por equipos");
     }
 
