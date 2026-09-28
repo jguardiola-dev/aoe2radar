@@ -24,7 +24,9 @@ public final class MuestraNocturna {
 
     private final SfrDataClient sfr;
     private final Sello sello;
-    private volatile Map<String, List<List<Object>>> muestra;
+    /** Lo leído de una descarga: ayer y anteayer se publican juntos (una sola escritura volatile), nunca de dos cargas. */
+    private record Carga(Map<String, List<List<Object>>> muestra, Map<String, List<List<Object>>> anteayer) { }
+    private volatile Carga carga;
     private volatile String fecha;
 
     public MuestraNocturna(SfrDataClient sfr, CacheService cache) {
@@ -34,19 +36,39 @@ public final class MuestraNocturna {
 
     public String fecha() { return fecha; }
 
+    /**
+     * La muestra de anteayer (misma forma que muestra()), que sfr-data publica desde la 1.4 en el mismo archivo. null si el
+     * archivo es anterior o faltó una noche: quien la use sigue solo con la de ayer, como hasta ahora. Carga como muestra().
+     */
+    public Map<String, List<List<Object>>> anteayer() {
+        Carga c = cargar();
+        return c == null ? null : c.anteayer();
+    }
+
     /** tramo → partidas (cada una, una lista). null si no está disponible. */
     public Map<String, List<List<Object>>> muestra() {
-        if (muestra != null && sello.fresco()) return muestra;
+        Carga c = cargar();
+        return c == null ? null : c.muestra();
+    }
+
+    private Carga cargar() {
+        Carga c = carga;
+        if (c != null && sello.fresco()) return c;
         try {
             byte[] raw = sfr.diario(ARCHIVO, 60);   // un fallo de red sale tal cual: no hay copia que borrar
             Map<String, Object> m;
             try { m = leerGzJson(raw); if (m == null) throw new java.io.IOException("vacío (null): " + ARCHIVO); }
             catch (Exception ex) { sfr.olvidarDiario(ARCHIVO); throw ex; }
-            Map<String, List<List<Object>>> out = new HashMap<>();
-            if (m.get("tramos") instanceof Map<?, ?> tm) for (Map.Entry<?, ?> en : tm.entrySet()) { List<List<Object>> l = new ArrayList<>(); for (Object o : arr(en.getValue())) l.add(arr(o)); out.put(String.valueOf(en.getKey()), l); }
-            muestra = out; fecha = String.valueOf(m.get("fecha"));
+            c = new Carga(tramos(m.get("tramos")), m.get("tramos_anteayer") instanceof Map<?, ?> ? tramos(m.get("tramos_anteayer")) : null);
+            carga = c; fecha = String.valueOf(m.get("fecha"));
             sello.marcar(sfr.fechaDiario(ARCHIVO));   // la edad, desde que se bajó
-        } catch (Exception ex) { log("perfiles: muestra: " + causa(ex)); muestra = null; sello.marcar(); }
-        return muestra;
+        } catch (Exception ex) { log("perfiles: muestra: " + causa(ex)); carga = null; c = null; sello.marcar(); }
+        return c;
+    }
+
+    private static Map<String, List<List<Object>>> tramos(Object t) {
+        Map<String, List<List<Object>>> out = new HashMap<>();
+        if (t instanceof Map<?, ?> tm) for (Map.Entry<?, ?> en : tm.entrySet()) { List<List<Object>> l = new ArrayList<>(); for (Object o : arr(en.getValue())) l.add(arr(o)); out.put(String.valueOf(en.getKey()), l); }
+        return out;
     }
 }
