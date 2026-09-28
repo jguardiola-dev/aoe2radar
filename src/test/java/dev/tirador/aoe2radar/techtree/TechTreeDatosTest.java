@@ -125,6 +125,16 @@ class TechTreeDatosTest {
         assertTrue(TechTreeDatos.jarVale(dir, "img/Unit/7.png", JAR), "los iconos, siempre");
     }
 
+    /** 1.4: un data.json sacado del jar olvida el ETag y pone a cero la última comprobación (antes esperaba hasta 24 h). */
+    @Test void dataJsonDelJarOlvidaEtagYReiniciaLaComprobacion() throws Exception {
+        java.util.Map<String, String> config = new java.util.LinkedHashMap<>();
+        TechTreeDatos.traer(dir, "data/data.json", JAR, red, config::put);
+        assertEquals(java.util.Map.of("techtree_etag", "", "techtree_check", "0"), config);
+        config.clear();
+        TechTreeDatos.traer(dir, "data/trees/NUEVA.json", JAR, red, config::put);
+        assertEquals(java.util.Map.of(), config, "lo demás no toca la config");
+    }
+
     @Test void loQueElJarNoTraeSeBajaDeLaRed() throws Exception {
         assertFalse(TechTreeDatos.descargar(dir, "data/trees/NUEVA.json", JAR, red));
         assertEquals(List.of("data/trees/NUEVA.json"), aLaRed);
