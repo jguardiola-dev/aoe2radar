@@ -40,7 +40,8 @@ public final class TarjetaPerfil {
 
     /**
      * La tarjeta desde el nocturno, o null si no alcanza y hay que preguntar a la API como antes: sin archivo de chispas
-     * (serieCronologica null) o con una chispa parcial más corta que MIN_PUNTOS_PARCIAL. Con una completa, una serie
+     * (serieCronologica null), jugador fuera de elo_ayer (ayer null: inactivo, sfr-data no lo cubre) o con una chispa
+     * parcial más corta que MIN_PUNTOS_PARCIAL. Con una completa, una serie
      * corta es de verdad «pocos 1v1» y se dice sin llamadas.
      * @param serieCronologica chispa del jugador (vieja → nueva), vacía si no tiene; null si no hay archivo
      * @param extra            {pico, ganadas, perdidas} (-1 = no se sabe) o null
@@ -50,6 +51,7 @@ public final class TarjetaPerfil {
      */
     public static Datos desdeNocturno(int[] serieCronologica, boolean completo, int[] extra, Integer eloActual, int[] ayer, String pais) {
         if (serieCronologica == null) return null;
+        if (ayer == null) return null;   // fuera del alcance de sfr-data (sin partidas en 28 días): la chispa no sabe nada de él
         if (!completo && serieCronologica.length < MIN_PUNTOS_PARCIAL) return null;
         List<Integer> reciente = new ArrayList<>(serieCronologica.length);
         for (int i = serieCronologica.length - 1; i >= 0; i--) reciente.add(serieCronologica[i]);

@@ -66,8 +66,8 @@ class TarjetaPerfilTest {
     }
 
     @Test void unaParcialCortaVaALaApiYUnaLargaNo() {
-        assertNull(TarjetaPerfil.desdeNocturno(cron(13), false, null, 1500, null, "es"), "parcial: 13 puntos no dicen «pocos 1v1»");
-        TarjetaPerfil.Datos d = TarjetaPerfil.desdeNocturno(cron(14), false, null, 1500, null, "es");
+        assertNull(TarjetaPerfil.desdeNocturno(cron(13), false, null, 1500, new int[]{ 1500, 50, 0, 0 }, "es"), "parcial: 13 puntos no dicen «pocos 1v1»");
+        TarjetaPerfil.Datos d = TarjetaPerfil.desdeNocturno(cron(14), false, null, 1500, new int[]{ 1500, 50, 0, 0 }, "es");
         assertNotNull(d);
         assertArrayEquals(new int[]{ 1000, 1001, 1002, 1003 }, d.spark(), "sin las 10 más recientes (1004-1013)");
     }
@@ -77,9 +77,11 @@ class TarjetaPerfilTest {
         assertNotNull(d);
         assertTrue(d.pocos1v1());
         assertNull(d.spark());
-        TarjetaPerfil.Datos vacia = TarjetaPerfil.desdeNocturno(new int[0], true, null, null, null, null);
-        assertNotNull(vacia, "completa y sin puntos: tampoco hace falta la API");
+        TarjetaPerfil.Datos vacia = TarjetaPerfil.desdeNocturno(new int[0], true, null, null, new int[]{ 0, 0, 1500, 40 }, null);
+        assertNotNull(vacia, "activo (en elo_ayer), completa y sin puntos: tampoco hace falta la API");
         assertTrue(vacia.pocos1v1());
+        assertNull(TarjetaPerfil.desdeNocturno(new int[0], true, null, 1500, null, null),
+                "fuera de elo_ayer = fuera del alcance de sfr-data: su perfil real sale de la API, como antes");
     }
 
     @Test void losDatosDeCabecera() {
