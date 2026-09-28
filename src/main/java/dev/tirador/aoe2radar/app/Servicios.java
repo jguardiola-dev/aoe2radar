@@ -36,6 +36,7 @@ import java.util.List;
 
 import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.api.Freno.THROTTLE;
+import static dev.tirador.aoe2radar.api.Freno.THROTTLE_WE;
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.TRANSPORTE;
 import static dev.tirador.aoe2radar.api.Http.UA;
@@ -156,8 +157,9 @@ public class Servicios {
      *  TRANSPORTE (texto, sigue redirecciones). */
     public static final ActualizadorService ACTUALIZADOR = new ActualizadorService(TRANSPORTE, DESCARGA_BINARIA,
             Instalacion::actuales, Identidad.VERSION, System.getProperty("java.version"));
-    /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada. */
-    public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
+    /** Cliente único de la API: freno, 429, cancelación (api.ApiClient). Estas dos funciones quedan como fachada.
+     *  Dos cubos (1.4): el del companion (THROTTLE) y el de World's Edge (THROTTLE_WE: respaldo y lobbies de Mi partida). */
+    public static final ApiClient API_CLIENTE = new ApiClient(THROTTLE, THROTTLE_WE, TRANSPORTE, Servicios::avisarPausa429, () -> detieneEsteHilo());
     /** Endpoints del companion con su URL en un solo sitio (api.CompanionApi). Va DESPUÉS de API_CLIENTE: los static final se inicializan en orden de texto.
      *  Con la caché por URL (1.3): fichas /profiles 10 min y páginas del ladder 14 min; lo que debe ser de ahora (ELO 1v1,
      *  hover, recarga forzada del top) va por perfilFresco/clasificacionFresca. /matches, búsqueda y Twitch, nunca. */

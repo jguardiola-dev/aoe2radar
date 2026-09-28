@@ -61,8 +61,28 @@ public final class MiPartidaServiceJuego implements MiPartidaService {
     private long ultimoAvisoMs;
     private long ultimoDiagMs;
 
+    /** La lista pública de lobbies en texto (OFICIAL_LOBBIES). Va a la red. */
+    @FunctionalInterface
+    public interface LectorLobbies { String texto(String url) throws IOException, InterruptedException; }
+
+    private final LectorLobbies lobbies;
+
+    /** Con la descarga de siempre (Http.descargarBytes, SIN freno): solo los tests. La app pasa el ApiClient. */
     public MiPartidaServiceJuego(LongFunction<Integer> elo1v1Conocido, BiFunction<String, String, String> leerConfig,
                                   BiConsumer<String, String> guardarConfig, Reloj reloj, Supplier<Path> carpetaLogsJuego) {
+        this(elo1v1Conocido, leerConfig, guardarConfig, reloj, carpetaLogsJuego,
+                url -> new String(descargarBytes(url, 20), StandardCharsets.UTF_8));
+    }
+
+    /**
+     * lobbies: cómo se lee la lista de lobbies. La app pasa ApiClient.texto (1.4): la llamada pasa por el cubo de
+     * World's Edge del freno (Freno.THROTTLE_WE) en vez de ir sin freno por Http.descargarBytes. Un solo intento, sin
+     * reintento ante 429: la lista solo sirve en los segundos antes de empezar la partida (antes: 3 intentos, 20/40/60 s).
+     */
+    public MiPartidaServiceJuego(LongFunction<Integer> elo1v1Conocido, BiFunction<String, String, String> leerConfig,
+                                  BiConsumer<String, String> guardarConfig, Reloj reloj, Supplier<Path> carpetaLogsJuego,
+                                  LectorLobbies lobbies) {
+        this.lobbies = lobbies;
         this.elo1v1Conocido = elo1v1Conocido;
         this.leerConfig = leerConfig;
         this.guardarConfig = guardarConfig;
@@ -154,7 +174,7 @@ public final class MiPartidaServiceJuego implements MiPartidaService {
     public ResultadoLobby sondearLobbyOficial() {
         try {
             long mi = Long.parseLong(leerConfig.apply("mi_pid", ""));
-            String texto = new String(descargarBytes(OFICIAL_LOBBIES, 20), StandardCharsets.UTF_8);
+            String texto = lobbies.texto(OFICIAL_LOBBIES);
             Object root = Json.parse(texto);
             List<Long> companeros = new ArrayList<>();
             boolean encontrado = buscarLobbyConPid(root, mi, companeros);

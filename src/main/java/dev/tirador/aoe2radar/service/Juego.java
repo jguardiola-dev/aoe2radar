@@ -1,5 +1,7 @@
 package dev.tirador.aoe2radar.service;
 
+import dev.tirador.aoe2radar.api.WorldsEdgeApi;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,7 +55,7 @@ public final class Juego {
         return null;
     }
 
-    public static final String OFICIAL_LOBBIES = "https://aoe-api.worldsedgelink.com/community/advertisement/findAdvertisements?title=age2&start=0&count=200";
+    public static final String OFICIAL_LOBBIES = WorldsEdgeApi.COMMUNITY + "/advertisement/findAdvertisements?title=age2&start=0&count=200";
 
     /** Carpeta de logs del juego: %USERPROFILE%\\Games\\Age of Empires 2 DE\\logs (o la indicada en config «logs_juego»). */
     public static Path carpetaLogsJuego() {

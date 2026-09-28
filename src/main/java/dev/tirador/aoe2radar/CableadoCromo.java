@@ -302,7 +302,8 @@ final class CableadoCromo {
      *  hilo ("log-juego", "lobby-oficial", "mi-perfil"). */
     static MiPartidaPanel miPartida(SpoilerFreeRecs v) {
         return new MiPartidaPanel(
-                new MiPartidaServiceJuego(v.menus::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego),
+                new MiPartidaServiceJuego(v.menus::elo1v1Conocido, Config::leerConfig, Config::guardarConfig, Reloj.SISTEMA, Juego::carpetaLogsJuego,
+                        Servicios.API_CLIENTE::texto),   // lobbies de World's Edge con su cubo del freno (1.4); un intento: la lista caduca en segundos
                 Tareas.SWING, v, v, new MiPartidaPanel.Anfitrion() {
                     @Override public List<String[]> buscarPerfiles(String nick) { return Servicios.buscarPerfiles(nick); }
                     @Override public void mostrarEstado(String texto) { v.status.setText(texto); }

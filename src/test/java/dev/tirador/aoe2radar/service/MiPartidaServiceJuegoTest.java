@@ -184,4 +184,23 @@ class MiPartidaServiceJuegoTest {
         m.players.add(mp);
         return m;
     }
+
+    // ----- lobbies oficiales (1.4: por el lector inyectado, que en la app es el ApiClient con el cubo de World's Edge)
+
+    @Test void losLobbiesSeLeenPorElLectorInyectado() {
+        config.put("mi_pid", "123");
+        List<String> pedidas = new ArrayList<>();
+        MiPartidaServiceJuego s = new MiPartidaServiceJuego(pid -> null, config::getOrDefault, config::put, reloj,
+                () -> Path.of("no-existe"), url -> { pedidas.add(url); return "{\"matchmembers\":[{\"profile_id\":9}]}"; });
+        MiPartidaService.ResultadoLobby r = s.sondearLobbyOficial();
+        assertEquals(List.of(Juego.OFICIAL_LOBBIES), pedidas);
+        assertFalse(r.avisar(), "mi pid no está en ningún lobby");
+    }
+
+    @Test void unFalloDelLectorNoRompeNada() {
+        config.put("mi_pid", "123");
+        MiPartidaServiceJuego s = new MiPartidaServiceJuego(pid -> null, config::getOrDefault, config::put, reloj,
+                () -> Path.of("no-existe"), url -> { throw new IOException("HTTP 429"); });
+        assertFalse(s.sondearLobbyOficial().avisar());
+    }
 }

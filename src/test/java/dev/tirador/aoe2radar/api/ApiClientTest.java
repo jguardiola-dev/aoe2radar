@@ -318,4 +318,50 @@ class ApiClientTest {
         assertThrows(IOException.class, () -> api.textoCon429(COMPANION));
         assertEquals(1, red.pedidas.size());
     }
+
+    // ----- dos cubos (1.4): companion y World's Edge, cada uno el suyo
+
+    static final String WE = "https://aoe-api.worldsedgelink.com/community/leaderboard/getPersonalStat?title=age2&profile_ids=%5B1%5D";
+
+    final ThrottleEspia cuboWE = new ThrottleEspia();
+    final ApiClient dosCubos = new ApiClient(throttle, cuboWE, red, avisos::add, () -> detenida);
+
+    @Test void worldsEdgePasaPorSuCuboYNoPorElDelCompanion() throws Exception {
+        dosCubos.textoCon429(WE);
+        assertEquals(1, cuboWE.adquiridas);
+        assertEquals(0, throttle.adquiridas);
+        dosCubos.textoCon429(COMPANION);
+        assertEquals(1, throttle.adquiridas);
+        assertEquals(1, cuboWE.adquiridas);
+        dosCubos.texto(STEAM);
+        assertEquals(1, throttle.adquiridas, "Steam: sin freno");
+        assertEquals(1, cuboWE.adquiridas, "Steam: sin freno");
+    }
+
+    @Test void un429DeWorldsEdgeVaASuCuboSeReintentaYNoAvisaALaBarra() throws Exception {
+        red.responde(429, 429, 200);
+        assertEquals("cuerpo 200", dosCubos.textoCon429(WE));
+        assertEquals(3, red.pedidas.size(), "como el companion: la petición y dos reintentos");
+        assertEquals(3, cuboWE.adquiridas, "cada reintento vuelve a entrar por el cubo de World's Edge");
+        assertEquals(0, throttle.adquiridas);
+        assertEquals(2, cuboWE.cuatrocientosVeintinueve);
+        assertEquals(0, throttle.cuatrocientosVeintinueve, "no pausa el companion");
+        assertTrue(avisos.isEmpty(), "la cuenta atrás de la barra es solo del companion");
+    }
+
+    @Test void un429DeWorldsEdgePorTextoTambienCuentaASuCubo() {
+        red.responde(429);
+        assertThrows(IOException.class, () -> dosCubos.texto(WE));
+        assertEquals(1, cuboWE.cuatrocientosVeintinueve);
+        assertEquals(0, throttle.cuatrocientosVeintinueve);
+        assertTrue(avisos.isEmpty());
+    }
+
+    @Test void un429DelCompanionNoTocaElCuboDeWorldsEdge() {
+        red.responde(429, 429, 429);
+        assertThrows(IOException.class, () -> dosCubos.textoCon429(COMPANION));
+        assertEquals(3, throttle.cuatrocientosVeintinueve);
+        assertEquals(0, cuboWE.cuatrocientosVeintinueve);
+        assertEquals(3, avisos.size(), "el companion sí avisa a la barra (el espía abre pausa nueva en cada 429)");
+    }
 }

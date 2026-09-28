@@ -11,26 +11,49 @@ import static dev.tirador.aoe2radar.util.Log.causa;
 import static dev.tirador.aoe2radar.util.Log.log;
 
 /**
- * El único camino de la app hacia la red en texto: freno para el companion, sus 429 al Throttle, cancelación.
+ * El único camino de la app hacia la red en texto: freno para el companion y, en su propio cubo, para World's Edge (1.4),
+ * los 429 de cada uno a su Throttle, cancelación.
  * Todo lo que necesita entra por el constructor (Throttle, Transporte, aviso de pausa, «¿Detener en curso?»), así que
  * se prueba sin red ni pantalla. La red ya no toca Swing: la pausa se avisa por alPausar y la UI decide qué pinta.
  */
 public final class ApiClient {
-    private final Throttle throttle;
+    private final Throttle throttle;              // el cubo del companion (*.aoe2companion.com)
+    private final Throttle throttleWE;            // el de World's Edge (*.worldsedgelink.com): estado propio desde la 1.4
     private final Transporte transporte;
     private final LongConsumer alPausar;          // segundos de pausa tras un 429 del companion (la barra de estado)
     private final BooleanSupplier detenida;       // ¿hay un Detener real en curso? (botón Detener)
     private final ContadorLlamadas contador;      // llamadas por endpoint y 429, al log cada hora (solo mide)
 
+    /** Un solo Throttle para los dos servicios (companion y World's Edge): los tests de siempre. La app usa el de dos cubos. */
     public ApiClient(Throttle throttle, Transporte transporte, LongConsumer alPausar, BooleanSupplier detenida) {
-        this(throttle, transporte, alPausar, detenida, new ContadorLlamadas(Reloj.SISTEMA, Log::log));
+        this(throttle, throttle, transporte, alPausar, detenida);
     }
 
-    /** Como el otro, con el contador que se quiera (los tests le dan un reloj falso y una salida que se puede leer). */
+    /** Con un cubo para el companion y otro para World's Edge (app.Servicios: Freno.THROTTLE y Freno.THROTTLE_WE). */
+    public ApiClient(Throttle throttle, Throttle throttleWE, Transporte transporte, LongConsumer alPausar, BooleanSupplier detenida) {
+        this(throttle, throttleWE, transporte, alPausar, detenida, new ContadorLlamadas(Reloj.SISTEMA, Log::log));
+    }
+
+    /** Como el de un cubo, con el contador que se quiera (los tests le dan un reloj falso y una salida que se puede leer). */
     public ApiClient(Throttle throttle, Transporte transporte, LongConsumer alPausar, BooleanSupplier detenida,
                      ContadorLlamadas contador) {
-        this.throttle = throttle; this.transporte = transporte; this.alPausar = alPausar; this.detenida = detenida;
-        this.contador = contador;
+        this(throttle, throttle, transporte, alPausar, detenida, contador);
+    }
+
+    public ApiClient(Throttle throttle, Throttle throttleWE, Transporte transporte, LongConsumer alPausar, BooleanSupplier detenida,
+                     ContadorLlamadas contador) {
+        this.throttle = throttle; this.throttleWE = throttleWE; this.transporte = transporte; this.alPausar = alPausar;
+        this.detenida = detenida; this.contador = contador;
+    }
+
+    /**
+     * El cubo por el que pasa url: el del companion, el de World's Edge o ninguno (null: GitHub, Steam…). El criterio de
+     * host vive en Freno (aplicaA / aplicaAWorldsEdge); aquí solo se elige el cubo.
+     */
+    private Throttle cuboPara(String url) {
+        if (Freno.aplicaA(url)) return throttle;
+        if (Freno.aplicaAWorldsEdge(url)) return throttleWE;
+        return null;
     }
 
     /**
@@ -55,7 +78,8 @@ public final class ApiClient {
     public String texto(String url) throws IOException, InterruptedException {
         Transporte.Respuesta r = pedir(url);
         if (r.estado() / 100 != 2) {
-            if (r.estado() == 429 && Freno.aplicaA(url)) registrar429();
+            Throttle cubo = cuboPara(url);
+            if (r.estado() == 429 && cubo != null) registrar429(cubo, url);
             throw new IOException("HTTP " + r.estado());
         }
         return r.cuerpo();
@@ -66,7 +90,8 @@ public final class ApiClient {
         // Una interrupción residual de un Detener anterior (los hilos del pool se reutilizan) se limpia;
         // solo cuenta si hay un Detener real en curso.
         if (Thread.interrupted() && detenida.getAsBoolean()) throw new InterruptedException("detenido");
-        if (Freno.aplicaA(url)) throttle.adquirir(detenida);   // cualquier host del companion; Detener corta la espera del freno
+        Throttle cubo = cuboPara(url);
+        if (cubo != null) cubo.adquirir(detenida);   // companion o World's Edge, cada uno su cubo; Detener corta la espera del freno
         contador.peticion(url);   // tras el freno: cuenta lo que de verdad sale a la red (reintentos incluidos)
         Transporte.Respuesta r = transporte.get(url);
         contador.respuesta(url, r.estado());
@@ -84,29 +109,34 @@ public final class ApiClient {
      * inesperado (RuntimeException), como IOException con su causa.
      */
     public String textoCon429(String url) throws IOException, InterruptedException {
-        boolean companion = Freno.aplicaA(url);   // solo el companion cuenta para el freno
+        Throttle cubo = cuboPara(url);   // solo companion y World's Edge cuentan para el freno (cada uno, el suyo)
         for (int intento = 1; ; intento++) {
             Transporte.Respuesta r;
             try { r = pedir(url); }
             catch (IOException | InterruptedException e) { throw e; }
             catch (Exception e) { throw new IOException(causa(e)); }
             if (r.estado() / 100 == 2) return r.cuerpo();
-            boolean reintentable = r.estado() == 429 && companion;
-            if (reintentable) registrar429();   // pausa global; el propio freno la respeta en todas las llamadas (y en el reintento)
+            boolean reintentable = r.estado() == 429 && cubo != null;
+            if (reintentable) registrar429(cubo, url);   // pausa de su cubo; el propio freno la respeta en todas las llamadas (y en el reintento)
             if (!reintentable || intento >= INTENTOS_429) throw new IOException("HTTP " + r.estado());
         }
     }
 
     /**
-     * Un 429 del companion: siempre al Throttle (pausa global y escalada viven allí). Línea en el log y aviso a quien
-     * escuche (la UI) solo si este 429 abrió la pausa: los de la misma ráfaga, que caen en una pausa vigente, ya están
-     * avisados (antes, 5 respuestas 429 seguidas escribían 5 líneas «pausa de N s» con N decreciente).
+     * Un 429: siempre al Throttle de su servicio (pausa y escalada viven allí). Línea en el log solo si este 429 abrió
+     * la pausa: los de la misma ráfaga, que caen en una pausa vigente, ya están avisados (antes, 5 respuestas 429
+     * seguidas escribían 5 líneas «pausa de N s» con N decreciente). Aviso a la UI (la cuenta atrás de la barra de
+     * estado) solo si es del companion: la de World's Edge no frena nada de lo que el usuario ve pasar por el companion.
      */
-    private void registrar429() {
-        Throttle.Pausa429 p = throttle.registrarEpisodio429();
+    private void registrar429(Throttle cubo, String url) {
+        Throttle.Pausa429 p = cubo.registrarEpisodio429();
         if (!p.nueva()) return;
         long seg = (p.ms() + 999) / 1000;   // hacia arriba: «0 s» con la pausa aún en curso confundiría
-        log("API: 429 recibido: pausa global de " + seg + " s para no insistir");
-        alPausar.accept(seg);
+        if (Freno.aplicaA(url)) {
+            log("API: 429 recibido: pausa global de " + seg + " s para no insistir");
+            alPausar.accept(seg);
+        } else {
+            log("API: 429 recibido de World's Edge: pausa de " + seg + " s para no insistir");
+        }
     }
 }

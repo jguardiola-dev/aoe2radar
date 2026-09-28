@@ -33,6 +33,19 @@ class ThrottleCuboTest {
         assertEquals(1000, r.dormido);
     }
 
+    @Test void pausaRestanteDiceSiElCortacircuitosEstaAbiertoSinEsperar() {
+        RelojFalso r = new RelojFalso();
+        ThrottleCubo t = new ThrottleCubo(r);
+        assertEquals(0, t.pausaRestanteMs(), "sin 429: cerrado");
+        t.registrar429();
+        assertEquals(60_000, t.pausaRestanteMs());
+        r.avanzar(59_000);
+        assertEquals(1_000, t.pausaRestanteMs());
+        r.avanzar(1_000);
+        assertEquals(0, t.pausaRestanteMs(), "acabó la pausa: cerrado otra vez");
+        assertEquals(0, r.dormido, "preguntar no duerme");
+    }
+
     /** Deja pasar la pausa vigente entera (y 1 ms): el siguiente 429 es un episodio nuevo. */
     static void pasaLaPausa(RelojFalso r, long pausa) { r.avanzar(pausa + 1); }
 
