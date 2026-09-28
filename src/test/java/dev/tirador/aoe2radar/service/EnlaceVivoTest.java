@@ -492,6 +492,50 @@ class EnlaceVivoTest {
         assertEquals(2, esperasQuitada().size(), "la ronda inicial y la del reintento: nada más");
     }
 
+    // ===== 1.4: la partida quitada que la API sigue viendo en curso se mira cada vez más tarde (3, 6, 12…) y, a los 90 min, sale =====
+
+    long ultimaEspera() { synchronized (planificador.esperas) { return planificador.esperas.get(planificador.esperas.size() - 1); } }
+
+    @Test void laVivaSeVuelveAMirarA3_6YLuegoCada12Min() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(1000, Duration.ofMinutes(10), false) + "]}";
+        marcarSolos(1);
+        enlace.procesarEventosSocket(quitadas(1), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        List<Long> esperas = new ArrayList<>();
+        for (int i = 0; i < 4; i++) { enlace.rondaQuitadas(); esperas.add(ultimaEspera() / 60_000); reloj.avanzar(ultimaEspera()); }
+        assertEquals(List.of(3L, 6L, 12L, 12L), esperas, "antes: 3, 3, 3, 3");
+        assertEquals(4, red.llamadas);
+        assertEquals(1000L, vivo.matchDe(100), "sigue en curso según la API: no sale");
+    }
+
+    @Test void laVivaQueTerminaEntreMedias_SaleYSeApuntaTerminada() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(1000, Duration.ofMinutes(10), false) + "]}";
+        marcarSolos(1);
+        enlace.procesarEventosSocket(quitadas(1), Set.of());
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        enlace.rondaQuitadas(); reloj.avanzar(ultimaEspera());
+        enlace.rondaQuitadas(); reloj.avanzar(ultimaEspera());
+        red.cuerpo = terminadas(1);
+        enlace.rondaQuitadas();
+        assertTrue(vivo.terminada(1000));
+        assertFalse(vivo.jugando(100));
+    }
+
+    @Test void laVivaMasDe90MinDespuesDelMatchRemovedSaleSinDarlaPorTerminada() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(1000, Duration.ofMinutes(10), false) + "]}";
+        marcarSolos(1);
+        enlace.procesarEventosSocket(quitadas(1), Set.of());
+        long inicio = reloj.ahora;
+        reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
+        while (vivo.jugando(100) && reloj.ahora - inicio < 3 * 3_600_000L) { enlace.rondaQuitadas(); if (vivo.jugando(100)) reloj.avanzar(ultimaEspera()); }
+        assertFalse(vivo.jugando(100), "no se queda «jugando» para siempre");
+        assertFalse(vivo.terminada(1000), "no se apunta terminada: la API decía que no; un barrido puede volver a marcarlo");
+        assertEquals(96L, (reloj.ahora - inicio) / 60_000, "3, 6, 12, 24… la primera mirada tras los 90 min");
+        assertEquals(10, red.llamadas, "antes: una cada 3 min (32 en esos 96 min, y seguía hasta las 3 h)");
+        assertEquals(List.of("liveEvento:100:true", "avisarTrasCambio"), vistas.avisos);
+        assertNull(vistas.partidasLive.get(0), "a Live now sin partida de la API, como un sin datos");
+    }
+
     // ===== 1.4: las partidas nuevas (A8) también se confirman en lote, con un conjunto «en vuelo» =====
 
     /** Espera (con tope) a que el hilo «socket-confirmar» termine: su último aviso es avisarTrasCambio. */

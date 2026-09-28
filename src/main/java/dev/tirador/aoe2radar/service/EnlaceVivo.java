@@ -238,12 +238,22 @@ public final class EnlaceVivo {
      *  turno. Es un presupuesto de esta función, no el freno global (ese sigue solo en api.Throttle/ApiClient); con
      *  6 lotes de 25, más de 150 jugadores quitados en un minuto se confirman al ritmo de 150 por minuto. */
     static final int TOPE_POR_MINUTO = 6;
+    /** Si la API sigue viendo en curso una partida quitada, se vuelve a mirar cada vez más tarde: 3, 6 y luego cada
+     *  12 min (antes, cada 3 min). A cambio, un final real puede tardar hasta 12 min en verse (el resync de la
+     *  watchlist, cada 10 min con socket, puede adelantarlo). */
+    static long esperaViva(int vivas) {
+        return vivas <= 1 ? ESPERA_QUITADA_MS : vivas == 2 ? 2 * ESPERA_QUITADA_MS : 4 * ESPERA_QUITADA_MS;
+    }
+    /** Tope total del bucle VIVA desde el matchRemoved: pasado, si la API aún la ve en curso, salen sus jugadores SIN
+     *  apuntarla como terminada (como tras un SIN_DATOS: un barrido puede volver a marcarlos si de verdad sigue). */
+    static final long TOPE_VIVA_MS = 90 * 60_000;
 
     /** Partidas quitadas con una comprobación pendiente: un matchRemoved repetido no lanza otra llamada. */
     private final Set<Long> quitadasEnVuelo = ConcurrentHashMap.newKeySet();
 
-    /** Una quitada esperando su comprobación: el intento (1 o 2, ver resolverQuitada) y cuándo vence la espera. */
-    private record Pendiente(int intento, long venceMs) { }
+    /** Una quitada esperando su comprobación: el intento (1 o 2, ver resolverQuitada), cuántas veces la vio VIVA la
+     *  API, cuándo llegó el matchRemoved (para TOPE_VIVA_MS) y cuándo vence la espera. */
+    private record Pendiente(int intento, int vivas, long desdeMs, long venceMs) { }
 
     // Estado del lote, bajo el monitor de pendientes: las quitadas que esperan (en orden de llegada), si hay una
     // ronda programada en el Planificador O EN CURSO (una sola a la vez: se apaga al final de la ronda, en reprogramar,
@@ -253,17 +263,17 @@ public final class EnlaceVivo {
     private boolean rondaProgramada;
     private final ArrayDeque<Long> llamadasRecientes = new ArrayDeque<>();
 
-    /** Apunta la partida para que se compruebe dentro de 3 min (sin programar nada: lo hace quien llama). */
-    private void apuntarQuitada(long matchId, int intento) {
-        synchronized (pendientes) { pendientes.put(matchId, new Pendiente(intento, relojCola.ahoraMs() + ESPERA_QUITADA_MS)); }
+    /** Apunta la partida para que se compruebe dentro de esperaMs (sin programar nada: lo hace quien llama). */
+    private void apuntarQuitada(long matchId, int intento, int vivas, long desdeMs, long esperaMs) {
+        synchronized (pendientes) { pendientes.put(matchId, new Pendiente(intento, vivas, desdeMs, relojCola.ahoraMs() + esperaMs)); }
     }
 
     /** Un matchRemoved nuevo: la apunta y programa una ronda si no la hay ya. Las quitadas que llegan juntas se
      *  comprueban juntas, en una llamada por lote de hasta 25 jugadores. */
-    private void programarQuitada(long matchId, int intento) {
+    private void programarQuitada(long matchId) {
         boolean programar;
         synchronized (pendientes) {
-            apuntarQuitada(matchId, intento);
+            apuntarQuitada(matchId, 1, 0, relojCola.ahoraMs(), ESPERA_QUITADA_MS);
             programar = !rondaProgramada;
             rondaProgramada = true;
         }
@@ -334,18 +344,20 @@ public final class EnlaceVivo {
 
     /** Vuelve a la cola, ya vencida, una quitada que el tope del minuto no dejó comprobar: va en la próxima ronda. */
     private void devolver(Caso caso) {
-        synchronized (pendientes) { pendientes.put(caso.matchId(), new Pendiente(caso.intento(), relojCola.ahoraMs())); }
+        synchronized (pendientes) { long ahora = relojCola.ahoraMs(); pendientes.put(caso.matchId(), new Pendiente(caso.intento(), caso.vivas(), caso.desdeMs(), ahora)); }
     }
 
     /** Una quitada lista para preguntar: los que solo tiene Live now (los marcados se leen al resolver), por quién se
      *  pregunta y cuándo empezó (la que guardó EstadoVivo; null si no se sabe), para LiveService.ausenteSegura. */
-    private record Caso(long matchId, int intento, List<Long> soloLive, long pid, Instant started) { }
+    private record Caso(long matchId, int intento, int vivas, long desdeMs, List<Long> soloLive, long pid, Instant started) { }
 
     /** Una sola quitada, sin esperar a la ronda. Solo la usan los tests: el mismo camino que un lote de un solo jugador. */
     void comprobarQuitada(long matchId, int intento) {
-        synchronized (pendientes) { pendientes.remove(matchId); }
+        Pendiente antes;
+        synchronized (pendientes) { antes = pendientes.remove(matchId); }
+        long ahora = relojCola.ahoraMs();
         Map<Long, Pendiente> una = new LinkedHashMap<>();
-        una.put(matchId, new Pendiente(intento, relojCola.ahoraMs()));
+        una.put(matchId, antes != null ? new Pendiente(intento, antes.vivas(), antes.desdeMs(), ahora) : new Pendiente(intento, 0, ahora, ahora));
         try { comprobarQuitadas(una); }
         finally { reprogramar(false); }
     }
@@ -373,7 +385,7 @@ public final class EnlaceVivo {
                     long pid = !pids.isEmpty() ? pids.get(0) : soloLive.get(0);
                     Match guardada = !pids.isEmpty() ? vivo.partida(pid) : null;
                     Instant started = guardada != null && guardada.id == matchId ? guardada.started : null;
-                    porPid.computeIfAbsent(pid, k -> new ArrayList<>()).add(new Caso(matchId, e.getValue().intento(), soloLive, pid, started));
+                    porPid.computeIfAbsent(pid, k -> new ArrayList<>()).add(new Caso(matchId, e.getValue().intento(), e.getValue().vivas(), e.getValue().desdeMs(), soloLive, pid, started));
                 } catch (RuntimeException ex) { log("socket: fallo al preparar la partida quitada " + matchId + ": " + causa(ex)); }
             }
             List<Long> todos = new ArrayList<>(porPid.keySet());
@@ -410,9 +422,9 @@ public final class EnlaceVivo {
 
     /**
      * ¿Terminó de verdad la partida quitada? (decisión de Jorge: solo cuenta «terminada»). TERMINADA: salen sus
-     * jugadores y se apunta como terminada. VIVA: el aviso era falso; se vuelve a mirar cada 3 min (tras un
-     * matchRemoved el companion ya no manda más de esa partida), con el tope natural de enCursoReal: pasadas 3 h
-     * desde started, la API la da por TERMINADA. SIN_DATOS (la API no la tiene o falló): un reintento; si sigue sin
+     * jugadores y se apunta como terminada. VIVA: el aviso era falso; se vuelve a mirar a los 3, 6 y luego cada 12 min
+     * (esperaViva; tras un matchRemoved el companion ya no manda más de esa partida); pasados TOPE_VIVA_MS (90 min)
+     * desde el matchRemoved, salen sus jugadores sin apuntarla como terminada (como un SIN_DATOS final). SIN_DATOS (la API no la tiene o falló): un reintento; si sigue sin
      * datos, salen SIN apuntarla como terminada (un fallo de red no puede bloquearla 3 h; un barrido puede volver a
      * marcarlos), para que nadie se quede «jugando» para siempre: los que solo vigila Live now no tienen otro
      * barrido que los saque. Sin red (el veredicto ya llegó); true si salió alguien marcado (hay que avisar).
@@ -423,17 +435,27 @@ public final class EnlaceVivo {
         boolean sigue = false;
         try {
             if (comp.error() != null) log("socket: no se pudo comprobar la partida quitada " + matchId + ": " + causa(comp.error()));
+            boolean vivaDemasiado = false;
             if (comp.veredicto() == LiveService.Veredicto.VIVA) {
-                log("socket: matchRemoved de la partida " + matchId + ", pero la API la ve en curso: se mantiene y se mira en 3 min");
-                apuntarQuitada(matchId, intento);   // la ronda la vuelve a programar al terminar
-                sigue = true;
-                return false;
+                if (relojCola.ahoraMs() - caso.desdeMs() >= TOPE_VIVA_MS) {
+                    vivaDemasiado = true;   // sale como un SIN_DATOS final: sin apuntarla como terminada
+                } else {
+                    int vivas = caso.vivas() + 1;
+                    long espera = esperaViva(vivas);
+                    log("socket: matchRemoved de la partida " + matchId + ", pero la API la ve en curso: se mantiene y se mira en " + espera / 60_000 + " min");
+                    apuntarQuitada(matchId, intento, vivas, caso.desdeMs(), espera);   // la ronda la vuelve a programar al terminar
+                    sigue = true;
+                    return false;
+                }
             }
             List<Long> fuera;
-            if (comp.veredicto() == LiveService.Veredicto.SIN_DATOS) {
+            if (vivaDemasiado) {
+                log("socket: la partida " + matchId + " sigue en curso según la API " + TOPE_VIVA_MS / 60_000 + " min después del matchRemoved: salen sus jugadores, sin darla por terminada");
+                fuera = vivo.sacarDePartida(matchId);
+            } else if (comp.veredicto() == LiveService.Veredicto.SIN_DATOS) {
                 if (intento < 2) {
                     log("socket: matchRemoved de la partida " + matchId + " sin datos de la API: se reintenta en 3 min");
-                    apuntarQuitada(matchId, intento + 1);
+                    apuntarQuitada(matchId, intento + 1, caso.vivas(), caso.desdeMs(), ESPERA_QUITADA_MS);
                     sigue = true;
                     return false;
                 }
@@ -445,7 +467,7 @@ public final class EnlaceVivo {
             boolean cambio = false;
             // TERMINADA: la partida que devolvió la API, con su hora de fin (si no, Live now pintaba «hace 0 min» hasta
             // que caducaba a las 2 h). Sin datos: null, como antes (Live now usa la que guardó al empezar). Revisión 1.3, F5.
-            Match fin = comp.veredicto() == LiveService.Veredicto.TERMINADA ? comp.partida() : null;
+            Match fin = comp.veredicto() == LiveService.Veredicto.TERMINADA ? comp.partida() : null;   // VIVA pasado el tope: null, como sin datos
             // con el matchId: si en el hueco el socket lo metió en otra partida, Live now no la suelta (menor del revisor)
             for (long pid : fuera) { vistas.liveTerminada(pid, matchId, fin); cambio = true; }
             for (long pid : caso.soloLive()) vistas.liveTerminada(pid, matchId, fin);   // F1: solo Live now los tenía (sin repetir: se quitaron los marcados arriba)
@@ -472,7 +494,7 @@ public final class EnlaceVivo {
                 // se quedaba «en partida» para siempre con el socket vivo (revisión 1.3, F1).
                 // Y si está por confirmar o en vuelo (aún nadie marcado): se programa igual; a los 3 min ya se habrá aplicado.
                 if ((!vivo.jugadoresDe(q.matchId()).isEmpty() || !vistas.jugadoresLiveNow(q.matchId()).isEmpty() || enConfirmacion(q.matchId())) && quitadasEnVuelo.add(q.matchId())) {
-                    try { programarQuitada(q.matchId(), 1); }
+                    try { programarQuitada(q.matchId()); }
                     catch (RuntimeException ex) { quitadasEnVuelo.remove(q.matchId()); throw ex; }
                 }
                 continue;
