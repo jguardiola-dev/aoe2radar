@@ -72,20 +72,28 @@ public final class EnlaceVivo {
     private final LiveService live;
     private final Vistas vistas;
     private final SocketVivo.Planificador planificador;
-    private final Reloj reloj;
+    /** El reloj de la cola de quitadas (esperas y tope por minuto): en la app, Reloj.MONOTONO, que no salta si
+     *  Windows cambia la hora; en los tests, el RelojFalso. El socket sigue con el suyo (hora del sistema). */
+    private final Reloj relojCola;
 
     public EnlaceVivo(EstadoVivo vivo, LiveService live, Vistas vistas) {
-        this(vivo, live, vistas, SocketVivo.HTTP, Reloj.SISTEMA, SocketVivo.planificadorSistema());
+        this(vivo, live, vistas, SocketVivo.HTTP, Reloj.SISTEMA, Reloj.MONOTONO, SocketVivo.planificadorSistema());
     }
 
-    /** Visible para tests: permite pasar un Conector/Reloj/Planificador falsos, sin red ni hilos reales. */
+    /** Visible para tests: permite pasar un Conector/Reloj/Planificador falsos, sin red ni hilos reales (el mismo
+     *  reloj para el socket y para la cola). */
     EnlaceVivo(EstadoVivo vivo, LiveService live, Vistas vistas,
                SocketVivo.Conector conector, Reloj reloj, SocketVivo.Planificador planificador) {
+        this(vivo, live, vistas, conector, reloj, reloj, planificador);
+    }
+
+    private EnlaceVivo(EstadoVivo vivo, LiveService live, Vistas vistas,
+                       SocketVivo.Conector conector, Reloj reloj, Reloj relojCola, SocketVivo.Planificador planificador) {
         this.vivo = vivo;
         this.live = live;
         this.vistas = vistas;
         this.planificador = planificador;
-        this.reloj = reloj;
+        this.relojCola = relojCola;
         this.socketVivo = new SocketVivo(conector, new SocketVivo.Oyente() {
             @Override public void conectado(boolean trasCaida) { if (trasCaida) vistas.refrescarLiveNowSiAbierta(); }   // tras una caída, un barrido para reparar el estado
             @Override public void eventos(List<SocketVivo.Evento> eventos, Set<Long> ids) { procesarEventosSocket(eventos, ids); }
@@ -151,7 +159,7 @@ public final class EnlaceVivo {
 
     /** Apunta la partida para que se compruebe dentro de 3 min (sin programar nada: lo hace quien llama). */
     private void apuntarQuitada(long matchId, int intento) {
-        synchronized (pendientes) { pendientes.put(matchId, new Pendiente(intento, reloj.ahoraMs() + ESPERA_QUITADA_MS)); }
+        synchronized (pendientes) { pendientes.put(matchId, new Pendiente(intento, relojCola.ahoraMs() + ESPERA_QUITADA_MS)); }
     }
 
     /** Un matchRemoved nuevo: la apunta y programa una ronda si no la hay ya. Las quitadas que llegan juntas se
@@ -182,7 +190,7 @@ public final class EnlaceVivo {
     void rondaQuitadas() {
         Map<Long, Pendiente> tanda = new LinkedHashMap<>();
         synchronized (pendientes) {
-            long ahora = reloj.ahoraMs();
+            long ahora = relojCola.ahoraMs();
             for (Iterator<Map.Entry<Long, Pendiente>> it = pendientes.entrySet().iterator(); it.hasNext(); ) {
                 Map.Entry<Long, Pendiente> e = it.next();
                 if (e.getValue().venceMs() <= ahora) { tanda.put(e.getKey(), e.getValue()); it.remove(); }
@@ -200,7 +208,7 @@ public final class EnlaceVivo {
         synchronized (pendientes) {
             if (finRonda) rondaProgramada = false;
             if (pendientes.isEmpty() || rondaProgramada) return;
-            long ahora = reloj.ahoraMs(), vence = Long.MAX_VALUE;
+            long ahora = relojCola.ahoraMs(), vence = Long.MAX_VALUE;
             for (Pendiente p : pendientes.values()) vence = Math.min(vence, p.venceMs());
             ms = Math.max(Math.max(vence - ahora, esperaTope(ahora)), 1_000);
             rondaProgramada = true;
@@ -221,7 +229,7 @@ public final class EnlaceVivo {
     /** Reserva una llamada dentro del tope del minuto; false si ya se hicieron TOPE_POR_MINUTO. */
     private boolean reservarLlamada() {
         synchronized (pendientes) {
-            long ahora = reloj.ahoraMs();
+            long ahora = relojCola.ahoraMs();
             if (esperaTope(ahora) > 0) return false;
             llamadasRecientes.addLast(ahora);
             return true;
@@ -230,7 +238,7 @@ public final class EnlaceVivo {
 
     /** Vuelve a la cola, ya vencida, una quitada que el tope del minuto no dejó comprobar: va en la próxima ronda. */
     private void devolver(Caso caso) {
-        synchronized (pendientes) { pendientes.put(caso.matchId(), new Pendiente(caso.intento(), reloj.ahoraMs())); }
+        synchronized (pendientes) { pendientes.put(caso.matchId(), new Pendiente(caso.intento(), relojCola.ahoraMs())); }
     }
 
     /** Una quitada lista para preguntar: los que solo tiene Live now (los marcados se leen al resolver) y por quién se pregunta. */
@@ -240,7 +248,7 @@ public final class EnlaceVivo {
     void comprobarQuitada(long matchId, int intento) {
         synchronized (pendientes) { pendientes.remove(matchId); }
         Map<Long, Pendiente> una = new LinkedHashMap<>();
-        una.put(matchId, new Pendiente(intento, reloj.ahoraMs()));
+        una.put(matchId, new Pendiente(intento, relojCola.ahoraMs()));
         try { comprobarQuitadas(una); }
         finally { reprogramar(false); }
     }
