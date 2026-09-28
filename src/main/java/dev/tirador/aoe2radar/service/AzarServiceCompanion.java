@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -63,6 +64,8 @@ public final class AzarServiceCompanion implements AzarService {
     private final CompanionApi companion;
     private final Function<String, String> claveCivDeNombre;
     private final Supplier<Map<String, List<List<Object>>>> muestraAyer;
+    private final Supplier<Map<String, List<List<Object>>>> muestraAnteayer;   // null dentro si el archivo no la trae (anterior a la 1.4)
+    private final Supplier<List<long[]>> ladderNocturno;                       // LadderNocturno.de(...); null → leaderboard en vivo
     private final LongConsumer dormir;
     private final int perPage;
     private final long pausaMs;
@@ -83,9 +86,26 @@ public final class AzarServiceCompanion implements AzarService {
     public AzarServiceCompanion(CompanionApi companion, Function<String, String> claveCivDeNombre,
                                  Supplier<Map<String, List<List<Object>>>> muestraAyer,
                                  LongConsumer dormir, int perPage, long pausaMs) {
+        this(companion, claveCivDeNombre, muestraAyer, () -> null, () -> null, dormir, perPage, pausaMs);
+    }
+
+    /**
+     * 1.4, «nocturno primero» también para el tramo: muestraAnteayer (MuestraNocturna.anteayer) completa la muestra de ayer
+     * (en «Al azar», solo con una ventana de 48 h o más y si ayer no da 10; en «Guess the ELO», cuando ayer ya está vista) y
+     * ladderNocturno (LadderNocturno.de sobre el ELO de anoche) sustituye a las páginas del leaderboard en vivo: la
+     * bisección y el muestreo de perfiles corren igual, pero sobre páginas de 100 ya en memoria (cero llamadas al
+     * leaderboard). Si alguno devuelve null (datos anteriores a la 1.4), todo sigue como antes.
+     */
+    public AzarServiceCompanion(CompanionApi companion, Function<String, String> claveCivDeNombre,
+                                 Supplier<Map<String, List<List<Object>>>> muestraAyer,
+                                 Supplier<Map<String, List<List<Object>>>> muestraAnteayer,
+                                 Supplier<List<long[]>> ladderNocturno,
+                                 LongConsumer dormir, int perPage, long pausaMs) {
         this.companion = companion;
         this.claveCivDeNombre = claveCivDeNombre;
         this.muestraAyer = muestraAyer;
+        this.muestraAnteayer = muestraAnteayer;
+        this.ladderNocturno = ladderNocturno;
         this.dormir = dormir;
         this.perPage = perPage;
         this.pausaMs = pausaMs;
@@ -98,7 +118,9 @@ public final class AzarServiceCompanion implements AzarService {
         Random rnd = new Random();
         azarDeMuestra = false;
         if (hours >= 24) {   // la muestra nocturna cubre «ayer»: si da para una tanda, cero llamadas
-            List<Match> deMuestra = azarDesdeMuestra(lo, hi, mapaSel, civSel, rnd);
+            List<Match> deMuestra = azarDesdeMuestra(muestraAyer.get(), lo, hi, mapaSel, civSel, rnd, 10);
+            if (hours >= 48 && deMuestra.size() < 10)   // la ventana cubre anteayer: se completa con su muestra (1.4)
+                deMuestra.addAll(azarDesdeMuestra(muestraAnteayer.get(), lo, hi, mapaSel, civSel, rnd, 10 - deMuestra.size()));
             if (deMuestra.size() >= 5) { for (Match m : deMuestra) { m.azar = true; AzarService.ajustarRefAzar(m, civSel); } azarDeMuestra = true; return deMuestra; }
         }
         long ahora = System.currentTimeMillis();
@@ -109,7 +131,7 @@ public final class AzarServiceCompanion implements AzarService {
         // Caché de sesión: contexto del ladder reutilizable y TTL de perfiles.
         if (ctxAzar == null || !firmaRango.equals(firmaRangoAzar)
                 || ahora - ctxAzarNacido > 10 * 60_000L) {
-            ctxAzar = new LbCtx();
+            ctxAzar = nuevoCtx();
             ctxAzarNacido = ahora;
             firmaRangoAzar = firmaRango;
             pagsAzar = null;
@@ -202,7 +224,11 @@ public final class AzarServiceCompanion implements AzarService {
                 for (int i = 0; i < nPags; i++) {
                     int pag = pagsAzar.get((cursorPagsAzar + i) % pagsAzar.size());
                     progreso.accept(t("Muestreando el ladder\u2026 (", "Sampling the ladder\u2026 (") + (i + 1) + "/" + nPags + ")");
-                    lb.addAll(lbPagina(ctxAzar, pag).jugadores());
+                    for (long[] j : lbPagina(ctxAzar, pag).jugadores())
+                        // ladder de anoche: su «última partida» es anterior al volcado, así que «antes del corte» no quiere
+                        // decir inactivo (pudo jugar hoy): cuenta como desconocida (0), igual que sin fecha. Solo aquí, nunca
+                        // en las páginas en caché, que se comparten entre tiradas con otra ventana de horas.
+                        lb.add(ctxAzar.nocturno && j.length > 2 && j[2] < cutoff.toEpochMilli() ? new long[]{ j[0], j[1], 0L } : j);
                 }
                 cursorPagsAzar += nPags;
                 ratingsLb.clear();
@@ -259,7 +285,7 @@ public final class AzarServiceCompanion implements AzarService {
         Random rnd = new Random();
         List<Match> deMuestra = gteDesdeMuestra(rnd);   // la muestra nocturna de sfr-data: cero llamadas y nunca una partida repetida
         if (!deMuestra.isEmpty()) return deMuestra;
-        LbCtx ctx = new LbCtx();
+        LbCtx ctx = nuevoCtx();
         int ult = ultimaPaginaLadder(ctx);
         int[][] tramos = tramosGte(ult);
         int[] franjas = franjasAleatorias(5, tramos.length, rnd);   // dado independiente por partida
@@ -347,12 +373,18 @@ public final class AzarServiceCompanion implements AzarService {
     /** Guess the ELO desde la muestra de ayer: 5 partidas 1v1 de tramos distintos, nunca una ya vista (los ids vistos se guardan en config). Vacío si no hay muestra. */
     private List<Match> gteDesdeMuestra(Random rnd) {
         Map<String, List<List<Object>>> muestra = muestraAyer.get();
-        if (muestra == null || muestra.isEmpty()) return List.of();
+        Map<String, List<List<Object>>> ant = muestraAnteayer.get();   // 1.4: si la de ayer ya está vista, la de anteayer
+        boolean hayAyer = muestra != null && !muestra.isEmpty(), hayAnt = ant != null && !ant.isEmpty();
+        if (!hayAyer && !hayAnt) return List.of();
+        if (!hayAyer) muestra = Map.of();
         Set<String> vistas = new HashSet<>(Arrays.asList(leerConfig("gte_vistas", "").split(",")));
-        List<String> tramos = new ArrayList<>(muestra.keySet()); Collections.shuffle(tramos, rnd);
+        Set<String> claves = new LinkedHashSet<>(muestra.keySet());
+        if (hayAnt) claves.addAll(ant.keySet());
+        List<String> tramos = new ArrayList<>(claves); Collections.shuffle(tramos, rnd);
         List<Match> res = new ArrayList<>();
         for (String tr : tramos) {
-            List<List<Object>> l = new ArrayList<>(muestra.get(tr)); Collections.shuffle(l, rnd);
+            List<List<Object>> l = new ArrayList<>(muestra.getOrDefault(tr, List.of())); Collections.shuffle(l, rnd);
+            if (hayAnt && ant.containsKey(tr)) { List<List<Object>> la = new ArrayList<>(ant.get(tr)); Collections.shuffle(la, rnd); l.addAll(la); }   // ayer primero
             for (List<Object> f : l) { if (vistas.contains(String.valueOf(lng(f.get(0))))) continue; res.add(matchDeMuestra(f)); break; }
             if (res.size() >= 5) break;
         }
@@ -365,9 +397,8 @@ public final class AzarServiceCompanion implements AzarService {
     }
 
     /** Al azar por ELO desde la muestra de ayer: partidas cuyo ELO medio cae en [lo, hi], con filtros de mapa y civ, sin repetir las ya enseñadas. */
-    private List<Match> azarDesdeMuestra(int lo, int hi, String mapaSel, String civSel, Random rnd) {
-        Map<String, List<List<Object>>> muestra = muestraAyer.get();
-        if (muestra == null) return List.of();
+    private List<Match> azarDesdeMuestra(Map<String, List<List<Object>>> muestra, int lo, int hi, String mapaSel, String civSel, Random rnd, int max) {
+        if (muestra == null) return new ArrayList<>();
         List<Match> cand = new ArrayList<>();
         for (List<List<Object>> l : muestra.values()) for (List<Object> f : l) {
             Match m = matchDeMuestra(f);
@@ -380,7 +411,7 @@ public final class AzarServiceCompanion implements AzarService {
             cand.add(m);
         }
         Collections.shuffle(cand, rnd);
-        List<Match> out = new ArrayList<>(cand.subList(0, Math.min(10, cand.size())));
+        List<Match> out = new ArrayList<>(cand.subList(0, Math.min(max, cand.size())));
         for (Match m : out) azarEnsenadas.add(m.id);
         return out;
     }
@@ -389,6 +420,7 @@ public final class AzarServiceCompanion implements AzarService {
     private PaginaLb lbPagina(LbCtx ctx, int p) throws IOException, InterruptedException {
         PaginaLb enCache = ctx.cache.get(p);
         if (enCache != null) return enCache;
+        if (ctx.nocturno) return new PaginaLb(List.of(), -1, -1);   // fuera del ladder nocturno: vacía, nunca al companion
         Clasificacion root = null;
         List<FilaClasificacion> players = List.of();
         if (ctx.id == null) {
@@ -432,6 +464,30 @@ public final class AzarServiceCompanion implements AzarService {
         return pag;
     }
 
+    /**
+     * Contexto nuevo del leaderboard: con el ladder nocturno (1.4), todas sus páginas de 100 ya en caché, sin llamadas;
+     * sin él (datos anteriores a la 1.4 o sin cargar), vacío como siempre y las páginas se piden al companion.
+     */
+    private LbCtx nuevoCtx() {
+        LbCtx ctx = new LbCtx();
+        List<long[]> noct;
+        try { noct = ladderNocturno.get(); }
+        catch (RuntimeException ex) { log("azar: ladder nocturno: " + causa(ex)); noct = null; }
+        if (noct == null || noct.isEmpty()) return ctx;
+        ctx.nocturno = true;
+        ctx.id = "nocturno";
+        int n = noct.size();
+        ctx.totalPaginas = (n + 99) / 100;
+        for (int p = 1; p <= ctx.totalPaginas; p++) {
+            List<long[]> js = new ArrayList<>(noct.subList((p - 1) * 100, Math.min(n, p * 100)));
+            int max = -1, min = -1;
+            for (long[] j : js) { int r = (int) j[1]; max = max < 0 ? r : Math.max(max, r); min = min < 0 ? r : Math.min(min, r); }
+            ctx.cache.put(p, new PaginaLb(js, max, min));
+        }
+        log("azar: ladder nocturno de sfr-data: " + n + " jugadores en " + ctx.totalPaginas + " páginas (sin llamadas al leaderboard)");
+        return ctx;
+    }
+
     /** Número de páginas del ladder: del campo total si viene; si no, sondeo
      *  exponencial hasta encontrar una página vacía. */
     private int ultimaPaginaLadder(LbCtx ctx) throws IOException, InterruptedException {
@@ -446,6 +502,7 @@ public final class AzarServiceCompanion implements AzarService {
      *  (rm_1v1 o 3), total de páginas y caché por página para que la
      *  búsqueda binaria no repita peticiones. */
     private static final class LbCtx {
+        boolean nocturno;   // páginas del ladder de anoche (sfr-data), ya todas en cache
         String id;
         int totalPaginas = -1;
         final Map<Integer, PaginaLb> cache = new HashMap<>();
