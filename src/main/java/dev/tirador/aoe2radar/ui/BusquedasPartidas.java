@@ -329,7 +329,7 @@ final class BusquedasPartidas {
                     if (r.detenida()) log("buscar #" + miSerial + ": detenida; " + r.lista().size() + " partidas de "
                             + r.recorridos() + "/" + tracked.size() + " jugadores, se muestran como parciales");
                     if (PartidasPresenter.conservaTablaAnterior(r)) {   // nada leído: la tabla anterior se queda
-                        vista.anfitrion.estado(PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size()));
+                        vista.anfitrion.estado(PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size(), r.fallos()));
                         return;
                     }
                     List<Match> res = r.lista();
@@ -349,7 +349,7 @@ final class BusquedasPartidas {
                     vista.refreshModeCombo();
                     vista.applyFilters();
                     vista.anfitrion.estado(r.detenida()
-                            ? PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size())
+                            ? PartidasPresenter.mensajeBusquedaDetenida(r.recorridos(), tracked.size(), r.fallos())
                             : PartidasPresenter.mensajeBusqueda(vista.view.size(), vista.all.size(), hours, topeAlcanzado, fallosFetch));
                 } catch (Exception ex) {
                     vista.anfitrion.estado("Error: " + causa(ex));

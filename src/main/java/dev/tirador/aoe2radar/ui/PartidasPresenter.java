@@ -285,10 +285,12 @@ public final class PartidasPresenter {
     }
 
     /** «Buscar partidas» detenida (decisión de Jorge, 1.3): lo leído hasta el corte se muestra, avisando de que es
-     *  parcial y de cuántos jugadores (de los buscados) se recorrieron enteros. */
-    public static String mensajeBusquedaDetenida(int recorridos, int buscados) {
+     *  parcial, de cuántos jugadores (de los buscados) se recorrieron enteros y, si alguno falló antes del corte,
+     *  de cuántos. */
+    public static String mensajeBusquedaDetenida(int recorridos, int buscados, int fallos) {
         return t("Búsqueda detenida: resultados parciales (", "Search stopped: partial results (") + recorridos
-                + t(" de ", " of ") + buscados + t(" jugadores)", " players)");
+                + t(" de ", " of ") + buscados + t(" jugadores", " players")
+                + (fallos > 0 ? ", " + fallos + t(" con error", " failed") : "") + ")";
     }
 
     /** Una «Buscar partidas» detenida sin haber leído ninguna partida: la tabla anterior se conserva (como hace

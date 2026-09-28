@@ -820,4 +820,25 @@ class PartidasViewTest {
             assertEquals("Búsqueda detenida: resultados parciales (0 de 2 jugadores)", anfitrion.estado);
         });
     }
+
+    @Test void botonBuscar_detenidaTrasUnFallo_loDiceEnElAviso() throws Exception {
+        enlace.jugadores.addAll(List.of(A, B, C));
+        CountDownLatch enB = new CountDownLatch(1), soltarB = new CountDownLatch(1);
+        Instant fin = Instant.now().minusSeconds(600);
+        anfitrion.paginador = (pid, pag, pp) -> {
+            if (pid == A.id()) throw new java.io.IOException("HTTP 500");   // A falla antes del corte
+            if (pid == B.id()) { enB.countDown(); soltarB.await(60, TimeUnit.SECONDS); }
+            return List.of(partida(pid, pid == B.id() ? B : C, fin));
+        };
+        try {
+            enEdt(() -> vista.fetchBtn.doClick());
+            assertTrue(enB.await(5, TimeUnit.SECONDS));
+            enEdt(() -> vista.fetchBtn.doClick());
+            esperar(() -> vista.fetchWorker == null, "que la búsqueda termine");
+            asentar();
+        } finally {
+            soltarB.countDown();
+        }
+        assertEquals("Búsqueda detenida: resultados parciales (1 de 3 jugadores, 1 con error)", anfitrion.estado);
+    }
 }

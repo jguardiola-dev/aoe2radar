@@ -390,9 +390,11 @@ class PartidasPresenterTest {
     }
 
     @Test void mensajeBusquedaDetenida_resultadosParcialesEnLosDosIdiomas() {
-        assertEquals("Búsqueda detenida: resultados parciales (2 de 5 jugadores)", PartidasPresenter.mensajeBusquedaDetenida(2, 5));
+        assertEquals("Búsqueda detenida: resultados parciales (2 de 5 jugadores)", PartidasPresenter.mensajeBusquedaDetenida(2, 5, 0));
+        assertEquals("Búsqueda detenida: resultados parciales (3 de 5 jugadores, 1 con error)", PartidasPresenter.mensajeBusquedaDetenida(3, 5, 1));
         IDIOMA = "en";
-        assertEquals("Search stopped: partial results (2 of 5 players)", PartidasPresenter.mensajeBusquedaDetenida(2, 5));
+        assertEquals("Search stopped: partial results (2 of 5 players)", PartidasPresenter.mensajeBusquedaDetenida(2, 5, 0));
+        assertEquals("Search stopped: partial results (3 of 5 players, 1 failed)", PartidasPresenter.mensajeBusquedaDetenida(3, 5, 1));
     }
 
     @Test void mensajeAzar_deLaMuestraNocturna_avisaDeQueSonPartidasDeAyer() {
