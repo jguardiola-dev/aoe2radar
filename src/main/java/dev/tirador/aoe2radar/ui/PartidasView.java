@@ -545,7 +545,10 @@ public final class PartidasView {
     /** «✓ en disco» / «✓✓ en juego» de cada fila terminada: antes eran dos Files.exists por partida en el EDT (hasta
      *  1.200 con el tope de 600) más leer config.properties; ahora se miran en un hilo de fondo y las filas se
      *  repintan al llegar (sin tocar la selección). Lo que se pinta al final es lo mismo que antes; en el primer
-     *  instante, las filas nuevas enseñan su «N POV»/«¿?» hasta que llega la respuesta del disco (revisión 1.3). */
+     *  instante, las filas nuevas enseñan su «N POV»/«¿?» hasta que llega la respuesta del disco (revisión 1.3).
+     *  Desde la 1.4, «en disco» es RecService.recSana (lee solo la cabecera, 5000 B), la misma regla con la que la
+     *  descarga decide reutilizar el archivo: una rec corrupta o truncada ya no enseña «✓ en disco» ni «Enviar al
+     *  juego». «En juego» sigue siendo Files.exists: al savegame solo se copia una rec sana. */
     void marcarEnDiscoEnFondo(List<Match> terminadas) {
         if (terminadas.isEmpty()) return;
         final long gen = ++generacionEnDisco;
@@ -557,7 +560,7 @@ public final class PartidasView {
                 boolean[][] marcas = new boolean[filas.size()][2];
                 for (int i = 0; i < filas.size(); i++) {
                     Path destino = anfitrion.destino(filas.get(i));
-                    marcas[i][0] = Files.exists(destino);
+                    marcas[i][0] = RecService.recSana(destino);   // sana, no solo presente: una rec corrupta no ofrece «Enviar al juego»
                     marcas[i][1] = sgConocida != null && Files.exists(sgConocida.resolve(destino.getFileName().toString()));
                 }
                 return marcas;

@@ -542,7 +542,7 @@ class PartidasViewTest {
     @Test void applyFilters_miraElDiscoFueraDelEdtYAcabaPintandoLoMismo() throws Exception {
         Match enDisco = partida(8401, A, Instant.now().minusSeconds(600));
         Match sinRec = partida(8402, A, Instant.now().minusSeconds(900));
-        java.nio.file.Files.write(recs.resolve("8401.aoe2record"), new byte[10]);
+        java.nio.file.Files.write(recs.resolve("8401.aoe2record"), new byte[6000]);   // una rec sana (RecService.recSana)
         anfitrion.destinoEnEdt.clear();
         enEdt(() -> vista.cargarPartidasEnTabla(List.of(enDisco, sinRec), A, "grupo|General"));   // llama a applyFilters
         esperar(() -> enDisco.enDisco, "que llegue la marca «en disco»");
@@ -554,6 +554,47 @@ class PartidasViewTest {
             assertEquals("✓ en disco", vista.tableModel.getValueAt(vista.view.indexOf(enDisco), 7));
             assertNotEquals("✓ en disco", vista.tableModel.getValueAt(vista.view.indexOf(sinRec), 7));
         });
+    }
+
+    /** DEUDA (applyFilters, 1.4): un archivo que está pero no es una rec sana (truncado, o la página de error que
+     *  guardó una descarga rota) no se marca «en disco», así que no ofrece «Enviar al juego» con él; la sana sí. */
+    @Test void applyFilters_unaRecCorruptaNoSeMarcaEnDisco() throws Exception {
+        Match sana = partida(8411, A, Instant.now().minusSeconds(600));
+        Match truncada = partida(8412, A, Instant.now().minusSeconds(700));
+        Match paginaDeError = partida(8413, A, Instant.now().minusSeconds(800));
+        java.nio.file.Files.write(recs.resolve("8411.aoe2record"), new byte[6000]);
+        java.nio.file.Files.write(recs.resolve("8412.aoe2record"), new byte[100]);
+        byte[] html = new byte[6000];
+        html[0] = '<';
+        java.nio.file.Files.write(recs.resolve("8413.aoe2record"), html);
+        enEdt(() -> vista.cargarPartidasEnTabla(List.of(sana, truncada, paginaDeError), A, "grupo|General"));
+        esperar(() -> sana.enDisco, "que llegue la marca «en disco» de la sana");
+        asentar();
+        assertFalse(truncada.enDisco, "truncada: no está «en disco»");
+        assertFalse(paginaDeError.enDisco, "página de error guardada como rec: no está «en disco»");
+    }
+
+    /** Lo que cuesta mirar «en disco» con recSana en vez de Files.exists: 600 recs (el tope de «Buscar partidas»)
+     *  leyendo solo su cabecera. No es un test de rendimiento con umbral (sería frágil): deja la cifra en la salida. */
+    @Test void recSana_con600Recs_leeSoloLaCabecera() throws Exception {
+        java.util.List<Path> archivos = new ArrayList<>();
+        byte[] rec = new byte[200_000];   // una rec corta de verdad pesa cientos de KB: se leen 5000 B de cada una
+        for (int i = 0; i < 600; i++) {
+            Path p = recs.resolve("medida" + i + ".aoe2record");
+            java.nio.file.Files.write(p, rec);
+            archivos.add(p);
+        }
+        long t0 = System.nanoTime();
+        int sanas = 0;
+        for (Path p : archivos) if (dev.tirador.aoe2radar.service.RecService.recSana(p)) sanas++;
+        long recSanaMs = (System.nanoTime() - t0) / 1_000_000;
+        t0 = System.nanoTime();
+        int existen = 0;
+        for (Path p : archivos) if (java.nio.file.Files.exists(p)) existen++;
+        long existsMs = (System.nanoTime() - t0) / 1_000_000;
+        System.out.println("recSana x600: " + recSanaMs + " ms; Files.exists x600: " + existsMs + " ms");
+        assertEquals(600, sanas);
+        assertEquals(600, existen);
     }
 
     // ----- textos (revisión 1.3, v13_textos.md): en inglés, nada en español fijo -----
