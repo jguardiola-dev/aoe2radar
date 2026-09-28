@@ -189,6 +189,23 @@ class SistemaTest {
         assertTrue((System.nanoTime() - t0) / 1_000_000 < 2_500, "un solo plazo de 1 s en total, no uno por paso");
     }
 
+    private static final String REG_ENTERA = "\r\nHKEY_CURRENT_USER\\...\\User Shell Folders\r\n"
+            + "    Desktop    REG_EXPAND_SZ    C:\\Users\\Jorge\\OneDrive\\Escritorio\r\n"
+            + "    {374DE290-123F-4565-9164-39C4925E467B}    REG_EXPAND_SZ    %USERPROFILE%\\Downloads\r\n"
+            + "    Personal    REG_EXPAND_SZ    C:\\Users\\Jorge\\OneDrive\\Documentos\r\n"
+            + "    My Pictures    REG_EXPAND_SZ    %USERPROFILE%\\Pictures\r\n\r\n";
+
+    @Test void carpetasDeBusquedaEscritorioDescargasYDocumentos() {
+        Map<String, String> env = Map.of("USERPROFILE", "C:\\Users\\Jorge");
+        assertEquals(java.util.List.of(Path.of("C:\\Users\\Jorge\\OneDrive\\Escritorio"),
+                        Path.of("C:\\Users\\Jorge\\Downloads"), Path.of("C:\\Users\\Jorge\\OneDrive\\Documentos")),
+                Sistema.carpetasDeBusqueda(REG_ENTERA, env::get, "C:\\Users\\Jorge", p -> true));
+        assertEquals("C:\\Users\\Jorge\\OneDrive\\Escritorio", Sistema.valorShell(REG_ENTERA, "Desktop", env::get));
+        // sin reg.exe: los respaldos de user.home, solo los que existen y sin repetir
+        assertEquals(java.util.List.of(Path.of("C:\\Users\\Jorge\\Desktop")),
+                Sistema.carpetasDeBusqueda(null, env::get, "C:\\Users\\Jorge", p -> p.endsWith("Desktop")));
+    }
+
     // ------------------------------------------------------------ relanzar
 
     @Test void soloSeRelanzaElExeDeLaApp() {

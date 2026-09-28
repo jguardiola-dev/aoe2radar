@@ -225,24 +225,56 @@ public final class Sistema {
     /** Pura: Documentos a partir de la salida de «reg query … /v Personal», con las %VARIABLES% expandidas; si no
      *  hay valor, no se puede expandir o la carpeta no existe, user.home\Documents. */
     static Path documentos(String salidaReg, Function<String, String> entorno, String userHome, Predicate<Path> existe) {
-        String valor = valorPersonal(salidaReg, entorno);
+        return carpetaShell(salidaReg, "Personal", "Documents", entorno, userHome, existe);
+    }
+
+    /** Pura: una carpeta del shell (valor «nombre» de User Shell Folders, expandido) si es absoluta y existe; si no,
+     *  user.home\respaldo. */
+    static Path carpetaShell(String salidaReg, String nombre, String respaldo, Function<String, String> entorno,
+                             String userHome, Predicate<Path> existe) {
+        String valor = valorShell(salidaReg, nombre, entorno);
         if (valor != null) {
             try {
                 Path p = Path.of(valor);
                 if (p.isAbsolute() && existe.test(p)) return p;
             } catch (InvalidPathException ignored) { }
         }
-        return Path.of(userHome == null ? "" : userHome, "Documents");
+        return Path.of(userHome == null ? "" : userHome, respaldo);
     }
 
-    private static final Pattern LINEA_PERSONAL = Pattern.compile("^\\s*Personal\\s+REG_(?:EXPAND_)?SZ\\s+(.+?)\\s*$",
-            Pattern.MULTILINE);
+    /** Valor de User Shell Folders con la carpeta Descargas (no tiene nombre legible, solo este GUID). */
+    static final String VALOR_DESCARGAS = "{374DE290-123F-4565-9164-39C4925E467B}";
+
+    /** Dónde buscar una 1.x en zip al primer arranque: Escritorio (el real, que OneDrive puede mover), Descargas y
+     *  Documentos, sin repetir y solo las que existen. Una llamada a reg.exe con plazo; nunca desde el EDT. */
+    public static List<Path> carpetasDeBusqueda() {
+        String salida = ejecutarConLimite(5, "cmd", "/c", "chcp 65001 >nul & reg query \"" + CLAVE_SHELL + "\"");
+        return carpetasDeBusqueda(salida, System::getenv, System.getProperty("user.home"), Files::isDirectory);
+    }
+
+    /** Pura, para el test: las tres carpetas a partir de la salida de «reg query» de la clave entera. */
+    static List<Path> carpetasDeBusqueda(String salidaReg, Function<String, String> entorno, String userHome,
+                                         Predicate<Path> existe) {
+        java.util.LinkedHashSet<Path> r = new java.util.LinkedHashSet<>();
+        r.add(carpetaShell(salidaReg, "Desktop", "Desktop", entorno, userHome, existe));
+        r.add(carpetaShell(salidaReg, VALOR_DESCARGAS, "Downloads", entorno, userHome, existe));
+        r.add(carpetaShell(salidaReg, "Personal", "Documents", entorno, userHome, existe));
+        return r.stream().filter(existe).toList();
+    }
+
     private static final Pattern VARIABLE = Pattern.compile("%([^%]+)%");
 
     /** El valor de «Personal» con las variables expandidas, o null si no está o alguna variable no existe. */
     static String valorPersonal(String salidaReg, Function<String, String> entorno) {
+        return valorShell(salidaReg, "Personal", entorno);
+    }
+
+    /** El valor «nombre» de la salida de reg query, con las variables expandidas; null si no está o alguna variable
+     *  no existe. */
+    static String valorShell(String salidaReg, String nombre, Function<String, String> entorno) {
         if (salidaReg == null) return null;
-        Matcher m = LINEA_PERSONAL.matcher(salidaReg);
+        Matcher m = Pattern.compile("^\\s*" + Pattern.quote(nombre) + "\\s+REG_(?:EXPAND_)?SZ\\s+(.+?)\\s*$",
+                Pattern.MULTILINE).matcher(salidaReg);
         if (!m.find()) return null;
         Matcher v = VARIABLE.matcher(m.group(1));
         StringBuilder sb = new StringBuilder();
