@@ -1,5 +1,6 @@
 package dev.tirador.aoe2radar.ui;
 
+import dev.tirador.aoe2radar.service.ImagenesJuego;
 import dev.tirador.aoe2radar.service.StatsService;
 import dev.tirador.aoe2radar.service.TechTreeService;
 
@@ -190,17 +191,17 @@ public final class TechTreePresenter {
                     for (Object o : arr(arbol.get("units_techs"))) {
                         Map<String, Object> n = obj(o);
                         Path p = tt.rutaIcono(String.valueOf(n.get("use_type")), lng(n.get("picture_index")));
-                        if (!Files.exists(p)) pedirIcono("img/" + n.get("use_type") + "/" + lng(n.get("picture_index")) + ".png");
+                        if (!ImagenesJuego.iconoEnDisco(p)) pedirIcono("img/" + n.get("use_type") + "/" + lng(n.get("picture_index")) + ".png");
                     }
                     for (Object o : arr(arbol.get("buildings"))) {
                         Map<String, Object> n = obj(o);
-                        if (!Files.exists(tt.rutaIcono("Building", lng(n.get("picture_index"))))) pedirIcono("img/Building/" + lng(n.get("picture_index")) + ".png");
+                        if (!ImagenesJuego.iconoEnDisco(tt.rutaIcono("Building", lng(n.get("picture_index"))))) pedirIcono("img/Building/" + lng(n.get("picture_index")) + ".png");
                     }
-                    if (!Files.exists(tt.dir().resolve("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png"))) pedirIcono("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
+                    if (!ImagenesJuego.iconoEnDisco(tt.dir().resolve("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png"))) pedirIcono("img/Civs/" + civ.toLowerCase(Locale.ROOT) + ".png");
                     Thread.sleep(50);
                 }
                 for (String rr : new String[]{ "food", "wood", "gold", "stone" })
-                    if (!Files.exists(tt.dir().resolve("img/" + rr + ".png"))) pedirIcono("img/" + rr + ".png");
+                    if (!ImagenesJuego.iconoEnDisco(tt.dir().resolve("img/" + rr + ".png"))) pedirIcono("img/" + rr + ".png");
             } catch (Exception ex) { log("techtree precarga: " + causa(ex)); }
         });
     }
