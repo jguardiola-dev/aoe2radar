@@ -631,6 +631,12 @@ class RegresionCapturas {
         Thread.sleep(700);
         foto("shot_menu.png");
         SwingUtilities.invokeAndWait(() -> javax.swing.MenuSelectionManager.defaultManager().clearSelectedPath());
+        // shot_actividad_abajo es la parte baja del perfil de 12Tirador, pero desde shot_ahora la pestaña activa es Live
+        // now: el guion bajaba la barra de un perfil que no estaba a la vista y fotografiaba Live now (desde el primer
+        // harness, TTShot; no por el bug de la pestaña del Tech tree). Se vuelve antes al perfil (su actividad ya está en la caché).
+        SwingUtilities.invokeAndWait(() -> app.abrirPerfil(1L, "12Tirador"));
+        Thread.sleep(1500);
+        cerrarDialogos();
         SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.perfil.actCalendario); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
         Thread.sleep(700);
         foto("shot_actividad_abajo.png");
