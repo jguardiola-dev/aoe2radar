@@ -114,7 +114,7 @@ public final class Navegador implements Navegacion {
         if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
+        if (techTreeBtn != null && techTreeBtn.isSelected()) salirDelTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "ladder");
         ratings.alAbrirAntes();
         partidas.taparResultados(); watchlist.apagarForma();
@@ -130,7 +130,7 @@ public final class Navegador implements Navegacion {
         if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
+        if (techTreeBtn != null && techTreeBtn.isSelected()) salirDelTechTree();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "civstats");
         civStats.subirArriba();
         partidas.taparResultados(); watchlist.apagarForma();
@@ -147,7 +147,7 @@ public final class Navegador implements Navegacion {
         directosBtn.setSelected(false);
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
+        if (techTreeBtn != null && techTreeBtn.isSelected()) salirDelTechTree();
         if (liveNow != null) liveNow.marcarCerrada(); if (ahoraBtn != null) ahoraBtn.setSelected(false);
         perfil.marcarAbierta();
         ((CardLayout) centroCards.getLayout()).show(centroCards, "perfil");
@@ -166,7 +166,7 @@ public final class Navegador implements Navegacion {
         directosBtn.setSelected(false);
         if (ladderBtn != null) ladderBtn.setSelected(false);
         if (civStatsBtn != null) civStatsBtn.setSelected(false);
-        if (techTreeBtn != null && techTreeBtn.isSelected()) cerrarTechTree();
+        if (techTreeBtn != null && techTreeBtn.isSelected()) salirDelTechTree();
         if (perfil != null) perfil.cerrar();
         if (perfilBtn != null) perfilBtn.setSelected(false);
         liveNow.marcarAbierta();
@@ -198,7 +198,17 @@ public final class Navegador implements Navegacion {
         techTree.alAbrir(civ);
     }
 
+    /** La «×» del Tech tree: sale de él y lleva a Partidas (lo único que no es salir hacia otra pestaña). */
     public void cerrarTechTree() {
+        salirDelTechTree();
+        mostrarDirectos(false);
+    }
+
+    /** Deja el Tech tree sin decidir a dónde se va: cierra la ficha flotante, desmarca su pestaña y devuelve la
+     *  watchlist a su ancho. La llaman los abrir* de las otras pestañas, que ya marcan la suya, cambian de carta y
+     *  registran su destino. Antes llamaban a cerrarTechTree(), cuyo mostrarDirectos(false) desmarcaba la pestaña de
+     *  destino (se subrayaba «Partidas») y metía un «recs» falso en el historial (revisión de pestañas 1.4.1, A5). */
+    private void salirDelTechTree() {
         techTree.ocultarDetalle();
         if (techTreeBtn != null) techTreeBtn.setSelected(false);
         if (splitPrincipal != null && ttDivisorPrevio >= 0) {   // la watchlist vuelve a su ancho
@@ -207,7 +217,6 @@ public final class Navegador implements Navegacion {
             splitPrincipal.setOneTouchExpandable(false);
             ttDivisorPrevio = -1;
         }
-        mostrarDirectos(false);
     }
 
     /** La zona central alterna entre la tabla de recs y los directos. */
