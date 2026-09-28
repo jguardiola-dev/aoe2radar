@@ -54,4 +54,7 @@ public final class Identidad {
     public static final String REPO_URL = "https://github.com/jguardiola-dev/aoe2radar";
     public static final String RELEASES_URL = REPO_URL + "/releases/latest";
     public static final String RELEASES_API = "https://api.github.com/repos/jguardiola-dev/aoe2radar/releases/latest";
+    /** Las «Game Content Usage Rules» de Microsoft: van enlazadas allí donde esté el aviso de Microsoft (lo exigen
+     *  las propias reglas). Acerca de, el pie del Tech tree, README.md y THIRD_PARTY_NOTICES.md. */
+    public static final String REGLAS_MICROSOFT_URL = "https://www.xbox.com/en-US/developers/rules";
 }
