@@ -147,6 +147,12 @@ final class AccionesVentana {
         if (!leerConfig("mi_pid", "").isBlank()) v.miPartida.iniciarVigilancia();   // «Mi partida»: aviso temprano al encontrar partida
 
         new javax.swing.Timer(3_600_000, e -> new Thread(Servicios::cargarControl, "control").start()).start();
+        // 1.4: el actualizador propio vuelve a mirar cada 12 h (la primera, a los 8 s, va con tUpd). Solo si está activo:
+        // el aviso por tags de la versión en zip sigue mirando una vez por arranque, como antes.
+        new javax.swing.Timer(12 * 3_600_000, e -> new Thread(() -> {
+            dev.tirador.aoe2radar.ui.Actualizaciones act = v.actualizaciones;
+            if (act != null && act.activo()) act.comprobar(false);
+        }, "actualizaciones").start()).start();
         v.vigilante.setInitialDelay(tickMs());
         v.vigilante.start();
     }

@@ -120,6 +120,9 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final JCheckBoxMenuItem autoSgItem = new JCheckBoxMenuItem(t("Enviar al juego al descargar", "Send to game after download"),
             Boolean.parseBoolean(leerConfig("autosavegame", "false")));
     MenuConfiguracion menuConfiguracion;   // ver ui.MenuConfiguracion: botón "Configuración ▾" + esquina "Mi perfil"
+    /** El actualizador propio (1.4) y su franja: ver ui.Actualizaciones. Lo fija montarVentana en el EDT; volatile porque
+     *  la comprobación (hilo «actualizaciones») y el Timer de 12 h lo leen desde otros hilos. */
+    volatile dev.tirador.aoe2radar.ui.Actualizaciones actualizaciones;
     Player invitado;
     String vistaDelInvitado = "";
     final CacheMemoria<Long, Object[]> perfilCardCache = CacheService.SISTEMA.memoria(Caducidad.TARJETA);   // pid -> { htmlDatos, int[] spark }

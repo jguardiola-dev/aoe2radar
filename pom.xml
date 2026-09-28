@@ -310,5 +310,48 @@
         </plugins>
       </build>
     </profile>
+
+    <!--
+      Perfil del instalador (1.4): va SIEMPRE junto a «empaquetar» y en la fase verify, después de todo el
+      empaquetado (jpackage y la copia de banderas, en package):
+          mvn -Pempaquetar,instalador -DskipTests verify
+      Compila packaging/aoe2radar.iss con Inno Setup 6 (ISCC.exe) sobre target/dist/aoe2radar y deja
+      target/instalador/aoe2radar-X.Y-setup.exe. El zip (release.yml) sigue saliendo de target/dist como antes.
+      ISCC: por defecto el de una instalación por usuario de Inno Setup 6; en otra ruta, -Discc="C:\...\ISCC.exe".
+    -->
+    <profile>
+      <id>instalador</id>
+      <properties>
+        <iscc>${env.LOCALAPPDATA}\Programs\Inno Setup 6\ISCC.exe</iscc>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>instalador-inno-setup</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${iscc}</executable>
+                  <arguments>
+                    <argument>/DAppVersion=${version.app}</argument>
+                    <argument>/DDistDir=${project.build.directory}\dist\aoe2radar</argument>
+                    <argument>/DOutputDir=${project.build.directory}\instalador</argument>
+                    <argument>/DIcono=${project.build.directory}\logo.ico</argument>
+                    <argument>${project.basedir}\packaging\aoe2radar.iss</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
   </profiles>
 </project>

@@ -7,9 +7,11 @@ import dev.tirador.aoe2radar.model.Player;
 import dev.tirador.aoe2radar.service.EnlaceVivo;
 import dev.tirador.aoe2radar.service.Juego;
 import dev.tirador.aoe2radar.service.MiPartidaServiceJuego;
+import dev.tirador.aoe2radar.ui.Actualizaciones;
 import dev.tirador.aoe2radar.ui.AutoScroll;
 import dev.tirador.aoe2radar.ui.BarraEstado;
 import dev.tirador.aoe2radar.ui.ClicEnFondo;
+import dev.tirador.aoe2radar.ui.FranjaActualizacion;
 import dev.tirador.aoe2radar.ui.FranjaAviso;
 import dev.tirador.aoe2radar.ui.MenuConfiguracion;
 import dev.tirador.aoe2radar.ui.MiPartidaPanel;
@@ -19,6 +21,7 @@ import dev.tirador.aoe2radar.ui.VentanaGuardada;
 import dev.tirador.aoe2radar.ui.VentanaPrincipalAjustes;
 import dev.tirador.aoe2radar.util.Config;
 import dev.tirador.aoe2radar.util.Reloj;
+import dev.tirador.aoe2radar.util.Sistema;
 
 import static dev.tirador.aoe2radar.api.Http.HTTP;
 import static dev.tirador.aoe2radar.api.Http.nuevoHttp;
@@ -61,6 +64,10 @@ final class CableadoCromo {
                 VentanaGuardada.guardar(v, v.splitPrincipal); v.enlaceVivo.cerrar();
                 Servicios.API_CLIENTE.volcarLlamadas();   // la cuenta de llamadas desde el último volcado horario, al log (sin red)
                 Paises.guardarAlCerrar(2000);   // F13 (1.3): los países del último minuto; retiene el cierre 2 s como mucho
+                // Lo último (1.4): aplicar la actualización descargada (y relanzar si se pidió «Reiniciar ahora»), ya con
+                // todo lo demás guardado. Retiene el cierre como mucho Actualizaciones.ESPERA_CIERRE_MS.
+                Actualizaciones act = v.actualizaciones;
+                if (act != null) act.alCerrar();
             }
             @Override public void alPerderFoco() { v.watchlist.ocultarHoverCard(true); }
         });
@@ -119,6 +126,12 @@ final class CableadoCromo {
             @Override public void mostrarMiPerfil() { v.miPartida.abrirMiPerfil(); }
             @Override public void cambiarCuentaPropia() { v.miPartida.preguntarMiNick(); }
             @Override public void mostrarAcercaDe() { v.showAbout(); }
+            @Override public boolean actualizadorPropio(boolean manual) {   // fuera del EDT (hilo «actualizaciones»)
+                Actualizaciones act = v.actualizaciones;
+                if (act == null || !act.activo()) return false;
+                act.comprobar(manual);
+                return true;
+            }
             @Override public java.util.List<String> gruposWatchlist() { return v.watchlist.gruposDelCombo(); }
             @Override public java.util.List<String> clanesGuardados() { return v.watchlist.clanesGuardados(); }
             @Override public java.util.List<dev.tirador.aoe2radar.model.PaisItem> paises() { return java.util.List.of(v.watchlist.PAISES); }
@@ -203,8 +216,23 @@ final class CableadoCromo {
         // entonces se marca como visto. Se fija aquí, en el EDT y antes de AccionesVentana.arrancar, que es quien
         // lanza la primera lectura de control.json.
         FranjaAviso franja = new FranjaAviso();
-        v.add(franja, BorderLayout.NORTH);
+        // 1.4: debajo, la franja de las actualizaciones (ui.FranjaActualizacion), con el mismo estilo. Las dos nacen
+        // ocultas y un BoxLayout sin hijos visibles no mide nada: sin avisos, la ventana queda como antes.
+        FranjaActualizacion franjaAct = new FranjaActualizacion();
+        JPanel avisos = new JPanel();
+        avisos.setLayout(new BoxLayout(avisos, BoxLayout.Y_AXIS));
+        avisos.add(franja);
+        avisos.add(franjaAct);
+        v.add(avisos, BorderLayout.NORTH);
         Servicios.avisoControl = franja::mostrar;
+        v.actualizaciones = new Actualizaciones(Servicios.ACTUALIZADOR, franjaAct, new Actualizaciones.Anfitrion() {
+            @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
+            @Override public void estado(String texto) { v.status.setText(texto); }
+            @Override public void cerrarVentana() {   // el cierre normal: windowClosing -> alCerrar -> EXIT_ON_CLOSE
+                v.dispatchEvent(new java.awt.event.WindowEvent(v, java.awt.event.WindowEvent.WINDOW_CLOSING));
+            }
+            @Override public boolean relanzar() { return Sistema.relanzar(); }
+        }, Tareas.SWING);
     }
 
     /** Lo que ui.BarraEstado necesita del resto de la ventana: la red (api.Http, java.net) vive aquí porque ui
