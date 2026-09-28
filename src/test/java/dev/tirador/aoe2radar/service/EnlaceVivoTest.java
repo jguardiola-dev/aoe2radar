@@ -521,19 +521,28 @@ class EnlaceVivoTest {
         assertFalse(vivo.jugando(100));
     }
 
-    @Test void laVivaMasDe90MinDespuesDelMatchRemovedSaleSinDarlaPorTerminada() {
-        red.cuerpo = "{\"matches\":[" + partidaJson(1000, Duration.ofMinutes(10), false) + "]}";
+    /** Decisión de Jorge (1.4): sin tope de 90 min. La viva se sigue mirando (3, 6, 12, 12…) hasta que la API la da
+     *  por terminada; si nunca pone finished, el tope de siempre: pasadas 3 h desde started, enCursoReal = false y la
+     *  API la da por TERMINADA (se apunta terminada, como en la 1.3). Nunca sale antes sin que la API lo diga. */
+    @Test void laVivaSeSigueMirandoHastaLas3hDesdeSuInicioYEntoncesTerminada() {
+        red.cuerpo = "{\"matches\":[" + partidaJson(1000, Duration.ofMinutes(10), false) + "]}";   // empezó 10 min antes del matchRemoved
         marcarSolos(1);
         enlace.procesarEventosSocket(quitadas(1), Set.of());
         long inicio = reloj.ahora;
         reloj.avanzar(EnlaceVivo.ESPERA_QUITADA_MS);
-        while (vivo.jugando(100) && reloj.ahora - inicio < 3 * 3_600_000L) { enlace.rondaQuitadas(); if (vivo.jugando(100)) reloj.avanzar(ultimaEspera()); }
-        assertFalse(vivo.jugando(100), "no se queda «jugando» para siempre");
-        assertFalse(vivo.terminada(1000), "no se apunta terminada: la API decía que no; un barrido puede volver a marcarlo");
-        assertEquals(96L, (reloj.ahora - inicio) / 60_000, "3, 6, 12, 24… la primera mirada tras los 90 min");
-        assertEquals(10, red.llamadas, "antes: una cada 3 min (32 en esos 96 min, y seguía hasta las 3 h)");
+        while (vivo.jugando(100) && reloj.ahora - inicio < 4 * 3_600_000L) {
+            enlace.rondaQuitadas();
+            if (vivo.jugando(100)) {
+                assertTrue(vistas.avisos.isEmpty(), "mientras la API la vea en curso, nadie sale (antes, a los 90 min)");
+                reloj.avanzar(ultimaEspera());
+            }
+        }
+        assertEquals(180L, (reloj.ahora - inicio) / 60_000, "3, 6, 12, 24… 168 (178 min de partida), 180: pasadas las 3 h");
+        assertFalse(vivo.jugando(100));
+        assertTrue(vivo.terminada(1000), "a las 3 h, lo de siempre: enCursoReal la da por TERMINADA");
+        assertEquals(17, red.llamadas, "antes de la 1.4: una cada 3 min (57 hasta las 3 h)");
         assertEquals(List.of("liveEvento:100:true", "avisarTrasCambio"), vistas.avisos);
-        assertNull(vistas.partidasLive.get(0), "a Live now sin partida de la API, como un sin datos");
+        assertNotNull(vistas.partidasLive.get(0), "a Live now con la partida de la API, como toda TERMINADA");
     }
 
     // ===== 1.4: las partidas nuevas (A8) también se confirman en lote, con un conjunto «en vuelo» =====
