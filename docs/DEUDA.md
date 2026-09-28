@@ -170,6 +170,8 @@
 | 2026-09-26 | smoke test (real data) | `replay=false` for every player in matches whose rec exists: if the UI uses it for «has rec», it lies; the socket sends the map name translated while the API sends it in English (1.1) | low |
 | 2026-09-28 | installer (Inno Setup) | ~~check by hand how Java closes the app when the installer's Restart Manager closes it (windowClosing or a shutdown without it) and adjust the text in packaging/aoe2radar.iss and README_TECNICO~~ **resolved** (2026-09-28, tested on the real PC): the Restart Manager finds the two aoe2radar.exe processes of the jpackage launcher (launcher + child with the JVM and the window), cannot close them, and a silent setup exits with code 5 leaving the app open; a WM_CLOSE to the launcher breaks it («GetMessage() failed. System error 1400»). Now CloseApplications=no and packaging/cerrar_aoe2radar.ps1 (PrepareToInstall / InitializeUninstall) asks only the child to close, like the × (taskkill without /F), and waits for both to exit | low |
 | 2026-09-28 | app.Main | 1.4: a startup failure outside new SpoilerFreeRecs (catalogs, config, theme) now writes arranque_error.log, shows the dialog and exits with code 2 (before, it escaped with no dialog); intended, listed for the 1.4 notes | low |
+| 2026-09-28 | service.EnlaceVivo: removed-match checks | ~~one API call per matchRemoved (A9) 3 min later, plus one every 3 min while the API saw it live~~ **resolved** (1.4, 2026-09-28): removed matches go into a queue and a single round checks those whose 3 min are up (never earlier), one call `profile_ids=<up to 25 csv>&per_page=100` per batch (one player per match; one player alone keeps `per_page=5`). A match missing from a batch is asked alone, as before, so the verdict never gets worse; quitadasEnVuelo still dedupes; local budget of 6 calls/min (not the global throttle, which stays in api). Same result for the user (only a TERMINADA verdict records the match). 20 matches removed at once: 20 calls → 1. avisarTrasCambio once per round | 1.4 |
+| 2026-09-28 | service.EnlaceVivo: wall clock in the queue | the removed-match queue and its per-minute budget use Reloj (system time); before, only the Planificador (monotonic) timed the wait. If Windows moves the clock back, pending checks wait that much longer (nothing is lost). Also still open: in-flight dedupe for the «new match» confirmation (A8, inventory 3.3 item 1) and a growing wait for VIVA rechecks (3.3 item 4) | low |
 
 ## Planned for 1.4
 
@@ -181,7 +183,8 @@ API plan approved by Jorge (2026-09-26). Studies: api_inventario and api_worldse
   IOException, open circuit breaker or N failures, and the UI says «partial data». Its own throttle bucket.
   Order: recent matches + match by id, profile/ELO, ladder, then search. Not worth it: long history, the
   «Al azar» stream, in-progress matches, Twitch.
-- **Socket confirmations in batches**, spaced, with an «in flight» set (no duplicate confirmations).
+- ~~**Socket confirmations in batches**, spaced, with an «in flight» set (no duplicate confirmations).~~ **done**
+  (2026-09-28) for matchRemoved (A9): see the «service.EnlaceVivo: removed-match checks» row.
 - **Larger sfr-data**: `chispas.json.gz` (last ratings per player for the hover card), a bigger sample
   (1,000 per bracket + the day before), rank and last match in `elo_ayer`.
 - **«Buscar partidas» in batches** (`profile_ids=<10 csv>&pp=100`, paging while the oldest is after the cutoff).
