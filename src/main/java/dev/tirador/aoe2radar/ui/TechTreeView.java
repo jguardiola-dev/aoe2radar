@@ -716,14 +716,19 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
         });
         JLabel despues = new JLabel(t(". En gris, lo que la civ no tiene. Pasa el ratón para ver coste y estadísticas; clic para la ficha completa.",
                 ". Greyed out = not available for this civ. Hover for cost and stats; click for full details."));
+        for (JLabel l : new JLabel[] { antes, reglas, despues }) l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+        // Atribución y enlace a la izquierda, a su tamaño; la ayuda de uso ocupa el resto y, si no cabe, se recorta
+        // con «…» como el pie de antes. Un FlowLayout solo pasaría el enlace a una segunda fila invisible.
         FlowLayout flujo = new FlowLayout(FlowLayout.LEADING, 0, 0);
         flujo.setAlignOnBaseline(true);
-        JPanel pie = new JPanel(flujo);
+        JPanel atribucion = new JPanel(flujo);
+        atribucion.setOpaque(false);
+        atribucion.add(antes);
+        atribucion.add(reglas);
+        JPanel pie = new JPanel(new BorderLayout());
         pie.setOpaque(false);
-        for (JLabel l : new JLabel[] { antes, reglas, despues }) {
-            l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
-            pie.add(l);
-        }
+        pie.add(atribucion, BorderLayout.WEST);
+        pie.add(despues, BorderLayout.CENTER);
         return pie;
     }
 

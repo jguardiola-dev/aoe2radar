@@ -12,6 +12,7 @@ import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingUtilities;
+import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Cursor;
 import java.awt.event.MouseEvent;
@@ -242,14 +243,22 @@ class TechTreeViewTest {
         JPanel[] pie = new JPanel[1];
         SwingUtilities.invokeAndWait(() -> pie[0] = out[0].piePagina());
 
+        List<JLabel> etiquetas = new ArrayList<>();
+        etiquetasDe(pie[0], etiquetas);
         StringBuilder texto = new StringBuilder();
         JLabel enlace = null;
-        for (Component c : pie[0].getComponents()) {
-            JLabel l = (JLabel) c;
+        for (JLabel l : etiquetas) {
             texto.append(l.getText());
             if (l.getCursor().getType() == Cursor.HAND_CURSOR) enlace = l;
         }
         String s = texto.toString();
+        // El enlace va en la parte que nunca se recorta (WEST); la ayuda de uso, en la que sí (CENTER).
+        JPanel oeste = (JPanel) ((BorderLayout) pie[0].getLayout()).getLayoutComponent(BorderLayout.WEST);
+        List<JLabel> fijas = new ArrayList<>();
+        etiquetasDe(oeste, fijas);
+        assertTrue(fijas.contains(enlace), "el enlace no debe poder quedar fuera en una ventana estrecha");
+        System.out.println("pie del Tech tree: ancho preferido " + pie[0].getPreferredSize().width + " px, atribución "
+                + oeste.getPreferredSize().width + " px");
         assertFalse(s.contains("iconos: aoe2techtree") || s.contains("icons: aoe2techtree"), "los iconos no son MIT: " + s);
         assertTrue(s.contains("aoe2techtree.net (HSZemi, MIT)"), s);
         assertTrue(s.contains("Age of Empires II © Microsoft"), s);
@@ -260,5 +269,12 @@ class TechTreeViewTest {
         SwingUtilities.invokeAndWait(() -> e.dispatchEvent(
                 new MouseEvent(e, MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, 2, 2, 1, false, MouseEvent.BUTTON1)));
         assertEquals(List.of("https://www.xbox.com/en-US/developers/rules"), anfitrion.urls);
+    }
+
+    private static void etiquetasDe(java.awt.Container c, List<JLabel> out) {
+        for (Component h : c.getComponents()) {
+            if (h instanceof JLabel l) out.add(l);
+            else if (h instanceof java.awt.Container sub) etiquetasDe(sub, out);
+        }
     }
 }
