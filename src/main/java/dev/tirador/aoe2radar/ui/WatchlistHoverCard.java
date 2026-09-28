@@ -10,6 +10,7 @@ import javax.swing.JPanel;
 import javax.swing.JWindow;
 import javax.swing.MenuSelectionManager;
 import javax.swing.SwingWorker;
+import javax.swing.ToolTipManager;
 import javax.swing.UIManager;
 import java.awt.BorderLayout;
 import java.awt.Color;
@@ -110,13 +111,18 @@ final class WatchlistHoverCard {
                 BorderFactory.createLineBorder(UIManager.getColor("Component.borderColor") != null
                         ? UIManager.getColor("Component.borderColor") : Color.GRAY),
                 BorderFactory.createEmptyBorder(8, 10, 8, 10)));
-        p.add(new JLabel(html), BorderLayout.CENTER);
+        p.add(new JLabel(TarjetaPerfil.conFila(html, wv.aliases.get(pid), wv.dialogos.notaDe(pid))), BorderLayout.CENTER);   // alias y nota: lo que decía el tooltip de la fila
         if (spark != null) p.add(new SparkPanel(spark), BorderLayout.SOUTH);
         wv.hoverCard.add(p);
         wv.hoverCard.pack();
         wv.hoverCard.setLocation(enPantalla.x + 14, enPantalla.y + 10);
         wv.hoverCard.setVisible(true);
+        ToolTipManager tm = ToolTipManager.sharedInstance();   // el tooltip de la fila (350 ms) ya puede estar fuera: se quita;
+        if (tm.isEnabled()) { tm.setEnabled(false); tm.setEnabled(true); }   // mientras se vea la tarjeta, la lista no da otro (tarjetaVisible)
     }
+
+    /** ¿Se ve la tarjeta? Mientras tanto la fila no da tooltip (lo que decía, alias y nota, va en la tarjeta). */
+    boolean tarjetaVisible() { return wv.hoverCard != null; }
 
     /** Panel con la mini gráfica del rating (termina 10 partidas atrás). */
     static class SparkPanel extends JPanel {

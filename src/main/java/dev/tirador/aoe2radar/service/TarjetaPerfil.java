@@ -65,6 +65,22 @@ public final class TarjetaPerfil {
         return new Datos(p, "", games, rating, max, w, l, ch.spark(), ch.pocos1v1());
     }
 
+    /**
+     * El HTML de la tarjeta con una línea más: el alias y la nota de esa fila de la Watchlist (lo que antes decía el
+     * tooltip de la fila, que ya no sale mientras se ve la tarjeta). Se añade al pintar, no en la caché de 10 min: una nota
+     * recién editada sale al momento. Sin alias ni nota (null o en blanco), el HTML tal cual.
+     */
+    public static String conFila(String html, String alias, String nota) {
+        boolean hayAlias = alias != null && !alias.isBlank(), hayNota = nota != null && !nota.isBlank();
+        if (!hayAlias && !hayNota || !html.endsWith("</html>")) return html;
+        StringBuilder l = new StringBuilder("<br><font size='2' color='gray'>");
+        if (hayAlias) l.append(t("Alias: ", "Alias: ")).append(escapeHtml(alias));
+        if (hayAlias && hayNota) l.append("  \u00B7 ");
+        if (hayNota) l.append(t("Nota: ", "Note: ")).append(escapeHtml(nota));
+        l.append("</font>");
+        return html.substring(0, html.length() - "</html>".length()) + l + "</html>";
+    }
+
     /** El HTML de la tarjeta (el mismo que montaba WatchlistHoverCard). */
     public static String html(String nombre, Datos d) {
         String pais = d.pais() == null ? "" : d.pais(), clan = d.clan() == null ? "" : d.clan();
