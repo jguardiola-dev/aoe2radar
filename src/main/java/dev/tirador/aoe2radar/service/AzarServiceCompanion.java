@@ -1,12 +1,9 @@
 package dev.tirador.aoe2radar.service;
 
 import dev.tirador.aoe2radar.api.CompanionApi;
-import dev.tirador.aoe2radar.model.Clasificacion;
-import dev.tirador.aoe2radar.model.FilaClasificacion;
 import dev.tirador.aoe2radar.model.Match;
 import dev.tirador.aoe2radar.model.MatchPlayer;
 import dev.tirador.aoe2radar.model.PaginaLb;
-import dev.tirador.aoe2radar.model.PaginaPartidas;
 import dev.tirador.aoe2radar.util.Hilos;
 
 import java.io.IOException;
@@ -31,7 +28,6 @@ import static dev.tirador.aoe2radar.api.Cancelacion.detieneEsteHilo;
 import static dev.tirador.aoe2radar.cache.RecsDisco.maxGteEnDisco;
 import static dev.tirador.aoe2radar.service.Aleatorio.ProveedorPaginas;
 import static dev.tirador.aoe2radar.service.Aleatorio.componerTanda;
-import static dev.tirador.aoe2radar.service.Aleatorio.cumpleAzar;
 import static dev.tirador.aoe2radar.service.Aleatorio.elegirPerfiles;
 import static dev.tirador.aoe2radar.service.Aleatorio.filtrarAleatorias;
 import static dev.tirador.aoe2radar.service.Aleatorio.filtrarGte;
@@ -65,10 +61,24 @@ public final class AzarServiceCompanion implements AzarService {
     private final Function<String, String> claveCivDeNombre;
     private final Supplier<Map<String, List<List<Object>>>> muestraAyer;
     private final Supplier<Map<String, List<List<Object>>>> muestraAnteayer;   // null dentro si el archivo no la trae (anterior a la 1.4)
-    private final Supplier<List<long[]>> ladderNocturno;                       // LadderNocturno.de(...); null → leaderboard en vivo
+    private final Supplier<List<long[]>> ladderNocturno;                       // LadderNocturno.de(...); null → mensaje y ninguna llamada (1.4.1)
     private final LongConsumer dormir;
     private final int perPage;
     private final long pausaMs;
+
+    /** Jugadores por llamada: /matches?profile_ids=<csv de hasta 10>&per_page=100 (el companion ya no admite /matches sin
+     *  profile_ids: 422 «profile_ids must be specified», 2026-09-28; el «río» de partidas recientes del ladder murió). */
+    static final int LOTE = 10, POR_LOTE = 100;
+    /** Tope de llamadas por tirada de «Al azar» con intensidad normal; se multiplica por la intensidad (1, 3, 10). */
+    static final int MAX_LOTES = 6;
+
+    /** Sin el ELO de anoche de sfr-data no hay de dónde sacar jugadores del tramo (ni río al que volver): se dice y no se llama. */
+    static String sinNocturno() {
+        return t("faltan los datos nocturnos de sfr-data (ELO de anoche), que son los que dicen qué jugadores hay en cada tramo; "
+                        + "inténtalo más tarde (con una ventana de 24 h o más se usa la muestra nocturna si está)",
+                "sfr-data's nightly data (last night's ELO) is missing, and it is what tells which players are in each bracket; "
+                        + "try again later (with a window of 24 h or more the nightly sample is used if available)");
+    }
 
     // --- Caché de sesión del «Al azar por ELO» (vive mientras la app está abierta) ---
     private LbCtx ctxAzar;                       // páginas del leaderboard reutilizadas entre tiradas
@@ -95,7 +105,8 @@ public final class AzarServiceCompanion implements AzarService {
      * (en «Al azar», solo con una ventana de 48 h o más y si ayer no da 10; en «Guess the ELO», cuando ayer ya está vista) y
      * ladderNocturno (LadderNocturno.de sobre el ELO de anoche) sustituye a las páginas del leaderboard en vivo: la
      * bisección y el muestreo de perfiles corren igual, pero sobre páginas de 100 ya en memoria (cero llamadas al
-     * leaderboard). Si alguno devuelve null (datos anteriores a la 1.4), todo sigue como antes.
+     * leaderboard). Si la muestra de anteayer es null, solo ayer. Sin ladder nocturno (1.4.1), lo que no dé la muestra no se
+     * busca: IOException con el mensaje de sinNocturno() y ninguna llamada (el leaderboard en vivo y el río ya no se usan).
      */
     public AzarServiceCompanion(CompanionApi companion, Function<String, String> claveCivDeNombre,
                                  Supplier<Map<String, List<List<Object>>>> muestraAyer,
@@ -132,13 +143,14 @@ public final class AzarServiceCompanion implements AzarService {
         azarTramoAgotado = false;
 
         // Caché de sesión: contexto del ladder reutilizable y TTL de perfiles.
-        if (ctxAzar == null || !firmaRango.equals(firmaRangoAzar)
+        if (ctxAzar == null || !ctxAzar.nocturno || !firmaRango.equals(firmaRangoAzar)
                 || ahora - ctxAzarNacido > 10 * 60_000L) {
             ctxAzar = nuevoCtx();
             ctxAzarNacido = ahora;
             firmaRangoAzar = firmaRango;
             pagsAzar = null;
         }
+        if (!ctxAzar.nocturno) throw new IOException(sinNocturno());   // ninguna llamada: sin tramo no hay a quién preguntar
         perfilVistoAzar.values().removeIf(ts -> ahora - ts > 10 * 60_000L);
         boolean continua = firmaTotal.equals(firmaTotalAzar) && !perfilVistoAzar.isEmpty();
         firmaTotalAzar = firmaTotal;
@@ -166,45 +178,6 @@ public final class AzarServiceCompanion implements AzarService {
             if (pIni > pFin) return ordenaYRecorta(encontradas);
             double fraccion = (pFin - pIni + 1) / (double) Math.max(1, ult);
 
-            // ---- Río global: solo si el rango es una porción rentable del
-            // ladder y no hay filtro de civ (la dilución lo vuelve un pozo).
-            if (fraccion >= 0.12 && civSel == null && encontradas.size() < 10) {
-                String[] variantesLb = { "rm_1v1", "3", null };   // null: sin filtro de ladder
-                int varLb = 0;
-                int maxPagRio = mapaSel != null ? 25 : 15;
-                int pagLeidas = 0;
-                for (int pag = 1; pag <= maxPagRio && encontradas.size() < 10 && !detieneEsteHilo(); pag++) {
-                    progreso.accept(t("Leyendo partidas recientes del ladder\u2026 (p\u00e1g. ", "Reading recent ladder games\u2026 (page ")
-                            + pag + ", " + encontradas.size() + "/10)");
-                    PaginaPartidas ms;
-                    try {
-                        ms = companion.recientes(variantesLb[varLb], pag, 50);   // con reintento ante 429, como antes
-                    } catch (Exception ex) {
-                        log("al azar (r\u00edo): fallo en p\u00e1gina " + pag + " (variante " + varLb + "): " + causa(ex));
-                        if (varLb < variantesLb.length - 1 && pagLeidas == 0) { varLb++; pag = 0; continue; }
-                        break;
-                    }
-                    if (ms.brutas() == 0 && pagLeidas == 0 && varLb < variantesLb.length - 1) {
-                        varLb++;
-                        pag = 0;
-                        continue;
-                    }
-                    if (ms.brutas() == 0) break;
-                    pagLeidas++;
-                    boolean algunaEnVentana = false;
-                    for (Match m : ms.partidas()) {
-                        if (m.finished == null) continue;
-                        cacheAzar.putIfAbsent(m.id, m);
-                        if (!m.finished.isBefore(cutoff)) algunaEnVentana = true;
-                        if (cumpleAzar(m, lo, hi, cutoff, mapaSel, civSel) && idsRes.add(m.id))
-                            encontradas.add(m);
-                    }
-                    if (!algunaEnVentana) break;      // el r\u00edo ya qued\u00f3 m\u00e1s viejo que la ventana
-                    dormir.accept(pausaMs / 2);
-                }
-                log("al azar (r\u00edo): " + pagLeidas + " p\u00e1ginas le\u00eddas (variante " + varLb + "), "
-                        + encontradas.size() + " v\u00e1lidas acumuladas");
-            }
             if (encontradas.size() >= 10) return ordenaYRecorta(encontradas);
 
             // ---- Perfiles activos del tramo, sin repetir los ya consultados.
@@ -215,8 +188,9 @@ public final class AzarServiceCompanion implements AzarService {
                 cursorPagsAzar = 0;
             }
             int pasadas = ((mapaSel != null || civSel != null) ? 2 : 3) * multAzar;
+            int maxLlamadas = MAX_LOTES * multAzar, llamadas = 0;   // cuenta todo intento, falle o salga de la caché por URL
             for (int intento = 1; intento <= pasadas && encontradas.size() < 10 && !detieneEsteHilo(); intento++) {
-                int nPerfiles = civSel != null ? 40 : (intento == 1 ? 12 : 24);
+                int nPerfiles = civSel != null ? 40 : (intento == 1 ? 10 : 20);   // múltiplos de LOTE: ninguna llamada a medio llenar
                 int nPags = Math.min(pagsAzar.size(), civSel != null ? 12 : (intento == 1 ? 6 : 10));
                 if (intento > 1 || continua)
                     progreso.accept(t("A\u00fan ", "Still ") + encontradas.size()
@@ -251,29 +225,34 @@ public final class AzarServiceCompanion implements AzarService {
                     if (!perfilVistoAzar.containsKey(pid)) perfiles.add(pid);
                 }
                 if (perfiles.isEmpty()) { azarTramoAgotado = true; break; }
-                int i = 0;
-                for (long pid : perfiles) {
-                    if (detieneEsteHilo()) break;
-                    progreso.accept(t("Perfil ", "Profile ") + (++i) + "/" + perfiles.size()
+                for (int k = 0; k < perfiles.size() && llamadas < maxLlamadas && !detieneEsteHilo(); k += LOTE) {
+                    List<Long> lote = new ArrayList<>(perfiles.subList(k, Math.min(perfiles.size(), k + LOTE)));
+                    Collections.sort(lote);   // URL estable (y la caché del freno no ve dos órdenes del mismo lote)
+                    progreso.accept(t("Jugadores ", "Players ") + (k + 1) + "–" + (k + lote.size()) + "/" + perfiles.size()
                             + " \u00b7 " + encontradas.size() + "/10\u2026");
+                    llamadas++;
                     try {
-                        Iterable<Match> leidas = companion.partidas(pid, 1, perPage);
-                        perfilVistoAzar.put(pid, System.currentTimeMillis());
+                        Iterable<Match> leidas = companion.partidas(csv(lote), 1, POR_LOTE);
+                        long vistoTs = System.currentTimeMillis();
+                        for (long pid : lote) perfilVistoAzar.put(pid, vistoTs);
                         for (Match m : leidas) {
                             if (m != null && m.finished != null) {
                                 unicos.putIfAbsent(m.id, m);
                                 cacheAzar.putIfAbsent(m.id, m);
                             }
                         }
+                    } catch (InterruptedException ex) {
+                        throw ex;   // Detener: al catch de abajo, que devuelve lo encontrado
                     } catch (Exception ex) {
-                        log("al azar: fallo con perfil " + pid + ": " + causa(ex));
+                        log("al azar: fallo con el lote " + csv(lote) + ": " + causa(ex));   // no quedan como vistos: otra pasada los reintenta
                     }
                     dormir.accept(pausaMs);
                 }
                 for (Match m : filtrarAleatorias(unicos.values(), ratingsLb, lo, hi, cutoff, mapaSel, civSel, 10, rnd))
                     if (idsRes.add(m.id)) encontradas.add(m);
+                if (llamadas >= maxLlamadas) { log("al azar: tope de " + maxLlamadas + " llamadas en esta tirada"); break; }
             }
-            log("al azar: total acumulado " + encontradas.size() + " partidas"
+            log("al azar: total acumulado " + encontradas.size() + " partidas en " + llamadas + " llamadas"
                     + (azarTramoAgotado ? " (tramo activo agotado en esta sesi\u00f3n)" : ""));
             return ordenaYRecorta(encontradas);
         } catch (InterruptedException ex) {   // Detener durante la bisección o el muestreo: se aplica lo encontrado, como en la 1.1
@@ -289,6 +268,7 @@ public final class AzarServiceCompanion implements AzarService {
         List<Match> deMuestra = gteDesdeMuestra(rnd);   // la muestra nocturna de sfr-data: cero llamadas y nunca una partida repetida
         if (!deMuestra.isEmpty()) return deMuestra;
         LbCtx ctx = nuevoCtx();
+        if (!ctx.nocturno) throw new IOException(sinNocturno());   // ninguna llamada
         int ult = ultimaPaginaLadder(ctx);
         int[][] tramos = tramosGte(ult);
         int[] franjas = franjasAleatorias(5, tramos.length, rnd);   // dado independiente por partida
@@ -322,25 +302,31 @@ public final class AzarServiceCompanion implements AzarService {
                 + " perfiles en 5 slots con franja sorteada al azar");
         if (nPerfiles == 0) return List.of();
 
-        List<List<Match>> validasPorSlot = new ArrayList<>();
-        int i = 0;
-        for (List<Long> ids : perfilesPorSlot) {
-            Map<Long, Match> unicos = new LinkedHashMap<>();
-            for (long pid : ids) {
-                if (detieneEsteHilo()) break;
-                progreso.accept(t("Perfil ", "Profile ") + (++i) + "/" + nPerfiles + "…");
-                try {
-                    Iterable<Match> leidas = companion.partidas(pid, 1, perPage);
-                    for (Match m : leidas) {
-                        if (m != null && m.finished != null) unicos.putIfAbsent(m.id, m);
-                    }
-                } catch (Exception ex) {
-                    log("Guess the ELO: fallo con perfil " + pid + ": " + causa(ex));
-                }
-                dormir.accept(pausaMs);
+        // Los (hasta 10) jugadores de los 5 slots en UNA llamada; luego cada partida va al slot de quien la jugó. Las 100
+        // partidas se reparten entre los 10: si uno muy activo deja algún slot sin nada, una segunda llamada solo con los
+        // jugadores de esos slots (como mucho 2). Si la primera falla (y no es Detener), el error se dice, no «no hay nada».
+        List<Long> todos = new ArrayList<>();
+        for (List<Long> ids : perfilesPorSlot) todos.addAll(ids);
+        Collections.sort(todos);
+        Map<Long, Match> leidas = new LinkedHashMap<>();
+        if (!detieneEsteHilo()) {
+            progreso.accept(t("Leyendo partidas de ", "Reading games of ") + todos.size() + t(" jugadores\u2026", " players\u2026"));
+            try { leerLote(todos, leidas); }
+            catch (InterruptedException ex) { if (!detieneEsteHilo()) throw ex; }
+            catch (IOException ex) {
+                log("Guess the ELO: fallo con el lote " + csv(todos) + ": " + causa(ex));
+                if (!detieneEsteHilo()) throw ex;
             }
-            validasPorSlot.add(filtrarGte(unicos.values(), cutoff, 3, rnd));
         }
+        List<Long> sinNada = new ArrayList<>();
+        for (List<Long> ids : perfilesPorSlot) if (delSlot(leidas.values(), ids).isEmpty()) sinNada.addAll(ids);
+        if (!leidas.isEmpty() && !sinNada.isEmpty() && sinNada.size() < todos.size() && !detieneEsteHilo()) {
+            Collections.sort(sinNada);
+            try { leerLote(sinNada, leidas); }
+            catch (Exception ex) { log("Guess the ELO: fallo con el segundo lote " + csv(sinNada) + ": " + causa(ex)); }
+        }
+        List<List<Match>> validasPorSlot = new ArrayList<>();
+        for (List<Long> ids : perfilesPorSlot) validasPorSlot.add(filtrarGte(delSlot(leidas.values(), ids), cutoff, 3, rnd));
         List<Match> res = componerTanda(validasPorSlot, 5, rnd);
         int base = maxGteEnDisco();
         for (int k = 0; k < res.size(); k++) {
@@ -424,57 +410,36 @@ public final class AzarServiceCompanion implements AzarService {
         return out;
     }
 
-    /** Baja y parsea una página del leaderboard, con caché. */
-    private PaginaLb lbPagina(LbCtx ctx, int p) throws IOException, InterruptedException {
+    /** Una llamada: las partidas terminadas de ids (ordenados, hasta LOTE) a leidas, sin repetir. */
+    private void leerLote(List<Long> ids, Map<Long, Match> leidas) throws IOException, InterruptedException {
+        for (Match m : companion.partidas(csv(ids), 1, POR_LOTE))
+            if (m != null && m.finished != null) leidas.putIfAbsent(m.id, m);
+    }
+
+    /** Las partidas en las que juega alguno de ids. */
+    private static List<Match> delSlot(Iterable<Match> partidas, List<Long> ids) {
+        List<Match> out = new ArrayList<>();
+        for (Match m : partidas) if (m.players.stream().anyMatch(p -> ids.contains(p.id))) out.add(m);
+        return out;
+    }
+
+    /** Una página del ladder nocturno (todas en caché desde nuevoCtx); fuera de rango, vacía. Nunca va a la red. */
+    private PaginaLb lbPagina(LbCtx ctx, int p) {
         PaginaLb enCache = ctx.cache.get(p);
-        if (enCache != null) return enCache;
-        if (ctx.nocturno) return new PaginaLb(List.of(), -1, -1);   // fuera del ladder nocturno: vacía, nunca al companion
-        Clasificacion root = null;
-        List<FilaClasificacion> players = List.of();
-        if (ctx.id == null) {
-            for (String id : new String[]{ "rm_1v1", "3" }) {
-                try {
-                    root = companion.clasificacion(id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
-                    players = root.filas();
-                    if (!players.isEmpty()) { ctx.id = id; break; }
-                } catch (InterruptedException ie) { throw ie; }   // Detener: no probar el otro id ni decir «no responde»
-                catch (IOException io) { if (String.valueOf(io.getMessage()).contains("429")) throw io; }   // un 429 es «espera», no «prueba otro id» (con reintentos, probar el «3» alargaba ~12 min y subía la pausa al tope)
-                catch (Exception ignored) {}
-            }
-            if (ctx.id == null) throw new IOException(t("el leaderboard no responde (ni rm_1v1 ni 3)", "the leaderboard isn't answering (neither rm_1v1 nor 3)"));
-        } else {
-            root = companion.clasificacion(ctx.id, p, 100, null);   // con reintento ante 429 (Detener corta la espera)
-            players = root.filas();
-        }
-        if (ctx.totalPaginas < 0 && root != null) {
-            long total = root.total();
-            long porPag = root.porPagina();
-            if (porPag <= 0) porPag = 100;
-            if (total > 0) ctx.totalPaginas = (int) ((total + porPag - 1) / porPag);
-        }
-        List<long[]> js = new ArrayList<>();
-        int max = -1, min = -1;
-        for (FilaClasificacion f : players) {
-            long pid = f.pid();
-            int rating = f.rating() != null ? f.rating() : -1;
-            if (pid > 0 && rating > 0) {
-                Instant lm = f.ultimaPartida();
-                js.add(new long[]{ pid, rating, lm == null ? 0L : lm.toEpochMilli() });
-                max = max < 0 ? rating : Math.max(max, rating);
-                min = min < 0 ? rating : Math.min(min, rating);
-            }
-        }
-        PaginaLb pag = new PaginaLb(js, max, min);
-        ctx.cache.put(p, pag);
-        log("leaderboard " + ctx.id + " página " + p + ": " + js.size() + " jugadores"
-                + (js.isEmpty() ? "" : ", rating " + max + "–" + min));
-        dormir.accept(pausaMs);
-        return pag;
+        return enCache != null ? enCache : new PaginaLb(List.of(), -1, -1);
+    }
+
+    /** «, »-separado para /matches?profile_ids=. */
+    static String csv(List<Long> ids) {
+        StringBuilder b = new StringBuilder();
+        for (long id : ids) { if (b.length() > 0) b.append(','); b.append(id); }
+        return b.toString();
     }
 
     /**
      * Contexto nuevo del leaderboard: con el ladder nocturno (1.4), todas sus páginas de 100 ya en caché, sin llamadas;
-     * sin él (datos anteriores a la 1.4 o sin cargar), vacío como siempre y las páginas se piden al companion.
+     * sin él (sfr-data caído o datos anteriores a la 1.4), vacío y no nocturno: quien llama lo dice y no llama a nadie
+     * (1.4.1: ya no se cae al leaderboard en vivo).
      */
     private LbCtx nuevoCtx() {
         LbCtx ctx = new LbCtx();
@@ -496,14 +461,9 @@ public final class AzarServiceCompanion implements AzarService {
         return ctx;
     }
 
-    /** Número de páginas del ladder: del campo total si viene; si no, sondeo
-     *  exponencial hasta encontrar una página vacía. */
-    private int ultimaPaginaLadder(LbCtx ctx) throws IOException, InterruptedException {
-        lbPagina(ctx, 1);
-        if (ctx.totalPaginas > 0) return ctx.totalPaginas;
-        int p = 1;
-        while (p < 4096 && !lbPagina(ctx, p * 2).jugadores().isEmpty()) p *= 2;
-        return p * 2;
+    /** Número de páginas del ladder nocturno. */
+    private int ultimaPaginaLadder(LbCtx ctx) {
+        return ctx.totalPaginas;
     }
 
     /** Estado compartido de una consulta al leaderboard: id que responde

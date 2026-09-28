@@ -10,8 +10,8 @@ import java.util.Map;
  * que las páginas del leaderboard del companion ({pid, rating, última partida en ms}), en orden de rango. «Al azar por
  * ELO» y «Guess the ELO» lo usan en vez de bisecar el leaderboard en vivo: cero llamadas para saber quién está en el tramo.
  * <p>Pura y sin red. Solo entran los jugadores con rango y ELO 1v1 (el alcance de sfr-data: todos los activos de los
- * últimos 28 días más el top 40.000). null si el archivo es anterior a la 1.4 (sin rangos): quien llama sigue con el
- * leaderboard en vivo, como hasta ahora.
+ * últimos 28 días más el top 40.000). null si el archivo es anterior a la 1.4 (sin rangos) o no está: desde la 1.4.1,
+ * quien llama lo dice y no busca (ver AzarServiceCompanion.sinNocturno).
  */
 public final class LadderNocturno {
     private LadderNocturno() {}
