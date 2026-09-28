@@ -208,8 +208,18 @@ class RegresionCapturas {
      */
     static void foto(String nombre) throws Exception { foto(nombre, () -> new JComponent[0]); }
     static void foto(String nombre, java.util.function.Supplier<JComponent[]> ignorar) throws Exception {
+        foto(nombre, ignorar, raiz -> List.of());
+    }
+    /** Igual, con zonas extra a ignorar calculadas en el EDT (p. ej. una columna de una tabla, que no es un componente). */
+    static void foto(String nombre, java.util.function.Supplier<JComponent[]> ignorar,
+                     java.util.function.Function<JRootPane, List<Rectangle>> extra) throws Exception {
         SpoilerFreeRecs app = app();
         asegurarTamanoRaiz(app);
+        // Fase 5: ningún cursor de texto en las fotos (parpadea: la foto dependía del instante). Si se cambió alguno,
+        // se deja un momento para que el repintado llegue antes de fotografiar.
+        boolean[] cambiados = { false };
+        SwingUtilities.invokeAndWait(() -> { for (Window w : Window.getWindows()) if (w.isShowing()) cambiados[0] |= sinCursores(w); });
+        if (cambiados[0]) Thread.sleep(250);
         // Hasta INTENTOS fotos separadas 1 s: un panel de Windows o un repintado tardío desaparecen en el siguiente
         // intento; un cambio real del código no, y sigue en rojo. Las que necesitan reintento se listan al final.
         ComparadorCapturas.Resultado res = null;
@@ -242,6 +252,7 @@ class RegresionCapturas {
                 for (JComponent c : new JComponent[]{ app.perfil.actCalendario, app.perfil.actSemana, app.perfil.actMeses })
                     zonaVisible(c, raiz, zonas);
                 for (JComponent c : ignorar.get()) zonaVisible(c, raiz, zonas);   // se resuelven aquí, en el EDT
+                zonas.addAll(extra.apply(raiz));
             });
             BufferedImage img = new Robot().createScreenCapture(r[0]);
             // Encargo Opus, revisado: la señal de verdad de pantalla bloqueada es la PRIMERA foto real, no una
@@ -348,6 +359,68 @@ class RegresionCapturas {
         return null;
     }
 
+    /** «aoe2radar 1.3 — …» → «aoe2radar X.Y — …»: la foto no depende del número de versión. */
+    static String tituloSinVersion(String titulo) {
+        return titulo.replaceFirst("^(\\S+) \\d+(?:\\.\\d+)* ", "$1 X.Y ");
+    }
+
+    /** Fase 5: las partidas en curso muestran un cronómetro (mm:ss desde el inicio, en tiempo de juego) que avanza
+     *  mientras se hace la foto: su texto depende del segundo exacto y ponía en rojo shot_ahora y shot_lista250 sin
+     *  que nada cambiara. Se ignoran solo esas etiquetas («15:04») y, en la lista del top 250, la columna «Ahora». */
+    static JComponent[] cronometros(Container raiz) {
+        List<JComponent> r = new ArrayList<>();
+        if (raiz != null) recogerCronometros(raiz, r);
+        return r.toArray(new JComponent[0]);
+    }
+    private static void recogerCronometros(Container c, List<JComponent> r) {
+        for (Component h : c.getComponents()) {
+            if (h instanceof JLabel l && l.getText() != null && l.getText().trim().matches("\\d{1,3}:\\d{2}")) r.add(l);
+            if (h instanceof Container hijo) recogerCronometros(hijo, r);
+        }
+    }
+    static List<Rectangle> columnaAhoraLista250(JRootPane raiz) {
+        List<Rectangle> r = new ArrayList<>();
+        for (Window w : Window.getWindows())
+            if (w instanceof JDialog d && d.isShowing()) buscarTablas(d.getContentPane(), t -> {
+                for (int col = 0; col < t.getColumnCount(); col++)
+                    if (t.getColumnName(col).startsWith("Ahora") || t.getColumnName(col).startsWith("Now")) {
+                        Rectangle celdas = t.getCellRect(0, col, true);
+                        if (t.getRowCount() > 1) celdas = celdas.union(t.getCellRect(t.getRowCount() - 1, col, true));
+                        r.add(SwingUtilities.convertRectangle(t, celdas, raiz));
+                    }
+            });
+        return r;
+    }
+    private static void buscarTablas(Container c, java.util.function.Consumer<JTable> f) {
+        for (Component h : c.getComponents()) {
+            if (h instanceof JTable t) f.accept(t);
+            else if (h instanceof Container hijo) buscarTablas(hijo, f);
+        }
+    }
+
+    /** Caret que no pinta nada (la selección la pinta el Highlighter, así que se sigue viendo). */
+    static final class CaretSinPintar extends javax.swing.text.DefaultCaret {
+        @Override public void paint(Graphics g) { }
+    }
+    /** Pone un CaretSinPintar en cada campo de texto de {@code c}, conservando cursor y selección. EDT. */
+    static boolean sinCursores(Container c) {
+        boolean alguno = false;
+        for (Component h : c.getComponents()) {
+            if (h instanceof javax.swing.text.JTextComponent t && !(t.getCaret() instanceof CaretSinPintar)) {
+                int punto = t.getCaret().getDot(), marca = t.getCaret().getMark();
+                int ritmo = t.getCaret().getBlinkRate();
+                CaretSinPintar nuevo = new CaretSinPintar();
+                t.setCaret(nuevo);
+                nuevo.setBlinkRate(ritmo);
+                nuevo.setDot(marca);
+                nuevo.moveDot(punto);
+                alguno = true;
+            }
+            if (h instanceof Container hijo) alguno |= sinCursores(hijo);
+        }
+        return alguno;
+    }
+
     static void correr() throws Exception {
         SpoilerFreeRecs.main(new String[0]);
         silenciarMensajeControl();
@@ -355,6 +428,11 @@ class RegresionCapturas {
         Thread.sleep(3000);
         SpoilerFreeRecs app = app();
         SwingUtilities.invokeAndWait(() -> { app.setSize(1500, 950); app.setLocation(0, 0); app.validate(); });
+        // Fase 5: el número de versión del título cambia en cada release y gastaba casi todo el umbral de las fotos de
+        // ventana entera (las referencias decían 1.2 con la app en 1.3), así que cualquier otra variación pequeña
+        // (cursor, reloj, resumen tardío) las ponía en rojo. Solo en el harness: el título lleva un «X.Y» fijo. Que la
+        // versión sea la del pom lo vigila IdentidadTest.
+        SwingUtilities.invokeAndWait(() -> app.setTitle(tituloSinVersion(app.getTitle())));
         // el cursor encima de la app provoca hovers y tooltips (p. ej. la ficha de una celda de la matriz, que salió en
         // shot_matriz_grande): se aparca fuera de la zona fotografiada (la app ocupa 0..1500 x 0..950 del monitor principal).
         // DESPUÉS de arrancar la app: crear un Robot antes inicializa Java2D y cambia el escalado de iconos (lo mismo que obligó a reuseForks=false).
@@ -367,7 +445,11 @@ class RegresionCapturas {
         SwingUtilities.invokeAndWait(() -> tamanoRaiz = app.getRootPane().getSize());
         System.out.println("raíz del harness: " + tamanoRaiz);
         Paises.PAIS_DE.put(1L, "es"); Paises.PAIS_DE.put(2L, "es"); Paises.PAIS_DE.put(3L, "ar"); Paises.PAIS_DE.put(4L, "de");
-        SwingUtilities.invokeAndWait(() -> { app.watchlist.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint(); });
+        SwingUtilities.invokeAndWait(() -> { app.watchlist.grupoCombo.setSelectedItem("Todos"); app.playersModel.addElement(new Player(1L, "12Tirador", "", 0L)); app.playersModel.addElement(new Player(2L, "Turpiacho", "", 0L)); app.playersModel.addElement(new Player(3L, "pume", "", 0L)); app.eloWatch.put(1L, 1905); app.eloWatch.put(2L, 1610); app.eloWatch.put(3L, 1980); app.playersList.repaint();
+            // Fase 5: el harness mete los jugadores directamente en el modelo, sin pasar por el presentador, así que
+            // el resumen «N jugadores» solo cambiaba con el siguiente repintado de indicadores, que lo dispara la red
+            // (barrido o socket). Sin red rápida se quedaba en «0» toda la pasada. Se pide aquí, como haría un alta.
+            app.watchlist.actualizarIndicadoresVivos(); });
         Thread.sleep(400);
         // Fila 131 de DEUDA: el resumen «N jugadores · M jugando» llega con el siguiente repintado de
         // indicadores, no al momento de añadir jugadores: esperar (con tope) a que ya diga el total de los 3
@@ -522,14 +604,14 @@ class RegresionCapturas {
         Thread.sleep(1500);
         SwingUtilities.invokeAndWait(() -> app.mostrarToast("\u25CF Hera ha empezado una partida \u00B7 vs Viper 2732 (Mongoles\u2013Francos) \u00B7 Arabia", 555));
         Thread.sleep(700);
-        foto("shot_ahora.png");
+        foto("shot_ahora.png", () -> cronometros(app.liveNow.ahoraCuerpoPanel()));
         // el aviso existe para shot_ahora; su temporizador (10 s) lo cerraría en mitad de las capturas siguientes y cuáles
         // lo muestran dependería del tiempo transcurrido. Se cierra ya, con el método que usa el propio temporizador.
         SwingUtilities.invokeAndWait(() -> { if (app.barraEstado.toastTimer != null) app.barraEstado.toastTimer.stop(); app.ocultarToast(); });
         System.out.println("live tarjetas: " + app.liveNow.ahoraCuerpoPanel().getComponentCount() + " | estado: " + app.liveNow.ahoraEstadoLabel().getText());
         SwingUtilities.invokeAndWait(app.liveNow::mostrarLista250);
         Thread.sleep(800);
-        foto("shot_lista250.png");
+        foto("shot_lista250.png", () -> cronometros(app.liveNow.ahoraCuerpoPanel()), RegresionCapturas::columnaAhoraLista250);
         cerrarDialogos();
         // Fin de Live now: la partida inventada 555 deja de estar en curso. Antes lo hacía, por casualidad, un barrido de
         // reparación contra la red real que disparaba un fallo del socket (el cierre pedido por la app contaba como caída y

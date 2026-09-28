@@ -63,4 +63,11 @@ class RegresionCapturasTest {
         img.setRGB(49, 49, Color.WHITE.getRGB());
         assertFalse(RegresionCapturas.todaNegra(img));
     }
+
+    @Test void tituloSinVersion_quitaSoloElNumeroDeVersion() {
+        assertEquals("aoe2radar X.Y — tu radar", RegresionCapturas.tituloSinVersion("aoe2radar 1.3 — tu radar"));
+        assertEquals("aoe2radar X.Y — x", RegresionCapturas.tituloSinVersion("aoe2radar 1.4.1 — x"));
+        assertEquals("aoe2radar X.Y — 1.3", RegresionCapturas.tituloSinVersion("aoe2radar 0.0 — 1.3"));
+        assertEquals("Watchlist", RegresionCapturas.tituloSinVersion("Watchlist"));
+    }
 }
