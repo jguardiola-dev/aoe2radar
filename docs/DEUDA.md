@@ -170,6 +170,10 @@
 | 2026-09-26 | smoke test (real data) | `replay=false` for every player in matches whose rec exists: if the UI uses it for «has rec», it lies; the socket sends the map name translated while the API sends it in English (1.1) | low |
 | 2026-09-28 | installer (Inno Setup) | ~~check by hand how Java closes the app when the installer's Restart Manager closes it (windowClosing or a shutdown without it) and adjust the text in packaging/aoe2radar.iss and README_TECNICO~~ **resolved** (2026-09-28, tested on the real PC): the Restart Manager finds the two aoe2radar.exe processes of the jpackage launcher (launcher + child with the JVM and the window), cannot close them, and a silent setup exits with code 5 leaving the app open; a WM_CLOSE to the launcher breaks it («GetMessage() failed. System error 1400»). Now CloseApplications=no and packaging/cerrar_aoe2radar.ps1 (PrepareToInstall / InitializeUninstall) asks only the child to close, like the × (taskkill without /F), and waits for both to exit | low |
 | 2026-09-28 | app.Main | 1.4: a startup failure outside new SpoilerFreeRecs (catalogs, config, theme) now writes arranque_error.log, shows the dialog and exits with code 2 (before, it escaped with no dialog); intended, listed for the 1.4 notes | low |
+| 2026-09-28 | larger sfr-data (Planned for 1.4) | ~~chispas, bigger sample + the day before, rank and last match in elo_ayer~~ **resolved in code** (sfr-data branch `mas-datos`, not pushed yet: 56c84eb, 4bd16a4; app e5f998b): elo_ayer v2 appends rank and last 1v1 match (+0.54 MB gz; 1.3 reads positions 0-5 only), muestra_ayer v2 has 1,000 per bracket and `tramos_anteayer` from the previous night's file (~0.6 MB gz), new chispas.json.gz (~2.5 MB gz, complete after each weekly consolidation, partial before). The app reads all three with fallback (old files → today's behaviour). Pending: push sfr-data and check the first nightly log (`elo_ayer: columnas para la tarjeta: pico=… ganadas=… perdidas=…`: peak/W/L column names are not verified against the real leaderboard.parquet) | medium |
+| 2026-09-28 | «Al azar» / Guess the ELO from elo_ayer (Planned for 1.4) | ~~bisecting the live ladder~~ **resolved** (acb062a): the bracket comes from last night's ladder (LadderNocturno, pages of 100 preloaded, 0 calls to /leaderboards); old data → live ladder as before. Still on the API: per-profile /matches and the «río». Semantic shifts to keep in mind: ratingsLb now holds last night's rating for ~130k players; the río threshold (12 %) and GTE brackets are over active + top 40k, not the whole ladder; a last match before the cutoff counts as «unknown», not inactive (the dump is from last night) | low |
+| 2026-09-28 | «Al azar» notice with the day before | with hours >= 48 and fewer than 10 from yesterday, the nightly sample is topped up with the day before, but PartidasPresenter.mensajeAzar still says «partidas de ayer (muestra nocturna)». Adjust the text («de los dos últimos días») when Partidas is touched | low |
+| 2026-09-28 | hover card (WatchlistHoverCard) | still disabled (`if (false && …)` in WatchlistLista). With chispas it costs 0 calls for anyone in the file (TarjetaPerfil.desdeNocturno; the nightly path has no clan and does not learn the Twitch channel). Turning it on is Jorge's call. «Ver forma» (porSerie) cannot use chispas: it runs only for players outside elo_ayer and its 24 h window needs today's games | low |
 
 ## Planned for 1.4
 
@@ -182,10 +186,10 @@ API plan approved by Jorge (2026-09-26). Studies: api_inventario and api_worldse
   Order: recent matches + match by id, profile/ELO, ladder, then search. Not worth it: long history, the
   «Al azar» stream, in-progress matches, Twitch.
 - **Socket confirmations in batches**, spaced, with an «in flight» set (no duplicate confirmations).
-- **Larger sfr-data**: `chispas.json.gz` (last ratings per player for the hover card), a bigger sample
-  (1,000 per bracket + the day before), rank and last match in `elo_ayer`.
+- ~~**Larger sfr-data**: `chispas.json.gz` (last ratings per player for the hover card), a bigger sample
+  (1,000 per bracket + the day before), rank and last match in `elo_ayer`.~~ Done in code, see the table (push pending).
 - **«Buscar partidas» in batches** (`profile_ids=<10 csv>&pp=100`, paging while the oldest is after the cutoff).
-- **«Al azar» and Guess the ELO from `elo_ayer`**, without bisecting the live ladder.
+- ~~**«Al azar» and Guess the ELO from `elo_ayer`**, without bisecting the live ladder.~~ Done (acb062a).
 - **Plan B documented**: what breaks if the companion disappears (socket, Twitch proxy, today's matches, sfr-data
   itself) and what replaces it (World's Edge, aoe.ms for recs, local search).
 - **Contact the aoe2companion author** with the figures from the per-endpoint counter.
