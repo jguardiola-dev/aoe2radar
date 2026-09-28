@@ -652,6 +652,8 @@ public final class WatchlistView implements WatchlistPresenter.Pantalla {
     // ===== Tarjeta de perfil flotante (ver WatchlistHoverCard) ==============================================
 
     boolean hoverProcede() { return tarjetaHover.hoverProcede(); }
+    /** ¿Se ve la tarjeta flotante? Entonces la fila no da tooltip (playersList.getToolTipText, en la ventana). */
+    public boolean tarjetaVisible() { return tarjetaHover.tarjetaVisible(); }
     public void ocultarHoverCard() { tarjetaHover.ocultarHoverCard(); }
     public void ocultarHoverCard(boolean forzar) { tarjetaHover.ocultarHoverCard(forzar); }
     void mostrarPerfilCard(long pid, String nombre, Point enPantalla) { tarjetaHover.mostrarPerfilCard(pid, nombre, enPantalla); }

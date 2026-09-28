@@ -61,6 +61,7 @@ final class CableadoWatchlist {
                     int i = locationToIndex(e.getPoint());
                     if (i >= 0 && getCellBounds(i, i).contains(e.getPoint())) return v.watchlist.tipForma(v.playersModel.get(i).id());
                 }
+                if (v.watchlist != null && v.watchlist.tarjetaVisible()) return null;   // con la tarjeta fuera, sin tooltip de fila: no se pisan (alias y nota van en la tarjeta)
                 return super.getToolTipText(e);
             }
         };
