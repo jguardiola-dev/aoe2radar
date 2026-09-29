@@ -198,6 +198,16 @@ class RegresionCapturas {
         for (Frame f : Frame.getFrames()) if (f instanceof SpoilerFreeRecs s) return s;
         return null;
     }
+    /** Pone el foco en el buscador de la Watchlist (campo del paquete ui, por reflexión) y espera a que llegue. */
+    static void enfocarBuscadorWatchlist(SpoilerFreeRecs app) throws Exception {
+        java.lang.reflect.Field f = app.watchlist.getClass().getDeclaredField("buscaNick");
+        f.setAccessible(true);
+        javax.swing.JTextField campo = (javax.swing.JTextField) f.get(app.watchlist);
+        SwingUtilities.invokeAndWait(campo::requestFocusInWindow);
+        for (int i = 0; i < 20 && !campo.isFocusOwner(); i++) Thread.sleep(50);
+        Thread.sleep(200);
+    }
+
     static void cerrarDialogos() throws Exception {
         SwingUtilities.invokeAndWait(() -> { for (Window w : Window.getWindows()) if (w instanceof JDialog d && d.isVisible()) d.dispose(); });
     }
@@ -637,6 +647,9 @@ class RegresionCapturas {
         SwingUtilities.invokeAndWait(() -> app.abrirPerfil(1L, "12Tirador"));
         Thread.sleep(1500);
         cerrarDialogos();
+        // Abrir el perfil deja el foco donde caiga según el momento (el buscador de la Watchlist unas pasadas sí y otras
+        // no: shot_actividad_abajo y shot_civstats_2000_mapa bailaban). Se deja fijo en el buscador, como antes.
+        enfocarBuscadorWatchlist(app);
         SwingUtilities.invokeAndWait(() -> { JScrollPane sc = (JScrollPane) SwingUtilities.getAncestorOfClass(JScrollPane.class, app.perfil.actCalendario); sc.getVerticalScrollBar().setValue(sc.getVerticalScrollBar().getMaximum()); });
         Thread.sleep(700);
         foto("shot_actividad_abajo.png");
