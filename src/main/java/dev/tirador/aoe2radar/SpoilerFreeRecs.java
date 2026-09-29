@@ -90,7 +90,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     final dev.tirador.aoe2radar.ui.MenusJugador menus = CableadoJugador.menus(this);
 
     // «Al azar por ELO»/«Guess the ELO»: muestreo y caché de sesión en el servicio; techTree.claveCivDeNombre y dormir() como colaboradores.
-    // 1.4: muestra de anteayer y ladder de anoche (sfr-data) en vez de bisecar el leaderboard en vivo; con datos viejos, como antes.
+    // 1.4: muestra de anteayer y ladder de anoche (sfr-data) en vez de bisecar el leaderboard en vivo; 1.4.1: sin ladder de anoche, un mensaje.
     final AzarService azarService = new AzarServiceCompanion(COMPANION, civ -> SpoilerFreeRecs.this.techTree.claveCivDeNombre(civ),
             Snapshots::muestraAyer, Snapshots::muestraAnteayer,
             () -> { Snapshots.cargarEloAyer(); return LadderNocturno.de(Snapshots.ELO_AYER, Snapshots.ELO.rangoUltima); },
@@ -265,7 +265,7 @@ public class SpoilerFreeRecs extends JFrame implements dev.tirador.aoe2radar.ui.
     // delegado aquí: las clases Cableado y AccionesVentana llaman directo a AccionesVentana o a ui.ConfirmacionEspectar.
     final Espectar espectar = new Espectar(LIVE);
 
-    void showAbout() { AcercaDe.showAbout(this, logo); }   // ver ui.AcercaDe (logo, showAbout)
+    void showAbout() { AcercaDe.showAbout(this, logo, url -> AccionesVentana.abrirUrl(this, url)); }   // ver ui.AcercaDe (logo, showAbout)
 
     // ComponentesTema: componentes que ui.TemaApp necesita repintar (inversión de dependencias: TemaApp no conoce esta clase).
     @Override public java.awt.Component raiz() { return this; }

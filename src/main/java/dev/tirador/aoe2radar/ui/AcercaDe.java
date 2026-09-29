@@ -7,7 +7,10 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import java.awt.BorderLayout;
+import java.awt.Cursor;
 import java.awt.Image;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
@@ -17,11 +20,13 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static dev.tirador.aoe2radar.ui.Componentes.iconoCuadrado;
 import static dev.tirador.aoe2radar.util.Identidad.AUTOR_COMPLETO;
 import static dev.tirador.aoe2radar.util.Identidad.CLAN;
 import static dev.tirador.aoe2radar.util.Identidad.NOMBRE;
+import static dev.tirador.aoe2radar.util.Identidad.REGLAS_MICROSOFT_URL;
 import static dev.tirador.aoe2radar.util.Identidad.TWITCH;
 import static dev.tirador.aoe2radar.util.Identidad.VERSION;
 import static dev.tirador.aoe2radar.util.I18n.t;
@@ -37,7 +42,8 @@ public final class AcercaDe {
     private AcercaDe() { }
 
     // ----- Acerca de (logo del clan + firma) ---------------------------------
-    public static void showAbout(JFrame propietario, Image logo) {
+    /** abrirUrl: abre una URL en el navegador (la ventana: AccionesVentana.abrirUrl). Se llama en el EDT, al hacer clic. */
+    public static void showAbout(JFrame propietario, Image logo, Consumer<String> abrirUrl) {
         JPanel p = new JPanel(new BorderLayout(0, 12));
         if (logo != null) {
             Image scaled = logo.getScaledInstance(96, -1, Image.SCALE_SMOOTH);
@@ -58,7 +64,23 @@ public final class AcercaDe {
                 + "</span></div></html>");
         texto.setHorizontalAlignment(SwingConstants.CENTER);
         p.add(texto, BorderLayout.CENTER);
+        p.add(enlaceReglas(abrirUrl), BorderLayout.SOUTH);
         JOptionPane.showMessageDialog(propietario, p, t("Acerca de", "About"), JOptionPane.PLAIN_MESSAGE);
+    }
+
+    /** Las reglas de Microsoft piden un enlace a ellas junto a su aviso: etiqueta clicable, como el directo de Twitch
+     *  en Live now (JLabel + cursor de mano + clic). La URL la abre la ventana (ui no usa java.net). */
+    static JLabel enlaceReglas(Consumer<String> abrirUrl) {
+        JLabel reglas = new JLabel("<html><div style='text-align:center;font-size:90%'>"
+                + t("Game Content Usage Rules de Microsoft: ", "Microsoft's Game Content Usage Rules: ")
+                + "<a href='" + REGLAS_MICROSOFT_URL + "'>" + REGLAS_MICROSOFT_URL.replaceFirst("^https://", "") + "</a></div></html>");
+        reglas.setHorizontalAlignment(SwingConstants.CENTER);
+        reglas.setToolTipText(REGLAS_MICROSOFT_URL);
+        reglas.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        reglas.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) { abrirUrl.accept(REGLAS_MICROSOFT_URL); }
+        });
+        return reglas;
     }
 
     /** Genera logo.ico multi-tamaño desde el logo (recurso o embebido: ver cargarLogo).

@@ -3,9 +3,17 @@ package dev.tirador.aoe2radar.ui;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import dev.tirador.aoe2radar.util.Identidad;
+
+import javax.swing.JLabel;
+import javax.swing.SwingUtilities;
+import java.awt.Cursor;
 import java.awt.Image;
+import java.awt.event.MouseEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -38,6 +46,22 @@ class AcercaDeTest {
         assertEquals(0, shortLE(leido, 0));
         assertEquals(1, shortLE(leido, 2));
         assertEquals(6, shortLE(leido, 4));
+    }
+
+    /** 1.4.1: las Game Content Usage Rules exigen un enlace a ellas junto al aviso de Microsoft. La etiqueta lo
+     *  enseña y, al hacer clic, pide a la ventana que abra esa URL (y ninguna otra). */
+    @Test void elEnlaceALasReglasDeMicrosoftAbreSuUrl() throws Exception {
+        List<String> abiertas = new ArrayList<>();
+        JLabel[] l = new JLabel[1];
+        SwingUtilities.invokeAndWait(() -> l[0] = AcercaDe.enlaceReglas(abiertas::add));
+        assertEquals("https://www.xbox.com/en-US/developers/rules", Identidad.REGLAS_MICROSOFT_URL);
+        assertTrue(l[0].getText().contains("www.xbox.com/en-US/developers/rules"), l[0].getText());
+        assertTrue(l[0].getText().contains("Game Content Usage Rules"), l[0].getText());
+        assertEquals(Cursor.HAND_CURSOR, l[0].getCursor().getType());
+        assertTrue(abiertas.isEmpty());
+        SwingUtilities.invokeAndWait(() -> l[0].dispatchEvent(
+                new MouseEvent(l[0], MouseEvent.MOUSE_CLICKED, System.currentTimeMillis(), 0, 2, 2, 1, false, MouseEvent.BUTTON1)));
+        assertEquals(List.of(Identidad.REGLAS_MICROSOFT_URL), abiertas);
     }
 
     private static int shortLE(byte[] b, int offset) {

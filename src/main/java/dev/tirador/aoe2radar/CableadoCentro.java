@@ -72,6 +72,7 @@ final class CableadoCentro {
                 new TechTreeView.Anfitrion() {
                     @Override public void precalentarPerfiles() { v.perfil.precalentar(); }
                     @Override public void cerrar() { v.navegador.cerrarTechTree(); }
+                    @Override public void abrirUrl(String url) { AccionesVentana.abrirUrl(v, url); }
                 },
                 new TechTreeView.EnlaceCivStats() {
                     // Civ Stats se crea después (civStats es null mientras se construye el tech tree, como civStatsPanel en la 1.1)

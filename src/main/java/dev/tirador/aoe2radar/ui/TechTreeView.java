@@ -97,6 +97,7 @@ import static dev.tirador.aoe2radar.util.Formato.miles;
 import static dev.tirador.aoe2radar.util.Formato.pct1;
 import static dev.tirador.aoe2radar.util.I18n.IDIOMA;
 import static dev.tirador.aoe2radar.util.I18n.t;
+import static dev.tirador.aoe2radar.util.Identidad.REGLAS_MICROSOFT_URL;
 import static dev.tirador.aoe2radar.util.Json.arr;
 import static dev.tirador.aoe2radar.util.Json.lng;
 import static dev.tirador.aoe2radar.util.Json.obj;
@@ -120,6 +121,9 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
 
         /** El botón «×» de la barra del Tech tree: hace lo mismo que cerrar la pestaña desde fuera. */
         void cerrar();
+
+        /** Abre una URL en el navegador (el enlace a las reglas de Microsoft del pie). */
+        void abrirUrl(String url);
     }
 
     /** Lo que el Tech tree necesita de Civ Stats (comparten filtros y banda de winrate): la ventana lo cablea con
@@ -694,11 +698,38 @@ public final class TechTreeView implements TechTreePresenter.Pantalla {
                 arrastre[0] = null; ttScroll.setCursor(Cursor.getDefaultCursor());
             }
         }, AWTEvent.MOUSE_EVENT_MASK | AWTEvent.MOUSE_MOTION_EVENT_MASK);
-        JLabel pie = new JLabel(t("Datos e iconos: aoe2techtree.net (HSZemi, MIT) · Age of Empires II © Microsoft. En gris, lo que la civ no tiene. Pasa el ratón para ver coste y estadísticas; clic para la ficha completa.",
-                "Data & icons: aoe2techtree.net (HSZemi, MIT) · Age of Empires II © Microsoft. Greyed out = not available for this civ. Hover for cost and stats; click for full details."));
-        pie.setFont(pie.getFont().deriveFont(Font.PLAIN, 11f));
-        techTreePanel.add(pie, BorderLayout.SOUTH);
+        techTreePanel.add(piePagina(), BorderLayout.SOUTH);
         return techTreePanel;
+    }
+
+    /** Pie del Tech tree (1.4.1): el código y los datos de aoe2techtree son MIT, pero sus iconos y textos son
+     *  contenido de Microsoft, que usamos bajo sus Game Content Usage Rules; las reglas piden enlazarlas junto al
+     *  aviso, así que el nombre de las reglas es un enlace (clic: la ventana abre la URL; ui no usa java.net). */
+    JPanel piePagina() {
+        JLabel antes = new JLabel(t("Datos: aoe2techtree.net (HSZemi, MIT) · Iconos y textos: Age of Empires II © Microsoft, bajo sus ",
+                "Data: aoe2techtree.net (HSZemi, MIT) · Icons & game text: Age of Empires II © Microsoft, under its "));
+        JLabel reglas = new JLabel("<html><a href='" + REGLAS_MICROSOFT_URL + "'>Game Content Usage Rules</a></html>");
+        reglas.setToolTipText(REGLAS_MICROSOFT_URL);
+        reglas.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        reglas.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) { anfitrion.abrirUrl(REGLAS_MICROSOFT_URL); }
+        });
+        JLabel despues = new JLabel(t(". En gris, lo que la civ no tiene. Pasa el ratón para ver coste y estadísticas; clic para la ficha completa.",
+                ". Greyed out = not available for this civ. Hover for cost and stats; click for full details."));
+        for (JLabel l : new JLabel[] { antes, reglas, despues }) l.setFont(l.getFont().deriveFont(Font.PLAIN, 11f));
+        // Atribución y enlace a la izquierda, a su tamaño; la ayuda de uso ocupa el resto y, si no cabe, se recorta
+        // con «…» como el pie de antes. Un FlowLayout solo pasaría el enlace a una segunda fila invisible.
+        FlowLayout flujo = new FlowLayout(FlowLayout.LEADING, 0, 0);
+        flujo.setAlignOnBaseline(true);
+        JPanel atribucion = new JPanel(flujo);
+        atribucion.setOpaque(false);
+        atribucion.add(antes);
+        atribucion.add(reglas);
+        JPanel pie = new JPanel(new BorderLayout());
+        pie.setOpaque(false);
+        pie.add(atribucion, BorderLayout.WEST);
+        pie.add(despues, BorderLayout.CENTER);
+        return pie;
     }
 
     void ttMostrarCiv(String civ) {

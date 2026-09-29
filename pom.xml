@@ -5,7 +5,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>dev.tirador</groupId>
   <artifactId>aoe2radar</artifactId>
-  <version>1.4.0</version>
+  <version>1.4.1</version>
   <packaging>jar</packaging>
   <name>aoe2radar</name>
 
@@ -42,6 +42,17 @@
       <resource>
         <directory>src/main/resources-filtradas</directory>
         <filtering>true</filtering>
+      </resource>
+      <!-- 1.4.1: LICENSE y THIRD_PARTY_NOTICES.md también dentro del jar (META-INF), sin filtrar: quien actualiza
+           solo el jar (actualizador propio) no recibe los archivos de junto al exe, pero sí el jar. -->
+      <resource>
+        <directory>${project.basedir}</directory>
+        <includes>
+          <include>LICENSE</include>
+          <include>THIRD_PARTY_NOTICES.md</include>
+        </includes>
+        <targetPath>META-INF</targetPath>
+        <filtering>false</filtering>
       </resource>
     </resources>
     <plugins>
@@ -301,6 +312,12 @@
                   <target>
                     <copy todir="${project.build.directory}/dist/aoe2radar/banderas">
                       <fileset dir="${project.basedir}/src/main/resources/banderas" />
+                    </copy>
+                    <!-- 1.4.1: la licencia de la app y los avisos de terceros junto al exe. Desde aquí viajan en
+                         el zip portable (release.yml comprime dist/aoe2radar) y en el instalador ([Files] de
+                         packaging/aoe2radar.iss copia DistDir entero). -->
+                    <copy todir="${project.build.directory}/dist/aoe2radar" overwrite="true">
+                      <fileset dir="${project.basedir}" includes="LICENSE,THIRD_PARTY_NOTICES.md" />
                     </copy>
                   </target>
                 </configuration>

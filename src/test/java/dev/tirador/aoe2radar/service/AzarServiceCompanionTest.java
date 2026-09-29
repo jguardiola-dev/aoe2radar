@@ -48,15 +48,25 @@ class AzarServiceCompanionTest {
         final Map<String, String> respuestas = new HashMap<>();
         final Map<String, IOException> fallos = new HashMap<>();
         final Map<String, Integer> llamadas = new HashMap<>();
+        final Map<String, Integer> codigos = new HashMap<>();
         void responder(String url, String json) { respuestas.put(url, json); }
+        /** Como el companion real desde 2026-09-28 con /matches sin profile_ids: 422 y ese cuerpo. */
+        void responder(String url, int codigo, String json) { respuestas.put(url, json); codigos.put(url, codigo); }
+        /** Respuesta para cualquier /matches?profile_ids=… no registrada (lotes con ids al azar); null: revienta. */
+        java.util.function.Function<String, String> lotesPorDefecto;
+        int codigoLotes = 200;   // el estado con el que responden esos lotes (500: el companion falla)
         void fallar(String url, String mensaje) { fallos.put(url, new IOException(mensaje)); }
         @Override public Respuesta get(String url) throws IOException {
             llamadas.merge(url, 1, Integer::sum);
             IOException fallo = fallos.get(url);
             if (fallo != null) throw fallo;
             String json = respuestas.get(url);
+            if (json == null && lotesPorDefecto != null && url.contains("/matches?profile_ids=")) {
+                json = lotesPorDefecto.apply(url);
+                if (codigoLotes != 200) return new Respuesta(codigoLotes, json);
+            }
             if (json == null) throw new AssertionError("URL no esperada en el test: " + url);
-            return new Respuesta(200, json);
+            return new Respuesta(codigos.getOrDefault(url, 200), json);
         }
         int llamadasA(String url) { return llamadas.getOrDefault(url, 0); }
         int totalLlamadas() { return llamadas.values().stream().mapToInt(Integer::intValue).sum(); }
@@ -164,87 +174,6 @@ class AzarServiceCompanionTest {
     // buscarAleatorias
     // ================================================================================================
 
-    @Test void buscarAleatorias_sinCandidatosEnElLadder_noConsultaRioNiPerfiles() throws Exception {
-        // Ladder de 2 páginas: página 1 con ELO alto (2000), página 2 con ELO bajo (900). Pedimos un rango
-        // (1400-1600) que no cae en NINGUNA página: la bisección da pIni=2 > pFin=1 y sale sin más llamadas.
-        FakeTransporte red = new FakeTransporte();
-        red.responder(urlLb("rm_1v1", 1), jsonLadder(2, 1, new long[]{1, 2000, 0}));
-        red.responder(urlLb("rm_1v1", 2), jsonLadder(2, 1, new long[]{2, 900, 0}));
-        AzarServiceCompanion s = servicio(red, sinMuestra());
-        Instant cutoff = Instant.now().minus(Duration.ofHours(1));
-        List<Match> res = s.buscarAleatorias(1400, 1600, null, null, 1, 1, cutoff, 1, m -> { });
-        assertTrue(res.isEmpty());
-        assertEquals(0, red.totalLlamadas() - red.llamadasA(urlLb("rm_1v1", 1)) - red.llamadasA(urlLb("rm_1v1", 2)),
-                "no debería haber llamado a nada más que a las dos páginas del ladder");
-    }
-
-    @Test void buscarAleatorias_caminoFeliz_encuentraPartidaPorMuestreoDePerfiles() throws Exception {
-        long ahora = Instant.now().getEpochSecond();
-        FakeTransporte red = new FakeTransporte();
-        ladderDeUnaPagina(red, ahora);
-        rioVacio(red);
-        red.responder(urlPartidas(111, 1), jsonUnaPartida1v1(999, 111, 222));
-        red.responder(urlPartidas(222, 1), jsonUnaPartida1v1(999, 111, 222));
-        AzarServiceCompanion s = servicio(red, sinMuestra());
-        Instant cutoff = Instant.now().minus(Duration.ofHours(1));
-        List<Match> res = s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 1, m -> { });
-        assertEquals(1, res.size());
-        assertEquals(999L, res.get(0).id);
-        assertEquals(1, red.llamadasA(urlPartidas(111, 1)));
-        assertEquals(1, red.llamadasA(urlPartidas(222, 1)));
-        // los dos únicos perfiles del tramo quedaron consultados: no hay más candidatos → tramo agotado
-        assertTrue(s.tramoAgotado());
-    }
-
-    @Test void buscarAleatorias_alContinuarEnLaMismaSesion_noRepitePerfilesYaConsultados() throws Exception {
-        long ahora = Instant.now().getEpochSecond();
-        FakeTransporte red = new FakeTransporte();
-        ladderDeUnaPagina(red, ahora);
-        rioVacio(red);
-        red.responder(urlPartidas(111, 1), jsonUnaPartida1v1(999, 111, 222));
-        red.responder(urlPartidas(222, 1), jsonUnaPartida1v1(999, 111, 222));
-        AzarServiceCompanion s = servicio(red, sinMuestra());
-        Instant cutoff = Instant.now().minus(Duration.ofHours(1));
-
-        List<Match> primera = s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 1, m -> { });
-        assertEquals(1, primera.size());
-        assertEquals(1, red.llamadasA(urlPartidas(111, 1)));
-        assertEquals(1, red.llamadasA(urlPartidas(222, 1)));
-
-        // Misma sesión, mismos filtros: los dos perfiles siguen dentro del TTL de 10 min → no se vuelven a pedir.
-        List<Match> segunda = s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 2, m -> { });
-        assertEquals(1, segunda.size(), "la partida ya en caché de sesión se sigue sirviendo");
-        assertEquals(1, red.llamadasA(urlPartidas(111, 1)), "no se repite la consulta al mismo perfil");
-        assertEquals(1, red.llamadasA(urlPartidas(222, 1)), "no se repite la consulta al mismo perfil");
-        assertEquals(1, red.llamadasA(urlLb("rm_1v1", 1)), "la página del ladder ya cacheada no se repide");
-    }
-
-    @Test void buscarAleatorias_errorDeRedAlLeerUnPerfil_noRompeYDevuelveLoEncontrado() throws Exception {
-        long ahora = Instant.now().getEpochSecond();
-        FakeTransporte red = new FakeTransporte();
-        // Un único perfil en rango, y su lectura de partidas siempre falla.
-        red.responder(urlLb("rm_1v1", 1), jsonLadder(1, 100, new long[]{111, 1500, ahora}));
-        rioVacio(red);
-        red.fallar(urlPartidas(111, 1), "500 de prueba");
-        AzarServiceCompanion s = servicio(red, sinMuestra());
-        Instant cutoff = Instant.now().minus(Duration.ofHours(1));
-        List<Match> res = s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 1, m -> { });
-        assertTrue(res.isEmpty(), "el perfil nunca respondió: no hay partidas que devolver");
-        // como el fallo pasa ANTES de marcar el perfil como visto, se reintenta en cada pasada (3, sin filtros)
-        assertEquals(3, red.llamadasA(urlPartidas(111, 1)));
-        assertFalse(s.tramoAgotado(), "el perfil nunca llegó a marcarse como visto: el tramo no está agotado");
-    }
-
-    @Test void buscarAleatorias_errorDeRedEnElLeaderboard_propagaLaExcepcion() {
-        FakeTransporte red = new FakeTransporte();
-        red.fallar(urlLb("rm_1v1", 1), "HTTP 500");
-        red.fallar(urlLb("3", 1), "HTTP 500");
-        AzarServiceCompanion s = servicio(red, sinMuestra());
-        Instant cutoff = Instant.now().minus(Duration.ofHours(1));
-        assertThrows(IOException.class,
-                () -> s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 1, m -> { }));
-    }
-
     @Test void buscarAleatorias_conMuestraNocturnaSuficiente_noTocaLaRed() throws Exception {
         List<List<Object>> partidas = new ArrayList<>();
         for (int i = 0; i < 5; i++)
@@ -265,15 +194,11 @@ class AzarServiceCompanionTest {
             llamadasMuestra.incrementAndGet();
             return Map.of();
         };
-        long ahora = Instant.now().getEpochSecond();
         FakeTransporte red = new FakeTransporte();
-        ladderDeUnaPagina(red, ahora);
-        rioVacio(red);
-        red.responder(urlPartidas(111, 1), SIN_PARTIDAS);
-        red.responder(urlPartidas(222, 1), SIN_PARTIDAS);
-        AzarServiceCompanion s = servicio(red, muestraEspia);
+        AzarServiceCompanion s = servicio(red, muestraEspia);   // sin ladder nocturno: la tirada lo dice y no llama
         Instant cutoff = Instant.now().minus(Duration.ofHours(1));
-        s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 1, m -> { });   // hours=1 < 24
+        assertThrows(IOException.class, () -> s.buscarAleatorias(1000, 2000, null, null, 1, 1, cutoff, 1, m -> { }));   // hours=1 < 24
+        assertEquals(0, red.totalLlamadas());
         assertEquals(0, llamadasMuestra.get(), "con menos de 24 h no se consulta la muestra nocturna");
         assertFalse(s.deMuestra(), "sin muestra, la tirada no se anuncia como de ayer");
     }
@@ -301,41 +226,5 @@ class AzarServiceCompanionTest {
         assertEquals(0, red.totalLlamadas());
         List<Integer> gtes = res.stream().map(m -> m.gte).sorted().toList();
         assertEquals(List.of(base + 1, base + 2), gtes);
-    }
-
-    @Test void buscarGte_sinMuestra_construyeUnaTandaDesdeElLadder() throws Exception {
-        long ahora = Instant.now().getEpochSecond();
-        FakeTransporte red = new FakeTransporte();
-        // Único par de perfiles del ladder (una sola página: ultimaPaginaLadder = 1, así que las 5 franjas del
-        // GTE, aunque sorteen páginas distintas, quedan todas pinzadas a la página 1 — ver AzarServiceCompanion).
-        ladderDeUnaPagina(red, ahora);
-        red.responder(urlPartidas(111, 1), jsonUnaPartida1v1(999, 111, 222));
-        red.responder(urlPartidas(222, 1), jsonUnaPartida1v1(999, 111, 222));
-        AzarServiceCompanion s = servicio(red, sinMuestra());
-        int base = dev.tirador.aoe2radar.cache.RecsDisco.maxGteEnDisco();
-        List<Match> res = s.buscarGte(Instant.now().minus(Duration.ofHours(48)), m -> { });
-        assertEquals(1, res.size(), "los dos únicos perfiles del ladder solo dan para una partida (deduplicada)");
-        assertEquals(999L, res.get(0).id);
-        assertEquals(base + 1, res.get(0).gte);
-    }
-
-    /** Revisión 1.3 (textos): el «Muestreando el ladder… (n/5)» del GTE era el único progreso sin t(). */
-    @Test void buscarGte_sinMuestra_elProgresoSaleEnElIdiomaDeLaApp() throws Exception {
-        String idiomaPrevio = dev.tirador.aoe2radar.util.I18n.IDIOMA;
-        dev.tirador.aoe2radar.util.I18n.IDIOMA = "en";
-        try {
-            long ahora = Instant.now().getEpochSecond();
-            FakeTransporte red = new FakeTransporte();
-            ladderDeUnaPagina(red, ahora);
-            red.responder(urlPartidas(111, 1), jsonUnaPartida1v1(999, 111, 222));
-            red.responder(urlPartidas(222, 1), jsonUnaPartida1v1(999, 111, 222));
-            AzarServiceCompanion s = servicio(red, sinMuestra());
-            List<String> progreso = new java.util.ArrayList<>();
-            s.buscarGte(Instant.now().minus(Duration.ofHours(48)), progreso::add);
-            assertTrue(progreso.stream().anyMatch(p -> p.startsWith("Sampling the ladder")), "progreso: " + progreso);
-            assertTrue(progreso.stream().noneMatch(p -> p.startsWith("Muestreando")), "progreso: " + progreso);
-        } finally {
-            dev.tirador.aoe2radar.util.I18n.IDIOMA = idiomaPrevio;
-        }
     }
 }

@@ -129,22 +129,27 @@ Services the app connects to on its own:
   nightly `sfr-data` summaries, the `aoe2techtree` data, and the new-version check and download.
 
 Some menus open links in your browser, but only when you click them (a player's page on aoe2companion or
-aoe2insights, their Twitch channel, the "buy me a coffee" link). The app never opens them on its own.
+aoe2insights, their Twitch channel, the "buy me a coffee" link, Microsoft's Game Content Usage Rules in
+About and in the tech tree). The app never opens them on its own.
 
 aoe2radar needs no user account, has no analytics or telemetry, and sends no personal data to anyone.
 
 ## Credits
 
 - Match and profile data: **aoe2companion**, by Dennis Keil.
-- Technology tree: **aoe2techtree**, by HSZemi (MIT license).
+- Technology tree: **aoe2techtree**, by HSZemi (MIT license for its code and data; the icons and game
+  text are Microsoft's, used under the Game Content Usage Rules below).
 - Flags: [hampusborgos/country-flags](https://github.com/hampusborgos/country-flags) (public domain).
 - UI: **FlatLaf** (Apache 2.0 license).
 - Bundled Java runtime: **OpenJDK** (GPLv2 with Classpath Exception).
 - Match spectating: **CaptureAge**.
 - Streams: **Twitch**.
 
+Full license texts and notices for everything bundled: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 Age of Empires II © Microsoft Corporation. aoe2radar was created under Microsoft's "Game Content Usage
 Rules" using assets from Age of Empires II, and it is not endorsed by or affiliated with Microsoft.
+See Microsoft's [Game Content Usage Rules](https://www.xbox.com/en-US/developers/rules).
 
 ## License
 
