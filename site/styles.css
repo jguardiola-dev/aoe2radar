@@ -100,26 +100,13 @@ header.top .wrap { display: flex; align-items: center; gap: 20px; min-height: 64
 .enlace-video:hover { text-decoration: underline; }
 .nota { color: var(--texto-2); font-size: 15px; }
 
-/* el radar: el rombo del minimapa, un aro de oro y un barrido rojo que da una vuelta y se apaga */
-.radar {
-  position: absolute; z-index: 1; right: 2%; top: -10px; width: 380px; aspect-ratio: 1;
-  transform: rotate(45deg); border: 2px solid rgba(212, 174, 94, .55); border-radius: 18px; overflow: hidden;
-  background:
-    linear-gradient(rgba(212, 174, 94, .08) 1px, transparent 1px) 0 0 / 25% 25%,
-    linear-gradient(90deg, rgba(212, 174, 94, .08) 1px, transparent 1px) 0 0 / 25% 25%;
-}
-.radar::after { content: ""; position: absolute; inset: 22%; border: 1px solid rgba(212, 174, 94, .3); border-radius: 10px; }
-.barrido {
-  position: absolute; inset: -50%;
-  background: conic-gradient(from 0deg, rgba(242, 96, 108, .5), rgba(242, 96, 108, 0) 22%, transparent 100%);
-  animation: barrer 2.6s cubic-bezier(.4, 0, .2, 1) .3s 1 both;
-}
-@keyframes barrer {
-  from { transform: rotate(0deg); opacity: 1; }
-  80% { opacity: 1; }
-  to { transform: rotate(360deg); opacity: 0; }
-}
-@media (prefers-reduced-motion: reduce) { .barrido { animation: none; opacity: 0; } }
+/* el radar: el icono de la marca (el rombo del minimapa) en grande, con su barrido girando sin parar */
+.radar { position: absolute; z-index: 1; right: 1%; top: -36px; width: 400px; max-width: 100%;
+  filter: drop-shadow(0 30px 50px rgba(0, 0, 0, .55)); }
+.radar svg { display: block; width: 100%; height: auto; }
+.radar .barrido { transform-box: view-box; transform-origin: 128px 128px; animation: girar 4s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .radar .barrido { animation: none; } }
 
 .hero-figura { margin: 56px 0 0; position: relative; z-index: 2; }
 .hero-figura .aviso {
@@ -243,8 +230,9 @@ details p { padding: 0 0 20px; color: var(--texto-2); max-width: 68ch; }
 .pie .copy { font-size: 13px; }
 
 /* ----- pantallas medianas y móvil ----- */
+@media (max-width: 1240px) { .radar { width: 300px; right: 0; top: -10px; } }
 @media (max-width: 1000px) {
-  .radar { width: 260px; right: -60px; top: -40px; opacity: .6; }
+  .radar { width: 260px; right: -50px; top: -30px; opacity: .55; }
   .fila, .dos { grid-template-columns: minmax(0, 1fr); gap: 28px; }
   .fila.al-reves .texto { order: 0; }
   .fila.ancha .texto { grid-template-columns: minmax(0, 1fr); }
