@@ -1,0 +1,33 @@
+aoe2radar
+Copyright (c) 2026 Jorge «12Tirador» Guardiola. Todos los derechos reservados. All rights reserved.
+
+ESPAÑOL
+
+aoe2radar es gratuito. Puedes descargarlo, instalarlo y usarlo gratis, y compartir el enlace oficial de descarga
+(https://github.com/jguardiola-dev/aoe2radar/releases). Sin permiso por escrito del autor no puedes:
+- distribuir el programa, modificado o no, fuera de ese enlace oficial;
+- venderlo o cobrar por él;
+- modificarlo, descompilarlo o usar su código, su nombre o su logotipo en otros proyectos,
+salvo en lo que la ley aplicable permita expresamente.
+
+Las versiones 1.2 a 1.5 se publicaron con la licencia MIT, y esas copias la conservan. Esta licencia se aplica
+desde la versión 1.6. Los componentes de terceros mantienen sus propias licencias (THIRD_PARTY_NOTICES.md). La
+herramienta de escenarios (aoe2radar-escenarios) es un programa aparte con licencia GPL v3.
+
+El programa se ofrece «tal cual», sin garantías de ningún tipo. El autor no responde de ningún daño derivado de su uso.
+
+ENGLISH
+
+aoe2radar is free of charge. You may download, install and use it for free, and share the official download link
+(https://github.com/jguardiola-dev/aoe2radar/releases). Without the author's written permission you may not:
+- distribute the program, modified or not, outside that official link;
+- sell it or charge for it;
+- modify it, decompile it, or use its code, name or logo in other projects,
+except as expressly permitted by applicable law.
+
+Versions 1.2 to 1.5 were published under the MIT license, and those copies keep it. This license applies from
+version 1.6 on. Third-party components keep their own licenses (THIRD_PARTY_NOTICES.md). The scenario tool
+(aoe2radar-escenarios) is a separate program under the GPL v3.
+
+The program is provided "as is", without warranty of any kind. The author is not liable for any damage arising
+from its use.

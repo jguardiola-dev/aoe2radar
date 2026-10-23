@@ -1,0 +1,39 @@
+# Página de presentación (site/) en GitHub Pages. SOLO a mano: no hay push, ni horario, ni pull_request que la
+# publique. Para publicar: Settings → Pages → Source: «GitHub Actions» (una vez) y luego Actions → pages → Run workflow.
+# El sitio es estático (HTML + CSS + imágenes): no hay paso de build; site/index.html y site/es/index.html se generan
+# en local con `python tools/site_gen.py` y se suben ya generados.
+name: pages
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un despliegue a la vez; uno nuevo no corta el que está en marcha.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  desplegar:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.despliegue.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configurar Pages
+        uses: actions/configure-pages@v5
+
+      - name: Subir site/
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Publicar
+        id: despliegue
+        uses: actions/deploy-pages@v4
