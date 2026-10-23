@@ -2,6 +2,8 @@
 
 Your radar for competitive Age of Empires II, without spoilers.
 
+**Website: https://jguardiola-dev.github.io/aoe2radar/** (en español: https://jguardiola-dev.github.io/aoe2radar/es/)
+
 🇪🇸 Español: [ver más abajo](#español)
 
 ---

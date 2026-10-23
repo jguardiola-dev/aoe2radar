@@ -3,13 +3,17 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>aoe2radar: tu compañero de AoE2 sin spoilers para Windows</title>
-<meta name="description" content="App gratuita para Windows de Age of Empires II: DE. Sigue a pros y amigos, mira partidas en directo, revive las tuyas sin spoilers y aprende el juego. Local, sin spoilers y se actualiza sola.">
-<meta name="theme-color" content="#1b1c1f">
-<meta property="og:title" content="aoe2radar: tu compañero de AoE2 sin spoilers para Windows">
-<meta property="og:description" content="App gratuita para Windows de Age of Empires II: DE. Sigue a pros y amigos, mira partidas en directo, revive las tuyas sin spoilers y aprende el juego. Local, sin spoilers y se actualiza sola.">
+<title>aoe2radar: todo lo que necesitas para Age of Empires II, en una app para Windows</title>
+<meta name="description" content="App gratuita para Windows de AoE2: DE. Build orders sobre el juego, el ELO y el smurf de tu rival al empezar, una Watchlist que te avisa cuando juegan tus amigos, recs sin spoilers enviadas al juego, equipos igualados y liguillas, simulador de combate y torneos.">
+<meta name="theme-color" content="#191816">
+<meta property="og:title" content="aoe2radar: todo lo que necesitas para Age of Empires II, en una app para Windows">
+<meta property="og:description" content="App gratuita para Windows de AoE2: DE. Build orders sobre el juego, el ELO y el smurf de tu rival al empezar, una Watchlist que te avisa cuando juegan tus amigos, recs sin spoilers enviadas al juego, equipos igualados y liguillas, simulador de combate y torneos.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="https://jguardiola-dev.github.io/aoe2radar/img/visor-summary-es.webp">
+<meta property="og:url" content="https://jguardiola-dev.github.io/aoe2radar/es/">
+<meta property="og:image" content="https://jguardiola-dev.github.io/aoe2radar/media/og-es.jpg">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 <link rel="canonical" href="https://jguardiola-dev.github.io/aoe2radar/es/">
 <link rel="alternate" hreflang="en" href="https://jguardiola-dev.github.io/aoe2radar/">
 <link rel="alternate" hreflang="es" href="https://jguardiola-dev.github.io/aoe2radar/es/">
@@ -19,151 +23,258 @@
 </head>
 <body>
 <a class="skip" href="#contenido">Saltar al contenido</a>
-<header class="top" id="arriba">
+<header class="top">
   <div class="wrap">
-    <a class="brand" href="./"><img src="../img/logotipo-oscuro.svg" width="158" height="30" alt="aoe2radar"></a>
+    <a class="brand" href="./"><img src="../img/logotipo-oscuro.svg" width="148" height="28" alt="aoe2radar"></a>
     <nav class="menu" aria-label="Principal">
       <a href="#funciones">Funciones</a>
+      <a href="#mas">Más</a>
       <a href="#instalar">Instalar</a>
       <a href="#preguntas">Preguntas</a>
-      <a href="https://github.com/jguardiola-dev/aoe2radar">GitHub</a>
-      <a class="lang" href="../" hreflang="en" lang="en" title="This page in English">English</a>
+      <a class="idioma" href="../" hreflang="en" lang="en" aria-label="View this page in English">English</a>
+      <a class="boton mini-cta" href="https://github.com/jguardiola-dev/aoe2radar/releases/latest/download/aoe2radar-1.5-setup.exe">Descargar</a>
     </nav>
   </div>
 </header>
 
 <main id="contenido">
-<section class="hero" aria-labelledby="titulo">
+<section class="hero">
   <div class="wrap">
-    <div>
-      <h1 id="titulo">Tu radar del AoE2. <span>Sin spoilers.</span></h1>
-      <p class="lead">Sigue la escena competitiva, revive tus partidas y aprende el juego, en una app gratuita para Windows que nunca te destripa un resultado.</p>
-      <div class="cta">
-        <a class="btn primary" href="https://github.com/jguardiola-dev/aoe2radar/releases/latest">
-          <svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true" focusable="false"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M10 2v10m-4-4 4 4 4-4M3 13v4h14v-4"/></svg>
-          Descargar para Windows</a>
-        <a class="btn secondary" href="https://github.com/jguardiola-dev/aoe2radar/releases">Todas las versiones</a>
-        <small>Gratis · Windows 10 y 11 · español e inglés</small>
+    <div class="hero-texto">
+      <h1>Todo lo que necesitas para AoE2. Y más de lo que imaginabas.</h1>
+      <p class="entrada">Una app gratuita para Windows que sigue a tus amigos y a los pros, te dice quién es de verdad tu rival cuando empieza la partida y pone tu build order encima del juego. Sin spoilers.</p>
+      <div class="acciones">
+        <a class="boton" href="https://github.com/jguardiola-dev/aoe2radar/releases/latest/download/aoe2radar-1.5-setup.exe">Descargar para Windows</a>
+        <a class="enlace-video" href="https://www.youtube.com/watch?v=og_HVtfqdh0">Ver el tráiler</a>
       </div>
+      <p class="nota">Versión 1.5, gratis, para Windows 10 y 11. Sin cuenta y sin anuncios.</p>
     </div>
-    <div class="shot"><img src="../img/visor-summary-es.webp" width="1280" height="720" alt="El visor de aoe2radar reproduce un 1v1 en Arabia en modo resumen: el mapa con los ejércitos estimados, los aldeanos y el gasto de cada jugador, y la historia hasta ese momento. El resto de la línea de tiempo sigue oculto." fetchpriority="high"></div>
+    <div class="radar" aria-hidden="true"><div class="barrido"></div></div>
+    <figure class="hero-figura">
+      <div class="ventana"><img src="../media/inicio-es.webp" width="1600" height="867" alt="El Inicio de aoe2radar: tu Watchlist, partidas en directo, próximos partidos de torneos, partidas destacadas, la calculadora de aldeanos y el simulador de combate." fetchpriority="high"></div>
+      <img class="aviso" src="../media/aviso-es.webp" width="2379" height="126" alt="Aviso de la app: m0re ha empezado una partida contra iBUYPOWER (2640), aztecas contra sajones, en Desierto de Arabia, con un botón para espectar.">
+    </figure>
   </div>
 </section>
 
-<section id="funciones" aria-labelledby="pilares">
+<section class="funciones" id="funciones" aria-labelledby="funciones-h">
   <div class="wrap">
-    <h2 id="pilares">Tres cosas en una sola app</h2>
-    <p class="intro">Todo funciona en tu PC, es gratis y guarda los resultados hasta que tú los pidas.</p>
-    <div class="pilares">
-      <article class="pilar">
-        <div class="img"><img src="../img/watchlist-card-es.webp" width="800" height="500" alt="La Watchlist con tres jugadores y la lista de sus últimas partidas: fecha, civ, rival, mapa y modo, sin ningún ganador." loading="lazy" decoding="async"></div>
-        <div class="txt"><p class="tag">Sigue la escena</p><h3>Pros, amigos y tu clan, de un vistazo</h3><p>Ten una Watchlist con pros, amigos y gente de tu clan. Mira sus últimas partidas sin resultados, quién está jugando ahora en Live now, quién hace directo en Twitch, y el perfil y el ELO de cada jugador.</p></div>
-      </article>
-      <article class="pilar">
-        <div class="img"><img src="../img/visor-replay-es.gif" width="576" height="324" alt="Animación del modo resumen: la cámara vuela a la base de un jugador cuando llega a la Edad Feudal, y el título del capítulo aparece abajo." loading="lazy" decoding="async"></div>
-        <div class="txt"><p class="tag">Entiende tus partidas <span class="pronto">Próximamente</span></p><h3>Revive una rec, capítulo a capítulo</h3><p>Abre una rec y mira la partida sobre el mapa, con la historia contada según avanza: edades, batallas y momentos clave. El modo resumen te cuenta la partida entera en un minuto, y puedes exportarlo.</p></div>
-      </article>
-      <article class="pilar">
-        <div class="img contain"><img src="../img/learn-es.webp" width="1200" height="340" alt="Simulador de combate (20 ballesteros contra 12 caballeros) y calculadora de aldeanos (aldeanos en comida, madera y oro para sacar caballeros sin parar)." loading="lazy" decoding="async"></div>
-        <div class="txt"><p class="tag">Aprende el juego</p><h3>Árboles, victorias y las cuentas de la producción</h3><p>Consulta el árbol tecnológico y el porcentaje de victorias de cada civ. Prueba un combate en el simulador antes de meterte en él y calcula cuántos aldeanos necesitas para producir sin parar. <span class="pronto">Próximamente</span></p>
-          <p>Build orders: un catálogo para compararlas con tu partida y seguirlas superpuestas en el juego. <span class="pronto">Próximamente</span></p></div>
-      </article>
-    </div>
+    <header class="cabeza">
+      <h2 id="funciones-h">Pensada para cuando juegas</h2>
+      <p>Lo que de otro modo buscarías en cinco pestañas del navegador, o que directamente no podrías hacer, en una ventana junto al juego.</p>
+    </header>
+    
+    <article class="fila">
+      <div class="texto">
+        <h3>Build orders que siguen tu partida</h3>
+        <p>38 build orders de Hera, TaToH, Sebastian, Survivalist y más, paso a paso y con iconos. Ponla en partida y se queda encima del AoE2, pasando de paso sola al ritmo del reloj del juego.</p>
+        <ul class="puntos"><li>Al acabar, compara tus tiempos con los de la build.</li><li>Busca por nombre, autor o civ, filtra por dificultad y guarda tus favoritas.</li></ul>
+      </div>
+      <div class="medio"><div class="juego"><video class="clip" width="1080" height="608" muted loop playsinline preload="none" poster="../media/build-es-poster.webp" aria-label="Una build order sobre el juego desenfocado: Alta Edad Media, 6 aldeanos a comida, paso 1 de 14, que pasa al siguiente en el 1:15."><source src="../media/build-es.mp4" type="video/mp4"></video></div></div>
+    </article>
+    <article class="fila al-reves">
+      <div class="texto">
+        <h3>Tu rival, nada más empezar</h3>
+        <p>En cuanto empieza tu partida, aoe2radar te enseña el ELO real de tu rival en 1v1 y en equipo, si la cuenta es el smurf de alguien (y de quién) y las civs de sus cinco últimas 1v1.</p>
+        <ul class="puntos"><li>Sabrás si siempre coge la misma civ antes de que salga tu primer aldeano.</li></ul>
+      </div>
+      <div class="medio"><div class="tarjeta"><img src="../media/mipartida_1v1-es.webp" width="1242" height="537" alt="Tarjeta Mi partida: tu partida empieza en Arabia, 1v1 RM. Kanon, 2351 en 1v1 y 1874 en TG, con las civs de sus últimas 1v1, contra 12Tirador, 2054."></div></div>
+    </article>
+    <article class="fila ancha">
+      <div class="texto">
+        <h3>Una Watchlist que te avisa cuando juegan</h3>
+        <p>Sigue a tus amigos, a tu clan y a los pros, por grupos. En cuanto uno empieza una partida ves contra quién juega, en qué mapa, con qué civs y con qué ELO, y puedes espectarla con un clic.</p>
+        <ul class="puntos"><li>Activa la campana de un jugador y te avisa aunque estés jugando.</li><li>Se queda a la izquierda en todas las pestañas, con la forma reciente de cada jugador.</li></ul>
+      </div>
+      <div class="medio"><div class="ventana"><video class="clip" width="1480" height="860" muted loop playsinline preload="none" poster="../media/watchlist-es-poster.webp" aria-label="La Watchlist con pros como Hera, Liereyy y TaToH; MbL está jugando contra Lewis en Desierto de Arabia, y el menú del clic derecho ofrece Espectar y Perfil."><source src="../media/watchlist-es.mp4" type="video/mp4"></video></div></div>
+    </article>
+    <article class="fila ancha">
+      <div class="texto">
+        <h3>El perfil de cualquiera, hasta su velocidad</h3>
+        <p>ELO máximo en cada modo, la gráfica, sus civs y mapas favoritos, vuestro cara a cara y su velocidad real en acciones efectivas por minuto (eAPM).</p>
+        <ul class="puntos"><li>Mira sus nicks anteriores y sus cuentas vinculadas, copia su ID o ábrelo en aoe2insights.</li></ul>
+      </div>
+      <div class="medio"><div class="ventana"><video class="clip" width="1444" height="940" muted loop playsinline preload="none" poster="../media/perfil-es-poster.webp" aria-label="El perfil de Hera: 2915 en 1v1, 1598 en TG, 129 de eAPM, un 84 % de victorias y sus civs y mapas más jugados."><source src="../media/perfil-es.mp4" type="video/mp4"></video></div></div>
+    </article>
+    <article class="fila ancha">
+      <div class="texto">
+        <h3>Recs sin spoilers, directas al juego</h3>
+        <p>Busca las partidas de cualquiera y manda la rec a AoE2 con un clic: aparece en Partidas guardadas, lista para ver. El resultado sigue oculto hasta que pulsas el ojo.</p>
+        <ul class="puntos"><li>Busca por jugador, ELO y mapa, o juega a «Guess the ELO» con partidas al azar.</li></ul>
+      </div>
+      <div class="medio"><div class="ventana"><video class="clip" width="1444" height="670" muted loop playsinline preload="none" poster="../media/recs-es-poster.webp" aria-label="La pestaña Recs con las últimas partidas de Hera agrupadas por día, sin spoilers, con botones para enviar al juego y descargar."><source src="../media/recs-es.mp4" type="video/mp4"></video></div></div>
+    </article>
+    <article class="fila ancha">
+      <div class="texto">
+        <h3>Equipos igualados y vuestra propia liga</h3>
+        <p>Mete de 2 a 8 jugadores y aoe2radar reparte los equipos por ELO, con ruleta de mapas y civs igualadas. Después cread una liguilla: un código para unirse, y los resultados se cuentan solos con las partidas que jugáis.</p>
+        <ul class="puntos"><li>Copia el nombre del lobby, encuentra las partidas de la liga y mira el winrate de cada civ en el mapa.</li></ul>
+      </div>
+      <div class="medio"><div class="ventana"><video class="clip" width="1430" height="930" muted loop playsinline preload="none" poster="../media/equipos-es-poster.webp" aria-label="Equipos igualados: equipo 1 y equipo 2 con 313 de diferencia de ELO, la lista de jugadores y una ruleta de mapas que cae en Lombardía."><source src="../media/equipos-es.mp4" type="video/mp4"></video></div></div>
+    </article>
+    <article class="fila ancha">
+      <div class="texto">
+        <h3>Resuelve la pelea antes de hacer las unidades</h3>
+        <p>Monta una batalla con las mejoras exactas que quieras, mira quién gana y por qué, y después mándala al juego como escenario para verla con tus ojos. La calculadora de aldeanos te dice cuántos necesitas en cada recurso para producir sin parar.</p>
+        <ul class="puntos"><li>En AoE2: Editor, Cargar escenario, Probar, y el juego dice «Gana J1» o «Gana J2».</li></ul>
+      </div>
+      <div class="medio"><div class="ventana"><video class="clip" width="1450" height="940" muted loop playsinline preload="none" poster="../media/combate-es-poster.webp" aria-label="El simulador de combate: francos contra britanos, 10 paladines contra 25 piqueros, cada lado con sus mejoras, y el veredicto con el tiempo que tarda."><source src="../media/combate-es.mp4" type="video/mp4"></video></div></div>
+    </article>
+    <article class="fila ancha">
+      <div class="texto">
+        <h3>Todos los torneos, con toda la información</h3>
+        <p>Los torneos de Liquipedia y las copas de la comunidad de gamenex.gg en un sitio: fechas, premios, cuadros, resultados, los mapas y civs de cada partida y el próximo partido de los jugadores que sigues.</p>
+        <ul class="puntos"><li>Fija un torneo en Inicio y no te pierdes un partido.</li></ul>
+      </div>
+      <div class="medio"><div class="ventana"><img src="../media/torneo-es.webp" width="1444" height="1000" alt="Sudden Dessaster 3: formato, 20.000 USD en premios, enlaces a Liquipedia, Twitch y YouTube, y los próximos partidos con su hora." loading="lazy" decoding="async"></div></div>
+    </article>
   </div>
 </section>
 
-<section aria-labelledby="spoilers">
+<section class="mas" id="mas" aria-labelledby="mas-h">
+  <div class="wrap">
+    <h2 id="mas-h">Y todo lo demás que usas cada día</h2>
+    <ul class="rejilla">
+      <li class="mini">
+        <img src="../media/directo-es.webp" width="960" height="540" alt="En directo: partidas del top 250 en curso, con el ELO de los jugadores, sus civs y el botón Espectar." loading="lazy" decoding="async">
+        <h3>En directo</h3>
+        <p>Las mejores partidas que se están jugando ahora, con su ELO y sus civs, listas para espectar.</p>
+      </li>
+      <li class="mini">
+        <img src="../media/ratings_es-es.webp" width="960" height="540" alt="La clasificación 1v1 de España: puesto, ELO, máximo, partidas, winrate y última partida." loading="lazy" decoding="async">
+        <h3>Todas las estadísticas</h3>
+        <p>Todas las clasificaciones por modo, país y clan, gráficas de ELO y el winrate de cada civ por mapa y por ELO.</p>
+      </li>
+      <li class="mini">
+        <img src="../media/streams-es.webp" width="960" height="540" alt="La pestaña Streams: miniaturas de los streams de AoE2 en directo en Twitch, YouTube y Kick." loading="lazy" decoding="async">
+        <h3>Streams</h3>
+        <p>Quién está emitiendo AoE2 ahora en Twitch, YouTube y Kick, con espectadores e idioma.</p>
+      </li>
+      <li class="mini">
+        <img src="../media/civs_techtree-es.webp" width="960" height="540" alt="El tech tree de los armenios con sus bonus, unidades únicas y un 52,8 % de victorias." loading="lazy" decoding="async">
+        <h3>Tech tree</h3>
+        <p>El árbol de cada civ en el parche actual, junto a sus estadísticas.</p>
+      </li>
+      <li class="mini">
+        <img src="../media/builds-es.webp" width="960" height="540" alt="El catálogo de build orders por dificultad: arqueros, exploradores, castillo rápido y más." loading="lazy" decoding="async">
+        <h3>Catálogo de builds</h3>
+        <p>Las 38 builds en una rejilla por dificultad, con el crédito de cada autor.</p>
+      </li>
+      <li class="mini">
+        <img src="../media/aldeanos-es.webp" width="960" height="540" alt="La calculadora de aldeanos: britanos haciendo aldeanos y arqueros, con los aldeanos necesarios en cada recurso." loading="lazy" decoding="async">
+        <h3>Aldeanos</h3>
+        <p>Cuántos aldeanos en cada recurso para que tu producción no pare.</p>
+      </li>
+    </ul>
+    <p class="mas-nota">Y además: un Inicio que ordenas a tu manera, tema claro y oscuro, español e inglés, y un visor de partidas en beta.</p>
+  </div>
+</section>
+
+<section class="pergamino" aria-labelledby="spoil-h">
   <div class="wrap dos">
     <div>
-      <h2 id="spoilers">Sin spoilers por diseño</h2>
-      <p class="intro">Saber el resultado arruina la partida. aoe2radar está hecha para que solo te enteres cuando tú lo decidas.</p>
-      <ul class="puntos">
-        <li><strong>Ningún ganador en la lista.</strong> La lista de partidas nunca muestra quién ganó, el cambio de ELO ni la duración.</li>
-        <li><strong>Un ELO que no chiva.</strong> El ELO de la Watchlist solo se actualiza al abrir la app, nunca al buscar.</li>
-        <li><strong>Una línea de tiempo sin final.</strong> En el visor, todo lo que ves sale solo de lo que ha pasado hasta ese momento, y la línea de tiempo no revela cuánto dura la partida. <span class="pronto">Próximamente</span></li>
-        <li><strong>Tú decides.</strong> <span class="ui">Revelar resultado</span> siempre está a un clic, y solo si lo pulsas.</li>
-      </ul>
+      <h2 id="spoil-h">Sin spoilers por diseño</h2>
+      <p>aoe2radar está hecha para ver partidas sin saber cómo acaban. Nada te chiva el resultado si no lo pides.</p>
     </div>
-    <div class="shot"><img src="../img/spoilers-es.webp" width="1200" height="340" alt="Dos filas de la lista de partidas: la primera con el resultado oculto; la segunda, tras pulsar Revelar resultado, dice Ganó." loading="lazy" decoding="async"></div>
+    <ul class="lista">
+      <li><strong>Ningún ganador en la lista.</strong> Las listas de partidas nunca enseñan quién ganó, el cambio de ELO ni la duración.</li>
+      <li><strong>Un ELO que no chiva.</strong> El ELO de la Watchlist solo se actualiza al abrir la app, nunca al buscar.</li>
+      <li><strong>Tú decides.</strong> El ojo de cada partida enseña la corona o la calavera, solo si lo pulsas.</li>
+    </ul>
   </div>
 </section>
 
-<section aria-labelledby="aldia">
+<section class="aldia" aria-labelledby="aldia-h">
+  <div class="wrap dos">
+    <h2 id="aldia-h">Se mantiene al día sola</h2>
+    <ul class="lista">
+      <li><strong>Se actualiza sola.</strong> Las versiones nuevas se bajan en segundo plano y se aplican al cerrar la app. Si algún arranque falla, vuelve sola a la versión anterior.</li>
+      <li><strong>Datos de cada noche.</strong> Perfiles, clasificaciones y estadísticas de civs se preparan cada noche, así la app pide lo mínimo a los servicios en vivo.</li>
+      <li><strong>El parche actual.</strong> El tech tree sigue cada parche nuevo.</li>
+    </ul>
+  </div>
+</section>
+
+<section class="trailer" aria-labelledby="trailer-h">
   <div class="wrap dos">
     <div>
-      <h2 id="aldia">Siempre al día</h2>
-      <p class="intro">Instálala una vez. A partir de ahí, la app y sus datos se mantienen al día solos.</p>
-      <ul class="puntos">
-        <li><strong>Se actualiza sola.</strong> La app instalada baja las versiones nuevas en segundo plano y las aplica al cerrarla. Si algún arranque falla, vuelve sola a la versión anterior.</li>
-        <li><strong>Datos de cada noche.</strong> Perfiles, ladders y estadísticas de civs se preparan cada noche, así la app pide lo mínimo a los servicios en vivo.</li>
-        <li><strong>El parche actual.</strong> El árbol tecnológico viene de aoe2techtree y sigue cada parche nuevo.</li>
-        <li><strong>En directo cuando importa.</strong> Live now y los avisos de partida se actualizan al momento gracias a aoe2companion.</li>
-      </ul>
+      <h2 id="trailer-h">Mírala en dos minutos</h2>
+      <p>El tráiler de la 1.5: la Watchlist, tu rival al empezar, la build sobre el juego, una batalla enviada al AoE2 y vuestra liga.</p>
     </div>
-    <div class="shot"><img src="../img/stats-es.webp" width="1200" height="340" alt="Civ Stats y la gráfica de ELO de un jugador: porcentaje de victorias de las mejores civs en Arabia y una línea de ELO de 90 días." loading="lazy" decoding="async"></div>
+    <a class="trailer-enlace" href="https://www.youtube.com/watch?v=og_HVtfqdh0"><img src="../media/trailer-es.webp" width="960" height="540" alt="Miniatura del tráiler: Todo lo que necesitas para Age of Empires II, y más." loading="lazy" decoding="async"><span>Ver el tráiler</span></a>
   </div>
 </section>
 
-<section aria-labelledby="capturas">
+<section class="instalar" id="instalar" aria-labelledby="instalar-h">
   <div class="wrap">
-    <h2 id="capturas">Capturas</h2>
-    <div class="galeria">
-      <figure><div class="shot"><img src="../img/livenow-es.webp" width="1280" height="812" alt="Live now con una partida en curso en Arabia y otra terminada hace diez minutos, con botón para bajar la rec y sin resultado." loading="lazy" decoding="async"></div><figcaption>Live now: quién está jugando ahora, con un botón para espectar.</figcaption></figure>
-      <figure><div class="shot"><img src="../img/profile-es.webp" width="1280" height="812" alt="Perfil de un jugador con 1.700 partidas: ELO, porcentaje de victorias, un calendario de actividad del año y tres gráficas de barras." loading="lazy" decoding="async"></div><figcaption>El perfil de un jugador: actividad del año y porcentaje de victorias por día, hora y mes.</figcaption></figure>
-      <figure><div class="shot"><img src="../img/visor-summary-es.webp" width="1280" height="720" alt="El visor de aoe2radar reproduce un 1v1 en Arabia en modo resumen: el mapa con los ejércitos estimados, los aldeanos y el gasto de cada jugador, y la historia hasta ese momento. El resto de la línea de tiempo sigue oculto." loading="lazy" decoding="async"></div><figcaption>El visor a mitad de partida: capítulos a la derecha, la línea de tiempo abajo y lo que viene aún por escribir. <span class="pronto">Próximamente</span></figcaption></figure>
-      <figure><div class="shot"><img src="../img/watchlist-es.webp" width="1280" height="812" alt="La Watchlist con tres jugadores y la lista de sus últimas partidas: fecha, civ, rival, mapa y modo, sin ningún ganador." loading="lazy" decoding="async"></div><figcaption>Tu Watchlist y sus últimas partidas, con los resultados ocultos.</figcaption></figure>
-    </div>
-  </div>
-</section>
-
-<section id="instalar" aria-labelledby="inst">
-  <div class="wrap">
-    <h2 id="inst">Instálala en tres pasos</h2>
+    <h2 id="instalar-h">Instálala en tres pasos</h2>
     <ol class="pasos">
-      <li><strong>Descarga</strong> <code>aoe2radar-X.Y-setup.exe</code> de la <a href="https://github.com/jguardiola-dev/aoe2radar/releases/latest">última versión</a>.</li>
+      <li><strong>Descarga</strong> <a href="https://github.com/jguardiola-dev/aoe2radar/releases/latest/download/aoe2radar-1.5-setup.exe">aoe2radar-1.5-setup.exe</a>.</li>
       <li><strong>Ejecútalo.</strong> Se instala solo para tu usuario de Windows, sin permisos de administrador, y aparece en el menú Inicio.</li>
-      <li><strong>Si SmartScreen avisa</strong> con <span class="ui">Windows protegió su PC</span>, pulsa <span class="ui">Más información</span> → <span class="ui">Ejecutar de todas formas</span>. El instalador aún no está firmado; por eso avisa Windows.</li>
+      <li><strong>Si SmartScreen avisa</strong> con <span class="ui">Windows protegió su PC</span>, pulsa <span class="ui">Más información</span> y luego <span class="ui">Ejecutar de todas formas</span>. El instalador aún no está firmado, por eso avisa Windows.</li>
     </ol>
-    <p class="nota">¿Prefieres no instalar nada? Cada versión trae también un zip: descomprímelo en su propia carpeta y abre <code>aoe2radar.exe</code>.</p>
-    <p class="cta" style="margin-top:20px"><a class="btn primary" href="https://github.com/jguardiola-dev/aoe2radar/releases/latest">Descargar para Windows</a></p>
+    <p class="nota">¿Prefieres no instalar nada? Cada versión trae también un zip portátil, en <a href="https://github.com/jguardiola-dev/aoe2radar/releases">todas las versiones</a>.</p>
+    <p><a class="boton" href="https://github.com/jguardiola-dev/aoe2radar/releases/latest/download/aoe2radar-1.5-setup.exe">Descargar para Windows</a></p>
   </div>
 </section>
 
-<section id="preguntas" aria-labelledby="faq">
-  <div class="wrap">
-    <h2 id="faq">Preguntas frecuentes</h2>
+<section class="preguntas" id="preguntas" aria-labelledby="preguntas-h">
+  <div class="wrap estrecho">
+    <h2 id="preguntas-h">Preguntas frecuentes</h2>
     <details><summary>¿De verdad es gratis?</summary><p>Sí. Sin anuncios, sin cuenta y sin versión de pago.</p></details>
-    <details><summary>¿Toca el juego o mi cuenta?</summary><p>No. No modifica Age of Empires II y nunca te pide tu usuario. Lee datos públicos de partidas, baja recs y, solo si se lo pides, abre una partida en el juego para que la espectes.</p></details>
+    <details><summary>¿Toca el juego o mi cuenta?</summary><p>No. No modifica Age of Empires II y nunca te pide tu usuario. Lee datos públicos de partidas, baja recs y, solo si se lo pides, abre una partida o un escenario en el juego.</p></details>
     <details><summary>¿Qué envía sobre mí?</summary><p>Nada. Ni analíticas ni telemetría. Tus ajustes y tus listas se quedan en tu PC.</p></details>
-    <details><summary>¿Hay versión para Mac o Linux?</summary><p>De momento no: aoe2radar es una app de Windows, como el juego y sus recs.</p></details>
-    <details><summary>¿Y si sí quiero saber quién ganó?</summary><p>Clic derecho en una partida → <span class="ui">Revelar resultado…</span>, o activa <span class="ui">Mostrar resultados</span> para verlos todos.</p></details>
-    <details><summary>¿Puedo cambiar el idioma o el tema?</summary><p>Sí. Habla español e inglés, tiene tema claro y oscuro y tres tamaños de letra. La primera vez que la abres, una guía corta te deja elegir, y puedes volver a verla desde Configuración.</p></details>
+    <details><summary>¿Hay versión para Mac o Linux?</summary><p>De momento no: aoe2radar es una app de Windows, como el juego.</p></details>
+    <details><summary>¿Puedo cambiar el idioma o el tema?</summary><p>Sí. Habla español e inglés, tiene tema claro y oscuro y tres tamaños de letra.</p></details>
+    <details><summary>He encontrado un fallo o tengo una idea. ¿Dónde lo cuento?</summary><p>En la app, desde el menú ⚙, o en las <a href="https://github.com/jguardiola-dev/aoe2radar/issues">incidencias de GitHub</a>. También me encuentras en <a href="https://twitch.tv/12tirador">Twitch</a>.</p></details>
   </div>
 </section>
 
-<section class="creditos" aria-labelledby="cred">
-  <div class="wrap">
-    <h2 id="cred">Créditos</h2>
+<section class="creditos" aria-labelledby="creditos-h">
+  <div class="wrap estrecho">
+    <h2 id="creditos-h">Créditos</h2>
     <ul>
       <li>Datos de partidas, jugadores y directos: <a href="https://www.aoe2companion.com">aoe2companion</a>, de Dennis Keil.</li>
-      <li>Árbol tecnológico: <a href="https://aoe2techtree.net">aoe2techtree</a>, de HSZemi (MIT).</li>
-      <li>Lector de recs: portado de <a href="https://github.com/happyleavesaoc/aoc-mgz">aoc-mgz</a> (happyleavesaoc) y <a href="https://github.com/aoe2ct/aoe2rec">aoe2rec</a> (Stéphane Bisinger y colaboradores), los dos MIT.</li>
-      <li>Inspiración: <a href="https://aoe2database.com">aoe2database</a>, de Pau795 (disposición de las mejoras y desglose del simulador de combate), y <a href="https://github.com/PeterWhiteJavascript/aoe2-de-tools">aoe2-de-tools</a>, de Survivalist.</li>
+      <li>Torneos: <a href="https://liquipedia.net/ageofempires/">Liquipedia</a> (CC BY-SA 3.0) y <a href="https://gamenex.gg">gamenex.gg</a>. Tech tree: <a href="https://aoe2techtree.net">aoe2techtree</a>, de HSZemi (MIT).</li>
+      <li>Build orders de sus creadores, sacadas de sus vídeos; la mayoría, encontradas gracias al catálogo de <a href="https://aoebuddy.com">AoE Buddy</a>.</li>
+      <li>Lector de recs portado de <a href="https://github.com/happyleavesaoc/aoc-mgz">aoc-mgz</a> y <a href="https://github.com/aoe2ct/aoe2rec">aoe2rec</a> (MIT). Simulador de combate y calculadora de aldeanos inspirados en <a href="https://aoe2database.com">aoe2database</a> (Pau795) y <a href="https://github.com/PeterWhiteJavascript/aoe2-de-tools">aoe2-de-tools</a> (Survivalist).</li>
       <li>Todas las licencias, en <a href="https://github.com/jguardiola-dev/aoe2radar/blob/main/THIRD_PARTY_NOTICES.md">THIRD_PARTY_NOTICES</a>.</li>
     </ul>
-    <div class="aviso">
-      <p>Age of Empires II © Microsoft Corporation. aoe2radar se creó conforme a las «Game Content Usage Rules» de Microsoft, con recursos de Age of Empires II, y Microsoft no la respalda ni tiene relación con ella.</p><p lang="en">Age of Empires II © Microsoft Corporation. aoe2radar was created under Microsoft's "Game Content Usage Rules" using assets from Age of Empires II, and it is not endorsed by or affiliated with Microsoft.</p>
+    <div class="legal">
+      <p>Age of Empires II © Microsoft Corporation. aoe2radar se creó conforme a las «Game Content Usage Rules» de Microsoft, con recursos de Age of Empires II, y Microsoft no la respalda ni tiene relación con ella.</p>
+      <p lang="en">Age of Empires II © Microsoft Corporation. aoe2radar was created under Microsoft's "Game Content Usage Rules" using assets from Age of Empires II, and it is not endorsed by or affiliated with Microsoft.</p>
       <p>Lee las <a href="https://www.xbox.com/en-US/developers/rules">Game Content Usage Rules</a> de Microsoft.</p>
     </div>
   </div>
 </section>
 </main>
 
-<footer>
+<footer class="pie">
   <div class="wrap">
-    <p>aoe2radar es gratis. © 2026 Jorge «12Tirador» Guardiola.<br>Hecha por un jugador de AoE2, para jugadores de AoE2.</p>
-    <p><a href="#arriba">Volver arriba</a></p>
+    <img src="../img/logotipo-oscuro.svg" width="148" height="28" alt="aoe2radar">
+    <p>Hecha por <a href="https://twitch.tv/12tirador">Jorge «12Tirador» Guardiola</a>, jugador de AoE2, para jugadores de AoE2. Si te sirve, <a href="https://paypal.me/12Tirador/5EUR">invítame a un café</a>.</p>
+    <p class="enlaces"><a href="https://github.com/jguardiola-dev/aoe2radar/releases">Todas las versiones</a> <a href="../" hreflang="en">English</a> <a href="https://github.com/jguardiola-dev/aoe2radar/issues">Avisar de un fallo</a></p>
+    <p class="copy">© 2026 Jorge Guardiola. Uso gratuito.</p>
   </div>
 </footer>
+<script>
+// Los vídeos van en bucle y sin sonido solo mientras se ven. Con «reducir movimiento», no se mueven solos: controles.
+(function () {
+  var quieto = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var clips = document.querySelectorAll('video.clip');
+  if (quieto || !('IntersectionObserver' in window)) {
+    clips.forEach(function (v) { v.controls = true; v.preload = 'metadata'; });
+    return;
+  }
+  var io = new IntersectionObserver(function (es) {
+    es.forEach(function (e) {
+      var v = e.target;
+      if (e.isIntersecting) { var p = v.play(); if (p && p.catch) p.catch(function () { v.controls = true; }); }
+      else v.pause();
+    });
+  }, { threshold: 0.35 });
+  clips.forEach(function (v) { io.observe(v); });
+})();
+</script>
 </body>
 </html>
