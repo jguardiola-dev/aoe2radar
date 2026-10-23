@@ -109,7 +109,8 @@ header.top .wrap { display: flex; align-items: center; gap: 20px; min-height: 64
 @media (prefers-reduced-motion: reduce) { .radar .barrido { animation: none; } }
 
 .hero-figura { margin: 56px 0 0; position: relative; z-index: 2; }
-.hero-figura .aviso {
+.vista-inicio { position: relative; margin: 0 0 48px; }
+.vista-inicio .aviso {
   position: absolute; left: 4%; bottom: -26px; width: min(78%, 900px);
   border-radius: 8px; box-shadow: 0 18px 40px rgba(0, 0, 0, .55), 0 0 0 1px rgba(255, 201, 77, .35);
 }
@@ -173,10 +174,7 @@ video.clip { width: 100%; background: var(--tinta-2); }
 .aldia .lista li strong { color: var(--texto); }
 .aldia .lista li::before { background: var(--oro); }
 
-/* ----- tráiler ----- */
-.trailer { border-top: 1px solid var(--linea); }
-.trailer h2 { margin-bottom: 16px; }
-.trailer p { color: var(--texto-2); max-width: 46ch; }
+/* ----- tráiler (en la portada) ----- */
 .trailer-caja { display: grid; gap: 12px; }
 .reproductor { position: relative; aspect-ratio: 16 / 9; border-radius: var(--radio); overflow: hidden; border: 1px solid var(--linea);
   background: var(--tinta-2); max-width: 100%; }
@@ -248,7 +246,7 @@ details p { padding: 0 0 20px; color: var(--texto-2); max-width: 68ch; }
   .hero { padding-top: 40px; }
   .radar { display: none; }
   .hero-figura { margin-top: 36px; }
-  .hero-figura .aviso { position: static; width: 100%; margin-top: 14px; }
+  .vista-inicio .aviso { position: static; width: 100%; margin-top: 14px; }
   .fila { padding: 40px 0; }
   .rejilla, .pasos { grid-template-columns: minmax(0, 1fr); }
 }
