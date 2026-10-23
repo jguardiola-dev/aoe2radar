@@ -190,13 +190,20 @@ video.clip { width: 100%; background: var(--tinta-2); }
 .trailer { border-top: 1px solid var(--linea); }
 .trailer h2 { margin-bottom: 16px; }
 .trailer p { color: var(--texto-2); max-width: 46ch; }
-.trailer-enlace { position: relative; display: block; border-radius: var(--radio); overflow: hidden; border: 1px solid var(--linea);
-  color: var(--texto); text-decoration: none; }
-.trailer-enlace span { display: flex; align-items: center; gap: 12px; padding: 14px 18px; background: var(--tinta-2);
-  border-top: 1px solid var(--linea); font-weight: 600; }
-.trailer-enlace span::before { content: ""; border-left: 12px solid var(--oro); border-top: 8px solid transparent;
-  border-bottom: 8px solid transparent; }
-.trailer-enlace:hover span { text-decoration: underline; }
+.trailer-caja { display: grid; gap: 12px; }
+.reproductor { position: relative; aspect-ratio: 16 / 9; border-radius: var(--radio); overflow: hidden; border: 1px solid var(--linea);
+  background: var(--tinta-2); max-width: 100%; }
+.reproductor iframe, .reproducir, .reproducir img { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.reproducir img { object-fit: cover; }
+.reproducir span {   /* botón de reproducir: el rombo de la marca con el triángulo dentro */
+  position: absolute; left: 50%; top: 50%; width: 76px; height: 76px; margin: -38px 0 0 -38px; transform: rotate(45deg);
+  background: var(--oro-fill); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .55); transition: transform .15s;
+}
+.reproducir span::after { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-35%, -50%) rotate(-45deg);
+  border-left: 22px solid var(--on-oro); border-top: 14px solid transparent; border-bottom: 14px solid transparent; }
+.reproducir:hover span, .reproducir:focus-visible span { transform: rotate(45deg) scale(1.08); }
+@media (prefers-reduced-motion: reduce) { .reproducir span { transition: none; } }
+.trailer-nota { font-size: 14px; color: var(--texto-2); }
 
 /* ----- instalar: es una secuencia, va numerada ----- */
 .instalar { border-top: 1px solid var(--linea); }

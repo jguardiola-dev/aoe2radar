@@ -45,7 +45,7 @@
       <p class="entrada">Una app gratuita para Windows que sigue a tus amigos y a los pros, te dice quién es de verdad tu rival cuando empieza la partida y pone tu build order encima del juego. Sin spoilers.</p>
       <div class="acciones">
         <a class="boton" href="https://github.com/jguardiola-dev/aoe2radar/releases/latest/download/aoe2radar-1.5-setup.exe">Descargar para Windows</a>
-        <a class="enlace-video" href="https://www.youtube.com/watch?v=og_HVtfqdh0">Ver el tráiler</a>
+        <a class="enlace-video" href="#trailer">Ver el tráiler</a>
       </div>
       <p class="nota">Versión 1.5, gratis, para Windows 10 y 11. Sin cuenta y sin anuncios.</p>
     </div>
@@ -195,13 +195,18 @@
   </div>
 </section>
 
-<section class="trailer" aria-labelledby="trailer-h">
+<section class="trailer" id="trailer" aria-labelledby="trailer-h">
   <div class="wrap dos">
     <div>
       <h2 id="trailer-h">Mírala en dos minutos</h2>
       <p>El tráiler de la 1.5: la Watchlist, tu rival al empezar, la build sobre el juego, una batalla enviada al AoE2 y vuestra liga.</p>
     </div>
-    <a class="trailer-enlace" href="https://www.youtube.com/watch?v=og_HVtfqdh0"><img src="../media/trailer-es.webp" width="960" height="540" alt="Miniatura del tráiler: Todo lo que necesitas para Age of Empires II, y más." loading="lazy" decoding="async"><span>Ver el tráiler</span></a>
+    <div class="trailer-caja">
+      <div class="reproductor" data-video="og_HVtfqdh0">
+        <a class="reproducir" href="https://www.youtube.com/watch?v=og_HVtfqdh0" aria-label="Reproducir el tráiler"><img src="../media/trailer-es.webp" width="960" height="540" alt="Miniatura del tráiler: Todo lo que necesitas para Age of Empires II, y más." loading="lazy" decoding="async"><span aria-hidden="true"></span></a>
+      </div>
+      <p class="trailer-nota">El reproductor se carga desde YouTube al pulsar reproducir. <a href="https://www.youtube.com/watch?v=og_HVtfqdh0">Verlo en YouTube</a></p>
+    </div>
   </div>
 </section>
 
@@ -275,6 +280,21 @@
   }, { threshold: 0.35 });
   clips.forEach(function (v) { io.observe(v); });
 })();
+// El tráiler: la miniatura es un enlace a YouTube; con JavaScript, el clic pone ahí el reproductor (sin cookies).
+document.querySelectorAll('.reproductor').forEach(function (caja) {
+  var enlace = caja.querySelector('.reproducir');
+  enlace.addEventListener('click', function (ev) {
+    ev.preventDefault();
+    var f = document.createElement('iframe');
+    f.src = 'https://www.youtube-nocookie.com/embed/' + caja.dataset.video + '?autoplay=1&rel=0&modestbranding=1&hl=es';
+    f.title = 'Tráiler de aoe2radar 1.5';
+    f.allow = 'autoplay; encrypted-media; picture-in-picture; fullscreen';
+    f.allowFullscreen = true;
+    f.referrerPolicy = 'strict-origin-when-cross-origin';
+    caja.replaceChild(f, enlace);
+    f.focus();
+  });
+});
 </script>
 </body>
 </html>
