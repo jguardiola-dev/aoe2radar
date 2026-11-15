@@ -76,8 +76,7 @@ section { padding: 96px 0; }
 .boton:hover { background: #d6aa4c; text-decoration: none; }
 
 /* ----- cabecera ----- */
-header.top { position: sticky; top: 0; z-index: 10; background: rgba(25, 24, 22, .9); border-bottom: 1px solid var(--linea);
-  -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+header.top { position: sticky; top: 0; z-index: 10; background: var(--tinta); border-bottom: 1px solid var(--linea); }   /* sólido: el desenfoque apenas se notaba y gasta en el móvil */
 header.top .wrap { display: flex; align-items: center; gap: 20px; min-height: 64px; }
 .brand { display: block; flex: none; }
 .menu { margin-left: auto; display: flex; align-items: center; gap: 4px 22px; flex-wrap: wrap; justify-content: flex-end; }
@@ -100,11 +99,12 @@ header.top .wrap { display: flex; align-items: center; gap: 20px; min-height: 64
 .enlace-video:hover { text-decoration: underline; }
 .nota { color: var(--texto-2); font-size: 15px; }
 
-/* el radar: el icono de la marca (el rombo del minimapa) en grande, con su barrido girando sin parar */
+/* el radar: el icono de la marca (el rombo del minimapa) en grande, con un barrido al cargar: una vuelta y quieto
+   (girando sin parar distraía del titular y no se podía parar) */
 .radar { position: absolute; z-index: 1; right: 1%; top: -36px; width: 400px; max-width: 100%;
   filter: drop-shadow(0 30px 50px rgba(0, 0, 0, .55)); }
 .radar svg { display: block; width: 100%; height: auto; }
-.radar .barrido { transform-box: view-box; transform-origin: 128px 128px; animation: girar 4s linear infinite; }
+.radar .barrido { transform-box: view-box; transform-origin: 128px 128px; animation: girar 3.2s cubic-bezier(.25, .6, .3, 1) .3s 1 both; }
 @keyframes girar { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .radar .barrido { animation: none; } }
 
@@ -116,11 +116,25 @@ header.top .wrap { display: flex; align-items: center; gap: 20px; min-height: 64
 }
 
 /* ----- marcos ----- */
-.ventana { border: 1px solid var(--linea); border-radius: var(--radio); overflow: hidden; background: var(--tinta-2);
-  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .7); }
-.juego { border-radius: var(--radio); overflow: hidden; border: 1px solid var(--linea); box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .7); }
+/* una sola elevación: el borde. La sombra grande apenas se veía sobre el fondo oscuro (Impeccable: borde o sombra, no los dos) */
+.ventana { border: 1px solid var(--linea); border-radius: var(--radio); overflow: hidden; background: var(--tinta-2); }
+.juego { border-radius: var(--radio); overflow: hidden; border: 1px solid var(--linea); }
 .tarjeta { border-radius: var(--radio); overflow: hidden; box-shadow: 0 30px 60px -20px rgba(0, 0, 0, .8), 0 0 0 1px rgba(255, 201, 77, .3); }
 video.clip { width: 100%; background: var(--tinta-2); }
+/* en el móvil, el recorte de la zona que importa de cada captura grande (tools/site_movil.py) */
+.solo-movil { display: none; }
+picture { display: block; }
+video.clip.tocable { cursor: pointer; }
+/* pausa de los vídeos: el aro de oro con las dos barras; parado, el triángulo. Solo aparece con JavaScript */
+.clip-caja { position: relative; }
+.clip-caja .cartel { position: absolute; inset: 0; width: 100%; height: 100%; }   /* sin JavaScript, la portada */
+.pausa { position: absolute; right: 12px; bottom: 12px; width: 44px; height: 44px; padding: 0; display: grid; place-items: center;
+  border: 1.5px solid var(--oro); border-radius: 50%; background: rgba(25, 24, 22, .8); color: var(--texto); cursor: pointer; }
+.pausa[hidden] { display: none; }
+.pausa::before { content: ""; box-sizing: border-box; width: 12px; height: 14px; border-left: 4px solid currentColor; border-right: 4px solid currentColor; }
+.pausa.parado::before { width: 0; height: 0; margin-left: 4px; border-left: 13px solid currentColor; border-right: 0;
+  border-top: 8px solid transparent; border-bottom: 8px solid transparent; }
+.pausa:hover { background: rgba(25, 24, 22, .95); }
 
 /* ----- lo que la hace distinta ----- */
 .funciones { padding-top: 120px; }
@@ -238,6 +252,8 @@ details p { padding: 0 0 20px; color: var(--texto-2); max-width: 68ch; }
   .rejilla { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 760px) {
+  .solo-ancho { display: none; }
+  .solo-movil { display: block; }
   body { font-size: 16px; }
   .wrap { padding: 0 16px; }
   section { padding: 64px 0; }
